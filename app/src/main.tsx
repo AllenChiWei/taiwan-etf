@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { RouterProvider } from '@tanstack/react-router';
 import { router } from './router';
+import { registerServiceWorker } from './registerSW';
 import './styles.css';
 
 const el = document.getElementById('root');
@@ -12,3 +13,5 @@ createRoot(el).render(
     <RouterProvider router={router} />
   </StrictMode>,
 );
+
+registerServiceWorker();
