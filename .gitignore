@@ -1,0 +1,22 @@
+# 機密設定 - 絕不上傳
+.env
+.env.*
+*.key
+*.pem
+secrets.json
+
+# Python 暫存
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 抓取資料的中間產物
+*.tmp
+*.bak
+taiwan_etf_list.html.bak
+
+# 作業系統
+Thumbs.db
+desktop.ini
+.DS_Store
