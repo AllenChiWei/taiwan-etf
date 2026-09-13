@@ -90,6 +90,14 @@ deploy workflow.
 A commit pushed with `GITHUB_TOKEN` does **not** trigger `push` workflows, which is why
 `update-data.yml` calls `deploy.yml` via `workflow_call` instead of relying on the push.
 
+**Newly listed ETFs are picked up automatically.** `fetch_universe.py` re-queries TWSE,
+TPEx and the FinMind sweep on every run rather than reading a stored list, so a fund that
+listed yesterday appears without anyone editing anything. `build_data.py` classifies codes
+it has not seen before with the rule in `etfdata.section()`; `scripts/diff_listings.py`
+names them in the daily commit message so `git log` answers "when did this show up?".
+Delistings are the asymmetric case: `verify_data.py` **fails** on a row that vanished,
+because that is far more often a broken scrape than a real delisting.
+
 `scripts/etfdata.py` holds all the judgment: bank-name normalisation (`CUST_NORM`), section
 rules, payout labels, return periods. A new payout label needs `FREQ_CLASS`/`FREQ_ORDER`
 there, `PILL` in `app/src/lib/format.ts`, a `.pill-*` rule in `app/src/styles.css`, and

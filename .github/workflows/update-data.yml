@@ -98,10 +98,20 @@ jobs:
           fi
           TOTAL=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['total'])")
           SNAP=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['snapshot'])")
+
+          # 新上市的 ETF 寫進 commit 訊息，從 git log 就看得到哪天多了哪幾檔。
+          # fetch_universe.py 每次都重新向交易所要完整名單，所以新掛牌的會自動出現。
+          NEW=$(python scripts/diff_listings.py "${WORK}/previous.json" app/public/data/etfs.json)
+
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add app/public/data/etfs.json taiwan_etf_list.html
-          git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）"
+          if [ -n "$NEW" ]; then
+            git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "新上市：${NEW}"
+            echo "::notice title=新上市 ETF::${NEW}"
+          else
+            git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）"
+          fi
           git push
           echo "changed=true" >> $GITHUB_OUTPUT
 
