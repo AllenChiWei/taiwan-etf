@@ -1,0 +1,77 @@
+name: 部署到 GitHub Pages
+
+# push 到 main 時自動部署；也提供 workflow_call，讓每日更新流程在 commit 後直接呼叫。
+# （用 GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以更新流程必須主動呼叫，
+#   否則資料更新後網站不會重新部署。）
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'app/**'
+      - 'taiwan_etf_list.html'
+      - '.github/workflows/deploy.yml'
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# 同時只跑一個部署。不取消進行中的那個，免得站台停在半完成狀態。
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: 安裝相依套件
+        working-directory: app
+        run: npm ci
+
+      - name: 測試篩選與排序邏輯
+        working-directory: app
+        run: npm test
+
+      - name: 驗證資料完整性
+        run: python3 scripts/verify_data.py app/public/data/etfs.json
+
+      - name: 建置
+        working-directory: app
+        run: npm run build
+
+      - name: 保留舊版單頁（既有連結不要壞掉）
+        # 轉換期間兩個前端並存：新站是根目錄，舊的單檔版留在原網址。
+        # 等新版穩定一段時間後可以拿掉這一步。
+        run: cp taiwan_etf_list.html app/dist/taiwan_etf_list.html
+
+      - uses: actions/configure-pages@v5
+        with:
+          # 若 repo 的 Pages 來源還停在「Deploy from a branch」，這裡會把它切成
+          # 「GitHub Actions」。切換後根網址服務 React 版，舊版單頁維持在
+          # /taiwan_etf_list.html。若這步失敗，到 Settings → Pages 手動改即可。
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: app/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

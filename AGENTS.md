@@ -2,38 +2,68 @@
 
 ## Project overview
 
-This workspace contains a single static HTML page, [taiwan_etf_list.html](taiwan_etf_list.html), which renders a searchable Taiwan ETF directory with category sections, custodian-bank filters, dividend-frequency filters, and external MoneyDJ links.
+A searchable Traditional-Chinese directory of Taiwan ETFs, published to GitHub Pages at
+<https://allenchiwei.github.io/taiwan-etf/>. Data comes from TWSE/TPEx open data plus
+MoneyDJ, refreshed by a weekday cron and committed back to the repo.
+
+```
+app/                    React 19 + TypeScript + Vite + Tailwind v4 — the site
+  public/data/etfs.json   generated dataset, fetched at runtime
+  src/lib/                pure logic (filters, sorting, formatting) — no React imports
+  tests/                  node --test, exercises the real modules
+scripts/                Python pipeline: scrape → etfs.json + legacy HTML
+tools/                  dev helpers (headless screenshots, static server)
+taiwan_etf_list.html    original single-file page, still served at its old URL
+.github/workflows/      daily data update, Pages deploy
+```
 
 ## Working conventions
 
-- Treat this as a lightweight static frontend project. Do not introduce frameworks, build tools, package managers, or bundlers unless the user explicitly asks for them.
-- Keep the page self-contained in HTML/CSS/JS. Most changes should happen directly in [taiwan_etf_list.html](taiwan_etf_list.html).
-- Preserve the current page structure and user-facing behavior:
-  - section IDs such as `cat-domestic`, `cat-foreign`, and `cat-leveraged-futures`
-  - the filter-bar controls (`searchBox`, `custodianFilter`, `frequencyFilter`)
-  - the `filterRows`, `resetFilters`, and `scrollToTop` functions
-  - the `data-custodian` and `data-frequency` attributes on table rows
+- The React app in `app/` is the primary front end. `taiwan_etf_list.html` is in
+  **maintenance mode**: keep it working, don't add features to it.
+- All user-facing text is Traditional Chinese.
+- Comments explain **why**, not what, in the language the surrounding file already uses.
+- Preserve public names the verifiers and tests depend on: section ids (`cat-domestic`,
+  `cat-foreign`, `cat-bond`, `cat-leveraged`, `cat-futures`, `cat-leveraged-futures`),
+  the legacy page's `filterRows` / `resetFilters` / `scrollToTop` / `sortTable` functions
+  and its `data-custodian` / `data-frequency` row attributes.
 
-## Data and content expectations
+## Data
 
-- ETF rows are stored directly in the HTML table bodies. When adding or editing ETF entries, keep the record consistent with the surrounding structure.
-- For row filtering to work correctly, each row should still include:
-  - `data-custodian` with the bank name
-  - `data-frequency` with one of the existing frequency labels such as `月配`, `雙月配`, `季配`, `半年配`, `年配`, or `—`
-- The page is bilingual/Traditional Chinese oriented; keep labels, headings, and placeholders in Traditional Chinese unless the user instructs otherwise.
+- **Never hand-edit `app/public/data/etfs.json` or the ETF rows in the legacy HTML.**
+  Both are generated. Run the pipeline (see `.claude/skills/update-etf-list/SKILL.md`)
+  or the `update-data` workflow.
+- If a data feed is unreachable, stop and say so. A plausible-looking invented 保管銀行
+  is worse than a missing row.
+- Adding a payout frequency touches four places: `FREQ_CLASS`/`FREQ_ORDER` in
+  `scripts/etfdata.py`, `PILL` in `app/src/lib/format.ts`, a `.pill-*` rule in
+  `app/src/styles.css`, and `FreqLabel` in `app/src/types.ts`.
+- Adding a numeric column touches `RETURN_PERIODS` (etfdata.py), `PERIOD_KEY`
+  (build_data.py), `NUMERIC_COLUMNS` (app/src/components/columns.ts), `NUMERIC_LABEL`
+  (format.ts), `NumericKey`/`Etf` (types.ts), `SORTABLE` (useFilterState.ts),
+  `SORT_OPTIONS` (FilterBar.tsx), plus the legacy page's header, `NCELLS` in
+  verify_page.py and its mobile `nth-child` block.
 
-## Practical guidance for AI agents
+## Conventions that are deliberate
 
-- If the user asks to update ETF data, edit the relevant sections and rows in [taiwan_etf_list.html](taiwan_etf_list.html) rather than creating separate data files.
-- If a change affects counts, update the visible counts in the section headers and the stats boxes in the page header to stay consistent.
-- If you add new filter options or new frequency categories, update both the HTML controls and the JS filtering logic in the same file.
-- When changing styling, prefer preserving the current visual layout and CSS class names unless the request clearly requires a redesign.
+- **紅漲綠跌**: gains are red, losses green — the Taiwan convention, opposite of the US one.
+- Returns are 市價 (market price), cumulative not annualised; `N/A` means the fund is
+  younger than that period.
+- 殖利率 `N/A` is ambiguous at source (no distribution vs. hasn't distributed yet); the
+  配息 column is what distinguishes them. Don't infer one from the other.
+- Section row counts are static and do not change while filtering.
 
 ## Verification
 
-- There is no automated test suite or build step in this workspace.
-- After editing, validate by opening [taiwan_etf_list.html](taiwan_etf_list.html) in a browser and checking that:
-  1. the page still renders,
-  2. filters still work,
-  3. links still point to MoneyDJ,
-  4. section counts and stats remain accurate.
+```bash
+cd app && npm test                                      # 篩選/排序/顏色，含真實資料檢查
+cd app && npm run build                                 # tsc -b && vite build
+python scripts/verify_data.py app/public/data/etfs.json
+python scripts/verify_page.py taiwan_etf_list.html
+node scripts/test_sort.js taiwan_etf_list.html
+```
+
+For layout and interaction, use `tools/shot.mjs` (DevTools-Protocol screenshots; reports
+horizontal overflow and page exceptions) served by `tools/serve.py`. Do not use Chrome's
+`--screenshot` with `--window-size` on Windows and do not serve with `python -m http.server`
+— both produce misleading results; `CLAUDE.md` explains why.

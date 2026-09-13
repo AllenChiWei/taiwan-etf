@@ -25,7 +25,7 @@ RET = 'https://www.moneydj.com/ETF/X/Basic/Basic0008.xdjhtm?etfid=%s.tw'
 _SORT = u'<th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">%s</th>'
 TH = (u'<th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th>'
       + _SORT % u'殖利率'
-      + _SORT % u'近3月' + _SORT % u'近6月' + _SORT % u'近1年'
+      + _SORT % u'近3月' + _SORT % u'近6月' + _SORT % u'近1年' + _SORT % u'近3年'
       + u'<th>詳情</th>')
 
 

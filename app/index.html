@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="台灣 ETF 總覽：359 檔 ETF 的保管銀行、配息頻率、殖利率與近期報酬率，可搜尋、篩選、排序。每日自動更新。">
+<meta name="theme-color" content="#0f1216">
+<title>台灣 ETF 總覽</title>
+
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="manifest" href="manifest.webmanifest">
+
+<!-- 在 CSS 之前套用主題，避免深色模式使用者看到一閃的白畫面。
+     這段刻意內嵌且同步執行；抽成模組就失去意義了。 -->
+<script>
+  (function () {
+    try {
+      var t = localStorage.getItem('twetf.theme');
+      if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t;
+    } catch (e) { /* 無痕模式下讀不到，跟隨系統即可 */ }
+  })();
+</script>
+</head>
+<body>
+<div id="root"></div>
+<noscript>這個網站需要 JavaScript 才能顯示 ETF 清單。</noscript>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

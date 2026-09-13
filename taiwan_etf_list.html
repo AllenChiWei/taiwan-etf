@@ -151,8 +151,8 @@
     tbody { display: block; padding: 10px; }
     tbody tr {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 4px 8px;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px 5px;
       padding: 11px 12px;
       margin-bottom: 8px;
       border: 1px solid #e4e9f0;
@@ -165,8 +165,8 @@
     td { padding: 0; font-size: 0.88rem; }
 
     /* 第 1 行：代號 ＋ 配息標籤 */
-    td:nth-child(1) { grid-column: 1 / 4; grid-row: 1; font-size: 1.02rem; }
-    td:nth-child(4) { grid-column: 4;     grid-row: 1; justify-self: end; align-self: center; }
+    td:nth-child(1) { grid-column: 1 / 5; grid-row: 1; font-size: 1.02rem; }
+    td:nth-child(4) { grid-column: 5;     grid-row: 1; justify-self: end; align-self: center; }
 
     /* 第 2 行：名稱 */
     td:nth-child(2) { grid-column: 1 / -1; grid-row: 2; font-weight: 600; font-size: 0.95rem; }
@@ -180,9 +180,10 @@
     td:nth-child(3)::before { content: '🏦 '; }
 
     /* 第 4 行：四個數字，各自帶欄名 */
-    td:nth-child(n+5):nth-child(-n+8) {
+    td:nth-child(n+5):nth-child(-n+9) {
       grid-row: 4;
       text-align: left;
+      font-size: 0.82rem;
       padding-top: 7px;
       border-top: 1px solid #eef1f5;
     }
@@ -190,21 +191,24 @@
     td:nth-child(6) { grid-column: 2; }
     td:nth-child(7) { grid-column: 3; }
     td:nth-child(8) { grid-column: 4; }
-    td:nth-child(n+5):nth-child(-n+8)::before {
+    td:nth-child(9) { grid-column: 5; }
+    td:nth-child(n+5):nth-child(-n+9)::before {
       display: block;
-      font-size: 0.66rem;
+      font-size: 0.6rem;
       font-weight: 400;
       color: #98a2ae;
       margin-bottom: 1px;
+      white-space: nowrap;
     }
     td:nth-child(5)::before { content: '殖利率'; }
     td:nth-child(6)::before { content: '近3月'; }
     td:nth-child(7)::before { content: '近6月'; }
     td:nth-child(8)::before { content: '近1年'; }
+    td:nth-child(9)::before { content: '近3年'; }
 
     /* 第 5 行：詳情按鈕 */
-    td:nth-child(9) { grid-column: 1 / -1; grid-row: 5; margin-top: 2px; }
-    td:nth-child(9) .link-btn {
+    td:nth-child(10) { grid-column: 1 / -1; grid-row: 5; margin-top: 2px; }
+    td:nth-child(10) .link-btn {
       display: block;
       text-align: center;
       padding: 8px;
@@ -220,9 +224,9 @@
   /* ===== 小尺寸手機（≤380px）===== */
   @media (max-width: 380px) {
     .stat-box { font-size: 0.66rem; }
-    td { font-size: 0.84rem; }
-    td:nth-child(n+5):nth-child(-n+8)::before { font-size: 0.62rem; }
-    thead th.sortable { font-size: 0.68rem; padding: 4px 7px; }
+    td { font-size: 0.8rem; }
+    td:nth-child(n+5):nth-child(-n+9)::before { font-size: 0.56rem; }
+    thead th.sortable { font-size: 0.66rem; padding: 4px 6px; }
   }
 </style>
 </head>
@@ -230,7 +234,7 @@
 
 <header>
   <h1>🇹🇼 台灣 ETF 完整清單</h1>
-  <p>資料來源：FinLab / MoneyDJ　更新日期：2026-09-12　報酬率／殖利率截至：09/11</p>
+  <p>資料來源：FinLab / MoneyDJ　更新日期：2026-09-13　報酬率／殖利率截至：09/11</p>
   <div class="stats">
     <div class="stat-box"><strong>359</strong>總計 ETF 檔數</div>
     <a class="stat-box stat-link" href="#cat-domestic"><strong>87</strong>台股 ETF</a>
@@ -287,7 +291,7 @@
   <section id="cat-domestic">
     <h2>台股ETF <span class="count">(87 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="中國信託商業銀行" data-frequency="月配">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00400a.tw" target="_blank">00400A</a></td>
@@ -296,6 +300,7 @@
           <td><span class="freq freq-monthly">月配</span></td>
           <td class="num yld">9.73</td>
           <td class="num ret-up">9.51</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00400a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -309,6 +314,7 @@
           <td class="num ret-up">7.05</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00401a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -318,6 +324,7 @@
           <td><span class="freq freq-quarterly">季配</span></td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-up">1.80</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00403a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -331,6 +338,7 @@
           <td class="num ret-up">2.83</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00404a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -340,6 +348,7 @@
           <td><span class="freq freq-quarterly">季配</span></td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-down">-3.59</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00405a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -353,6 +362,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00406a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -360,6 +370,7 @@
           <td>主動凱基台灣</td>
           <td>彰化商業銀行</td>
           <td><span class="freq freq-unknown">—</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -375,6 +386,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00408a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -382,6 +394,7 @@
           <td>主動永豐科技趨勢</td>
           <td>第一商業銀行</td>
           <td><span class="freq freq-semi">半年配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -397,6 +410,7 @@
           <td class="num ret-up">8.52</td>
           <td class="num ret-up">38.56</td>
           <td class="num ret-up">98.17</td>
+          <td class="num ret-up">272.83</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0050.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="年配">
@@ -408,6 +422,7 @@
           <td class="num ret-up">5.89</td>
           <td class="num ret-up">33.41</td>
           <td class="num ret-up">76.72</td>
+          <td class="num ret-up">131.94</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0051.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="年配">
@@ -419,6 +434,7 @@
           <td class="num ret-up">7.57</td>
           <td class="num ret-up">37.94</td>
           <td class="num ret-up">105.35</td>
+          <td class="num ret-up">317.64</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0052.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -430,6 +446,7 @@
           <td class="num ret-up">5.91</td>
           <td class="num ret-up">39.03</td>
           <td class="num ret-up">102.94</td>
+          <td class="num ret-up">287.81</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0053.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="國泰世華商業銀行" data-frequency="年配">
@@ -441,6 +458,7 @@
           <td class="num ret-up">24.36</td>
           <td class="num ret-up">51.71</td>
           <td class="num ret-up">68.53</td>
+          <td class="num ret-up">135.12</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0055.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -452,6 +470,7 @@
           <td class="num ret-up">14.61</td>
           <td class="num ret-up">50.63</td>
           <td class="num ret-up">69.45</td>
+          <td class="num ret-up">117.61</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0056.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="年配">
@@ -463,6 +482,7 @@
           <td class="num ret-up">8.79</td>
           <td class="num ret-up">38.68</td>
           <td class="num ret-up">96.66</td>
+          <td class="num ret-up">252.25</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0057.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -474,6 +494,7 @@
           <td class="num ret-down">-3.49</td>
           <td class="num ret-up">39.36</td>
           <td class="num ret-up">93.93</td>
+          <td class="num ret-up">166.48</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006201.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -485,6 +506,7 @@
           <td class="num ret-up">9.15</td>
           <td class="num ret-up">39.76</td>
           <td class="num ret-up">96.47</td>
+          <td class="num ret-up">255.07</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006203.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="國泰世華商業銀行" data-frequency="年配">
@@ -496,6 +518,7 @@
           <td class="num ret-up">7.48</td>
           <td class="num ret-up">32.96</td>
           <td class="num ret-up">84.26</td>
+          <td class="num ret-up">190.94</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006204.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -507,6 +530,7 @@
           <td class="num ret-up">8.63</td>
           <td class="num ret-up">38.48</td>
           <td class="num ret-up">98.34</td>
+          <td class="num ret-up">271.49</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006208.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台中商業銀行" data-frequency="季配">
@@ -518,6 +542,7 @@
           <td class="num ret-up">5.36</td>
           <td class="num ret-up">55.04</td>
           <td class="num ret-up">113.37</td>
+          <td class="num ret-up">283.32</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00690.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="半年配">
@@ -529,6 +554,7 @@
           <td class="num ret-up">8.36</td>
           <td class="num ret-up">37.07</td>
           <td class="num ret-up">91.31</td>
+          <td class="num ret-up">232.62</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00692.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="半年配">
@@ -540,6 +566,7 @@
           <td class="num ret-up">17.47</td>
           <td class="num ret-up">47.41</td>
           <td class="num ret-up">58.27</td>
+          <td class="num ret-up">104.68</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00701.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="季配">
@@ -551,6 +578,7 @@
           <td class="num ret-up">9.63</td>
           <td class="num ret-up">26.09</td>
           <td class="num ret-up">31.63</td>
+          <td class="num ret-up">69.43</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00713.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -562,6 +590,7 @@
           <td class="num ret-up">16.20</td>
           <td class="num ret-up">56.75</td>
           <td class="num ret-up">114.75</td>
+          <td class="num ret-up">234.32</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00728.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣新光商業銀行" data-frequency="月配">
@@ -573,6 +602,7 @@
           <td class="num ret-up">1.14</td>
           <td class="num ret-up">25.75</td>
           <td class="num ret-up">17.57</td>
+          <td class="num ret-up">80.10</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00730.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣新光商業銀行" data-frequency="季配">
@@ -584,6 +614,7 @@
           <td class="num ret-up">16.00</td>
           <td class="num ret-up">40.11</td>
           <td class="num ret-up">52.42</td>
+          <td class="num ret-up">85.93</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00731.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="半年配">
@@ -595,6 +626,7 @@
           <td class="num ret-down">-3.14</td>
           <td class="num ret-up">20.34</td>
           <td class="num ret-up">46.63</td>
+          <td class="num ret-up">39.36</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00733.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -606,6 +638,7 @@
           <td class="num ret-up">8.25</td>
           <td class="num ret-up">46.81</td>
           <td class="num ret-up">94.81</td>
+          <td class="num ret-up">227.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00850.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -617,6 +650,7 @@
           <td class="num ret-up">10.91</td>
           <td class="num ret-up">59.85</td>
           <td class="num ret-up">78.64</td>
+          <td class="num ret-up">115.66</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00878.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -628,6 +662,7 @@
           <td class="num ret-up">5.12</td>
           <td class="num ret-up">46.56</td>
           <td class="num ret-up">107.60</td>
+          <td class="num ret-up">303.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00881.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -639,6 +674,7 @@
           <td class="num ret-up">9.05</td>
           <td class="num ret-up">57.70</td>
           <td class="num ret-up">118.16</td>
+          <td class="num ret-up">219.63</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00888.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -650,6 +686,7 @@
           <td class="num ret-up">9.21</td>
           <td class="num ret-up">56.59</td>
           <td class="num ret-up">123.67</td>
+          <td class="num ret-up">260.81</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00891.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="半年配">
@@ -661,6 +698,7 @@
           <td class="num ret-up">4.48</td>
           <td class="num ret-up">56.33</td>
           <td class="num ret-up">137.88</td>
+          <td class="num ret-up">286.39</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00892.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -672,6 +710,7 @@
           <td class="num ret-up">5.27</td>
           <td class="num ret-up">47.93</td>
           <td class="num ret-up">116.49</td>
+          <td class="num ret-up">331.47</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00894.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -683,6 +722,7 @@
           <td class="num ret-up">6.29</td>
           <td class="num ret-up">37.96</td>
           <td class="num ret-up">72.06</td>
+          <td class="num ret-up">140.62</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00896.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -694,6 +734,7 @@
           <td class="num ret-up">5.06</td>
           <td class="num ret-up">39.59</td>
           <td class="num ret-up">55.15</td>
+          <td class="num ret-up">94.67</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00900.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="年配">
@@ -705,6 +746,7 @@
           <td class="num ret-up">4.20</td>
           <td class="num ret-up">50.87</td>
           <td class="num ret-up">109.94</td>
+          <td class="num ret-up">285.06</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00901.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -716,6 +758,7 @@
           <td class="num ret-up">6.85</td>
           <td class="num ret-up">47.15</td>
           <td class="num ret-up">134.19</td>
+          <td class="num ret-up">290.35</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00904.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -727,6 +770,7 @@
           <td class="num ret-up">4.23</td>
           <td class="num ret-up">41.95</td>
           <td class="num ret-up">84.56</td>
+          <td class="num ret-up">225.60</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00905.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="雙月配">
@@ -738,6 +782,7 @@
           <td class="num ret-up">12.51</td>
           <td class="num ret-up">21.73</td>
           <td class="num ret-up">23.83</td>
+          <td class="num ret-up">53.85</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00907.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -749,6 +794,7 @@
           <td class="num ret-up">12.05</td>
           <td class="num ret-up">47.96</td>
           <td class="num ret-up">95.67</td>
+          <td class="num ret-up">200.83</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00912.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="半年配">
@@ -760,6 +806,7 @@
           <td class="num ret-up">7.60</td>
           <td class="num ret-up">66.91</td>
           <td class="num ret-up">155.75</td>
+          <td class="num ret-up">279.79</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00913.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -771,6 +818,7 @@
           <td class="num ret-up">10.59</td>
           <td class="num ret-up">44.38</td>
           <td class="num ret-up">55.14</td>
+          <td class="num ret-up">103.14</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00915.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="季配">
@@ -782,6 +830,7 @@
           <td class="num ret-up">21.31</td>
           <td class="num ret-up">62.70</td>
           <td class="num ret-up">74.12</td>
+          <td class="num ret-up">147.57</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00918.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -793,6 +842,7 @@
           <td class="num ret-up">11.21</td>
           <td class="num ret-up">45.89</td>
           <td class="num ret-up">69.58</td>
+          <td class="num ret-up">118.38</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00919.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -804,6 +854,7 @@
           <td class="num ret-up">9.74</td>
           <td class="num ret-up">31.02</td>
           <td class="num ret-up">44.25</td>
+          <td class="num ret-up">68.07</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00921.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="半年配">
@@ -815,6 +866,7 @@
           <td class="num ret-up">9.59</td>
           <td class="num ret-up">45.05</td>
           <td class="num ret-up">98.06</td>
+          <td class="num ret-up">235.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00922.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="半年配">
@@ -826,6 +878,7 @@
           <td class="num ret-up">6.64</td>
           <td class="num ret-up">46.22</td>
           <td class="num ret-up">100.28</td>
+          <td class="num ret-up">232.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00923.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -837,6 +890,7 @@
           <td class="num ret-up">4.71</td>
           <td class="num ret-up">61.48</td>
           <td class="num ret-up">126.96</td>
+          <td class="num ret-up">230.31</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00927.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -848,6 +902,7 @@
           <td class="num ret-down">-2.55</td>
           <td class="num ret-up">49.22</td>
           <td class="num ret-up">96.93</td>
+          <td class="num ret-up">169.69</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00928.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="月配">
@@ -859,6 +914,7 @@
           <td class="num ret-up">4.05</td>
           <td class="num ret-up">52.75</td>
           <td class="num ret-up">71.03</td>
+          <td class="num ret-up">104.95</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00929.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="雙月配">
@@ -870,6 +926,7 @@
           <td class="num ret-up">1.86</td>
           <td class="num ret-up">39.37</td>
           <td class="num ret-up">47.65</td>
+          <td class="num ret-up">84.70</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00930.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -881,6 +938,7 @@
           <td class="num ret-down">-0.02</td>
           <td class="num ret-up">21.66</td>
           <td class="num ret-up">26.07</td>
+          <td class="num ret-up">35.90</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00932.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -892,6 +950,7 @@
           <td class="num ret-up">12.31</td>
           <td class="num ret-up">44.62</td>
           <td class="num ret-up">62.79</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00934.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -903,6 +962,7 @@
           <td class="num ret-up">2.90</td>
           <td class="num ret-up">55.94</td>
           <td class="num ret-up">135.94</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00935.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="月配">
@@ -914,6 +974,7 @@
           <td class="num ret-up">6.30</td>
           <td class="num ret-up">25.99</td>
           <td class="num ret-up">44.83</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00936.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -925,6 +986,7 @@
           <td class="num ret-up">16.90</td>
           <td class="num ret-up">44.66</td>
           <td class="num ret-up">79.87</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00938.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="月配">
@@ -936,6 +998,7 @@
           <td class="num ret-up">16.75</td>
           <td class="num ret-up">55.04</td>
           <td class="num ret-up">81.24</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00939.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="月配">
@@ -947,6 +1010,7 @@
           <td class="num ret-up">7.36</td>
           <td class="num ret-up">35.50</td>
           <td class="num ret-up">43.87</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00940.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣土地銀行" data-frequency="月配">
@@ -958,6 +1022,7 @@
           <td class="num ret-up">0.97</td>
           <td class="num ret-up">44.49</td>
           <td class="num ret-up">55.14</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00943.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="月配">
@@ -969,6 +1034,7 @@
           <td class="num ret-up">5.12</td>
           <td class="num ret-up">43.65</td>
           <td class="num ret-up">56.08</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00944.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="月配">
@@ -980,6 +1046,7 @@
           <td class="num ret-up">3.56</td>
           <td class="num ret-up">53.68</td>
           <td class="num ret-up">54.82</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00946.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -991,6 +1058,7 @@
           <td class="num ret-up">5.48</td>
           <td class="num ret-up">58.49</td>
           <td class="num ret-up">153.29</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00947.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -1002,6 +1070,7 @@
           <td class="num ret-up">1.75</td>
           <td class="num ret-up">43.34</td>
           <td class="num ret-up">71.53</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00952.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -1013,6 +1082,7 @@
           <td class="num ret-up">8.41</td>
           <td class="num ret-up">38.89</td>
           <td class="num ret-up">59.59</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00961.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="月配">
@@ -1024,6 +1094,7 @@
           <td class="num ret-up">6.26</td>
           <td class="num ret-up">40.76</td>
           <td class="num ret-up">47.77</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00962.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -1035,6 +1106,7 @@
           <td class="num ret-up">5.89</td>
           <td class="num ret-up">55.88</td>
           <td class="num ret-up">93.06</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009802.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="季配">
@@ -1046,6 +1118,7 @@
           <td class="num ret-up">6.03</td>
           <td class="num ret-up">41.59</td>
           <td class="num ret-up">100.17</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009803.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -1057,6 +1130,7 @@
           <td class="num ret-up">9.26</td>
           <td class="num ret-up">50.32</td>
           <td class="num ret-up">98.76</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009804.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="季配">
@@ -1068,6 +1142,7 @@
           <td class="num ret-up">6.46</td>
           <td class="num ret-up">43.36</td>
           <td class="num ret-up">88.65</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009808.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -1078,6 +1153,7 @@
           <td class="num yld">3.47</td>
           <td class="num ret-up">10.63</td>
           <td class="num ret-up">46.59</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009809.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1090,6 +1166,7 @@
           <td class="num ret-up">7.14</td>
           <td class="num ret-up">47.69</td>
           <td class="num ret-up">96.66</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00980a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="—">
@@ -1100,6 +1177,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-up">9.29</td>
           <td class="num ret-up">45.16</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009816.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1112,6 +1190,7 @@
           <td class="num ret-up">1.12</td>
           <td class="num ret-up">52.93</td>
           <td class="num ret-up">122.02</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00981a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -1123,6 +1202,7 @@
           <td class="num ret-up">2.08</td>
           <td class="num ret-up">46.20</td>
           <td class="num ret-up">89.92</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00982a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="半年配">
@@ -1133,6 +1213,7 @@
           <td class="num yld">12.57</td>
           <td class="num ret-up">5.36</td>
           <td class="num ret-up">38.35</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00982t.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1145,6 +1226,7 @@
           <td class="num ret-up">1.23</td>
           <td class="num ret-up">29.13</td>
           <td class="num ret-up">59.63</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00984a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="半年配">
@@ -1156,6 +1238,7 @@
           <td class="num ret-up">7.84</td>
           <td class="num ret-up">39.95</td>
           <td class="num ret-up">99.82</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00985a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="年配">
@@ -1166,6 +1249,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-up">0.25</td>
           <td class="num ret-up">39.24</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00987a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1178,6 +1262,7 @@
           <td class="num ret-down">-2.05</td>
           <td class="num ret-up">46.73</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00991a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -1188,6 +1273,7 @@
           <td class="num yld">10.52</td>
           <td class="num ret-up">6.45</td>
           <td class="num ret-up">45.17</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00992a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1200,6 +1286,7 @@
           <td class="num ret-up">1.39</td>
           <td class="num ret-up">25.74</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00993a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -1210,6 +1297,7 @@
           <td class="num yld">8.62</td>
           <td class="num ret-down">-0.05</td>
           <td class="num ret-up">44.86</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00994a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -1222,6 +1310,7 @@
           <td class="num ret-up">0.65</td>
           <td class="num ret-up">47.58</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00995a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="季配">
@@ -1231,6 +1320,7 @@
           <td><span class="freq freq-quarterly">季配</span></td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-down">-4.45</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00996a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -1244,6 +1334,7 @@
           <td class="num ret-up">4.32</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00999a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>
@@ -1253,7 +1344,7 @@
   <section id="cat-foreign">
     <h2>海外ETF <span class="count">(113 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="永豐商業銀行" data-frequency="年配">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00402a.tw" target="_blank">00402A</a></td>
@@ -1264,6 +1355,7 @@
           <td class="num ret-up">0.42</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00402a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="國泰世華商業銀行" data-frequency="年配">
@@ -1271,6 +1363,7 @@
           <td>主動復華全球50</td>
           <td>國泰世華商業銀行</td>
           <td><span class="freq freq-annual">年配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -1286,6 +1379,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00411a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1297,6 +1391,7 @@
           <td class="num ret-down">-1.44</td>
           <td class="num ret-up">0.13</td>
           <td class="num ret-up">11.41</td>
+          <td class="num ret-up">32.89</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0061.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1308,6 +1403,7 @@
           <td class="num ret-down">-0.78</td>
           <td class="num ret-down">-4.00</td>
           <td class="num ret-up">7.89</td>
+          <td class="num ret-up">28.99</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006205.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1319,6 +1415,7 @@
           <td class="num ret-up">2.35</td>
           <td class="num ret-down">-1.33</td>
           <td class="num ret-up">8.36</td>
+          <td class="num ret-up">26.31</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006206.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="—">
@@ -1330,6 +1427,7 @@
           <td class="num ret-down">-2.91</td>
           <td class="num ret-down">-0.91</td>
           <td class="num ret-up">12.01</td>
+          <td class="num ret-up">32.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=006207.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1341,6 +1439,7 @@
           <td class="num ret-down">-0.12</td>
           <td class="num ret-down">-4.36</td>
           <td class="num ret-down">-0.81</td>
+          <td class="num ret-up">21.45</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00625k.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1352,6 +1451,7 @@
           <td class="num ret-down">-4.13</td>
           <td class="num ret-up">0.48</td>
           <td class="num ret-up">7.79</td>
+          <td class="num ret-up">28.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00636.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1363,6 +1463,7 @@
           <td class="num ret-down">-2.72</td>
           <td class="num ret-up">0.23</td>
           <td class="num ret-up">3.25</td>
+          <td class="num ret-up">31.55</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00636k.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1374,6 +1475,7 @@
           <td class="num ret-down">-9.45</td>
           <td class="num ret-up">0.06</td>
           <td class="num ret-up">13.73</td>
+          <td class="num ret-up">37.42</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00639.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1385,6 +1487,7 @@
           <td class="num ret-down">-6.98</td>
           <td class="num ret-down">-4.08</td>
           <td class="num ret-up">15.53</td>
+          <td class="num ret-up">37.10</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00643.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1396,6 +1499,7 @@
           <td class="num ret-down">-7.97</td>
           <td class="num ret-down">-5.46</td>
           <td class="num ret-up">6.72</td>
+          <td class="num ret-up">27.42</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00643k.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -1407,6 +1511,7 @@
           <td class="num ret-up">5.57</td>
           <td class="num ret-up">9.42</td>
           <td class="num ret-up">30.62</td>
+          <td class="num ret-up">77.81</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00645.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="年配">
@@ -1418,6 +1523,7 @@
           <td class="num ret-up">4.26</td>
           <td class="num ret-up">11.63</td>
           <td class="num ret-up">22.04</td>
+          <td class="num ret-up">70.60</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00646.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1429,6 +1535,7 @@
           <td class="num ret-up">0.89</td>
           <td class="num ret-down">-7.79</td>
           <td class="num ret-down">-10.71</td>
+          <td class="num ret-down">-5.07</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00652.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -1440,6 +1547,7 @@
           <td class="num ret-up">0.87</td>
           <td class="num ret-up">16.09</td>
           <td class="num ret-up">46.24</td>
+          <td class="num ret-up">97.83</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00657.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -1451,6 +1559,7 @@
           <td class="num ret-up">0.97</td>
           <td class="num ret-up">15.27</td>
           <td class="num ret-up">38.24</td>
+          <td class="num ret-up">99.33</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00657k.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -1462,6 +1571,7 @@
           <td class="num ret-up">4.42</td>
           <td class="num ret-up">7.98</td>
           <td class="num ret-up">18.08</td>
+          <td class="num ret-up">48.29</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00660.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -1473,6 +1583,7 @@
           <td class="num ret-down">-0.06</td>
           <td class="num ret-up">15.97</td>
           <td class="num ret-up">46.42</td>
+          <td class="num ret-up">100.48</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00661.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1484,6 +1595,7 @@
           <td class="num ret-up">1.15</td>
           <td class="num ret-up">16.14</td>
           <td class="num ret-up">27.38</td>
+          <td class="num ret-up">87.34</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00662.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1495,6 +1607,7 @@
           <td class="num ret-up">4.13</td>
           <td class="num ret-up">9.01</td>
           <td class="num ret-up">20.28</td>
+          <td class="num ret-up">50.27</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00668.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1506,6 +1619,7 @@
           <td class="num ret-up">4.38</td>
           <td class="num ret-up">9.35</td>
           <td class="num ret-up">14.75</td>
+          <td class="num ret-up">51.87</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00668k.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1517,6 +1631,7 @@
           <td class="num ret-up">19.08</td>
           <td class="num ret-up">15.74</td>
           <td class="num ret-up">49.82</td>
+          <td class="num ret-up">60.50</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00678.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1528,6 +1643,7 @@
           <td class="num ret-up">1.57</td>
           <td class="num ret-down">-4.48</td>
           <td class="num ret-down">-8.43</td>
+          <td class="num ret-up">33.57</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00700.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="半年配">
@@ -1539,6 +1655,7 @@
           <td class="num ret-up">2.25</td>
           <td class="num ret-up">2.72</td>
           <td class="num ret-up">13.37</td>
+          <td class="num ret-up">35.05</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00702.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1550,6 +1667,7 @@
           <td class="num ret-down">-0.84</td>
           <td class="num ret-down">-9.69</td>
           <td class="num ret-down">-13.11</td>
+          <td class="num ret-up">21.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00703.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -1561,6 +1679,7 @@
           <td class="num ret-up">4.82</td>
           <td class="num ret-up">5.49</td>
           <td class="num ret-up">21.14</td>
+          <td class="num ret-up">55.82</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00709.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -1572,6 +1691,7 @@
           <td class="num ret-down">-1.84</td>
           <td class="num ret-down">-4.30</td>
           <td class="num ret-down">-1.62</td>
+          <td class="num ret-up">5.31</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00712.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="季配">
@@ -1583,6 +1703,7 @@
           <td class="num ret-down">-3.15</td>
           <td class="num ret-up">1.14</td>
           <td class="num ret-up">9.24</td>
+          <td class="num ret-up">21.05</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00714.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -1594,6 +1715,7 @@
           <td class="num ret-down">-2.23</td>
           <td class="num ret-down">-2.23</td>
           <td class="num ret-up">0.75</td>
+          <td class="num ret-up">9.60</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00717.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="半年配">
@@ -1605,6 +1727,7 @@
           <td class="num ret-up">2.59</td>
           <td class="num ret-up">54.89</td>
           <td class="num ret-up">172.81</td>
+          <td class="num ret-up">331.97</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00735.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="半年配">
@@ -1616,6 +1739,7 @@
           <td class="num ret-up">7.49</td>
           <td class="num ret-up">9.46</td>
           <td class="num ret-up">24.37</td>
+          <td class="num ret-up">63.00</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00736.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1627,6 +1751,7 @@
           <td class="num ret-up">4.38</td>
           <td class="num ret-up">14.26</td>
           <td class="num ret-up">16.03</td>
+          <td class="num ret-up">31.04</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00737.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -1638,6 +1763,7 @@
           <td class="num ret-down">-3.59</td>
           <td class="num ret-down">-2.69</td>
           <td class="num ret-up">9.88</td>
+          <td class="num ret-up">31.44</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00739.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="—">
@@ -1649,6 +1775,7 @@
           <td class="num ret-down">-0.89</td>
           <td class="num ret-down">-10.36</td>
           <td class="num ret-down">-15.44</td>
+          <td class="num ret-up">20.67</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00752.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -1660,6 +1787,7 @@
           <td class="num ret-up">9.63</td>
           <td class="num ret-up">21.69</td>
           <td class="num ret-up">18.74</td>
+          <td class="num ret-up">128.10</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00757.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -1671,6 +1799,7 @@
           <td class="num ret-up">3.09</td>
           <td class="num ret-up">35.97</td>
           <td class="num ret-up">42.02</td>
+          <td class="num ret-up">143.98</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00762.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="年配">
@@ -1682,6 +1811,7 @@
           <td class="num ret-up">4.32</td>
           <td class="num ret-up">29.13</td>
           <td class="num ret-up">40.43</td>
+          <td class="num ret-up">138.60</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00770.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -1693,6 +1823,7 @@
           <td class="num ret-down">-2.76</td>
           <td class="num ret-down">-4.28</td>
           <td class="num ret-down">-0.84</td>
+          <td class="num ret-up">7.39</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00771.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -1704,6 +1835,7 @@
           <td class="num ret-down">-6.19</td>
           <td class="num ret-down">-8.55</td>
           <td class="num ret-up">15.30</td>
+          <td class="num ret-up">37.87</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00783.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="年配">
@@ -1715,6 +1847,7 @@
           <td class="num ret-down">-6.60</td>
           <td class="num ret-up">45.40</td>
           <td class="num ret-up">103.24</td>
+          <td class="num ret-up">220.85</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00830.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="年配">
@@ -1726,6 +1859,7 @@
           <td class="num ret-up">2.40</td>
           <td class="num ret-up">21.94</td>
           <td class="num ret-up">40.10</td>
+          <td class="num ret-up">113.55</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00851.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="半年配">
@@ -1737,6 +1871,7 @@
           <td class="num ret-up">5.05</td>
           <td class="num ret-up">13.12</td>
           <td class="num ret-up">23.14</td>
+          <td class="num ret-up">71.31</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00858.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="—">
@@ -1748,6 +1883,7 @@
           <td class="num ret-down">-3.14</td>
           <td class="num ret-up">29.64</td>
           <td class="num ret-up">81.96</td>
+          <td class="num ret-up">167.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00861.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -1759,6 +1895,7 @@
           <td class="num ret-up">12.94</td>
           <td class="num ret-up">36.49</td>
           <td class="num ret-up">37.28</td>
+          <td class="num ret-up">82.29</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00875.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1770,6 +1907,7 @@
           <td class="num ret-down">-5.05</td>
           <td class="num ret-up">35.55</td>
           <td class="num ret-up">108.88</td>
+          <td class="num ret-up">185.14</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00876.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -1781,6 +1919,7 @@
           <td class="num ret-down">-11.83</td>
           <td class="num ret-up">29.34</td>
           <td class="num ret-up">69.27</td>
+          <td class="num ret-up">257.61</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00877.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="半年配">
@@ -1792,6 +1931,7 @@
           <td class="num ret-down">-3.29</td>
           <td class="num ret-down">-4.38</td>
           <td class="num ret-up">10.61</td>
+          <td class="num ret-up">66.64</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00882.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣新光商業銀行" data-frequency="—">
@@ -1803,6 +1943,7 @@
           <td class="num ret-up">0.93</td>
           <td class="num ret-up">4.95</td>
           <td class="num ret-up">17.14</td>
+          <td class="num ret-up">32.64</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00885.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="—">
@@ -1814,6 +1955,7 @@
           <td class="num ret-up">10.86</td>
           <td class="num ret-up">33.91</td>
           <td class="num ret-up">27.56</td>
+          <td class="num ret-up">83.45</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00886.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="—">
@@ -1825,6 +1967,7 @@
           <td class="num ret-down">-9.04</td>
           <td class="num ret-up">16.63</td>
           <td class="num ret-up">35.91</td>
+          <td class="num ret-up">19.27</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00887.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="—">
@@ -1836,6 +1979,7 @@
           <td class="num ret-down">-2.45</td>
           <td class="num ret-up">24.93</td>
           <td class="num ret-up">56.80</td>
+          <td class="num ret-up">141.02</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00893.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1847,6 +1991,7 @@
           <td class="num ret-up">1.26</td>
           <td class="num ret-up">21.16</td>
           <td class="num ret-up">48.56</td>
+          <td class="num ret-up">157.12</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00895.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -1858,6 +2003,7 @@
           <td class="num ret-up">31.07</td>
           <td class="num ret-up">25.70</td>
           <td class="num ret-up">74.10</td>
+          <td class="num ret-up">67.15</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00897.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -1869,6 +2015,7 @@
           <td class="num ret-up">28.14</td>
           <td class="num ret-up">27.05</td>
           <td class="num ret-up">62.10</td>
+          <td class="num ret-up">40.83</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00898.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -1880,6 +2027,7 @@
           <td class="num ret-down">-11.87</td>
           <td class="num ret-down">-0.22</td>
           <td class="num ret-up">38.08</td>
+          <td class="num ret-up">19.00</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00899.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -1891,6 +2039,7 @@
           <td class="num ret-down">-13.86</td>
           <td class="num ret-down">-13.09</td>
           <td class="num ret-up">20.42</td>
+          <td class="num ret-up">12.01</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00902.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -1902,6 +2051,7 @@
           <td class="num ret-up">1.01</td>
           <td class="num ret-up">29.12</td>
           <td class="num ret-up">30.08</td>
+          <td class="num ret-up">76.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00903.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -1913,6 +2063,7 @@
           <td class="num ret-up">0.52</td>
           <td class="num ret-up">8.79</td>
           <td class="num ret-up">14.65</td>
+          <td class="num ret-up">41.34</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00908.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="年配">
@@ -1924,6 +2075,7 @@
           <td class="num ret-up">0.24</td>
           <td class="num ret-up">26.07</td>
           <td class="num ret-up">29.22</td>
+          <td class="num ret-up">194.46</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00909.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="—">
@@ -1935,6 +2087,7 @@
           <td class="num ret-down">-17.93</td>
           <td class="num ret-down">-1.07</td>
           <td class="num ret-up">50.01</td>
+          <td class="num ret-up">238.63</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00910.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="半年配">
@@ -1946,6 +2099,7 @@
           <td class="num ret-down">-7.09</td>
           <td class="num ret-up">49.40</td>
           <td class="num ret-up">112.08</td>
+          <td class="num ret-up">201.74</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00911.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -1957,6 +2111,7 @@
           <td class="num ret-up">4.75</td>
           <td class="num ret-up">9.57</td>
           <td class="num ret-up">12.91</td>
+          <td class="num ret-up">56.53</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00916.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="年配">
@@ -1968,6 +2123,7 @@
           <td class="num ret-up">7.89</td>
           <td class="num ret-up">14.47</td>
           <td class="num ret-up">14.25</td>
+          <td class="num ret-up">85.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00917.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -1979,6 +2135,7 @@
           <td class="num ret-down">-2.91</td>
           <td class="num ret-up">15.21</td>
           <td class="num ret-up">58.44</td>
+          <td class="num ret-up">66.27</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00920.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="—">
@@ -1990,6 +2147,7 @@
           <td class="num ret-up">3.63</td>
           <td class="num ret-up">13.82</td>
           <td class="num ret-up">20.61</td>
+          <td class="num ret-up">87.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00924.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="年配">
@@ -2001,6 +2159,7 @@
           <td class="num ret-up">6.46</td>
           <td class="num ret-up">11.10</td>
           <td class="num ret-up">25.58</td>
+          <td class="num ret-up">81.25</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00926.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="—">
@@ -2012,6 +2171,7 @@
           <td class="num ret-down">-4.83</td>
           <td class="num ret-up">13.60</td>
           <td class="num ret-up">76.38</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00941.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="年配">
@@ -2023,6 +2183,7 @@
           <td class="num ret-up">8.60</td>
           <td class="num ret-up">9.04</td>
           <td class="num ret-up">24.64</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00949.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="年配">
@@ -2034,6 +2195,7 @@
           <td class="num ret-down">-3.53</td>
           <td class="num ret-up">17.32</td>
           <td class="num ret-up">89.52</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00951.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="年配">
@@ -2045,6 +2207,7 @@
           <td class="num ret-down">-3.63</td>
           <td class="num ret-up">17.51</td>
           <td class="num ret-up">89.15</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00954.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="年配">
@@ -2056,6 +2219,7 @@
           <td class="num ret-up">16.94</td>
           <td class="num ret-up">5.32</td>
           <td class="num ret-up">44.00</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00955.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2067,6 +2231,7 @@
           <td class="num ret-up">16.00</td>
           <td class="num ret-up">13.46</td>
           <td class="num ret-up">37.64</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00956.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2078,6 +2243,7 @@
           <td class="num ret-up">25.16</td>
           <td class="num ret-up">28.00</td>
           <td class="num ret-up">62.62</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00960.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -2089,6 +2255,7 @@
           <td class="num ret-up">5.53</td>
           <td class="num ret-up">9.98</td>
           <td class="num ret-up">29.96</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00963.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -2100,6 +2267,7 @@
           <td class="num ret-up">7.26</td>
           <td class="num ret-up">11.75</td>
           <td class="num ret-up">48.77</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00964.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="年配">
@@ -2111,6 +2279,7 @@
           <td class="num ret-up">4.21</td>
           <td class="num ret-down">-5.20</td>
           <td class="num ret-up">16.83</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00965.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="年配">
@@ -2122,6 +2291,7 @@
           <td class="num ret-up">4.89</td>
           <td class="num ret-up">10.92</td>
           <td class="num ret-up">16.62</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00971.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -2133,6 +2303,7 @@
           <td class="num ret-up">14.73</td>
           <td class="num ret-up">14.31</td>
           <td class="num ret-up">36.17</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00972.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="年配">
@@ -2144,6 +2315,7 @@
           <td class="num ret-up">1.11</td>
           <td class="num ret-up">15.82</td>
           <td class="num ret-up">27.21</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009800.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="年配">
@@ -2155,6 +2327,7 @@
           <td class="num ret-up">2.12</td>
           <td class="num ret-up">12.60</td>
           <td class="num ret-up">14.30</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009801.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣土地銀行" data-frequency="季配">
@@ -2166,6 +2339,7 @@
           <td class="num ret-down">-4.57</td>
           <td class="num ret-up">0.14</td>
           <td class="num ret-up">29.63</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009805.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="年配">
@@ -2177,6 +2351,7 @@
           <td class="num ret-up">4.50</td>
           <td class="num ret-up">12.73</td>
           <td class="num ret-up">21.04</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009806.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="年配">
@@ -2188,6 +2363,7 @@
           <td class="num ret-up">4.97</td>
           <td class="num ret-up">31.00</td>
           <td class="num ret-up">41.80</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009807.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="半年配">
@@ -2199,6 +2375,7 @@
           <td class="num ret-up">4.09</td>
           <td class="num ret-up">10.57</td>
           <td class="num ret-up">15.24</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00980t.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="年配">
@@ -2210,6 +2387,7 @@
           <td class="num ret-up">4.38</td>
           <td class="num ret-up">13.03</td>
           <td class="num ret-up">26.90</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009810.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="半年配">
@@ -2221,6 +2399,7 @@
           <td class="num ret-up">4.53</td>
           <td class="num ret-up">14.56</td>
           <td class="num ret-up">22.46</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009811.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -2231,6 +2410,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-up">9.29</td>
           <td class="num ret-up">11.26</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009812.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -2243,6 +2423,7 @@
           <td class="num ret-up">2.28</td>
           <td class="num ret-up">9.06</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009813.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -2253,6 +2434,7 @@
           <td class="num yld">1.49</td>
           <td class="num ret-up">4.85</td>
           <td class="num ret-up">12.37</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009814.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -2265,6 +2447,7 @@
           <td class="num ret-up">4.77</td>
           <td class="num ret-up">18.10</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009815.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="半年配">
@@ -2276,6 +2459,7 @@
           <td class="num ret-up">3.31</td>
           <td class="num ret-down">-7.83</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009817.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -2285,6 +2469,7 @@
           <td><span class="freq freq-unknown">—</span></td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-up">5.77</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009818.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -2298,6 +2483,7 @@
           <td class="num ret-down">-3.09</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009819.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -2308,6 +2494,7 @@
           <td class="num yld">6.88</td>
           <td class="num ret-down">-0.16</td>
           <td class="num ret-up">7.80</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00981t.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -2320,6 +2507,7 @@
           <td class="num ret-down">-1.51</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009820.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -2327,6 +2515,7 @@
           <td>野村稀土關鍵資源</td>
           <td>永豐商業銀行</td>
           <td><span class="freq freq-unknown">—</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -2342,6 +2531,7 @@
           <td class="num ret-up">6.79</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009822.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -2349,6 +2539,7 @@
           <td>群益S&amp;P500</td>
           <td>華南商業銀行</td>
           <td><span class="freq freq-quarterly">季配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -2364,6 +2555,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009824.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -2371,6 +2563,7 @@
           <td>聯邦美國金融創新</td>
           <td>彰化商業銀行</td>
           <td><span class="freq freq-unknown">—</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -2386,6 +2579,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009826.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="季配">
@@ -2393,6 +2587,7 @@
           <td>玉山未來全球算力</td>
           <td>兆豐國際商業銀行</td>
           <td><span class="freq freq-quarterly">季配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -2408,6 +2603,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=009828.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="半年配">
@@ -2415,6 +2611,7 @@
           <td>大華韓國KOSPI50</td>
           <td>元大商業銀行</td>
           <td><span class="freq freq-semi">半年配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -2430,6 +2627,7 @@
           <td class="num ret-up">9.51</td>
           <td class="num ret-up">9.02</td>
           <td class="num ret-up">5.68</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00983a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="年配">
@@ -2441,6 +2639,7 @@
           <td class="num ret-down">-0.98</td>
           <td class="num ret-up">16.48</td>
           <td class="num ret-up">35.33</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00986a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="年配">
@@ -2451,6 +2650,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-down">-19.60</td>
           <td class="num ret-up">23.91</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00988a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -2463,6 +2663,7 @@
           <td class="num ret-down">-1.82</td>
           <td class="num ret-up">17.22</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00989a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="—">
@@ -2474,6 +2675,7 @@
           <td class="num ret-down">-19.10</td>
           <td class="num ret-up">21.98</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00990a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -2483,6 +2685,7 @@
           <td><span class="freq freq-quarterly">季配</span></td>
           <td class="num yld">13.60</td>
           <td class="num ret-down">-10.67</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00997a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -2496,6 +2699,7 @@
           <td class="num ret-up">10.73</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00998a.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>
@@ -2505,7 +2709,7 @@
   <section id="cat-bond">
     <h2>債券ETF <span class="count">(112 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00679b.tw" target="_blank">00679B</a></td>
@@ -2516,6 +2720,7 @@
           <td class="num ret-down">-3.87</td>
           <td class="num ret-down">-6.43</td>
           <td class="num ret-down">-1.58</td>
+          <td class="num ret-down">-4.98</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00679b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2527,6 +2732,7 @@
           <td class="num ret-down">-3.77</td>
           <td class="num ret-down">-6.48</td>
           <td class="num ret-down">-1.50</td>
+          <td class="num ret-down">-3.45</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00687b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -2538,6 +2744,7 @@
           <td class="num ret-down">-3.46</td>
           <td class="num ret-down">-6.39</td>
           <td class="num ret-down">-5.60</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00687c.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2549,6 +2756,7 @@
           <td class="num ret-up">0.15</td>
           <td class="num ret-up">0.12</td>
           <td class="num ret-up">6.26</td>
+          <td class="num ret-up">11.12</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00694b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2560,6 +2768,7 @@
           <td class="num ret-down">-1.86</td>
           <td class="num ret-down">-3.88</td>
           <td class="num ret-up">1.56</td>
+          <td class="num ret-up">6.80</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00695b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2571,6 +2780,7 @@
           <td class="num ret-down">-3.96</td>
           <td class="num ret-down">-6.57</td>
           <td class="num ret-down">-1.68</td>
+          <td class="num ret-down">-3.36</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00696b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -2582,6 +2792,7 @@
           <td class="num ret-down">-1.82</td>
           <td class="num ret-down">-3.84</td>
           <td class="num ret-up">1.71</td>
+          <td class="num ret-up">7.22</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00697b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2593,6 +2804,7 @@
           <td class="num ret-up">1.82</td>
           <td class="num ret-up">2.74</td>
           <td class="num ret-up">8.63</td>
+          <td class="num ret-up">21.16</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00710b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2604,6 +2816,7 @@
           <td class="num ret-down">-3.41</td>
           <td class="num ret-down">-4.52</td>
           <td class="num ret-up">1.71</td>
+          <td class="num ret-up">9.91</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00711b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -2615,6 +2828,7 @@
           <td class="num ret-up">0.30</td>
           <td class="num ret-up">0.31</td>
           <td class="num ret-up">6.22</td>
+          <td class="num ret-up">11.29</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00719b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2626,6 +2840,7 @@
           <td class="num ret-down">-4.17</td>
           <td class="num ret-down">-3.99</td>
           <td class="num ret-down">-0.64</td>
+          <td class="num ret-up">9.21</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00720b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2637,6 +2852,7 @@
           <td class="num ret-down">-5.12</td>
           <td class="num ret-down">-6.15</td>
           <td class="num ret-down">-2.64</td>
+          <td class="num ret-up">9.00</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00722b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2648,6 +2864,7 @@
           <td class="num ret-down">-4.88</td>
           <td class="num ret-down">-5.15</td>
           <td class="num ret-down">-3.83</td>
+          <td class="num ret-up">1.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00723b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2659,6 +2876,7 @@
           <td class="num ret-down">-3.34</td>
           <td class="num ret-down">-4.12</td>
           <td class="num ret-up">0.59</td>
+          <td class="num ret-up">14.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00724b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2670,6 +2888,7 @@
           <td class="num ret-down">-3.80</td>
           <td class="num ret-down">-3.74</td>
           <td class="num ret-up">0.17</td>
+          <td class="num ret-up">11.45</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00725b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2681,6 +2900,7 @@
           <td class="num ret-down">-1.91</td>
           <td class="num ret-down">-2.67</td>
           <td class="num ret-up">3.56</td>
+          <td class="num ret-up">14.75</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00726b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2692,6 +2912,7 @@
           <td class="num ret-up">0.61</td>
           <td class="num ret-up">2.01</td>
           <td class="num ret-up">8.47</td>
+          <td class="num ret-up">20.71</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00727b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="季配">
@@ -2703,6 +2924,7 @@
           <td class="num ret-down">-2.40</td>
           <td class="num ret-down">-3.20</td>
           <td class="num ret-up">2.56</td>
+          <td class="num ret-up">10.98</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00734b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -2714,6 +2936,7 @@
           <td class="num ret-down">-3.75</td>
           <td class="num ret-down">-3.72</td>
           <td class="num ret-up">0.31</td>
+          <td class="num ret-up">12.33</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00740b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="月配">
@@ -2725,6 +2948,7 @@
           <td class="num ret-up">0.41</td>
           <td class="num ret-up">0.80</td>
           <td class="num ret-up">6.74</td>
+          <td class="num ret-up">19.08</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00741b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -2736,6 +2960,7 @@
           <td class="num ret-down">-3.67</td>
           <td class="num ret-down">-4.51</td>
           <td class="num ret-up">0.01</td>
+          <td class="num ret-up">7.78</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00746b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -2747,6 +2972,7 @@
           <td class="num ret-down">-2.87</td>
           <td class="num ret-down">-3.80</td>
           <td class="num ret-up">3.24</td>
+          <td class="num ret-up">12.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00749b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="上海商業儲蓄銀行" data-frequency="季配">
@@ -2758,6 +2984,7 @@
           <td class="num ret-down">-4.67</td>
           <td class="num ret-down">-5.09</td>
           <td class="num ret-down">-3.13</td>
+          <td class="num ret-up">3.73</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00750b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -2769,6 +2996,7 @@
           <td class="num ret-down">-5.05</td>
           <td class="num ret-down">-5.69</td>
           <td class="num ret-down">-2.72</td>
+          <td class="num ret-up">1.81</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00751b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2780,6 +3008,7 @@
           <td class="num ret-down">-5.83</td>
           <td class="num ret-down">-7.02</td>
           <td class="num ret-down">-5.23</td>
+          <td class="num ret-down">-0.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00754b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2791,6 +3020,7 @@
           <td class="num ret-down">-3.52</td>
           <td class="num ret-down">-3.84</td>
           <td class="num ret-up">0.14</td>
+          <td class="num ret-up">9.31</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00755b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -2802,6 +3032,7 @@
           <td class="num ret-down">-3.37</td>
           <td class="num ret-down">-3.55</td>
           <td class="num ret-up">1.60</td>
+          <td class="num ret-up">10.97</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00756b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2813,6 +3044,7 @@
           <td class="num ret-down">-3.21</td>
           <td class="num ret-down">-3.21</td>
           <td class="num ret-up">2.75</td>
+          <td class="num ret-up">10.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00758b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2824,6 +3056,7 @@
           <td class="num ret-down">-3.99</td>
           <td class="num ret-down">-4.74</td>
           <td class="num ret-down">-0.17</td>
+          <td class="num ret-up">5.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00759b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2835,6 +3068,7 @@
           <td class="num ret-down">-2.82</td>
           <td class="num ret-down">-3.50</td>
           <td class="num ret-up">0.21</td>
+          <td class="num ret-up">14.80</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00760b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2846,6 +3080,7 @@
           <td class="num ret-down">-4.42</td>
           <td class="num ret-down">-5.11</td>
           <td class="num ret-down">-1.34</td>
+          <td class="num ret-up">4.32</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00761b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2857,6 +3092,7 @@
           <td class="num ret-down">-3.85</td>
           <td class="num ret-down">-6.43</td>
           <td class="num ret-down">-1.45</td>
+          <td class="num ret-down">-4.15</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00764b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -2868,6 +3104,7 @@
           <td class="num ret-down">-3.79</td>
           <td class="num ret-down">-6.53</td>
           <td class="num ret-down">-1.62</td>
+          <td class="num ret-down">-3.35</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00768b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -2879,6 +3116,7 @@
           <td class="num ret-down">-4.23</td>
           <td class="num ret-down">-4.95</td>
           <td class="num ret-down">-1.10</td>
+          <td class="num ret-up">4.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00772b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="月配">
@@ -2890,6 +3128,7 @@
           <td class="num ret-down">-3.71</td>
           <td class="num ret-down">-4.58</td>
           <td class="num ret-down">-0.07</td>
+          <td class="num ret-up">10.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00773b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -2901,6 +3140,7 @@
           <td class="num ret-down">-4.60</td>
           <td class="num ret-down">-5.15</td>
           <td class="num ret-down">-1.08</td>
+          <td class="num ret-up">4.23</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00775b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="月配">
@@ -2912,6 +3152,7 @@
           <td class="num ret-down">-5.11</td>
           <td class="num ret-down">-5.69</td>
           <td class="num ret-down">-2.60</td>
+          <td class="num ret-up">2.73</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00777b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="月配">
@@ -2923,6 +3164,7 @@
           <td class="num ret-down">-4.39</td>
           <td class="num ret-down">-5.02</td>
           <td class="num ret-down">-1.27</td>
+          <td class="num ret-up">7.98</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00778b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -2934,6 +3176,7 @@
           <td class="num ret-down">-4.03</td>
           <td class="num ret-down">-6.71</td>
           <td class="num ret-down">-1.86</td>
+          <td class="num ret-down">-5.56</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00779b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2945,6 +3188,7 @@
           <td class="num ret-down">-2.22</td>
           <td class="num ret-down">-3.36</td>
           <td class="num ret-up">1.94</td>
+          <td class="num ret-up">14.03</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00780b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -2956,6 +3200,7 @@
           <td class="num ret-down">-5.27</td>
           <td class="num ret-down">-6.45</td>
           <td class="num ret-down">-4.37</td>
+          <td class="num ret-down">-2.20</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00781b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -2967,6 +3212,7 @@
           <td class="num ret-down">-3.88</td>
           <td class="num ret-down">-4.71</td>
           <td class="num ret-down">-0.45</td>
+          <td class="num ret-up">7.40</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00782b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -2978,6 +3224,7 @@
           <td class="num ret-down">-3.85</td>
           <td class="num ret-down">-4.67</td>
           <td class="num ret-up">0.10</td>
+          <td class="num ret-up">11.95</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00785b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -2989,6 +3236,7 @@
           <td class="num ret-down">-3.56</td>
           <td class="num ret-down">-4.41</td>
           <td class="num ret-up">0.98</td>
+          <td class="num ret-up">10.73</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00786b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3000,6 +3248,7 @@
           <td class="num ret-down">-3.61</td>
           <td class="num ret-down">-4.53</td>
           <td class="num ret-up">1.14</td>
+          <td class="num ret-up">6.14</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00787b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -3011,6 +3260,7 @@
           <td class="num ret-down">-3.87</td>
           <td class="num ret-down">-4.37</td>
           <td class="num ret-up">0.68</td>
+          <td class="num ret-up">8.06</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00788b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -3022,6 +3272,7 @@
           <td class="num ret-down">-5.28</td>
           <td class="num ret-down">-5.88</td>
           <td class="num ret-down">-3.04</td>
+          <td class="num ret-up">1.90</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00789b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -3033,6 +3284,7 @@
           <td class="num ret-up">0.24</td>
           <td class="num ret-up">0.33</td>
           <td class="num ret-up">7.00</td>
+          <td class="num ret-up">15.86</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00791b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -3044,6 +3296,7 @@
           <td class="num ret-down">-4.10</td>
           <td class="num ret-down">-4.30</td>
           <td class="num ret-down">-0.35</td>
+          <td class="num ret-up">6.24</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00792b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="季配">
@@ -3055,6 +3308,7 @@
           <td class="num ret-down">-4.42</td>
           <td class="num ret-down">-4.97</td>
           <td class="num ret-down">-0.57</td>
+          <td class="num ret-up">2.89</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00793b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -3066,6 +3320,7 @@
           <td class="num ret-down">-3.80</td>
           <td class="num ret-down">-6.44</td>
           <td class="num ret-down">-1.41</td>
+          <td class="num ret-down">-3.20</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00795b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3077,6 +3332,7 @@
           <td class="num ret-down">-3.92</td>
           <td class="num ret-down">-4.84</td>
           <td class="num ret-down">-0.28</td>
+          <td class="num ret-up">3.99</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00799b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3088,6 +3344,7 @@
           <td class="num ret-down">-3.93</td>
           <td class="num ret-down">-4.78</td>
           <td class="num ret-up">0.36</td>
+          <td class="num ret-up">11.78</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00834b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -3099,6 +3356,7 @@
           <td class="num ret-down">-4.55</td>
           <td class="num ret-down">-4.73</td>
           <td class="num ret-down">-0.88</td>
+          <td class="num ret-up">4.13</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00836b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -3110,6 +3368,7 @@
           <td class="num ret-down">-4.81</td>
           <td class="num ret-down">-5.53</td>
           <td class="num ret-down">-2.12</td>
+          <td class="num ret-up">3.16</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00840b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3121,6 +3380,7 @@
           <td class="num ret-down">-5.87</td>
           <td class="num ret-down">-7.34</td>
           <td class="num ret-down">-4.96</td>
+          <td class="num ret-down">-1.71</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00841b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -3132,6 +3392,7 @@
           <td class="num ret-down">-3.06</td>
           <td class="num ret-down">-4.67</td>
           <td class="num ret-up">0.27</td>
+          <td class="num ret-up">11.57</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00842b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="季配">
@@ -3143,6 +3404,7 @@
           <td class="num ret-down">-4.23</td>
           <td class="num ret-down">-4.84</td>
           <td class="num ret-down">-0.66</td>
+          <td class="num ret-up">9.95</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00844b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -3154,6 +3416,7 @@
           <td class="num ret-down">-1.91</td>
           <td class="num ret-down">-2.76</td>
           <td class="num ret-up">2.86</td>
+          <td class="num ret-up">15.74</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00845b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -3165,6 +3428,7 @@
           <td class="num ret-down">-2.09</td>
           <td class="num ret-down">-3.00</td>
           <td class="num ret-up">3.24</td>
+          <td class="num ret-up">18.86</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00846b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -3176,6 +3440,7 @@
           <td class="num ret-down">-4.09</td>
           <td class="num ret-down">-6.46</td>
           <td class="num ret-down">-0.55</td>
+          <td class="num ret-up">2.25</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00847b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -3187,6 +3452,7 @@
           <td class="num ret-down">-2.59</td>
           <td class="num ret-down">-3.79</td>
           <td class="num ret-up">1.71</td>
+          <td class="num ret-up">11.41</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00848b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -3198,6 +3464,7 @@
           <td class="num ret-down">-0.01</td>
           <td class="num ret-up">0.45</td>
           <td class="num ret-up">6.69</td>
+          <td class="num ret-up">11.15</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00849b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="季配">
@@ -3209,6 +3476,7 @@
           <td class="num ret-down">-4.46</td>
           <td class="num ret-down">-5.07</td>
           <td class="num ret-down">-1.50</td>
+          <td class="num ret-up">4.13</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00853b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3220,6 +3488,7 @@
           <td class="num ret-down">-0.60</td>
           <td class="num ret-down">-0.57</td>
           <td class="num ret-up">5.55</td>
+          <td class="num ret-up">9.94</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00856b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3231,6 +3500,7 @@
           <td class="num ret-down">-3.80</td>
           <td class="num ret-down">-6.46</td>
           <td class="num ret-down">-1.46</td>
+          <td class="num ret-down">-3.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00857b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3242,6 +3512,7 @@
           <td class="num ret-up">0.80</td>
           <td class="num ret-up">1.50</td>
           <td class="num ret-up">7.53</td>
+          <td class="num ret-up">12.25</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00859b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="季配">
@@ -3253,6 +3524,7 @@
           <td class="num ret-up">0.04</td>
           <td class="num ret-up">0.23</td>
           <td class="num ret-up">6.45</td>
+          <td class="num ret-up">15.37</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00860b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -3264,6 +3536,7 @@
           <td class="num ret-down">-4.23</td>
           <td class="num ret-down">-4.09</td>
           <td class="num ret-down">-0.71</td>
+          <td class="num ret-up">10.59</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00862b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -3275,6 +3548,7 @@
           <td class="num ret-down">-4.91</td>
           <td class="num ret-down">-5.74</td>
           <td class="num ret-down">-1.95</td>
+          <td class="num ret-up">9.37</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00863b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="季配">
@@ -3286,6 +3560,7 @@
           <td class="num ret-up">0.86</td>
           <td class="num ret-up">1.52</td>
           <td class="num ret-up">7.68</td>
+          <td class="num ret-up">11.99</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00864b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3297,6 +3572,7 @@
           <td class="num ret-up">0.79</td>
           <td class="num ret-up">1.50</td>
           <td class="num ret-up">7.89</td>
+          <td class="num ret-up">11.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00865b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="季配">
@@ -3308,6 +3584,7 @@
           <td class="num ret-down">-6.13</td>
           <td class="num ret-down">-7.26</td>
           <td class="num ret-down">-3.44</td>
+          <td class="num ret-up">7.87</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00867b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="上海商業儲蓄銀行" data-frequency="季配">
@@ -3319,6 +3596,7 @@
           <td class="num ret-down">-3.56</td>
           <td class="num ret-down">-5.23</td>
           <td class="num ret-up">0.59</td>
+          <td class="num ret-up">7.26</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00870b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="季配">
@@ -3330,6 +3608,7 @@
           <td class="num ret-down">-4.07</td>
           <td class="num ret-down">-5.46</td>
           <td class="num ret-up">0.96</td>
+          <td class="num ret-up">7.59</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00884b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="月配">
@@ -3341,6 +3620,7 @@
           <td class="num ret-down">-4.04</td>
           <td class="num ret-down">-3.92</td>
           <td class="num ret-down">-0.61</td>
+          <td class="num ret-up">10.38</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00890b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="季配">
@@ -3352,6 +3632,7 @@
           <td class="num ret-down">-3.92</td>
           <td class="num ret-down">-6.60</td>
           <td class="num ret-down">-1.61</td>
+          <td class="num ret-down">-3.36</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00931b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3363,6 +3644,7 @@
           <td class="num ret-down">-3.30</td>
           <td class="num ret-down">-4.20</td>
           <td class="num ret-up">0.39</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00933b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3374,6 +3656,7 @@
           <td class="num ret-down">-3.84</td>
           <td class="num ret-down">-3.72</td>
           <td class="num ret-up">0.01</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00937b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="月配">
@@ -3385,6 +3668,7 @@
           <td class="num ret-down">-4.75</td>
           <td class="num ret-down">-5.16</td>
           <td class="num ret-down">-1.70</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00942b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="月配">
@@ -3396,6 +3680,7 @@
           <td class="num ret-up">0.80</td>
           <td class="num ret-up">2.42</td>
           <td class="num ret-up">9.43</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00945b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="月配">
@@ -3407,6 +3692,7 @@
           <td class="num ret-down">-3.88</td>
           <td class="num ret-down">-3.70</td>
           <td class="num ret-down">-0.01</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00948b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3418,6 +3704,7 @@
           <td class="num ret-down">-3.54</td>
           <td class="num ret-down">-4.08</td>
           <td class="num ret-up">0.34</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00950b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="月配">
@@ -3429,6 +3716,7 @@
           <td class="num ret-up">1.22</td>
           <td class="num ret-up">2.43</td>
           <td class="num ret-up">8.63</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00953b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="月配">
@@ -3440,6 +3728,7 @@
           <td class="num ret-down">-4.27</td>
           <td class="num ret-down">-4.78</td>
           <td class="num ret-down">-1.26</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00957b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="月配">
@@ -3451,6 +3740,7 @@
           <td class="num ret-down">-3.46</td>
           <td class="num ret-down">-4.24</td>
           <td class="num ret-up">1.08</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00958b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台灣中小企銀" data-frequency="月配">
@@ -3462,6 +3752,7 @@
           <td class="num ret-down">-3.21</td>
           <td class="num ret-down">-3.42</td>
           <td class="num ret-up">0.68</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00959b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="合作金庫商業銀行" data-frequency="月配">
@@ -3473,6 +3764,7 @@
           <td class="num ret-down">-4.02</td>
           <td class="num ret-down">-3.64</td>
           <td class="num ret-up">0.49</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00966b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -3484,6 +3776,7 @@
           <td class="num ret-down">-2.92</td>
           <td class="num ret-down">-5.40</td>
           <td class="num ret-down">-0.08</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00967b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3495,6 +3788,7 @@
           <td class="num ret-down">-3.72</td>
           <td class="num ret-down">-3.61</td>
           <td class="num ret-up">0.68</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00968b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="年配">
@@ -3506,6 +3800,7 @@
           <td class="num ret-down">-6.03</td>
           <td class="num ret-down">-10.36</td>
           <td class="num ret-down">-7.15</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00969b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣土地銀行" data-frequency="月配">
@@ -3517,6 +3812,7 @@
           <td class="num ret-down">-3.99</td>
           <td class="num ret-down">-3.42</td>
           <td class="num ret-up">0.60</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00970b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="元大商業銀行" data-frequency="月配">
@@ -3528,6 +3824,7 @@
           <td class="num ret-down">-3.62</td>
           <td class="num ret-down">-3.39</td>
           <td class="num ret-up">0.74</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00980b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="月配">
@@ -3539,6 +3836,7 @@
           <td class="num ret-down">-1.15</td>
           <td class="num ret-down">-0.98</td>
           <td class="num ret-up">2.36</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00980d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3550,6 +3848,7 @@
           <td class="num ret-up">0.84</td>
           <td class="num ret-up">1.57</td>
           <td class="num ret-up">6.85</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00981b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="月配">
@@ -3560,6 +3859,7 @@
           <td class="num yld">7.25</td>
           <td class="num ret-up">0.46</td>
           <td class="num ret-up">1.92</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00981d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -3572,6 +3872,7 @@
           <td class="num ret-down">-4.29</td>
           <td class="num ret-down">-4.22</td>
           <td class="num ret-down">-0.62</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00982b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -3582,6 +3883,7 @@
           <td class="num yld">6.55</td>
           <td class="num ret-down">-2.80</td>
           <td class="num ret-down">-3.40</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00982d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -3594,6 +3896,7 @@
           <td class="num ret-down">-3.92</td>
           <td class="num ret-down">-6.74</td>
           <td class="num ret-down">-1.59</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00983b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="月配">
@@ -3604,6 +3907,7 @@
           <td class="num yld">7.39</td>
           <td class="num ret-down">-1.72</td>
           <td class="num ret-down">-2.00</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00983d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -3616,6 +3920,7 @@
           <td class="num ret-down">-3.95</td>
           <td class="num ret-down">-4.59</td>
           <td class="num ret-down">-0.30</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00984b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="月配">
@@ -3626,6 +3931,7 @@
           <td class="num yld">10.42</td>
           <td class="num ret-up">0.01</td>
           <td class="num ret-up">2.11</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00984d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
@@ -3638,6 +3944,7 @@
           <td class="num ret-up">0.51</td>
           <td class="num ret-up">0.64</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00985b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="國泰世華商業銀行" data-frequency="月配">
@@ -3647,6 +3954,7 @@
           <td><span class="freq freq-monthly">月配</span></td>
           <td class="num yld">7.51</td>
           <td class="num ret-down">-3.38</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00985d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -3660,6 +3968,7 @@
           <td class="num ret-down">-3.52</td>
           <td class="num ret-down">-4.76</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00986b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="月配">
@@ -3669,6 +3978,7 @@
           <td><span class="freq freq-monthly">月配</span></td>
           <td class="num yld">7.63</td>
           <td class="num ret-down">-2.42</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00986d.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
@@ -3682,6 +3992,7 @@
           <td class="num ret-down">-0.40</td>
           <td class="num ret-down">-2.19</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00987b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="第一商業銀行" data-frequency="季配">
@@ -3689,6 +4000,7 @@
           <td>主動統一美債量化</td>
           <td>第一商業銀行</td>
           <td><span class="freq freq-quarterly">季配</span></td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -3704,6 +4016,7 @@
           <td class="num ret-down">-0.27</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00988b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3715,6 +4028,7 @@
           <td class="num ret-up">0.76</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00989b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="月配">
@@ -3723,6 +4037,7 @@
           <td>彰化商業銀行</td>
           <td><span class="freq freq-monthly">月配</span></td>
           <td class="num yld">9.70</td>
+          <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
@@ -3737,6 +4052,7 @@
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
           <td class="num ret-na">N/A</td>
+          <td class="num ret-na">N/A</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00991b.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>
@@ -3746,7 +4062,7 @@
   <section id="cat-leveraged">
     <h2>槓桿/反向ETF <span class="count">(33 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="華南商業銀行" data-frequency="—">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00631l.tw" target="_blank">00631L</a></td>
@@ -3757,6 +4073,7 @@
           <td class="num ret-up">8.28</td>
           <td class="num ret-up">63.01</td>
           <td class="num ret-up">182.95</td>
+          <td class="num ret-up">514.09</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00631l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -3768,6 +4085,7 @@
           <td class="num ret-down">-8.49</td>
           <td class="num ret-down">-28.65</td>
           <td class="num ret-down">-47.92</td>
+          <td class="num ret-down">-71.17</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00632r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -3779,6 +4097,7 @@
           <td class="num ret-down">-4.95</td>
           <td class="num ret-up">0.23</td>
           <td class="num ret-down">-1.61</td>
+          <td class="num ret-up">26.41</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00633l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -3790,6 +4109,7 @@
           <td class="num ret-up">0.32</td>
           <td class="num ret-down">-3.37</td>
           <td class="num ret-down">-4.55</td>
+          <td class="num ret-down">-30.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00634r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3801,6 +4121,7 @@
           <td class="num ret-down">-5.41</td>
           <td class="num ret-up">0.10</td>
           <td class="num ret-up">0.31</td>
+          <td class="num ret-up">30.51</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00637l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3812,6 +4133,7 @@
           <td class="num ret-flat">0.00</td>
           <td class="num ret-down">-4.55</td>
           <td class="num ret-down">-2.89</td>
+          <td class="num ret-down">-30.54</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00638r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -3823,6 +4145,7 @@
           <td class="num ret-up">8.21</td>
           <td class="num ret-up">13.93</td>
           <td class="num ret-up">58.30</td>
+          <td class="num ret-up">147.19</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00640l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -3834,6 +4157,7 @@
           <td class="num ret-down">-5.30</td>
           <td class="num ret-down">-9.64</td>
           <td class="num ret-down">-25.89</td>
+          <td class="num ret-down">-51.74</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00641r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3845,6 +4169,7 @@
           <td class="num ret-up">5.48</td>
           <td class="num ret-up">18.56</td>
           <td class="num ret-up">26.81</td>
+          <td class="num ret-up">109.32</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00647l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3856,6 +4181,7 @@
           <td class="num ret-down">-3.41</td>
           <td class="num ret-down">-10.00</td>
           <td class="num ret-down">-12.39</td>
+          <td class="num ret-down">-40.18</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00648r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3867,6 +4193,7 @@
           <td class="num ret-up">5.45</td>
           <td class="num ret-down">-8.04</td>
           <td class="num ret-down">-10.72</td>
+          <td class="num ret-up">46.97</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00650l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3878,6 +4205,7 @@
           <td class="num ret-down">-4.17</td>
           <td class="num ret-up">0.76</td>
           <td class="num ret-up">0.38</td>
+          <td class="num ret-down">-41.09</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00651r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3889,6 +4217,7 @@
           <td class="num ret-down">-0.09</td>
           <td class="num ret-down">-11.32</td>
           <td class="num ret-down">-22.27</td>
+          <td class="num ret-down">-14.74</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00653l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3900,6 +4229,7 @@
           <td class="num ret-down">-0.85</td>
           <td class="num ret-up">2.49</td>
           <td class="num ret-up">9.73</td>
+          <td class="num ret-down">-5.80</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00654r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3911,6 +4241,7 @@
           <td class="num ret-down">-5.45</td>
           <td class="num ret-up">0.58</td>
           <td class="num ret-down">-1.77</td>
+          <td class="num ret-up">26.50</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00655l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3922,6 +4253,7 @@
           <td class="num ret-down">-0.17</td>
           <td class="num ret-down">-4.97</td>
           <td class="num ret-down">-3.26</td>
+          <td class="num ret-down">-30.97</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00656r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3933,6 +4265,7 @@
           <td class="num ret-up">7.14</td>
           <td class="num ret-up">63.33</td>
           <td class="num ret-up">183.16</td>
+          <td class="num ret-up">506.06</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00663l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -3944,6 +4277,7 @@
           <td class="num ret-down">-8.05</td>
           <td class="num ret-down">-28.89</td>
           <td class="num ret-down">-48.05</td>
+          <td class="num ret-down">-71.01</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00664r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3955,6 +4289,7 @@
           <td class="num ret-up">0.45</td>
           <td class="num ret-down">-10.14</td>
           <td class="num ret-down">-23.76</td>
+          <td class="num ret-up">23.28</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00665l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3966,6 +4301,7 @@
           <td class="num ret-down">-1.80</td>
           <td class="num ret-up">1.87</td>
           <td class="num ret-up">7.81</td>
+          <td class="num ret-down">-39.50</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00666r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台新國際商業銀行" data-frequency="—">
@@ -3977,6 +4313,7 @@
           <td class="num ret-down">-3.65</td>
           <td class="num ret-down">-8.33</td>
           <td class="num ret-down">-10.96</td>
+          <td class="num ret-down">-33.08</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00669r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3988,6 +4325,7 @@
           <td class="num ret-down">-1.20</td>
           <td class="num ret-up">25.45</td>
           <td class="num ret-up">30.77</td>
+          <td class="num ret-up">123.22</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00670l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -3999,6 +4337,7 @@
           <td class="num ret-down">-2.38</td>
           <td class="num ret-down">-15.17</td>
           <td class="num ret-down">-19.08</td>
+          <td class="num ret-down">-48.43</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00671r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -4010,6 +4349,7 @@
           <td class="num ret-up">7.21</td>
           <td class="num ret-up">62.58</td>
           <td class="num ret-up">181.85</td>
+          <td class="num ret-up">499.24</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00675l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -4021,6 +4361,7 @@
           <td class="num ret-down">-8.22</td>
           <td class="num ret-down">-28.40</td>
           <td class="num ret-down">-47.61</td>
+          <td class="num ret-down">-70.21</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00676r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -4032,6 +4373,7 @@
           <td class="num ret-down">-9.24</td>
           <td class="num ret-down">-16.35</td>
           <td class="num ret-down">-17.47</td>
+          <td class="num ret-down">-33.51</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00680l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="華南商業銀行" data-frequency="—">
@@ -4043,6 +4385,7 @@
           <td class="num ret-up">4.09</td>
           <td class="num ret-up">7.48</td>
           <td class="num ret-up">8.48</td>
+          <td class="num ret-up">8.91</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00681r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4054,6 +4397,7 @@
           <td class="num ret-up">7.53</td>
           <td class="num ret-up">63.78</td>
           <td class="num ret-up">184.16</td>
+          <td class="num ret-up">511.36</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00685l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4065,6 +4409,7 @@
           <td class="num ret-down">-9.35</td>
           <td class="num ret-down">-29.20</td>
           <td class="num ret-down">-48.13</td>
+          <td class="num ret-down">-70.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00686r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4076,6 +4421,7 @@
           <td class="num ret-down">-9.26</td>
           <td class="num ret-down">-16.40</td>
           <td class="num ret-down">-17.40</td>
+          <td class="num ret-down">-33.23</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00688l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4087,6 +4433,7 @@
           <td class="num ret-up">4.33</td>
           <td class="num ret-up">8.03</td>
           <td class="num ret-up">10.45</td>
+          <td class="num ret-up">9.82</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00689r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="台北富邦商業銀行" data-frequency="—">
@@ -4098,6 +4445,7 @@
           <td class="num ret-down">-2.85</td>
           <td class="num ret-down">-20.91</td>
           <td class="num ret-down">-32.85</td>
+          <td class="num ret-down">-1.01</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00753l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -4109,6 +4457,7 @@
           <td class="num ret-up">6.00</td>
           <td class="num ret-up">13.37</td>
           <td class="num ret-up">24.08</td>
+          <td class="num ret-up">68.54</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00852l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>
@@ -4118,7 +4467,7 @@
   <section id="cat-futures">
     <h2>期貨ETF <span class="count">(6 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="臺灣銀行" data-frequency="—">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00635u.tw" target="_blank">00635U</a></td>
@@ -4129,6 +4478,7 @@
           <td class="num ret-up">5.02</td>
           <td class="num ret-down">-18.77</td>
           <td class="num ret-up">13.60</td>
+          <td class="num ret-up">87.52</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00635u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -4140,6 +4490,7 @@
           <td class="num ret-up">15.17</td>
           <td class="num ret-up">50.86</td>
           <td class="num ret-up">105.97</td>
+          <td class="num ret-up">79.28</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00642u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -4151,6 +4502,7 @@
           <td class="num ret-up">0.15</td>
           <td class="num ret-up">0.49</td>
           <td class="num ret-up">1.75</td>
+          <td class="num ret-down">-2.77</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00682u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="彰化商業銀行" data-frequency="—">
@@ -4162,6 +4514,7 @@
           <td class="num ret-up">15.16</td>
           <td class="num ret-up">5.59</td>
           <td class="num ret-up">19.64</td>
+          <td class="num ret-down">-16.61</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00693u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣土地銀行" data-frequency="—">
@@ -4173,6 +4526,7 @@
           <td class="num ret-down">-1.46</td>
           <td class="num ret-down">-29.60</td>
           <td class="num ret-up">47.16</td>
+          <td class="num ret-up">126.17</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00738u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="永豐商業銀行" data-frequency="—">
@@ -4184,6 +4538,7 @@
           <td class="num ret-up">2.67</td>
           <td class="num ret-up">6.40</td>
           <td class="num ret-up">34.45</td>
+          <td class="num ret-up">45.17</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00763u.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>
@@ -4193,7 +4548,7 @@
   <section id="cat-leveraged-futures">
     <h2>槓桿期貨ETF <span class="count">(8 檔)</span></h2>
     <table>
-      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th>詳情</th></tr></thead>
+      <thead><tr><th>代號</th><th>名稱</th><th>保管銀行</th><th>配息</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">殖利率</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近6月</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近1年</th><th class="num sortable" tabindex="0" title="點擊排序，再點一次反向，第三次還原">近3年</th><th>詳情</th></tr></thead>
       <tbody>
         <tr data-custodian="兆豐國際商業銀行" data-frequency="—">
           <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00673r.tw" target="_blank">00673R</a></td>
@@ -4204,6 +4559,7 @@
           <td class="num ret-down">-20.29</td>
           <td class="num ret-down">-49.45</td>
           <td class="num ret-down">-62.24</td>
+          <td class="num ret-down">-67.42</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00673r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="—">
@@ -4215,6 +4571,7 @@
           <td class="num ret-down">-6.65</td>
           <td class="num ret-up">18.08</td>
           <td class="num ret-down">-19.49</td>
+          <td class="num ret-down">-55.06</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00674r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -4226,6 +4583,7 @@
           <td class="num ret-down">-1.16</td>
           <td class="num ret-up">1.29</td>
           <td class="num ret-up">4.42</td>
+          <td class="num ret-down">-4.92</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00683l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="中國信託商業銀行" data-frequency="—">
@@ -4237,6 +4595,7 @@
           <td class="num ret-up">0.86</td>
           <td class="num ret-down">-1.30</td>
           <td class="num ret-down">-3.61</td>
+          <td class="num ret-down">-2.81</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00684r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4248,6 +4607,7 @@
           <td class="num ret-up">6.18</td>
           <td class="num ret-up">1.21</td>
           <td class="num ret-down">-15.02</td>
+          <td class="num ret-down">-35.44</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00706l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="玉山商業銀行" data-frequency="—">
@@ -4259,6 +4619,7 @@
           <td class="num ret-down">-3.16</td>
           <td class="num ret-down">-1.26</td>
           <td class="num ret-up">7.94</td>
+          <td class="num ret-up">15.96</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00707r.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="—">
@@ -4270,6 +4631,7 @@
           <td class="num ret-up">8.14</td>
           <td class="num ret-down">-36.64</td>
           <td class="num ret-up">18.35</td>
+          <td class="num ret-up">207.74</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00708l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
         <tr data-custodian="臺灣銀行" data-frequency="—">
@@ -4281,6 +4643,7 @@
           <td class="num ret-up">31.81</td>
           <td class="num ret-up">80.55</td>
           <td class="num ret-up">211.51</td>
+          <td class="num ret-up">95.38</td>
           <td><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00715l.tw" target="_blank" class="link-btn">MoneyDJ</a></td>
         </tr>
       </tbody>

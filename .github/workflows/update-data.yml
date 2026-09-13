@@ -1,0 +1,131 @@
+name: 每日更新 ETF 資料
+
+# 台灣時間每個交易日 19:00（= UTC 11:00）。台股 13:30 收盤，MoneyDJ 傍晚才更新完報酬率。
+# 要改時間就改下面的 cron：GitHub 用 UTC，台灣時間減 8 小時。
+# 例：台灣 21:00 -> '0 13 * * 1-5'；台灣 08:00 -> '0 0 * * 2-6'（跨日，星期往後移一天）
+on:
+  schedule:
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      skip_returns:
+        description: '略過報酬率抓取（只更新名單／保管銀行／配息，快很多）'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    outputs:
+      changed: ${{ steps.commit.outputs.changed }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: 安裝相依套件
+        run: |
+          pip install --quiet certifi
+          cd app && npm ci
+
+      - name: 連線檢查
+        # 先確認資料來源從 GitHub 的機器連得到。連不到就直接失敗，
+        # 不要讓爬蟲跑 20 分鐘才發現拿到一堆錯誤頁。
+        run: |
+          code=$(curl -sS -o /dev/null -w '%{http_code}' -m 30 \
+            -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0 Safari/537.36' \
+            'https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0050.tw' || echo 000)
+          echo "MoneyDJ: HTTP $code"
+          [ "$code" = "200" ] || { echo "::error::MoneyDJ 無法連線，中止更新（既有資料保持不變）"; exit 1; }
+
+      - name: 建立工作目錄並保留前一版
+        run: |
+          echo "WORK=${RUNNER_TEMP}/etf" >> $GITHUB_ENV
+          mkdir -p "${RUNNER_TEMP}/etf"
+          cp app/public/data/etfs.json "${RUNNER_TEMP}/etf/previous.json"
+          cp taiwan_etf_list.html "${RUNNER_TEMP}/etf/previous.html"
+
+      - name: 抓取 ETF 名單（TWSE / TPEx / FinMind）
+        run: python scripts/fetch_universe.py "$WORK"
+
+      - name: 抓取基本資料（保管銀行、配息、殖利率）
+        run: python scripts/scrape_moneydj.py "$WORK"
+
+      - name: 抓取報酬率
+        if: ${{ github.event.inputs.skip_returns != 'true' }}
+        run: python scripts/scrape_returns.py "$WORK"
+
+      - name: 產生 React 版資料
+        run: python scripts/build_data.py "$WORK" app/public/data/etfs.json
+
+      - name: 重建舊版單頁
+        run: python scripts/build_page.py "$WORK" taiwan_etf_list.html
+
+      - name: 驗證資料（與前一版比對，異常就不提交）
+        run: python scripts/verify_data.py app/public/data/etfs.json "${WORK}/previous.json"
+
+      - name: 驗證舊版單頁
+        run: python scripts/verify_page.py taiwan_etf_list.html "${WORK}/previous.html"
+
+      - name: 測試
+        run: |
+          cd app && npm test
+          cd .. && node scripts/test_sort.js taiwan_etf_list.html
+
+      - name: 提交變更
+        id: commit
+        run: |
+          if git diff --quiet -- app/public/data/etfs.json taiwan_etf_list.html; then
+            echo "資料無變動，不提交"
+            echo "changed=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          TOTAL=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['total'])")
+          SNAP=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['snapshot'])")
+          git config user.name  'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/public/data/etfs.json taiwan_etf_list.html
+          git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）"
+          git push
+          echo "changed=true" >> $GITHUB_OUTPUT
+
+      - name: 失敗時保留爬蟲錯誤紀錄
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scrape-errors
+          path: |
+            ${{ runner.temp }}/etf/*errors*.txt
+            ${{ runner.temp }}/etf/universe.tsv
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: 還原未通過驗證的資料
+        if: failure()
+        run: git checkout -- app/public/data/etfs.json taiwan_etf_list.html || true
+
+  # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程
+  deploy:
+    needs: update
+    if: needs.update.outputs.changed == 'true'
+    uses: ./.github/workflows/deploy.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

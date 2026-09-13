@@ -4,114 +4,167 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A single self-contained static page, [taiwan_etf_list.html](taiwan_etf_list.html) (~2800 lines): a searchable Traditional-Chinese directory of 359 Taiwan ETFs with custodian-bank and dividend-frequency filters, linking out to MoneyDJ. There is no build step, no package manager, no test suite, and no git repository here — the whole project is that one file plus [AGENTS.md](AGENTS.md).
+A searchable Traditional-Chinese directory of Taiwan ETFs (359 as of the last run), published
+at <https://allenchiwei.github.io/taiwan-etf/>. Data is scraped from TWSE/TPEx open data plus
+MoneyDJ on a weekday cron and committed back to the repo.
 
-Do not introduce frameworks, bundlers, package managers, or split the data into separate files unless the user explicitly asks. Keep HTML, CSS, and JS inline in the one file.
+```
+app/                       React 19 + TypeScript + Vite + Tailwind v4 — the site
+  public/data/etfs.json      the dataset the app fetches at runtime (generated)
+  src/lib/                   pure logic: filters, sorting, formatting (Node-testable)
+  src/components/            presentation
+  src/routes/                one file per page
+  tests/                     node --test, runs the real modules
+scripts/                   the Python data pipeline (scrape → JSON + legacy HTML)
+tools/                     dev helpers: headless screenshots, static server
+taiwan_etf_list.html       the original single-file page, still live at its old URL
+.github/workflows/         daily data update + Pages deploy
+.claude/skills/            the update-etf-list skill (docs; its scripts live in scripts/)
+```
+
+**Two front ends exist on purpose, for now.** The React app is the primary site; the
+single-file page is kept working at `/taiwan_etf_list.html` so existing links and bookmarks
+don't break. One pipeline run updates both, and CI verifies both. When the React app has
+been stable for a while, dropping the legacy page is a one-line change in `deploy.yml`
+plus deleting the file and its three scripts.
 
 ## Verify changes
 
-Open the file in a browser (`start taiwan_etf_list.html`) and check: page renders, search + both selects + 清除 filter rows correctly, section counts and header stats match reality, MoneyDJ links resolve.
-
-## Architecture
-
-Everything is driven by data attributes on the table rows; there is no JS data model.
-
-**Sections** — six `<section>` elements, each `<h2>` + one `<table>`, in this order and with these hardcoded counts that must be kept in sync with the rows:
-
-| Section id | Heading | Rows |
-| --- | --- | --- |
-| `cat-domestic` | 台股ETF | 87 |
-| `cat-foreign` | 海外ETF | 113 |
-| `cat-bond` | 債券ETF | 112 |
-| `cat-leveraged` | 槓桿/反向ETF | 33 |
-| `cat-futures` | 期貨ETF | 6 |
-| `cat-leveraged-futures` | 槓桿期貨ETF | 8 |
-
-**Header stats** (`.stat-box`) show 359 total plus four anchor links: 87 → `#cat-domestic`, 113 → `#cat-foreign`, 112 → `#cat-bond`, and 47 → `#cat-leveraged`, where 47 is the sum of the last three sections (33+6+8). Editing rows means updating both the `<h2><span class="count">` and these stat boxes.
-
-**Row shape** — nine cells: 代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 詳情.
-
-```html
-<tr data-custodian="中國信託商業銀行" data-frequency="月配">
-  <td class="code"><a href="https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=00400a.tw" target="_blank">00400A</a></td>
-  <td>主動國泰動能高息</td>
-  <td>中國信託商業銀行</td>
-  <td><span class="freq freq-monthly">月配</span></td>
-  <td class="num yld">9.73</td>
-  <td class="num ret-up">9.51</td>
-  <td class="num ret-na">N/A</td>
-  <td class="num ret-na">N/A</td>
-  <td><a href="..." target="_blank" class="link-btn">MoneyDJ</a></td>
-</tr>
+```bash
+cd app && npm test          # 篩選/排序/顏色慣例，含對真實 etfs.json 的檢查
+cd app && npm run build     # tsc -b && vite build
+python scripts/verify_data.py app/public/data/etfs.json
+python scripts/verify_page.py taiwan_etf_list.html
+node scripts/test_sort.js taiwan_etf_list.html
 ```
 
-**殖利率** comes from `Basic0004` (same page as 保管銀行/配息) and is styled `.yld`;
-`N/A` means either no distribution or none yet — read the 配息 column to tell which.
+Visual and interaction checks go through `tools/shot.mjs` (see **Verifying mobile** below)
+rather than by opening a browser by hand.
 
-**Returns** are 市價 (market price) returns from MoneyDJ `Basic0008`, not NAV. `N/A` means the
-fund is younger than the period. Colour follows the Taiwan convention — `.ret-up` red,
-`.ret-down` green, `.ret-na` grey — the opposite of the US one; don't "fix" it. Because these
-are a market snapshot they carry their own stamp in the header (`報酬率／殖利率截至：MM/DD`) separate
-from 更新日期.
+## Data
 
-The MoneyDJ URL is always `https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=<code lowercased>.tw`, and the same URL appears twice per row (code cell and 詳情 button).
+`app/public/data/etfs.json` is the single source of truth for both front ends:
 
-**Filtering** — `filterRows()` (called from `oninput`/`onchange`) ANDs three row predicates: substring match against the first three cells only (代號/名稱/保管銀行 — it used to be the whole `tr.innerText`, which after the return columns arrived made every digit typed match stray percentages), exact match on `data-custodian`, exact match on `data-frequency`. Non-matching rows get `.hidden`. A fourth control, `#sectionFilter`, works at section level instead: a `<section>` is shown only when it still has visible rows **and** matches the selected category. `resetFilters()` clears all four controls; a scroll listener toggles `.show` on `#scrollTopBtn`. Section counts are static and deliberately do **not** update while filtering.
+```jsonc
+{
+  "meta": { "updated": "2026-09-13", "snapshot": "09/12", "total": 359, "source": "…" },
+  "sections":    [ { "id": "cat-domestic", "title": "台股ETF", "count": 87 }, … ],
+  "custodians":  ["上海商業儲蓄銀行", …],        // 篩選選項，必須涵蓋所有 etfs[].cust
+  "frequencies": ["月配", "雙月配", …, "—"],
+  "etfs": [ { "code": "0050", "name": "元大台灣50", "cust": "…", "freq": "半年配",
+              "yield": "1.49", "r3": "8.52", "r6": "38.56", "r12": "98.17",
+              "r36": "…", "sec": "cat-domestic" } ]
+}
+```
 
-`#sectionFilter`'s options are built at load time by `initSectionFilter()` from the `section[id^="cat-"]` elements themselves, so they never drift from the tables — unlike the custodian and frequency lists, which `build_page.py` writes. It exists because the six tables sort independently: without it, "sort by 殖利率" on a phone means scrolling to the right section first.
+**Never hand-edit it.** `scripts/build_data.py` writes it; `scripts/verify_data.py` is the
+gate that stops a half-failed scrape from overwriting good data (it fails on vanished rows,
+a >5% drop in total, an all-N/A column, or a custodian/frequency with no filter option).
 
-**Sorting** — `sortTable(th)` is wired by one delegated click/keydown listener on
-`th.sortable`; each section table sorts independently (desc → asc → original 代號 order),
-`N/A` always sinks, ties are stable. Adding a numeric column means adding `sortable` to its
-`<th>`, or it silently won't sort. `.claude/skills/update-etf-list/scripts/test_sort.js`
-runs the real function against a stub DOM — use it after editing the JS.
+Six sections, fixed order: `cat-domestic` 台股 · `cat-foreign` 海外 · `cat-bond` 債券 ·
+`cat-leveraged` 槓桿/反向 · `cat-futures` 期貨 · `cat-leveraged-futures` 槓桿期貨.
+The header's "槓桿/期貨" stat is the sum of the last three.
 
-**Coupled values** — a new custodian or frequency must be added in three places at once: the row's `data-*` attribute, the matching `<option value="...">` in `#custodianFilter` / `#frequencyFilter`, and (for frequency) a `.freq-*` pill class. The `data-frequency` value must equal the option value exactly, since the comparison is `===`.
+**Existing codes keep their section.** `build_data.py` reads the previous JSON and only
+classifies codes that are new, which preserves curated calls like `00735 國泰臺韓科技`
+sitting in 海外 despite MoneyDJ reporting 投資區域 = 台灣. `verify_data.py` fails if a row
+changes section.
 
-Frequency pill classes: `freq-monthly` (月配), `freq-quarterly` (季配), `freq-semi` (半年配), `freq-annual` (年配), `freq-bimonthly` (雙月配), `freq-unknown` (—). `.freq-none` is defined in CSS but unused — dead, not a gap.
+### Conventions that are not bugs
+
+- **紅漲綠跌.** `.text-up` is red, `.text-down` is green — the Taiwan convention, the
+  opposite of the US one. `returnTone()` in `app/src/lib/format.ts` owns it. Don't "fix" it.
+- **Returns are 市價 (market price), not NAV**, and are cumulative, not annualised.
+  `N/A` means the fund is younger than the period.
+- **殖利率 `N/A` is ambiguous at source**: either the fund makes no distribution, or it pays
+  but hasn't distributed yet. The 配息 column (`—` vs a frequency) is what tells them apart;
+  don't try to infer one from the other.
 
 ## Updating the data
 
-Do not hand-edit ETF rows. The `update-etf-list` skill (`.claude/skills/update-etf-list/`) rebuilds the tables from TWSE/TPEx open data plus MoneyDJ, and verifies the result against the previous version. Its `scripts/etfdata.py` holds the bank-name normalisation and section rules.
+Use the `update-etf-list` skill. In CI it is `.github/workflows/update-data.yml`, weekdays
+at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 hours). It
+scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
+deploy workflow.
+
+A commit pushed with `GITHUB_TOKEN` does **not** trigger `push` workflows, which is why
+`update-data.yml` calls `deploy.yml` via `workflow_call` instead of relying on the push.
+
+`scripts/etfdata.py` holds all the judgment: bank-name normalisation (`CUST_NORM`), section
+rules, payout labels, return periods. A new payout label needs `FREQ_CLASS`/`FREQ_ORDER`
+there, `PILL` in `app/src/lib/format.ts`, a `.pill-*` rule in `app/src/styles.css`, and
+`FreqLabel` in `app/src/types.ts` — `build_data.py` refuses to write rather than emit an
+unstyled pill.
+
+## The React app
+
+No state management library: filter state lives in the URL (TanStack Router search params,
+hash history because GitHub Pages has no SPA fallback), data lives in one context, and
+favourites live in `localStorage`.
+
+- `src/api/etfs.ts` is the **only** place that knows where data comes from. Phase 2 (a real
+  backend) replaces that one module; components don't change.
+- `src/lib/` is pure and has no React imports, so `tests/` runs the real functions under
+  `node --test`. Those modules use explicit `.ts` extensions in their relative imports —
+  Vite doesn't need it but Node's ESM does.
+- Desktop renders `EtfTable`, phones render `EtfCards`; `useIsMobile()` picks one so 359 rows
+  aren't in the DOM twice. Both read `NUMERIC_COLUMNS` from `components/columns.ts`, so a new
+  numeric column appears in both.
+- Sorting flattens the sections (`flat={Boolean(sort)}`) — otherwise it looks like it only
+  sorted within one category.
+
+### Verifying mobile
+
+```bash
+python tools/serve.py . 8785 &
+node tools/shot.mjs http://127.0.0.1:8785/… out.png 390x844 --dsf=2 --js=probe.js
+```
+
+`tools/shot.mjs` drives Edge/Chrome over the DevTools Protocol, reports horizontal overflow,
+surfaces page exceptions, and can run a script in the page (`--js`) to assert on layout or
+interaction. Two traps it exists to avoid:
+
+- **Don't use Chrome's `--screenshot` with `--window-size` on Windows.** The minimum window
+  width is ~492px, so `--window-size=390` lays out at 492px and crops the canvas to 390px.
+  The result looks exactly like a blown-out layout but isn't.
+- **Don't serve with `python -m http.server`.** It reads MIME types from the Windows registry,
+  where `.js` is often `text/plain`; browsers then refuse the module script and the page
+  renders blank with no obvious error. `tools/serve.py` sets the types explicitly.
+
+## The legacy single-file page
+
+`taiwan_etf_list.html` is ~4400 lines of inline HTML/CSS/JS with no build step. Everything is
+driven by data attributes on `<tr>`; there is no JS data model. Keep it that way — it is in
+maintenance mode, not a place to add features.
+
+**Row shape — 10 cells**: 代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 /
+近3年 / 詳情. Section `<h2>` counts and the `.stats` boxes are static and written by
+`build_page.py`; they deliberately do **not** update while filtering.
+
+**Filtering** — `filterRows()` ANDs three row predicates (substring match against the first
+three cells only — it used to match the whole `tr.innerText`, which made every digit typed
+hit stray percentages; exact `data-custodian`; exact `data-frequency`) and then a fourth,
+section-level one: a `<section>` shows only if it still has visible rows **and** matches
+`#sectionFilter`. That filter's options are built at load time by `initSectionFilter()` from
+the `section[id^="cat-"]` elements, so they can't drift from the tables.
+
+**Sorting** — `sortTable(th)` is delegated off `th.sortable`; each section table sorts
+independently (desc → asc → original 代號 order), `N/A` always sinks, ties are stable.
+A column that loses the class goes silently dead, so `verify_page.py` counts them (5 per
+table, 6 tables).
+
+**Mobile** — a `@media (max-width: 768px)` block turns each `<tr>` into a 5-column grid card
+and positions cells with **`nth-child`**, because most `<td>`s carry no class. That couples
+the layout to column order: inserting a column means renumbering that block or the cards
+silently scramble. `thead` is not hidden; it becomes a row of sort chips so `sortTable()`
+keeps working. `.filter-bar` drops `position: sticky` on phones, and its labels are a fixed
+`7em` so the four controls line up.
+
+Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` counts tags with
+`<tr[ >]` and will report the page as unbalanced.
 
 ## Conventions
 
 - All user-facing text is Traditional Chinese; `<html lang="zh-Hant-TW">`.
-- Keep existing ids, class names, function names, and the overall visual layout — the filter logic and the AGENTS.md contract depend on them.
-- The header line carries a data source and update date (`資料來源：FinLab / MoneyDJ　更新日期：...`); refresh the date when the ETF data changes.
-
-## 部署
-
-GitHub Pages，repo `AllenChiWei/taiwan-etf`，來源為 `main` 分支根目錄，
-線上網址 https://allenchiwei.github.io/taiwan-etf/
-（`index.html` 只是轉址到 `taiwan_etf_list.html`，改動資料時不必動它）。
-
-更新完 ETF 資料後 `git add -A && git commit && git push`，Pages 約一分鐘後自動重新部署。
-憑證由 Windows Git Credential Manager 保管，不要把 token 寫進檔案或 `.env`。
-
-## 響應式（手機版面）
-
-A `@media (max-width: 768px)` block at the end of the `<style>` turns each `<tr>` into a
-card: `table`/`tbody` go `display: block`, `tbody tr` becomes a 4-column grid, and the
-cells are positioned with **`nth-child`** because most `<td>`s carry no class.
-
-**This couples the mobile layout to column order.** The nine cells are
-代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 詳情, and the CSS addresses
-them as `td:nth-child(1)` … `td:nth-child(9)`, with `nth-child(5)`–`nth-child(8)` carrying
-the column name via `::before`. Reordering or inserting a column means updating that block
-too, or the cards silently scramble.
-
-`thead` is **not** hidden on mobile — it becomes a row of sort chips, so `sortTable()` keeps
-working untouched. `.filter-bar` drops its `position: sticky` on phones (four stacked rows
-would eat half the screen). `tbody tr.hidden` still beats the card `display: grid` on
-specificity, so `filterRows()` needs no change.
-
-Don't write literal `<tr>` / `<td>` in CSS comments — `verify_page.py` counts tags with
-`<tr[ >]` and will report the page as unbalanced.
-
-### 驗證手機版
-
-`node tools/shot.mjs <url> <out.png> 390x844 --dsf=2 [--js=probe.js]` screenshots through the
-DevTools Protocol and reports horizontal overflow. Use it rather than Edge's `--screenshot`:
-on Windows the minimum window width is ~492px, so `--window-size=390` renders at 492px and
-crops the canvas to 390px, which looks exactly like a blown-out layout but is not one.
+- Comments explain **why**, in the language the surrounding file already uses.
+- Keep existing ids, class names and function names — the verifiers and AGENTS.md depend on them.

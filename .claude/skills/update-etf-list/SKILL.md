@@ -5,9 +5,16 @@ description: Refresh or expand taiwan_etf_list.html with current Taiwan ETF data
 
 # Updating the Taiwan ETF list
 
-Rebuilds the tables in [taiwan_etf_list.html](../../../taiwan_etf_list.html) from live exchange
-and MoneyDJ data. Five scripts in `scripts/`, run in order. Everything lands in a
-scratch work directory; only the last step touches the real page.
+Rebuilds the ETF data from live exchange and MoneyDJ feeds. The scripts live in
+[scripts/](../../../scripts/) at the repo root (not in this skill folder) because the
+GitHub Actions daily job runs the same ones.
+
+There are **two front ends** and one run updates both:
+
+| Output | Consumed by |
+| --- | --- |
+| `app/public/data/etfs.json` | the React app (`app/`), the primary site |
+| `taiwan_etf_list.html` | the older single-file page, kept at its original URL |
 
 **Never hand-type ETF rows.** Codes, names, custodian banks and payout frequencies all
 come from the feeds below. If a feed is unreachable, say so and stop — a plausible-looking
@@ -17,16 +24,23 @@ invented 保管銀行 is worse than a missing row.
 
 ```bash
 WORK=<scratchpad>/etf            # anywhere outside the project
-PAGE=D:/ai/TaiwanETF/taiwan_etf_list.html
-cp "$PAGE" "$WORK/previous.html"          # keep for the regression diff
+cp app/public/data/etfs.json "$WORK/previous.json"   # for the regression diff
+cp taiwan_etf_list.html      "$WORK/previous.html"
 
-python scripts/fetch_universe.py  "$WORK"            # ~1 min  -> universe.tsv
-python scripts/scrape_moneydj.py  "$WORK"            # ~8 min  -> pages/*.html
-python scripts/scrape_returns.py  "$WORK"            # ~8 min  -> returns/*.html
-python scripts/build_page.py      "$WORK" "$PAGE"    # rewrites the page
-python scripts/verify_page.py     "$PAGE" "$WORK/previous.html"
-node   scripts/test_sort.js       "$PAGE"          # only if you touched sortTable()
+python scripts/fetch_universe.py "$WORK"                              # ~1 min -> universe.tsv
+python scripts/scrape_moneydj.py "$WORK"                              # ~8 min -> pages/*.html
+python scripts/scrape_returns.py "$WORK"                              # ~8 min -> returns/*.html
+python scripts/build_data.py     "$WORK" app/public/data/etfs.json    # React 版資料
+python scripts/build_page.py     "$WORK" taiwan_etf_list.html         # 舊版單頁
+python scripts/verify_data.py    app/public/data/etfs.json "$WORK/previous.json"
+python scripts/verify_page.py    taiwan_etf_list.html      "$WORK/previous.html"
+cd app && npm test && cd ..                                           # 篩選/排序邏輯
+node scripts/test_sort.js taiwan_etf_list.html                        # 舊版頁的排序
 ```
+
+In CI this is `.github/workflows/update-data.yml`, on a weekday 19:00 Taiwan-time cron.
+It runs the same commands and refuses to commit if any verifier fails, so a half-finished
+scrape can never overwrite good data.
 
 Both scrapers skip files already on disk, so a re-run resumes rather than refetching.
 
@@ -73,7 +87,10 @@ label rather than by position, so MoneyDJ adding a period does not silently shif
 A missing or unparsable returns page degrades to N/A cells and a warning — it does not
 block the build, because the basic table is the page's backbone and returns are an extra.
 
-**3. `build_page.py`** — parses the pages, normalises, classifies, splices.
+**3. `build_data.py` / `build_page.py`** — parse the pages, normalise, classify.
+
+`build_data.py` writes JSON and is the one that matters; `build_page.py` splices the
+same data into the legacy HTML.
 
 Only the generated regions are rewritten (tables, both `<select>` option lists, the
 `.stats` block, the 更新日期). CSS, JS and layout are untouched, so hand edits like the
@@ -114,13 +131,18 @@ source and is passed through rather than papered over.
 
 **Returns.** Red for gains, green for losses — the Taiwan convention, the opposite of the
 US one. `return_class` in `etfdata.py` owns this; `verify_page.py` fails the build if any
-cell's colour class disagrees with its sign. Row layout is 9 cells:
-代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 詳情.
+cell's colour class disagrees with its sign. Row layout is 10 cells:
+代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 近3年 / 詳情.
+Adding a period means: `RETURN_PERIODS` in etfdata.py, `PERIOD_KEY` in build_data.py,
+one `_SORT` header in build_page.py, `NCELLS` in verify_page.py, the mobile card's
+`nth-child` block in the page CSS, and on the React side `NumericKey` + `Etf` in
+types.ts, `NUMERIC_COLUMNS` in columns.ts, `NUMERIC_LABEL` in format.ts, `SORTABLE`
+in useFilterState.ts and `SORT_OPTIONS` in FilterBar.tsx.
 
-**Sorting.** The four numeric columns are click-to-sort, per section table: first click
+**Sorting.** The five numeric columns are click-to-sort, per section table: first click
 高→低, second 低→高, third restores 代號 order. `N/A` always sinks to the bottom in both
 directions, and ties keep 代號 order. The handler is delegated off `th.sortable`, so a
-header that loses that class goes silently dead — `verify_page.py` counts them (4 per
+header that loses that class goes silently dead — `verify_page.py` counts them (5 per
 table). `sortTable()` lives in the page, not in these scripts; `test_sort.js` extracts the
 real function and exercises it against a stub DOM, so run it after editing the JS.
 
@@ -148,3 +170,5 @@ diff "$WORK/test.html" "$PAGE"          # expect no output
   `certifi` and falls back to unverified TLS for that host (public read-only open data).
 - FinMind works tokenless at 300 req/hr. `$FINMIND_TOKEN` raises it to 600 but is not needed.
 - Keep counts in [CLAUDE.md](../../../CLAUDE.md) in sync after a run that changes totals.
+- The React app reads `etfs.json` at runtime, so a data-only change needs no rebuild —
+  but the deploy workflow still has to run for the new file to reach the CDN.

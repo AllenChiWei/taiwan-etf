@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="台灣 ETF 總覽">
+  <rect width="512" height="512" rx="112" fill="#0f1216"/>
+  <g stroke="#4d9bff" stroke-width="26" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M96 340 L200 236 L280 316 L416 172"/>
+    <path d="M416 172 L416 236 M416 172 L352 172"/>
+  </g>
+  <g fill="#d32f2f">
+    <rect x="118" y="368" width="44" height="48" rx="10"/>
+    <rect x="190" y="340" width="44" height="76" rx="10"/>
+    <rect x="262" y="382" width="44" height="34" rx="10"/>
+    <rect x="334" y="316" width="44" height="100" rx="10"/>
+  </g>
+</svg>

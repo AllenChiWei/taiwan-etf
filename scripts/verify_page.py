@@ -81,9 +81,9 @@ have = set(re.findall(r'\.(freq-[a-z]+|ret-[a-z]+)\s*\{', h))
 if need - have:
     fails.append('pill class used but not defined in CSS: %s' % sorted(need - have))
 
-# --- row internals: 9 cells, cell text agrees with the data-* attributes ------
-# 代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 詳情
-NCELLS = 9
+# --- row internals: 10 cells, cell text agrees with the data-* attributes ------
+# 代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 近3年 / 詳情
+NCELLS = 10
 NUM_OK = re.compile(r'^(N/A|-?[\d,]+\.\d+|-?[\d,]+)$')
 bad = badnum = 0
 yield_cells = []
@@ -150,14 +150,14 @@ for token in ['filterRows', 'resetFilters', 'scrollToTop', 'sortTable', 'searchB
         fails.append('lost JS/DOM hook: %s' % token)
 
 # --- click-to-sort wiring -----------------------------------------------------
-# 4 sortable headers (殖利率 + 3 returns) in each of the 6 section tables. The
+# 5 sortable headers (殖利率 + 4 returns) in each of the 6 section tables. The
 # handler is delegated off `th.sortable`, so a header that loses the class goes
 # silently dead rather than erroring.
 n_tables = h.count('<thead>')
 n_sortable = len(re.findall(r'<th class="num sortable"', h))
-print('sortable headers: %d (%d tables x 4)' % (n_sortable, n_tables))
-if n_sortable != n_tables * 4:
-    fails.append('expected %d sortable headers, found %d' % (n_tables * 4, n_sortable))
+print('sortable headers: %d (%d tables x 5)' % (n_sortable, n_tables))
+if n_sortable != n_tables * 5:
+    fails.append('expected %d sortable headers, found %d' % (n_tables * 5, n_sortable))
 for css in ['th.sortable', '.sorted-desc', '.sorted-asc']:
     if css not in h:
         fails.append('missing sort CSS: %s' % css)

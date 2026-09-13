@@ -1,0 +1,176 @@
+@import "tailwindcss";
+
+/* 主題三態：
+   - 沒有 data-theme 屬性 → 跟隨系統
+   - data-theme="light" / "dark" → 使用者明確選擇，蓋過系統
+   語意色都定義成 CSS 變數，再用 @theme inline 映射給 Tailwind。
+   inline 代表 Tailwind 產生的是 var(--x) 而不是把值複製進去，
+   所以切換主題時不需要任何 dark: 變體，顏色會自己跟著變。 */
+
+:root {
+  --c-bg:            #f6f7f9;
+  --c-surface:       #ffffff;
+  --c-sunken:        #eceef2;
+  --c-hover:         #f0f2f5;
+  --c-border:        #d9dde3;
+  --c-border-strong: #b9c0ca;
+
+  --c-ink:           #1a1d21;
+  --c-muted:         #5c6670;
+  --c-faint:         #8b949e;
+
+  --c-accent:        #1f6feb;
+  --c-accent-ink:    #ffffff;
+  --c-accent-soft:   #e5efff;
+
+  /* 台股慣例：紅漲綠跌。與美股相反，不要對調。 */
+  --c-up:            #d32f2f;
+  --c-down:          #1a8c4a;
+  --c-flat:          #5c6670;
+  --c-na:            #9aa1a9;
+  --c-yield:         #b26a00;
+
+  --c-star:          #f0a500;
+
+  --c-freq-monthly-bg:   #e8f0fe;  --c-freq-monthly-fg:   #1a56c4;
+  --c-freq-bimonthly-bg: #ede7f6;  --c-freq-bimonthly-fg: #5e35b1;
+  --c-freq-quarterly-bg: #e6f4ea;  --c-freq-quarterly-fg: #1a7f42;
+  --c-freq-semi-bg:      #fff4e5;  --c-freq-semi-fg:      #b26a00;
+  --c-freq-annual-bg:    #fce8e6;  --c-freq-annual-fg:    #c5221f;
+  --c-freq-none-bg:      #eceef2;  --c-freq-none-fg:      #6b7280;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --c-bg:            #0f1216;
+    --c-surface:       #171b21;
+    --c-sunken:        #0b0e11;
+    --c-hover:         #1d222a;
+    --c-border:        #2a313a;
+    --c-border-strong: #3d4652;
+
+    --c-ink:           #e6e9ed;
+    --c-muted:         #9aa4b0;
+    --c-faint:         #6e7883;
+
+    --c-accent:        #4d9bff;
+    --c-accent-ink:    #06121f;
+    --c-accent-soft:   #14263d;
+
+    --c-up:            #ff6b6b;
+    --c-down:          #3ecf8e;
+    --c-flat:          #9aa4b0;
+    --c-na:            #6e7883;
+    --c-yield:         #e0a33c;
+
+    --c-freq-monthly-bg:   #16263f;  --c-freq-monthly-fg:   #7db0ff;
+    --c-freq-bimonthly-bg: #251d3a;  --c-freq-bimonthly-fg: #b39ddb;
+    --c-freq-quarterly-bg: #12301f;  --c-freq-quarterly-fg: #5fcf8e;
+    --c-freq-semi-bg:      #33260f;  --c-freq-semi-fg:      #e0a33c;
+    --c-freq-annual-bg:    #3a1a19;  --c-freq-annual-fg:    #ff8a80;
+    --c-freq-none-bg:      #1d222a;  --c-freq-none-fg:      #8b949e;
+
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme="dark"] {
+  --c-bg:            #0f1216;
+  --c-surface:       #171b21;
+  --c-sunken:        #0b0e11;
+  --c-hover:         #1d222a;
+  --c-border:        #2a313a;
+  --c-border-strong: #3d4652;
+
+  --c-ink:           #e6e9ed;
+  --c-muted:         #9aa4b0;
+  --c-faint:         #6e7883;
+
+  --c-accent:        #4d9bff;
+  --c-accent-ink:    #06121f;
+  --c-accent-soft:   #14263d;
+
+  --c-up:            #ff6b6b;
+  --c-down:          #3ecf8e;
+  --c-flat:          #9aa4b0;
+  --c-na:            #6e7883;
+  --c-yield:         #e0a33c;
+
+  --c-freq-monthly-bg:   #16263f;  --c-freq-monthly-fg:   #7db0ff;
+  --c-freq-bimonthly-bg: #251d3a;  --c-freq-bimonthly-fg: #b39ddb;
+  --c-freq-quarterly-bg: #12301f;  --c-freq-quarterly-fg: #5fcf8e;
+  --c-freq-semi-bg:      #33260f;  --c-freq-semi-fg:      #e0a33c;
+  --c-freq-annual-bg:    #3a1a19;  --c-freq-annual-fg:    #ff8a80;
+  --c-freq-none-bg:      #1d222a;  --c-freq-none-fg:      #8b949e;
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg:            var(--c-bg);
+  --color-surface:       var(--c-surface);
+  --color-sunken:        var(--c-sunken);
+  --color-hover:         var(--c-hover);
+  --color-line:          var(--c-border);
+  --color-line-strong:   var(--c-border-strong);
+
+  --color-ink:           var(--c-ink);
+  --color-muted:         var(--c-muted);
+  --color-faint:         var(--c-faint);
+
+  --color-accent:        var(--c-accent);
+  --color-accent-ink:    var(--c-accent-ink);
+  --color-accent-soft:   var(--c-accent-soft);
+
+  --color-up:            var(--c-up);
+  --color-down:          var(--c-down);
+  --color-flat:          var(--c-flat);
+  --color-na:            var(--c-na);
+  --color-yield:         var(--c-yield);
+  --color-star:          var(--c-star);
+
+  --font-sans: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei",
+               ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    scroll-behavior: smooth;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    background: var(--c-bg);
+    color: var(--c-ink);
+    font-family: var(--font-sans);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* 數字一律等寬，表格與卡片裡的小數點才會對齊 */
+  .tabular { font-variant-numeric: tabular-nums; }
+
+  :focus-visible {
+    outline: 2px solid var(--c-accent);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+}
+
+/* 配息頻率標籤。顏色跟著主題走，所以用變數而不是 Tailwind 的固定色階。 */
+.pill-monthly   { background: var(--c-freq-monthly-bg);   color: var(--c-freq-monthly-fg); }
+.pill-bimonthly { background: var(--c-freq-bimonthly-bg); color: var(--c-freq-bimonthly-fg); }
+.pill-quarterly { background: var(--c-freq-quarterly-bg); color: var(--c-freq-quarterly-fg); }
+.pill-semi      { background: var(--c-freq-semi-bg);      color: var(--c-freq-semi-fg); }
+.pill-annual    { background: var(--c-freq-annual-bg);    color: var(--c-freq-annual-fg); }
+.pill-none      { background: var(--c-freq-none-bg);      color: var(--c-freq-none-fg); }
