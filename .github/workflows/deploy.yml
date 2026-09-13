@@ -8,6 +8,7 @@ on:
     branches: [main]
     paths:
       - 'app/**'
+      - 'scripts/**'
       - 'taiwan_etf_list.html'
       - '.github/workflows/deploy.yml'
   workflow_call:
@@ -26,6 +27,12 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      FINLAB_API_TOKEN: ${{ secrets.FINLAB_API_TOKEN }}
+      SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
+      # salt 隨 manifest 公開給瀏覽器，不是機密；固定它是為了讓部署不會
+      # 讓所有人的工作階段失效。用 repository variable 就夠了。
+      SITE_SALT: ${{ vars.SITE_SALT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -35,16 +42,61 @@ jobs:
           cache: npm
           cache-dependency-path: app/package-lock.json
 
-      - name: 安裝相依套件
-        working-directory: app
-        run: npm ci
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
 
-      - name: 測試篩選與排序邏輯
+      - name: 安裝相依套件
+        run: |
+          pip install --quiet finlab cryptography
+          cd app && npm ci
+
+      # FinLab 衍生的資料（美股清單、績效曲線）刻意不進版控：明文放在公開 repo 等於
+      # 沒加密，而曲線每天全部重算會讓 repo 每年膨脹數百 MB。改成部署時即時產生。
+      - name: 產生美股資料與績效曲線
+        id: finlab
+        if: ${{ env.FINLAB_API_TOKEN != '' }}
+        run: |
+          python scripts/fetch_us_etfs.py
+          python scripts/verify_us_data.py app/public/data/us_etfs.json
+          python scripts/fetch_series.py
+          echo "generated=true" >> $GITHUB_OUTPUT
+
+      - name: 加密受保護的資料
+        if: ${{ steps.finlab.outputs.generated == 'true' }}
+        run: |
+          if [ -z "$SITE_PASSWORD" ]; then
+            echo "::error::已產生 FinLab 資料但沒有設定 SITE_PASSWORD secret。"
+            echo "::error::未加密就部署等於公開付費訂閱的資料，因此中止。"
+            exit 1
+          fi
+          python scripts/encrypt_data.py
+
+      - name: 沒有 FinLab 憑證時的提醒
+        if: ${{ env.FINLAB_API_TOKEN == '' }}
+        run: |
+          echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含美股資料與績效曲線。"
+          echo "::warning::台股清單不受影響（來自公開的 TWSE/TPEx/MoneyDJ）。"
+
+      - name: 確認沒有明文外洩到建置產物
+        run: |
+          # 最後一道防線：FinLab 的明文絕不能出現在要上線的檔案裡。
+          # 加密腳本會刪掉明文，這裡確認它真的做到了。
+          leaked=$(find app/public/data \( -name 'us_etfs.json' -o \
+                     \( -path '*/series/*' -name '*.json' \) \) | head -5)
+          if [ -n "$leaked" ]; then
+            echo "::error::建置產物含未加密的 FinLab 資料："
+            echo "$leaked"
+            exit 1
+          fi
+          echo "檢查通過：沒有未加密的 FinLab 資料"
+
+      - name: 驗證台股資料
+        run: python scripts/verify_data.py app/public/data/etfs.json
+
+      - name: 測試
         working-directory: app
         run: npm test
-
-      - name: 驗證資料完整性
-        run: python3 scripts/verify_data.py app/public/data/etfs.json
 
       - name: 建置
         working-directory: app

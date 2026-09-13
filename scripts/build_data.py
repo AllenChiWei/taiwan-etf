@@ -21,7 +21,8 @@ OUT = (sys.argv[2] if len(sys.argv) > 2
        else os.path.join('app', 'public', 'data', 'etfs.json'))
 
 # MoneyDJ 的期間欄位 -> JSON 欄位名。順序由 etfdata.RETURN_PERIODS 決定。
-PERIOD_KEY = {u'三個月': 'r3', u'六個月': 'r6', u'一年': 'r12', u'三年': 'r36'}
+PERIOD_KEY = {u'三個月': 'r3', u'六個月': 'r6', u'一年': 'r12',
+              u'三年': 'r36', u'五年': 'r60'}
 
 
 def previous_sections(path):

@@ -36,14 +36,14 @@ export function EtfCards({ rows, isFav, onToggleFav }: Props) {
             <span aria-hidden="true">🏦 </span>{e.cust}
           </p>
 
-          <dl className="mt-2.5 grid grid-cols-5 gap-1.5 border-t border-line pt-2">
+          <dl className="mt-2.5 grid grid-cols-3 gap-x-2 gap-y-2 border-t border-line pt-2">
             {NUMERIC_COLUMNS.map(c => {
               const value = e[c.key];
               const cls = c.key === 'yield' ? yieldClass(value) : TONE_CLASS[returnTone(value)];
               return (
                 <div key={c.key}>
                   <dt className="text-[10px] font-semibold whitespace-nowrap text-faint">{c.label}</dt>
-                  <dd className={`tabular font-mono text-[13px] ${cls}`}>{value}</dd>
+                  <dd className={`tabular font-mono text-sm ${cls}`}>{value}</dd>
                 </div>
               );
             })}

@@ -136,7 +136,7 @@ def parse_yield(v):
 # 一年 / 三年 / 五年 / 十年 / 成立日) followed by a 市價 row and a 淨值 row.
 # We take 市價 (market price) - that is the return someone holding the ETF actually
 # realised. 淨值 (NAV) sits in the row right after if it is ever wanted instead.
-RETURN_PERIODS = [u'三個月', u'六個月', u'一年', u'三年']
+RETURN_PERIODS = [u'三個月', u'六個月', u'一年', u'三年', u'五年']
 NA = 'N/A'
 
 

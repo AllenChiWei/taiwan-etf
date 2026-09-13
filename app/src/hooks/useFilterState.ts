@@ -6,7 +6,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import type { Filters, NumericKey } from '../types';
 import type { SortSpec } from '../lib/filters';
 
-const SORTABLE: NumericKey[] = ['yield', 'r3', 'r6', 'r12', 'r36'];
+const SORTABLE: NumericKey[] = ['yield', 'r3', 'r6', 'r12', 'r36', 'r60'];
 
 function parseSort(raw: string): SortSpec | null {
   const [key, dir] = raw.split('-');

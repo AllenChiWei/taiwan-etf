@@ -11,7 +11,8 @@ import { EmptyState } from './EmptyState';
 import { ScrollTopButton } from './ScrollTopButton';
 
 const TABS = [
-  { to: '/', label: '清單' },
+  { to: '/', label: '台股' },
+  { to: '/us', label: '美股' },
   { to: '/favorites', label: '收藏' },
   { to: '/about', label: '說明' },
 ] as const;

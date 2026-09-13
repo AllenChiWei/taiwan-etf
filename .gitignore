@@ -1,6 +1,8 @@
 # 機密設定 - 絕不上傳
 .env
 .env.*
+# .env.example 只寫變數名稱不含值，要進版控
+!.env.example
 *.key
 *.pem
 secrets.json
@@ -13,6 +15,16 @@ venv/
 
 # 開發用診斷產物（tools/make_diag.py 產生）
 __diag.html
+
+# FinLab 付費資料的明文絕不進版控 —— 公開 repo 裡的明文等於沒加密。
+# 只有 .enc 會被提交（見 scripts/encrypt_data.py）。
+app/public/data/us_etfs.json
+# 加密產物與 manifest 同樣由部署流程產生（本機這份是用測試密碼加密的）
+app/public/data/*.enc
+app/public/data/secure.json
+
+# 績效曲線：部署時即時產生，不進版控（每天全部重算，commit 會爆掉）
+app/public/data/series/
 
 # 抓取資料的中間產物
 *.tmp

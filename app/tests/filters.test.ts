@@ -27,6 +27,7 @@ const mk = (code: string, o: Partial<Etf> = {}): Etf => ({
   r6: o.r6 ?? '1.00',
   r12: o.r12 ?? '1.00',
   r36: o.r36 ?? '1.00',
+  r60: o.r60 ?? '1.00',
 });
 
 describe('搜尋', () => {

@@ -24,7 +24,8 @@ PREV = sys.argv[2] if len(sys.argv) > 2 else None
 # A legitimate delisting or two is normal; losing 5% of the table in one run is a broken scrape.
 DROP_TOLERANCE = 0.05
 
-REQUIRED_FIELDS = ['code', 'name', 'cust', 'freq', 'yield', 'sec', 'r3', 'r6', 'r12', 'r36']
+REQUIRED_FIELDS = ['code', 'name', 'cust', 'freq', 'yield', 'sec',
+                   'r3', 'r6', 'r12', 'r36', 'r60']
 
 fails = []
 warns = []
@@ -144,7 +145,7 @@ def numeric_ok(v):
 
 
 for e in etfs:
-    for f in ('yield', 'r3', 'r6', 'r12', 'r36'):
+    for f in ('yield', 'r3', 'r6', 'r12', 'r36', 'r60'):
         if not numeric_ok(e[f]):
             fail('%s has unparsable %s=%r' % (e['code'], f, e[f]))
 

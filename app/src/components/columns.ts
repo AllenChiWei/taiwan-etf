@@ -20,6 +20,7 @@ export const NUMERIC_COLUMNS: Array<{ key: NumericKey; label: string }> = [
   { key: 'r6', label: '近6月' },
   { key: 'r12', label: '近1年' },
   { key: 'r36', label: '近3年' },
+  { key: 'r60', label: '近5年' },
 ];
 
 export const COLUMNS: ColumnDef[] = [

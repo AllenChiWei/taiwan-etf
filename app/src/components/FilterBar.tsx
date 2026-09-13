@@ -19,6 +19,7 @@ const SORT_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'r6-desc', label: '近6月 高→低' },
   { value: 'r12-desc', label: '近1年 高→低' },
   { value: 'r36-desc', label: '近3年 高→低' },
+  { value: 'r60-desc', label: '近5年 高→低' },
 ];
 
 export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset }: Props) {

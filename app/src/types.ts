@@ -16,6 +16,8 @@ export interface Etf {
   r12: string;
   /** 近 3 年市價報酬率（累積，非年化）*/
   r36: string;
+  /** 近 5 年市價報酬率（累積，非年化）*/
+  r60: string;
   sec: SectionId;
 }
 
@@ -54,7 +56,7 @@ export interface EtfDataset {
 }
 
 /** 可排序的數值欄位。 */
-export type NumericKey = 'yield' | 'r3' | 'r6' | 'r12' | 'r36';
+export type NumericKey = 'yield' | 'r3' | 'r6' | 'r12' | 'r36' | 'r60';
 
 export interface Filters {
   q: string;
@@ -62,3 +64,48 @@ export interface Filters {
   freq: string;
   sec: string;
 }
+
+// ---- 美股 ETF ----------------------------------------------------------------
+// 與台股那份刻意不共用型別：欄位不同（沒有保管銀行／配息／殖利率，多了成交金額），
+// 硬湊成一個型別只會讓兩邊都長出一堆可選欄位。
+
+/** 一檔美股 ETF。欄位名稱與 scripts/fetch_us_etfs.py 產生的 us_etfs.json 一致。 */
+export interface UsEtf {
+  /** 交易代號，例如 SPY */
+  code: string;
+  name: string;
+  /** 上市交易所代碼（Nasdaq Trader 的 Listing Exchange，如 P=NYSE Arca、Q=Nasdaq） */
+  exch: string;
+  /** 近 3 個月累積總報酬（含息再投資），或 'N/A' */
+  r3: string;
+  r6: string;
+  r12: string;
+  /** 近 3 年累積總報酬，成立未滿三年為 'N/A' */
+  r36: string;
+  /** 近 5 年累積總報酬 */
+  r60: string;
+  /** 近 60 個交易日的日均成交金額（美元） */
+  adv: number;
+  /** adv 是否達到 meta.liquidMinAdv */
+  liquid: boolean;
+}
+
+export interface UsEtfMeta {
+  updated: string;
+  /** 價格資料的最後交易日 YYYY-MM-DD */
+  asof: string;
+  total: number;
+  liquid: number;
+  liquidMinAdv: number;
+  source: string;
+  note?: string;
+  generated_by?: string;
+}
+
+export interface UsEtfDataset {
+  meta: UsEtfMeta;
+  etfs: UsEtf[];
+}
+
+/** 美股表格可排序的數值欄位。 */
+export type UsNumericKey = 'adv' | 'r3' | 'r6' | 'r12' | 'r36' | 'r60';

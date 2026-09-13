@@ -45,6 +45,7 @@ export const NUMERIC_LABEL: Record<NumericKey, string> = {
   r6: '近6月',
   r12: '近1年',
   r36: '近3年',
+  r60: '近5年',
 };
 
 /** MoneyDJ 個別 ETF 頁；代號一律小寫。 */
