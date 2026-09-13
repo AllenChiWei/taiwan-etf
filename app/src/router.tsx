@@ -18,7 +18,6 @@ import { ListPage } from './routes/ListPage';
 import { FavoritesPage } from './routes/FavoritesPage';
 import { AboutPage } from './routes/AboutPage';
 import { UsPage } from './routes/UsPage';
-import { PasswordGate } from './components/PasswordGate';
 
 export interface ListSearch {
   q: string;
@@ -61,12 +60,7 @@ const favoritesRoute = createRoute({
 const usRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/us',
-  // 美股資料來自 FinLab 付費訂閱，加密存放，要密碼才解得開
-  component: () => (
-    <PasswordGate what="美股 ETF 清單">
-      <UsPage />
-    </PasswordGate>
-  ),
+  component: UsPage,
 });
 
 const aboutRoute = createRoute({

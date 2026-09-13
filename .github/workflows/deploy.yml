@@ -51,14 +51,13 @@ jobs:
           pip install --quiet finlab cryptography
           cd app && npm ci
 
-      # FinLab 衍生的資料（美股清單、績效曲線）刻意不進版控：明文放在公開 repo 等於
-      # 沒加密，而曲線每天全部重算會讓 repo 每年膨脹數百 MB。改成部署時即時產生。
-      - name: 產生美股資料與績效曲線
+      # 美股清單已在版控中（每日更新流程會提交它）。這裡只產生價格序列：
+      # 那是 11 MB、每天全部重算，進版控會讓 repo 每年膨脹數百 MB。
+      # 沒有 FinLab 憑證時網站照常運作，只是沒有績效圖。
+      - name: 產生績效曲線
         id: finlab
         if: ${{ env.FINLAB_API_TOKEN != '' }}
         run: |
-          python scripts/fetch_us_etfs.py
-          python scripts/verify_us_data.py app/public/data/us_etfs.json
           python scripts/fetch_series.py
           echo "generated=true" >> $GITHUB_OUTPUT
 
@@ -75,24 +74,26 @@ jobs:
       - name: 沒有 FinLab 憑證時的提醒
         if: ${{ env.FINLAB_API_TOKEN == '' }}
         run: |
-          echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含美股資料與績效曲線。"
-          echo "::warning::台股清單不受影響（來自公開的 TWSE/TPEx/MoneyDJ）。"
+          echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含績效曲線。"
+          echo "::warning::台股與美股清單不受影響（兩份都在版控中）。"
 
-      - name: 確認沒有明文外洩到建置產物
+      - name: 確認價格序列沒有以明文上線
         run: |
-          # 最後一道防線：FinLab 的明文絕不能出現在要上線的檔案裡。
-          # 加密腳本會刪掉明文，這裡確認它真的做到了。
-          leaked=$(find app/public/data \( -name 'us_etfs.json' -o \
-                     \( -path '*/series/*' -name '*.json' \) \) | head -5)
+          # 最後一道防線。us_etfs.json 是公開的（代號名稱來自 Nasdaq 公開檔案，
+          # 報酬率是我們自己算的衍生統計），但 series/ 底下是價格歷史本身，
+          # 那才是付費資料集，絕不能以明文出現在產物裡。
+          leaked=$(find app/public/data/series -name '*.json' 2>/dev/null | head -5)
           if [ -n "$leaked" ]; then
-            echo "::error::建置產物含未加密的 FinLab 資料："
+            echo "::error::建置產物含未加密的價格序列："
             echo "$leaked"
             exit 1
           fi
-          echo "檢查通過：沒有未加密的 FinLab 資料"
+          echo "檢查通過：價格序列都已加密"
 
-      - name: 驗證台股資料
-        run: python scripts/verify_data.py app/public/data/etfs.json
+      - name: 驗證資料
+        run: |
+          python scripts/verify_data.py app/public/data/etfs.json
+          python scripts/verify_us_data.py app/public/data/us_etfs.json
 
       - name: 測試
         working-directory: app

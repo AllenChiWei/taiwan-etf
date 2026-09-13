@@ -24,6 +24,8 @@ jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    env:
+      FINLAB_API_TOKEN: ${{ secrets.FINLAB_API_TOKEN }}
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
     steps:
@@ -41,7 +43,7 @@ jobs:
 
       - name: 安裝相依套件
         run: |
-          pip install --quiet certifi
+          pip install --quiet certifi finlab
           cd app && npm ci
 
       - name: 連線檢查
@@ -60,6 +62,7 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/etf"
           cp app/public/data/etfs.json "${RUNNER_TEMP}/etf/previous.json"
           cp taiwan_etf_list.html "${RUNNER_TEMP}/etf/previous.html"
+          cp app/public/data/us_etfs.json "${RUNNER_TEMP}/etf/previous_us.json" || true
 
       - name: 抓取 ETF 名單（TWSE / TPEx / FinMind）
         run: python scripts/fetch_universe.py "$WORK"
@@ -83,6 +86,14 @@ jobs:
       - name: 驗證舊版單頁
         run: python scripts/verify_page.py taiwan_etf_list.html "${WORK}/previous.html"
 
+      # 美股清單跟著台股一起更新。它是公開的衍生統計（代號名稱來自 Nasdaq
+      # 公開檔案，報酬率由我們計算），所以可以進版控；價格序列則否。
+      - name: 更新美股清單
+        if: ${{ env.FINLAB_API_TOKEN != '' }}
+        run: |
+          python scripts/fetch_us_etfs.py
+          python scripts/verify_us_data.py app/public/data/us_etfs.json "${WORK}/previous_us.json"
+
       - name: 測試
         run: |
           cd app && npm test
@@ -91,7 +102,7 @@ jobs:
       - name: 提交變更
         id: commit
         run: |
-          if git diff --quiet -- app/public/data/etfs.json taiwan_etf_list.html; then
+          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json taiwan_etf_list.html; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
@@ -105,7 +116,7 @@ jobs:
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/public/data/etfs.json taiwan_etf_list.html
+          git add app/public/data/etfs.json app/public/data/us_etfs.json taiwan_etf_list.html
           if [ -n "$NEW" ]; then
             git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "新上市：${NEW}"
             echo "::notice title=新上市 ETF::${NEW}"
@@ -128,7 +139,7 @@ jobs:
 
       - name: 還原未通過驗證的資料
         if: failure()
-        run: git checkout -- app/public/data/etfs.json taiwan_etf_list.html || true
+        run: git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json taiwan_etf_list.html || true
 
   # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程
   deploy:

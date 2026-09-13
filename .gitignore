@@ -16,10 +16,8 @@ venv/
 # 開發用診斷產物（tools/make_diag.py 產生）
 __diag.html
 
-# FinLab 付費資料的明文絕不進版控 —— 公開 repo 裡的明文等於沒加密。
-# 只有 .enc 會被提交（見 scripts/encrypt_data.py）。
-app/public/data/us_etfs.json
-# 加密產物與 manifest 同樣由部署流程產生（本機這份是用測試密碼加密的）
+# 加密產物與 manifest 由部署流程產生（本機這份是用測試密碼加密的）。
+# us_etfs.json 不在此列：它是公開的衍生統計，見 scripts/encrypt_data.py 的說明。
 app/public/data/*.enc
 app/public/data/secure.json
 

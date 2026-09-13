@@ -7,7 +7,6 @@ import { returnTone, TONE_CLASS } from '../lib/format';
 import { PerformanceChart, lineColor } from '../components/PerformanceChart';
 import { EmptyState } from '../components/EmptyState';
 import { PasswordGate } from '../components/PasswordGate';
-import { isUnlocked } from '../lib/secure';
 
 /** 一次比較太多條線會糊成一團，也讓圖例擠不下。 */
 const MAX_COMPARE = 8;
@@ -36,8 +35,8 @@ export function FavoritesPage() {
   const twMap = useMemo(
     () => new Map(tw.etfs.map(e => [e.code, e])), [tw.etfs]);
   const unknown = favorites.codes.filter(c => !twMap.has(c));
-  // 沒解鎖就查不到美股資料，也不必為了它去下載加密檔
-  const needUs = unknown.length > 0 && isUnlocked();
+  // 美股清單是公開的，不需要解鎖；只有績效曲線要密碼
+  const needUs = unknown.length > 0;
   const usState = useUsDataset0(needUs);
 
   const items: Item[] = useMemo(() => {

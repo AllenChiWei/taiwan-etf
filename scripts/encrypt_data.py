@@ -5,7 +5,6 @@ u"""Encrypt the FinLab-derived data so a public URL alone is not enough to read 
 
 Encrypts, in place next to the originals:
 
-    app/public/data/us_etfs.json      -> us_etfs.json.enc
     app/public/data/series/**/*.json  -> *.enc
 
 and writes the public manifest `app/public/data/secure.json` that the browser needs
@@ -16,10 +15,17 @@ protects nothing — the script is readable and `data/us_etfs.json` is fetchable
 without ever running it. Encrypting the payload is the part that actually works; without
 the password the files are noise.
 
+What is locked and what is not:
+
+    locked    series/**          the actual price history — 1,052 tickers x ~1,900 days.
+                                 This is the paid dataset itself.
+    public    us_etfs.json       ticker/name/exchange come from Nasdaq Trader's public
+                                 file; the five return figures and the dollar volume are
+                                 statistics we computed. A derived aggregate, not the set.
+    public    etfs.json          Taiwan, from public TWSE/TPEx/MoneyDJ pages.
+
 What this is and is not: it stops someone who merely has the URL. It does not stop someone
-who has the password from keeping a copy — nothing can. Taiwan data stays in the clear
-because it comes from public TWSE/TPEx/MoneyDJ pages; only the paid FinLab-derived files
-are locked.
+who has the password from keeping a copy — nothing can.
 
 Salt handling: the salt lives in the committed manifest and is reused as long as the
 password still verifies against the stored check, so a routine rebuild does not log
@@ -122,12 +128,12 @@ def try_existing_salt(password):
 
 
 def walk_targets():
-    u"""要加密的檔案。台股那份不在其中：它來自公開來源。
+    u"""只加密價格序列。us_etfs.json 與 etfs.json 是公開的 —— 見檔頭的表格。
 
     先把清單收集成 list 再回傳：加密迴圈會刪掉明文，而一邊 os.walk 一邊刪檔案
     會讓走訪漏掉大部分檔案（第一次寫成 generator，1055 個只處理了 87 個）。
     """
-    targets = [os.path.join(DATA, 'us_etfs.json')]
+    targets = []
     series = os.path.join(DATA, 'series')
     for dirpath, _dirs, files in os.walk(series):
         for f in files:
@@ -177,7 +183,7 @@ def main():
           % ('重新產生（密碼已變更，既有工作階段全部失效）' if rotated else '沿用（既有工作階段仍有效）',
              TTL_HOURS, format(ITERATIONS, ',')))
     if n == 0:
-        sys.exit('沒有任何檔案被加密 —— 先跑 fetch_us_etfs.py 與 fetch_series.py')
+        sys.exit('沒有任何檔案被加密 —— 先跑 fetch_series.py')
 
 
 if __name__ == '__main__':

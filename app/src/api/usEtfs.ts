@@ -6,12 +6,11 @@
 
 import type { UsEtfDataset } from '../types';
 import { DataError } from './etfs';
-import { decryptJson, isUnlocked } from '../lib/secure';
-
 const BASE = import.meta.env.BASE_URL;
 
-// 加密過的檔案。沒有密碼的人拿到的只是亂數，見 scripts/encrypt_data.py
-export const US_DATA_URL = `${BASE}data/us_etfs.json.enc`;
+// 這份是公開的：代號／名稱／交易所來自 Nasdaq Trader 的公開檔案，五個報酬率與
+// 成交金額是我們自己從價格算出來的衍生統計。真正受保護的是 series/ 裡的價格序列。
+export const US_DATA_URL = `${BASE}data/us_etfs.json`;
 
 function assertDataset(value: unknown): asserts value is UsEtfDataset {
   const d = value as Partial<UsEtfDataset> | null;
@@ -22,8 +21,6 @@ function assertDataset(value: unknown): asserts value is UsEtfDataset {
 }
 
 export async function fetchUsDataset(signal?: AbortSignal): Promise<UsEtfDataset> {
-  if (!isUnlocked()) throw new DataError('尚未解鎖');
-
   let res: Response;
   try {
     res = await fetch(US_DATA_URL, { signal, cache: 'no-cache' });
@@ -35,9 +32,9 @@ export async function fetchUsDataset(signal?: AbortSignal): Promise<UsEtfDataset
 
   let json: unknown;
   try {
-    json = await decryptJson<unknown>(await res.arrayBuffer());
+    json = await res.json();
   } catch (err) {
-    throw new DataError('美股資料解密失敗，請重新輸入密碼', err);
+    throw new DataError('美股資料不是有效的 JSON', err);
   }
   assertDataset(json);
   return json;
