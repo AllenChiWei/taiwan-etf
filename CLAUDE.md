@@ -56,7 +56,9 @@ from 更新日期.
 
 The MoneyDJ URL is always `https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=<code lowercased>.tw`, and the same URL appears twice per row (code cell and 詳情 button).
 
-**Filtering** — `filterRows()` (called from `oninput`/`onchange`) ANDs three predicates: substring match against the first three cells only (代號/名稱/保管銀行 — it used to be the whole `tr.innerText`, which after the return columns arrived made every digit typed match stray percentages), exact match on `data-custodian`, exact match on `data-frequency`. Non-matching rows get `.hidden`; any `<section>` with no visible rows is hidden via `style.display`. `resetFilters()` clears all three controls; a scroll listener toggles `.show` on `#scrollTopBtn`. Section counts are static and deliberately do **not** update while filtering.
+**Filtering** — `filterRows()` (called from `oninput`/`onchange`) ANDs three row predicates: substring match against the first three cells only (代號/名稱/保管銀行 — it used to be the whole `tr.innerText`, which after the return columns arrived made every digit typed match stray percentages), exact match on `data-custodian`, exact match on `data-frequency`. Non-matching rows get `.hidden`. A fourth control, `#sectionFilter`, works at section level instead: a `<section>` is shown only when it still has visible rows **and** matches the selected category. `resetFilters()` clears all four controls; a scroll listener toggles `.show` on `#scrollTopBtn`. Section counts are static and deliberately do **not** update while filtering.
+
+`#sectionFilter`'s options are built at load time by `initSectionFilter()` from the `section[id^="cat-"]` elements themselves, so they never drift from the tables — unlike the custodian and frequency lists, which `build_page.py` writes. It exists because the six tables sort independently: without it, "sort by 殖利率" on a phone means scrolling to the right section first.
 
 **Sorting** — `sortTable(th)` is wired by one delegated click/keydown listener on
 `th.sortable`; each section table sorts independently (desc → asc → original 代號 order),

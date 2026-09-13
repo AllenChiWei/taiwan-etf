@@ -112,10 +112,12 @@
       gap: 7px;
       border-radius: 0;
     }
-    .filter-bar label  { flex: 0 0 auto; font-size: 0.8rem; }
+    /* 固定標籤寬度，三個控制項的左緣才會對齊 —— 最長的是「保管銀行：」，
+       emoji 加 5 個全形字元約 6.5em，取 7em 留點餘裕 */
+    .filter-bar label  { flex: 0 0 7em; font-size: 0.8rem; white-space: nowrap; }
     /* 16px 是 iOS Safari 聚焦時不自動放大頁面的最低字級 */
-    .filter-bar input  { flex: 1 1 60%; min-width: 0; font-size: 16px; padding: 9px 12px; }
-    .filter-bar select { flex: 1 1 60%; min-width: 0; font-size: 0.92rem; padding: 9px 10px; }
+    .filter-bar input  { flex: 1 1 55%; min-width: 0; font-size: 16px; padding: 9px 12px; }
+    .filter-bar select { flex: 1 1 55%; min-width: 0; font-size: 0.92rem; padding: 9px 10px; }
     .reset-btn { flex: 1 1 100%; padding: 10px; font-size: 0.9rem; }
 
     section { border-radius: 8px; margin-bottom: 16px; scroll-margin-top: 12px; }
@@ -273,6 +275,10 @@
       <option value="半年配">半年配</option>
       <option value="年配">年配</option>
       <option value="—">— (無資料)</option>
+    </select>
+    <label>📂 分類：</label>
+    <select id="sectionFilter" onchange="filterRows()">
+      <option value="">全部</option>
     </select>
     <button type="button" onclick="resetFilters()" class="reset-btn">清除</button>
   </div>
@@ -4291,6 +4297,7 @@ function filterRows() {
   const q = document.getElementById('searchBox').value.toLowerCase().trim();
   const cust = document.getElementById('custodianFilter').value;
   const freq = document.getElementById('frequencyFilter').value;
+  const sec = document.getElementById('sectionFilter').value;
   document.querySelectorAll('tbody tr').forEach(tr => {
     // 只比對代號/名稱/保管銀行三欄，避免報酬率數字污染關鍵字搜尋
     const cells = tr.cells;
@@ -4302,20 +4309,38 @@ function filterRows() {
     const matchFreq = freq === '' || trFreq === freq;
     tr.classList.toggle('hidden', !(matchQuery && matchCust && matchFreq));
   });
-  document.querySelectorAll('section').forEach(sec => {
-    const visible = [...sec.querySelectorAll('tbody tr')].some(tr => !tr.classList.contains('hidden'));
-    sec.style.display = visible ? '' : 'none';
+  document.querySelectorAll('section').forEach(s => {
+    const visible = [...s.querySelectorAll('tbody tr')].some(tr => !tr.classList.contains('hidden'));
+    const matchSec = sec === '' || s.id === sec;
+    s.style.display = (visible && matchSec) ? '' : 'none';
   });
 }
 function resetFilters() {
   document.getElementById('searchBox').value = '';
   document.getElementById('custodianFilter').value = '';
   document.getElementById('frequencyFilter').value = '';
+  document.getElementById('sectionFilter').value = '';
   filterRows();
 }
 function scrollToTop() {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+/* 分類選項直接從頁面上的 section 產生，所以重建表格時不必記得同步一份清單。
+   標題取 h2 的第一個文字節點（後面那個 span 是「(87 檔)」的計數）。 */
+(function initSectionFilter() {
+  const sel = document.getElementById('sectionFilter');
+  if (!sel) return;
+  document.querySelectorAll('section[id^="cat-"]').forEach(sec => {
+    const h2 = sec.querySelector('h2');
+    if (!h2) return;
+    const opt = document.createElement('option');
+    opt.value = sec.id;
+    opt.textContent = h2.firstChild.textContent.trim()
+                    + '（' + sec.querySelectorAll('tbody tr').length + '）';
+    sel.appendChild(opt);
+  });
+})();
 window.addEventListener('scroll', () => {
   const btn = document.getElementById('scrollTopBtn');
   if (btn) btn.classList.toggle('show', window.scrollY > 300);

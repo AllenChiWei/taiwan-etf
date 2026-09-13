@@ -69,6 +69,20 @@ function once(eventName) {
   return new Promise(resolve => events.set(eventName, resolve));
 }
 
+// 頁面的主控台訊息與未攔截的例外 —— 空白畫面幾乎都是這裡有東西
+const logs = [];
+function recordEvent(method, params) {
+  if (method === 'Runtime.consoleAPICalled' && /error|warning/.test(params.type)) {
+    logs.push(`[console.${params.type}] ` +
+      params.args.map(a => a.description ?? a.value ?? a.type).join(' '));
+  } else if (method === 'Runtime.exceptionThrown') {
+    const d = params.exceptionDetails;
+    logs.push(`[例外] ${d.exception?.description ?? d.text}`);
+  } else if (method === 'Log.entryAdded' && params.entry.level === 'error') {
+    logs.push(`[${params.entry.source}] ${params.entry.text} ${params.entry.url ?? ''}`);
+  }
+}
+
 async function main() {
   // 等偵錯埠開起來
   let target = null;
@@ -91,14 +105,18 @@ async function main() {
       const { resolve, reject } = pending.get(msg.id);
       pending.delete(msg.id);
       msg.error ? reject(new Error(msg.error.message)) : resolve(msg.result);
-    } else if (msg.method && events.has(msg.method)) {
-      events.get(msg.method)(msg.params);
-      events.delete(msg.method);
+    } else if (msg.method) {
+      recordEvent(msg.method, msg.params);
+      if (events.has(msg.method)) {
+        events.get(msg.method)(msg.params);
+        events.delete(msg.method);
+      }
     }
   };
 
   await send('Page.enable');
   await send('Runtime.enable');
+  await send('Log.enable');
 
   await send('Emulation.setDeviceMetricsOverride', {
     width, height, deviceScaleFactor: dsf, mobile,
@@ -135,6 +153,11 @@ async function main() {
     })()`,
   });
   const r = probe.result.value;
+  if (logs.length) {
+    console.log(`  頁面錯誤 ${logs.length} 則：`);
+    const firstLine = (s) => s.split(String.fromCharCode(10))[0].slice(0, 200);
+    for (const l of logs.slice(0, 8)) console.log('    ' + firstLine(l));
+  }
   console.log(`  視窗 ${r.vw}px  內容 ${r.sw}px  ${r.sw > r.vw + 1 ? '橫向溢出！' : '無橫向溢出'}`);
   for (const o of r.over) console.log(`    溢出: ${o}`);
 
