@@ -11,6 +11,9 @@ __pycache__/
 .venv/
 venv/
 
+# 開發用診斷產物（tools/make_diag.py 產生）
+__diag.html
+
 # 抓取資料的中間產物
 *.tmp
 *.bak

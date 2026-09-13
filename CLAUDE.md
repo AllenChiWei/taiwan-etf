@@ -86,3 +86,30 @@ GitHub Pages，repo `AllenChiWei/taiwan-etf`，來源為 `main` 分支根目錄�
 
 更新完 ETF 資料後 `git add -A && git commit && git push`，Pages 約一分鐘後自動重新部署。
 憑證由 Windows Git Credential Manager 保管，不要把 token 寫進檔案或 `.env`。
+
+## 響應式（手機版面）
+
+A `@media (max-width: 768px)` block at the end of the `<style>` turns each `<tr>` into a
+card: `table`/`tbody` go `display: block`, `tbody tr` becomes a 4-column grid, and the
+cells are positioned with **`nth-child`** because most `<td>`s carry no class.
+
+**This couples the mobile layout to column order.** The nine cells are
+代號 / 名稱 / 保管銀行 / 配息 / 殖利率 / 近3月 / 近6月 / 近1年 / 詳情, and the CSS addresses
+them as `td:nth-child(1)` … `td:nth-child(9)`, with `nth-child(5)`–`nth-child(8)` carrying
+the column name via `::before`. Reordering or inserting a column means updating that block
+too, or the cards silently scramble.
+
+`thead` is **not** hidden on mobile — it becomes a row of sort chips, so `sortTable()` keeps
+working untouched. `.filter-bar` drops its `position: sticky` on phones (four stacked rows
+would eat half the screen). `tbody tr.hidden` still beats the card `display: grid` on
+specificity, so `filterRows()` needs no change.
+
+Don't write literal `<tr>` / `<td>` in CSS comments — `verify_page.py` counts tags with
+`<tr[ >]` and will report the page as unbalanced.
+
+### 驗證手機版
+
+`node tools/shot.mjs <url> <out.png> 390x844 --dsf=2 [--js=probe.js]` screenshots through the
+DevTools Protocol and reports horizontal overflow. Use it rather than Edge's `--screenshot`:
+on Windows the minimum window width is ~492px, so `--window-size=390` renders at 492px and
+crops the canvas to 390px, which looks exactly like a blown-out layout but is not one.
