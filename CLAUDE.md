@@ -77,3 +77,12 @@ Do not hand-edit ETF rows. The `update-etf-list` skill (`.claude/skills/update-e
 - All user-facing text is Traditional Chinese; `<html lang="zh-Hant-TW">`.
 - Keep existing ids, class names, function names, and the overall visual layout — the filter logic and the AGENTS.md contract depend on them.
 - The header line carries a data source and update date (`資料來源：FinLab / MoneyDJ　更新日期：...`); refresh the date when the ETF data changes.
+
+## 部署
+
+GitHub Pages，repo `AllenChiWei/taiwan-etf`，來源為 `main` 分支根目錄，
+線上網址 https://allenchiwei.github.io/taiwan-etf/
+（`index.html` 只是轉址到 `taiwan_etf_list.html`，改動資料時不必動它）。
+
+更新完 ETF 資料後 `git add -A && git commit && git push`，Pages 約一分鐘後自動重新部署。
+憑證由 Windows Git Credential Manager 保管，不要把 token 寫進檔案或 `.env`。
