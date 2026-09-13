@@ -57,9 +57,9 @@ jobs:
 
       - uses: actions/configure-pages@v5
         with:
-          # 若 repo 的 Pages 來源還停在「Deploy from a branch」，這裡會把它切成
-          # 「GitHub Actions」。切換後根網址服務 React 版，舊版單頁維持在
-          # /taiwan_etf_list.html。若這步失敗，到 Settings → Pages 手動改即可。
+          # 只在 Pages 尚未啟用時才會建立站台；它「不會」改變已啟用站台的來源設定。
+          # 來源必須是 Settings → Pages → Source = GitHub Actions，否則內建的
+          # 分支建置會同時執行，而且因為晚幾秒完成而覆蓋掉這裡的產物。
           enablement: true
 
       - uses: actions/upload-pages-artifact@v3
