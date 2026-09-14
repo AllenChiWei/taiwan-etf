@@ -42,6 +42,39 @@ export const US_COLUMNS: Array<{ key: UsNumericKey; label: string }> = [
 
 const RETURN_KEYS: UsNumericKey[] = ['r3', 'r6', 'r12', 'r36', 'r60'];
 
+/** 手機沒有表頭可點，用一排按鈕代替 —— 與台股清單同樣的操作方式。 */
+export function UsSortChips({ sortKey, sortDir, onSort }: {
+  sortKey: UsNumericKey | null;
+  sortDir: 'asc' | 'desc';
+  onSort: (k: UsNumericKey) => void;
+}) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-1.5">
+      <span className="text-xs text-muted">排序</span>
+      {US_COLUMNS.map(c => {
+        const active = sortKey === c.key;
+        return (
+          <button
+            key={c.key}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onSort(c.key)}
+            className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors
+              ${active
+                ? 'border-accent bg-accent text-accent-ink'
+                : 'border-line bg-surface text-accent'}`}
+          >
+            {c.key === 'adv' ? '成交額' : c.label}
+            <span aria-hidden="true" className="ml-0.5">
+              {active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 interface ViewProps {
   rows: UsEtf[];
   sortKey: UsNumericKey | null;

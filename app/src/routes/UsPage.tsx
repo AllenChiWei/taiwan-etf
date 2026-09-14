@@ -4,7 +4,7 @@ import { useUsDataset } from '../hooks/useUsDataset';
 import { useIsMobile } from '../hooks/useMediaQuery';
 import { toNumber } from '../lib/filters';
 import { EmptyState } from '../components/EmptyState';
-import { UsEtfTable, UsEtfCards, US_COLUMNS, formatAdv } from '../components/UsEtfViews';
+import { UsEtfTable, UsEtfCards, UsSortChips, US_COLUMNS, formatAdv } from '../components/UsEtfViews';
 import type { UsEtf, UsNumericKey } from '../types';
 
 type Dir = 'asc' | 'desc';
@@ -83,9 +83,13 @@ export function UsPage() {
             價格資料截至 {meta!.asof}。
           </p>
           <p className="mt-1">
-            報酬率為<strong className="text-ink">總報酬</strong>（股息再投資）、累積非年化。
-            這張表<strong className="text-ink">沒有殖利率欄位</strong> —— 資料來源對 ETF 的配息資料不完整，
-            與其放一個算錯的數字，不如不放。
+            報酬率為<strong className="text-up">價格報酬，不含配息</strong>、累積非年化。
+            我們能合法取得的來源沒有提供含息的總報酬，所以這裡照實標示。
+          </p>
+          <p className="mt-1">
+            這對高配息的標的影響很大：QYLD 近5年的<em>價格</em>跌 12.66%，
+            但把每年約 12% 的配息計入後，總報酬其實是正的（MoneyDJ 記為 +47.61%）。
+            看這類 ETF 時請務必另外查總報酬。指數型 ETF 配息少，兩者差距有限。
           </p>
         </div>
       </div>
@@ -162,6 +166,7 @@ export function UsPage() {
             <p className="mb-3.5 text-[13px] text-muted">
               顯示 <strong className="tabular font-mono text-ink">{rows.length}</strong> 檔
             </p>
+            {isMobile && <UsSortChips sortKey={sortKey} sortDir={sortDir} onSort={cycleSort} />}
             {isMobile
               ? <UsEtfCards rows={rows} isFav={favorites.has} onToggleFav={favorites.toggle} />
               : <UsEtfTable rows={rows} sortKey={sortKey} sortDir={sortDir} onSort={cycleSort}

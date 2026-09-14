@@ -103,6 +103,8 @@ export function FavoritesPage() {
         勾選要比較的 ETF（最多 {MAX_COMPARE} 檔）。
         起點會自動取<strong className="text-ink">最晚上市那一檔的上市日</strong>，
         所有曲線在該點都歸零成 100，之後的差距才是真正的績效差。
+        曲線畫的是<strong className="text-up">價格走勢，不含配息</strong> ——
+        比較高配息標的（例如 QYLD、JEPI）時要記得這點。
       </p>
 
       <div className="mb-3 flex flex-wrap gap-1.5">

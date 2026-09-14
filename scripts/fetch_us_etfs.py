@@ -7,16 +7,21 @@ Why two sources: FinLab's `us_fund_price` covers ~10,000 funds but mixes ETFs wi
 funds (the 5-letter tickers ending in X). Nasdaq Trader publishes an official file with an
 explicit ETF flag but no prices. The intersection is the universe.
 
-Returns come from `us_fund_price:adj_pct_change` compounded, NOT from the ratio of two
-`adj_close` values. Those two agree for most funds but not all: JEPI's adj_close implies a
--1.95% one-year return while its daily adjusted returns compound to +3.83%. JEPI is a
-covered-call income fund yielding ~7-8%, so the negative figure is wrong — its adj_close
-series is missing distribution adjustments. The daily series is the one to trust.
+**These are PRICE returns, not total returns.** FinLab's `us_fund_price` is a price
+series: at the start of the history adj_close equals close exactly for every fund, and at
+the end the ratio is only 1.020 for QYLD — after ten years of ~12% annual distributions a
+dividend-adjusted series would be near 3.1. The adjustment covers splits, not payouts.
 
-There is deliberately **no 殖利率 column**. FinLab's `us_ratios:dividend_yield` covers
-operating companies only (AAPL yes, SPY/JEPI/SCHD absent), and deriving yield from
-total-return minus price-return gives 0.30% for SPY (actually ~1.1%) and a negative number
-for JEPI. A wrong number is worse than an absent one.
+The gap that causes is large. MoneyDJ (which states its figures include distributions)
+puts QYLD's five-year return at +47.61%; the price-only figure here is -12.66%, a 60
+percentage point difference. Index funds barely differ, high-yield funds differ hugely.
+
+Computing true total return needs a distribution history, and no source we can use has
+full coverage: FinLab has none for funds, and Nasdaq's dividend endpoint returns 152 rows
+for QYLD but zero for SPY, JEPI and SCHD (verified repeatedly — not rate limiting). So the
+column is labelled as price return in the UI rather than quietly being wrong.
+
+There is likewise no 殖利率 column: the same missing distribution data.
 """
 import io
 import json
@@ -142,8 +147,9 @@ def main():
             'liquidMinAdv': LIQUID_MIN_ADV,
             'source': 'FinLab / Nasdaq Trader',
             'generated_by': 'fetch_us_etfs.py',
-            # 前端要據此說明為什麼沒有殖利率
-            'note': 'returns are total return (dividends reinvested), cumulative not annualised',
+            # 前端據此標示欄位意義。改成含息的總報酬時，這裡也要一起改。
+            'note': 'PRICE returns, excluding distributions; cumulative, not annualised',
+            'returnBasis': 'price',
         },
         'etfs': rows,
     }
