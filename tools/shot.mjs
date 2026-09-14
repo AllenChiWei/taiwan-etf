@@ -13,8 +13,8 @@
  * Node 22+ 內建 WebSocket，所以不需要任何 npm 套件。
  */
 
-import { spawn } from 'node:child_process';
-import { writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { writeFileSync, readFileSync, existsSync, rmSync, mkdirSync } from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 
 const EDGE_CANDIDATES = [
@@ -40,7 +40,14 @@ if (!browser) {
 }
 
 const PORT = 9222 + (process.pid % 500);
-const profile = `${process.env.TEMP || '/tmp'}/shot-profile-${process.pid}`;
+
+// 設定檔放在專案底下（.cache/ 已 gitignore），不寫進系統暫存區。
+// 這支工具曾經在使用者的系統碟留下 69 個設定檔、共 22 GB，把 C 碟塞滿 ——
+// 每個 Edge 設定檔約 320 MB，而它原本從不清理。
+const profileRoot = new URL('../.cache/shot-profiles/', import.meta.url).pathname
+  .replace(/^\/([A-Za-z]:)/, '$1');
+const profile = `${profileRoot}${process.pid}`;
+mkdirSync(profile, { recursive: true });
 
 const proc = spawn(browser, [
   '--headless=new', '--disable-gpu', '--no-sandbox', '--no-first-run',
@@ -58,9 +65,10 @@ function send(method, params = {}) {
   ws.send(JSON.stringify({ id, method, params }));
   return new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
+    // 互動測試（--js）常常要等動態載入的分頁與 PBKDF2，30 秒不夠
     setTimeout(() => {
       if (pending.delete(id)) reject(new Error(`${method} 逾時`));
-    }, 30000);
+    }, 150000);
   });
 }
 
@@ -184,6 +192,40 @@ async function main() {
   console.log(`  已存 ${out}`);
 }
 
+/**
+ * 收尾：關掉整棵瀏覽器行程樹，再刪掉這次的設定檔。
+ *
+ * proc.kill() 只殺得掉啟動的那一個行程。Edge 會另外開數十個子行程（算繪、GPU、
+ * 工具程序），那些孤兒行程會一直握著設定檔不放，於是檔案刪不掉、記憶體也收不回。
+ * 這支工具曾經因此累積出 542 個殘留行程與 22 GB 設定檔，讓整台機器慢到
+ * tsc 會卡住十幾分鐘、Python 行程被系統中止。Windows 必須用 taskkill /T。
+ */
+async function cleanup() {
+  try { ws?.close(); } catch { /* 已關閉 */ }
+  try {
+    if (process.platform === 'win32') {
+      spawnSync('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+      // taskkill /T 只走得到父子關係，Edge 有些行程是另外派生的，抓不到。
+      // 補一道以「命令列含我們這次的設定檔路徑」為條件的清除 —— 這個條件只會命中
+      // 本次啟動的行程，不會誤殺使用者自己開著的瀏覽器視窗。
+      spawnSync('powershell', ['-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process -Filter "Name='msedge.exe'" | ` +
+        `Where-Object { $_.CommandLine -like '*${profile.replace(/\\/g, '/')}*' } | ` +
+        `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`,
+      ], { stdio: 'ignore' });
+    } else {
+      proc.kill('SIGKILL');
+    }
+  } catch { /* 行程可能已經結束 */ }
+
+  // 等檔案控制代碼釋放後再刪，失敗就重試幾次
+  await sleep(400);
+  for (let i = 0; i < 3; i++) {
+    try { rmSync(profile, { recursive: true, force: true }); break; }
+    catch { await sleep(600); }
+  }
+}
+
 main()
   .catch(err => { console.error('截圖失敗:', err.message); process.exitCode = 1; })
-  .finally(() => { try { ws?.close(); } catch {} proc.kill(); });
+  .finally(cleanup);

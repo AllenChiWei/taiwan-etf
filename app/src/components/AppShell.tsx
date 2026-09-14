@@ -1,6 +1,7 @@
 /* 根路由元件：載入資料、畫頁首／頁尾，把 <Outlet /> 交給各分頁。
    資料在這一層載入，分頁切換才不會重抓。 */
 
+import { Suspense } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useDataset } from '../hooks/useDataset';
 import { useFavorites } from '../hooks/useFavorites';
@@ -91,7 +92,10 @@ export function AppShell() {
 
         {state.status === 'ready' && (
           <AppProvider value={{ data: state.data, favorites }}>
-            <Outlet />
+            {/* 分頁是動態載入的，切換時會有一瞬間的空白 */}
+            <Suspense fallback={<p className="py-16 text-center text-muted">載入中…</p>}>
+              <Outlet />
+            </Suspense>
           </AppProvider>
         )}
       </main>

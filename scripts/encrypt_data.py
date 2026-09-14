@@ -33,6 +33,7 @@ everyone out. Change SITE_PASSWORD and the salt is regenerated, which invalidate
 existing session — that is the intended behaviour when you rotate the password.
 """
 import base64
+import gzip
 import io
 import json
 import os
@@ -90,6 +91,14 @@ def derive(password, salt):
 def encrypt(key, plaintext):
     iv = os.urandom(12)
     return iv + AESGCM(key).encrypt(iv, plaintext, None)
+
+
+def compress(raw):
+    u"""密文是亂數，HTTP 的 gzip 壓不動它，所以得在加密前先壓。
+
+    曲線檔是數字陣列，壓縮率很高（約 3 倍）。瀏覽器端用 DecompressionStream
+    解回來。"""
+    return gzip.compress(raw, 9)
 
 
 def configured_salt():
@@ -162,6 +171,8 @@ def main():
         'salt': b64(salt),
         'check': b64(encrypt(key, CHECK_PLAINTEXT)),
         'ttlHours': TTL_HOURS,
+        # 前端據此決定解密後要不要先解壓縮
+        'compressed': True,
     }, io.open(MANIFEST, 'w', encoding='utf-8'), indent=2)
 
     n = 0
@@ -171,7 +182,7 @@ def main():
             continue
         raw = io.open(path, 'rb').read()
         out = path + '.enc'
-        io.open(out, 'wb').write(encrypt(key, raw))
+        io.open(out, 'wb').write(encrypt(key, compress(raw)))
         os.remove(path)                           # 明文不留在建置產物裡
         total_in += len(raw)
         total_out += os.path.getsize(out)

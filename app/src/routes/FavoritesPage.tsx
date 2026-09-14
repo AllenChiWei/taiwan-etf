@@ -70,8 +70,6 @@ export function FavoritesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items.length]);
 
-  const chart = useChartData(items, selected, period);
-
   if (favorites.count === 0) {
     return (
       <div className="pt-4">
@@ -91,8 +89,9 @@ export function FavoritesPage() {
       : prev.length >= MAX_COMPARE ? prev : [...prev, code]);
   };
 
+  // 勾選順序決定顏色，與圖表用的順序一致
   const colorOf = (code: string) => {
-    const i = chart.result?.series.findIndex(s => s.code === code) ?? -1;
+    const i = items.filter(it => selected.includes(it.code)).findIndex(it => it.code === code);
     return i >= 0 ? lineColor(i) : undefined;
   };
 
@@ -121,25 +120,7 @@ export function FavoritesPage() {
       </div>
 
       <PasswordGate what="績效曲線">
-      {chart.loading && (
-        <div className="grid h-[200px] place-items-center rounded-xl border border-line bg-surface text-sm text-muted">
-          載入曲線資料中…
-        </div>
-      )}
-      {!chart.loading && chart.error && (
-        <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
-          {chart.error}
-        </div>
-      )}
-      {!chart.loading && !chart.error && chart.result && (
-        <>
-          <PerformanceChart result={chart.result} />
-          <p className="mt-1.5 text-[12px] text-faint">
-            起點 {chart.result.startDate}　·　共同期間 {chart.result.dates.length} 個交易日
-            {chart.result.dropped.length > 0 && `　·　${chart.result.dropped.join('、')} 缺曲線資料`}
-          </p>
-        </>
-      )}
+        <ChartPanel items={items} selected={selected} period={period} />
       </PasswordGate>
 
       <h2 className="mt-6 mb-2 text-base font-bold text-ink">
@@ -185,6 +166,42 @@ export function FavoritesPage() {
         </p>
       )}
     </div>
+  );
+}
+
+/**
+ * 圖表區。刻意獨立成一個元件並放在 PasswordGate 之內：
+ * 曲線檔是加密的，未解鎖時抓取一定失敗，而 effect 的依賴不會因為「解鎖了」而改變，
+ * 所以放在閘外就再也不會重試。掛載時機等於解鎖時機，問題自然消失。
+ */
+function ChartPanel({ items, selected, period }:
+  { items: Item[]; selected: string[]; period: string }) {
+  const chart = useChartData(items, selected, period);
+
+  if (chart.loading) {
+    return (
+      <div className="grid h-[200px] place-items-center rounded-xl border border-line bg-surface text-sm text-muted">
+        載入曲線資料中…
+      </div>
+    );
+  }
+  if (chart.error) {
+    return (
+      <div className="rounded-xl border border-line bg-surface px-4 py-6 text-center text-sm text-muted">
+        {chart.error}
+      </div>
+    );
+  }
+  if (!chart.result) return null;
+
+  return (
+    <>
+      <PerformanceChart result={chart.result} />
+      <p className="mt-1.5 text-[12px] text-faint">
+        起點 {chart.result.startDate}　·　共同期間 {chart.result.dates.length} 個交易日
+        {chart.result.dropped.length > 0 && `　·　${chart.result.dropped.join('、')} 缺曲線資料`}
+      </p>
+    </>
   );
 }
 

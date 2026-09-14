@@ -19,6 +19,8 @@ export interface SecureManifest {
   salt: string;
   check: string;
   ttlHours: number;
+  /** 內容在加密前先 gzip 過 —— 密文是亂數，HTTP 壓縮對它無效 */
+  compressed?: boolean;
 }
 
 interface StoredSession {
@@ -47,6 +49,7 @@ export function loadManifest(baseUrl: string): Promise<SecureManifest> {
         if (!r.ok) throw new Error(`取得解鎖設定失敗（HTTP ${r.status}）`);
         return r.json() as Promise<SecureManifest>;
       })
+      .then(m => { payloadCompressed = Boolean(m.compressed); return m; })
       .catch(err => { manifestPromise = null; throw err; });
   }
   return manifestPromise;
@@ -124,13 +127,24 @@ export function lock(): void {
 
 export const isUnlocked = () => activeKey !== null;
 
-/** 解密一個 .enc 檔（格式為 IV(12) || 密文）。 */
+let payloadCompressed = false;
+
+/** 解密一個 .enc 檔（格式為 IV(12) || 密文）。內容若壓縮過會一併解開。 */
 export async function decryptJson<T>(buf: ArrayBuffer): Promise<T> {
   if (!activeKey) throw new Error('尚未解鎖');
   const bytes = new Uint8Array(buf);
   const plain = await crypto.subtle.decrypt(
     { name: 'AES-GCM', iv: bytes.slice(0, 12) }, activeKey, bytes.slice(12));
-  return JSON.parse(new TextDecoder().decode(plain)) as T;
+
+  if (!payloadCompressed) return JSON.parse(new TextDecoder().decode(plain)) as T;
+
+  // DecompressionStream 在 Chrome 80+/Safari 16.4+/Firefox 113+ 都有
+  if (typeof DecompressionStream === 'undefined') {
+    throw new Error('這個瀏覽器不支援 gzip 解壓縮，請更新瀏覽器');
+  }
+  const stream = new Blob([plain]).stream().pipeThrough(new DecompressionStream('gzip'));
+  const text = await new Response(stream).text();
+  return JSON.parse(text) as T;
 }
 
 /** 工作階段還剩多久（毫秒）。未解鎖回傳 0。 */

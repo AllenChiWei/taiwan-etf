@@ -33,3 +33,6 @@ taiwan_etf_list.html.bak
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# 開發工具的暫存（瀏覽器設定檔等），放專案底下而非系統碟
+.cache/

@@ -13,11 +13,19 @@ import {
   createRouter,
 } from '@tanstack/react-router';
 
+import { lazy } from 'react';
+
 import { AppShell } from './components/AppShell';
 import { ListPage } from './routes/ListPage';
-import { FavoritesPage } from './routes/FavoritesPage';
-import { AboutPage } from './routes/AboutPage';
-import { UsPage } from './routes/UsPage';
+
+// 台股清單是首頁，跟著主程式一起載。其餘分頁按需求載入 ——
+// 美股頁帶著虛擬捲動、收藏頁帶著圖表與 WebCrypto 解密，
+// 只看台股的訪客沒有理由為那些付下載成本。
+// React.lazy 需要 default export，這些是具名匯出，所以在這裡轉一層。
+const UsPage = lazy(() => import('./routes/UsPage').then(m => ({ default: m.UsPage })));
+const FavoritesPage = lazy(() =>
+  import('./routes/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
+const AboutPage = lazy(() => import('./routes/AboutPage').then(m => ({ default: m.AboutPage })));
 
 export interface ListSearch {
   q: string;
