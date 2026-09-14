@@ -137,6 +137,11 @@ def parse_yield(v):
 # We take 市價 (market price) - that is the return someone holding the ETF actually
 # realised. 淨值 (NAV) sits in the row right after if it is ever wanted instead.
 RETURN_PERIODS = [u'三個月', u'六個月', u'一年', u'三年', u'五年']
+
+# 對外一律用這組鍵。台股報酬率自 2026-09 起改由 FinLab 計算（見 fetch_tw_returns.py），
+# MoneyDJ 的 Basic0008 不再抓取 —— 那讓對 MoneyDJ 的請求量少了一半。
+RETURN_KEYS = ['r3', 'r6', 'r12', 'r36', 'r60']
+PERIOD_TO_KEY = dict(zip(RETURN_PERIODS, RETURN_KEYS))
 NA = 'N/A'
 
 
@@ -209,15 +214,34 @@ def section(code, name, target, area):
     return 'cat-domestic' if area == u'台灣' else 'cat-foreign'
 
 
+def load_tw_returns(work):
+    u"""<work>/tw_returns.json -> ({code: {r3: '8.52', …}}, asof) ；沒有就回 ({}, '')。
+
+    fetch_tw_returns.py 產生這個檔。有它就不必解析 MoneyDJ 的 Basic0008，
+    也就不必去抓那 359 頁。"""
+    import json
+    path = os.path.join(work, 'tw_returns.json')
+    if not os.path.exists(path):
+        return {}, ''
+    try:
+        doc = json.load(open(path, 'rb'))
+    except ValueError:
+        return {}, ''
+    return doc.get('returns') or {}, doc.get('asof') or ''
+
+
 def load_rows(work, universe, current_sections):
     """universe: [(code, name, market)]; current_sections: {code: section_id}.
-    -> rows, missing_basic, missing_returns, asof
+    -> rows, missing_basic, missing_returns, ret_asof, yld_asof
 
-    Each row: {code, name, cust, freq, sec, ret: {三個月, 六個月, 一年}}.
-    A missing/unparsable returns page yields N/A cells rather than blocking the
-    build - basic data is the page's backbone, returns are an extra."""
+    Each row: {code, name, cust, freq, yield, sec, ret: {r3, r6, r12, r36, r60}}.
+
+    報酬率優先採用 <work>/tw_returns.json（FinLab 算的總報酬）；沒有那個檔才退回
+    解析 MoneyDJ 的 returns/*.html。缺報酬率只會讓那幾格顯示 N/A，不會擋下建置 ——
+    保管銀行與配息才是這張表的骨幹。"""
     rows, missing, no_ret, asof = [], [], [], collections.Counter()
     yld_asof = collections.Counter()
+    fin_returns, fin_asof = load_tw_returns(work)
     for code, name, _market in universe:
         path = os.path.join(work, 'pages', code + '.html')
         d = parse_page(path) if os.path.exists(path) else {}
@@ -227,12 +251,19 @@ def load_rows(work, universe, current_sections):
         if ya:
             yld_asof[ya] += 1
 
-        rpath = os.path.join(work, 'returns', code + '.html')
-        r = parse_returns(rpath) if os.path.exists(rpath) else {}
-        if not r:
-            no_ret.append(code)
-        elif r.get('asof'):
-            asof[r['asof']] += 1
+        if fin_returns:
+            fr = fin_returns.get(code) or {}
+            ret = dict((k, fr.get(k) or NA) for k in RETURN_KEYS)
+            if all(v == NA for v in ret.values()):
+                no_ret.append(code)
+        else:
+            rpath = os.path.join(work, 'returns', code + '.html')
+            r = parse_returns(rpath) if os.path.exists(rpath) else {}
+            if not r:
+                no_ret.append(code)
+            elif r.get('asof'):
+                asof[r['asof']] += 1
+            ret = dict((PERIOD_TO_KEY[p], r.get(p) or NA) for p in RETURN_PERIODS)
 
         rows.append({
             'code': code,
@@ -240,9 +271,10 @@ def load_rows(work, universe, current_sections):
             'cust': norm_cust(d.get(u'保管機構', '')),
             'freq': norm_freq(d.get(u'配息頻率', '')),
             'yield': yld,
-            'ret': dict((p, r.get(p) or NA) for p in RETURN_PERIODS),
+            'ret': ret,
             'sec': current_sections.get(code) or section(
                 code, name, d.get(u'投資標的', ''), d.get(u'投資區域', '')),
         })
     top = lambda c: (c.most_common(1)[0][0] if c else '')
-    return rows, missing, no_ret, top(asof), top(yld_asof)
+    # FinLab 的 asof 是完整日期（2026-09-11），MoneyDJ 的是 MM/DD；前端只顯示字串
+    return rows, missing, no_ret, (fin_asof or top(asof)), top(yld_asof)

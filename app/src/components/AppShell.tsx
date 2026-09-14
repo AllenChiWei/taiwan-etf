@@ -98,7 +98,7 @@ export function AppShell() {
 
       <footer className="mx-auto w-full max-w-6xl border-t border-line px-3 py-6 text-center
                          text-[12.5px] text-faint sm:px-4">
-        <p>資料來源：TWSE／TPEx 公開資料 ＋ MoneyDJ。本頁僅供參考，不構成投資建議。</p>
+        <p>資料來源：TWSE／TPEx 公開資料、FinLab、MoneyDJ。本頁僅供參考，不構成投資建議。</p>
         {meta && <p className="mt-1">共 {meta.total} 檔　·　更新於 {meta.updated}</p>}
       </footer>
 

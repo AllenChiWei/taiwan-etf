@@ -4,9 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A searchable Traditional-Chinese directory of Taiwan ETFs (359 as of the last run), published
-at <https://allenchiwei.github.io/taiwan-etf/>. Data is scraped from TWSE/TPEx open data plus
-MoneyDJ on a weekday cron and committed back to the repo.
+A searchable Traditional-Chinese directory of Taiwan and US ETFs, published at
+<https://allenchiwei.github.io/taiwan-etf/>. Refreshed on a weekday cron and committed back.
+
+Where each field comes from, because it is not one source:
+
+| Field | Source |
+| --- | --- |
+| Taiwan ETF list | TWSE + TPEx open data (+ a FinMind sweep for stragglers) |
+| Taiwan returns (3m/6m/1y/3y/5y) | computed from FinLab `etl:adj_close` — **total return** |
+| Taiwan 保管銀行 / 配息頻率 / 殖利率 | MoneyDJ `Basic0004` — no FinLab equivalent exists |
+| US ETF list | Nasdaq Trader's public symbol file ∩ FinLab price matrix |
+| US returns | computed from FinLab `us_fund_price` — **price return only**, see below |
+
+MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
+request count against them (718 pages → 359). Their robots.txt says data mining without
+consent is not allowed, so taking less matters.
 
 ```
 app/                       React 19 + TypeScript + Vite + Tailwind v4 — the site

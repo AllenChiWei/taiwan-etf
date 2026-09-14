@@ -11,7 +11,7 @@ never overwritten by the rule.
 """
 import io, os, re, sys, datetime, collections
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from etfdata import (DASH, FREQ_CLASS, FREQ_ORDER, SECTIONS, RETURN_PERIODS,
+from etfdata import (DASH, FREQ_CLASS, FREQ_ORDER, SECTIONS, RETURN_KEYS,
                      load_rows, return_class)
 
 WORK = sys.argv[1] if len(sys.argv) > 1 else '.'
@@ -93,8 +93,8 @@ def main():
                      % ('yld' if yv != 'N/A' else 'ret-na', esc(yv))
                      + u''.join(
                          u'          <td class="num %s">%s</td>\n'
-                         % (return_class(r['ret'][p]), esc(r['ret'][p]))
-                         for p in RETURN_PERIODS))
+                         % (return_class(r['ret'][k]), esc(r['ret'][k]))
+                         for k in RETURN_KEYS))
             out.append(
                 u'        <tr data-custodian="%s" data-frequency="%s">\n'
                 u'          <td class="code"><a href="%s" target="_blank">%s</a></td>\n'
@@ -174,7 +174,7 @@ def main():
     print('custodian options=%d  returns as-of=%s  yield as-of=%s'
           % (len(custs), ret_asof or 'none', yld_asof or 'none'))
     print('N/A cells: returns=%d  yield=%d'
-          % (sum(1 for r in rows for p in RETURN_PERIODS if r['ret'][p] == 'N/A'),
+          % (sum(1 for r in rows for k in RETURN_KEYS if r['ret'][k] == 'N/A'),
              sum(1 for r in rows if r['yield'] == 'N/A')))
 
 

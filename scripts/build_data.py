@@ -13,16 +13,14 @@ codes that are new get classified by the rule in etfdata.section().
 import io, os, re, sys, json, datetime, collections
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from etfdata import (DASH, FREQ_CLASS, FREQ_ORDER, SECTIONS, RETURN_PERIODS,
+from etfdata import (DASH, FREQ_CLASS, FREQ_ORDER, SECTIONS, RETURN_KEYS,
                      load_rows)
 
 WORK = sys.argv[1] if len(sys.argv) > 1 else '.'
 OUT = (sys.argv[2] if len(sys.argv) > 2
        else os.path.join('app', 'public', 'data', 'etfs.json'))
 
-# MoneyDJ 的期間欄位 -> JSON 欄位名。順序由 etfdata.RETURN_PERIODS 決定。
-PERIOD_KEY = {u'三個月': 'r3', u'六個月': 'r6', u'一年': 'r12',
-              u'三年': 'r36', u'五年': 'r60'}
+# 報酬率的鍵已由 etfdata 統一（r3/r6/r12/r36/r60），這裡直接沿用。
 
 
 def previous_sections(path):
@@ -80,8 +78,8 @@ def main():
             'yield': r['yield'],
             'sec': r['sec'],
         }
-        for period, key in PERIOD_KEY.items():
-            e[key] = r['ret'].get(period) or 'N/A'
+        for key in RETURN_KEYS:
+            e[key] = r['ret'].get(key) or 'N/A'
         etfs.append(e)
 
     doc = {
@@ -89,7 +87,7 @@ def main():
             'updated': datetime.date.today().isoformat(),
             'snapshot': ret_asof or yld_asof or '',
             'total': len(etfs),
-            'source': u'TWSE / TPEx / MoneyDJ',
+            'source': u'TWSE / TPEx / FinLab / MoneyDJ',
             'generated_by': 'build_data.py',
         },
         'sections': [{'id': s, 'title': t, 'count': counts.get(s, 0)} for s, t in SECTIONS],
@@ -110,7 +108,7 @@ def main():
     print('custodians=%d  returns as-of=%s  yield as-of=%s'
           % (len(doc['custodians']), ret_asof or 'none', yld_asof or 'none'))
     print('N/A cells: returns=%d  yield=%d'
-          % (sum(1 for e in etfs for k in PERIOD_KEY.values() if e[k] == 'N/A'),
+          % (sum(1 for e in etfs for k in RETURN_KEYS if e[k] == 'N/A'),
              sum(1 for e in etfs if e['yield'] == 'N/A')))
 
 

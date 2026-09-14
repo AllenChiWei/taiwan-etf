@@ -27,9 +27,9 @@ WORK=<scratchpad>/etf            # anywhere outside the project
 cp app/public/data/etfs.json "$WORK/previous.json"   # for the regression diff
 cp taiwan_etf_list.html      "$WORK/previous.html"
 
-python scripts/fetch_universe.py "$WORK"                              # ~1 min -> universe.tsv
-python scripts/scrape_moneydj.py "$WORK"                              # ~8 min -> pages/*.html
-python scripts/scrape_returns.py "$WORK"                              # ~8 min -> returns/*.html
+python scripts/fetch_universe.py  "$WORK"                             # ~1 min -> universe.tsv
+python scripts/scrape_moneydj.py  "$WORK"                             # ~8 min -> pages/*.html
+python scripts/fetch_tw_returns.py "$WORK"                            # ~10 s  -> tw_returns.json
 python scripts/build_data.py     "$WORK" app/public/data/etfs.json    # React 版資料
 python scripts/build_page.py     "$WORK" taiwan_etf_list.html         # 舊版單頁
 python scripts/verify_data.py    app/public/data/etfs.json "$WORK/previous.json"
@@ -76,7 +76,21 @@ only checked source carrying 保管機構, 配息頻率 and 殖利率 together. 
 TPEx codes alike.
 ~1 req/sec; the script retries 3× and fails loudly rather than writing a partial dataset.
 
-**2b. `scrape_returns.py` → `returns/<CODE>.html`**
+**2b. `fetch_tw_returns.py` → `tw_returns.json`** （取代了對 MoneyDJ 的第二輪抓取）
+
+報酬率改由 FinLab 的 `etl:adj_close` 計算。那是真正含息的還原股價序列 ——
+0056 的還原/原始比值已成長到 3.03，正是配息再投資的效果。期間用日曆月而非
+交易日數，和 MoneyDJ 的定義一致：實測 0050／0056／00878／00679B 的近3月、
+近6月、近1年三個期間與 MoneyDJ 完全相同，近3年差 0.07 以內。
+
+這樣做的主因是**把對 MoneyDJ 的請求量砍半**（718 頁 -> 359 頁）。
+保管銀行、配息頻率、殖利率在 FinLab 沒有對應資料，仍然只能從 Basic0004 來。
+
+`scrape_returns.py` 保留作為 FinLab 不可用時的退路，但已不在每日流程中。
+
+<details><summary>舊的 MoneyDJ 報酬率抓取（備援）</summary>
+
+**`scrape_returns.py` → `returns/<CODE>.html`**
 
 `Basic0008.xdjhtm` (報酬分析). One label row (一日 / 一週 / 一個月 / 三個月 / 六個月 / 一年 /
 三年 / 五年 / 十年 / 成立日) then a 市價 row and a 淨值 row. The page uses **市價** — the
@@ -84,8 +98,8 @@ return an actual holder realised. `parse_returns` in `etfdata.py` locates the co
 label rather than by position, so MoneyDJ adding a period does not silently shift the data.
 
 `N/A` for a fund younger than the period is real data and is rendered as-is, not blanked.
-A missing or unparsable returns page degrades to N/A cells and a warning — it does not
-block the build, because the basic table is the page's backbone and returns are an extra.
+
+</details>
 
 **3. `build_data.py` / `build_page.py`** — parse the pages, normalise, classify.
 

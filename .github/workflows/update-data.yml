@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       skip_returns:
-        description: '略過報酬率抓取（只更新名單／保管銀行／配息，快很多）'
+        description: '略過報酬率計算（只更新名單／保管銀行／配息）'
         type: boolean
         default: false
 
@@ -70,9 +70,11 @@ jobs:
       - name: 抓取基本資料（保管銀行、配息、殖利率）
         run: python scripts/scrape_moneydj.py "$WORK"
 
-      - name: 抓取報酬率
-        if: ${{ github.event.inputs.skip_returns != 'true' }}
-        run: python scripts/scrape_returns.py "$WORK"
+      # 報酬率改由 FinLab 計算。MoneyDJ 那邊只剩 Basic0004（保管銀行／配息／殖利率），
+      # 對他們的請求量因此少了一半。
+      - name: 計算報酬率（FinLab）
+        if: ${{ env.FINLAB_API_TOKEN != '' && github.event.inputs.skip_returns != 'true' }}
+        run: python scripts/fetch_tw_returns.py "$WORK"
 
       - name: 產生 React 版資料
         run: python scripts/build_data.py "$WORK" app/public/data/etfs.json

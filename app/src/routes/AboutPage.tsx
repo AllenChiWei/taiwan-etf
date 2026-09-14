@@ -6,7 +6,6 @@ export function AboutPage() {
   const h2 = 'mt-6 mb-2 text-[17px] font-bold text-ink first:mt-0';
   const p = 'text-[14.5px] text-muted';
   const ul = 'my-2 list-disc space-y-1.5 pl-5 text-[14.5px] text-muted';
-  const code = 'rounded bg-sunken px-1.5 py-0.5 font-mono text-[13px]';
 
   return (
     <div className="max-w-[70ch] pt-6 pb-4">
@@ -19,8 +18,11 @@ export function AboutPage() {
       <h2 className={h2}>資料來源與更新</h2>
       <ul className={ul}>
         <li>ETF 清單：證交所 TWSE 與櫃買中心 TPEx 公開資料</li>
-        <li>保管銀行、配息頻率、殖利率：MoneyDJ <code className={code}>Basic0004</code></li>
-        <li>報酬率：MoneyDJ <code className={code}>Basic0008</code>，取<strong className="text-ink">市價</strong>報酬（非淨值）</li>
+        <li>
+          報酬率：由 FinLab 的還原股價計算，是<strong className="text-ink">含息的總報酬</strong>、
+          累積非年化
+        </li>
+        <li>保管銀行、配息頻率、殖利率：MoneyDJ</li>
         <li>
           資料日期：<strong className="text-ink">{meta.updated}</strong>
           {meta.snapshot && <>　·　報酬率／殖利率截至 {meta.snapshot}</>}
@@ -41,7 +43,7 @@ export function AboutPage() {
           <span className="mx-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold pill-none">—</span>
           的是前者。
         </li>
-        <li><strong className="text-ink">報酬率是累積報酬</strong>，不是年化。</li>
+        <li><strong className="text-ink">報酬率是累積報酬</strong>，不是年化，且已含配息再投資。</li>
       </ul>
 
       <h2 className={h2}>收藏功能</h2>
