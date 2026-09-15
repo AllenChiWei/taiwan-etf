@@ -40,8 +40,10 @@ export interface Section {
 export interface EtfMeta {
   /** 資料產生日期 YYYY-MM-DD */
   updated: string;
-  /** 報酬率／殖利率的市場快照日期 MM/DD，可能是空字串 */
+  /** 報酬率的資料日期（FinLab 的最後交易日，YYYY-MM-DD），可能是空字串 */
   snapshot: string;
+  /** 殖利率的報價日期（MoneyDJ，MM/DD），可能是空字串 */
+  yieldAsof?: string;
   total: number;
   source: string;
   generated_by?: string;

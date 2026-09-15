@@ -25,7 +25,8 @@ export function AboutPage() {
         <li>保管銀行、配息頻率、殖利率：MoneyDJ</li>
         <li>
           資料日期：<strong className="text-ink">{meta.updated}</strong>
-          {meta.snapshot && <>　·　報酬率／殖利率截至 {meta.snapshot}</>}
+          {meta.snapshot && <>　·　報酬率截至 {meta.snapshot}</>}
+          {meta.yieldAsof && <>　·　殖利率截至 {meta.yieldAsof}</>}
         </li>
       </ul>
 

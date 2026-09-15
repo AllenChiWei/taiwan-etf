@@ -53,8 +53,12 @@ export function moneydjUrl(code: string): string {
   return `https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=${code.toLowerCase()}.tw`;
 }
 
-/** 把 meta 的 MM/DD 快照日期寫成人看得懂的句子。 */
-export function metaLine(source: string, updated: string, snapshot: string): string {
-  const snap = snapshot ? `　·　報酬率／殖利率截至 ${snapshot}` : '';
-  return `資料來源：${source}　·　更新於 ${updated}${snap}`;
+/** 頁首那一行。報酬率與殖利率的資料日期不同源，分開標示才不會誤導。 */
+export function metaLine(
+  source: string, updated: string, snapshot: string, yieldAsof?: string,
+): string {
+  const parts = [`資料來源：${source}`, `更新於 ${updated}`];
+  if (snapshot) parts.push(`報酬率截至 ${snapshot}`);
+  if (yieldAsof) parts.push(`殖利率截至 ${yieldAsof}`);
+  return parts.join('　·　');
 }

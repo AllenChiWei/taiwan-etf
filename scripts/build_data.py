@@ -85,7 +85,10 @@ def main():
     doc = {
         'meta': {
             'updated': datetime.date.today().isoformat(),
-            'snapshot': ret_asof or yld_asof or '',
+            # 兩個日期不同源也不同步：報酬率來自 FinLab 的最後交易日，
+            # 殖利率來自 MoneyDJ 的報價日。共用一個欄位會讓其中一個被蓋掉。
+            'snapshot': ret_asof or '',
+            'yieldAsof': yld_asof or '',
             'total': len(etfs),
             'source': u'TWSE / TPEx / FinLab / MoneyDJ',
             'generated_by': 'build_data.py',

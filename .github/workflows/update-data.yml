@@ -46,6 +46,19 @@ jobs:
           pip install --quiet certifi finlab
           cd app && npm ci
 
+      # 報酬率自 2026-09 起只由 FinLab 計算，沒有憑證就算不出來。
+      # 早點失敗：先前沒擋的時候，流程會先爬完 359 頁 MoneyDJ、產生一份報酬率
+      # 全是 N/A 的資料，最後才被驗證器擋下 —— 白跑十分鐘，也白打擾了資料來源。
+      - name: 檢查必要憑證
+        run: |
+          if [ -z "$FINLAB_API_TOKEN" ]; then
+            echo "::error title=缺少 FINLAB_API_TOKEN::報酬率由 FinLab 計算，沒有這個 secret 就無法更新。"
+            echo "::error::到 Settings → Secrets and variables → Actions 建立名為 FINLAB_API_TOKEN 的 secret。"
+            echo "::error::注意：本機的 .env 不會上傳（被 gitignore 擋住），CI 看不到它。"
+            exit 1
+          fi
+          echo "FinLab 憑證已設定（長度 ${#FINLAB_API_TOKEN}）"
+
       - name: 連線檢查
         # 先確認資料來源從 GitHub 的機器連得到。連不到就直接失敗，
         # 不要讓爬蟲跑 20 分鐘才發現拿到一堆錯誤頁。
@@ -73,7 +86,7 @@ jobs:
       # 報酬率改由 FinLab 計算。MoneyDJ 那邊只剩 Basic0004（保管銀行／配息／殖利率），
       # 對他們的請求量因此少了一半。
       - name: 計算報酬率（FinLab）
-        if: ${{ env.FINLAB_API_TOKEN != '' && github.event.inputs.skip_returns != 'true' }}
+        if: ${{ github.event.inputs.skip_returns != 'true' }}
         run: python scripts/fetch_tw_returns.py "$WORK"
 
       - name: 產生 React 版資料
@@ -91,7 +104,6 @@ jobs:
       # 美股清單跟著台股一起更新。它是公開的衍生統計（代號名稱來自 Nasdaq
       # 公開檔案，報酬率由我們計算），所以可以進版控；價格序列則否。
       - name: 更新美股清單
-        if: ${{ env.FINLAB_API_TOKEN != '' }}
         run: |
           python scripts/fetch_us_etfs.py
           python scripts/verify_us_data.py app/public/data/us_etfs.json "${WORK}/previous_us.json"

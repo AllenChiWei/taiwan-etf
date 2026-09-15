@@ -38,7 +38,7 @@ export function AppShell() {
           <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight">台灣 ETF 總覽</h1>
             <p className="mt-0.5 text-[12.5px] text-muted">
-              {meta ? metaLine(meta.source, meta.updated, meta.snapshot) : '載入中…'}
+              {meta ? metaLine(meta.source, meta.updated, meta.snapshot, meta.yieldAsof) : '載入中…'}
             </p>
           </div>
           <button
