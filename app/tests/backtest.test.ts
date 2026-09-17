@@ -229,7 +229,7 @@ test('monthIndex 找不到時回傳 -1', () => {
 test('退休試算：不投入不成長時資產不變', () => {
   const r = project({
     initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
-    returnPct: 0, inflationPct: 0, withdrawPct: 4, yieldPct: 5,
+    returnPct: 0, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: true,
   });
   assert.equal(r.finalValue, 1_000_000);
   assert.ok(Math.abs(r.monthlyWithdraw - 1_000_000 * 0.04 / 12) < 1e-6);
@@ -239,7 +239,7 @@ test('退休試算：不投入不成長時資產不變', () => {
 test('退休試算：通膨會壓低實質購買力', () => {
   const r = project({
     initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 20,
-    returnPct: 0, inflationPct: 2, withdrawPct: 4, yieldPct: 5,
+    returnPct: 0, inflationPct: 2, withdrawPct: 4, yieldPct: 5, reinvest: true,
   });
   assert.ok(Math.abs(r.finalReal - 1_000_000 / Math.pow(1.02, 20)) < 1e-6);
   assert.ok(r.finalReal < r.finalValue);
@@ -248,7 +248,7 @@ test('退休試算：通膨會壓低實質購買力', () => {
 test('退休試算：年化 12% 的複利十年約 3.1 倍', () => {
   const r = project({
     initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
-    returnPct: 12, inflationPct: 0, withdrawPct: 4, yieldPct: 5,
+    returnPct: 12, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: true,
   });
   // 用月複利換算，十年後 1.12^10 ≈ 3.106
   assert.ok(Math.abs(r.finalValue / 1_000_000 - Math.pow(1.12, 10)) < 0.01);
@@ -258,12 +258,76 @@ test('退休試算：年化 12% 的複利十年約 3.1 倍', () => {
 test('退休試算：每年調升投入金額會增加總投入', () => {
   const flat = project({
     initial: 0, monthly: 10_000, monthlyGrowthPct: 0, years: 5,
-    returnPct: 5, inflationPct: 0, withdrawPct: 4, yieldPct: 5,
+    returnPct: 5, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: true,
   });
   const rising = project({
     initial: 0, monthly: 10_000, monthlyGrowthPct: 5, years: 5,
-    returnPct: 5, inflationPct: 0, withdrawPct: 4, yieldPct: 5,
+    returnPct: 5, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: true,
   });
   assert.ok(rising.totalInvested > flat.totalInvested);
   assert.ok(rising.finalValue > flat.finalValue);
+});
+
+
+test('退休試算：再投入時以總報酬複利，不另外產生現金', () => {
+  const r = project({
+    initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
+    returnPct: 8, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: true,
+  });
+  assert.equal(r.dividendCash, 0);
+  assert.equal(r.total, r.finalValue);
+  // returnPct 是含息總報酬，所以殖利率多少都不影響累積
+  const other = project({
+    initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
+    returnPct: 8, inflationPct: 0, withdrawPct: 4, yieldPct: 1, reinvest: true,
+  });
+  assert.ok(Math.abs(r.finalValue - other.finalValue) < 1e-6);
+});
+
+test('退休試算：不再投入時組合只以「總報酬−殖利率」成長', () => {
+  const r = project({
+    initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
+    returnPct: 8, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: false,
+  });
+  // 價格成長 3%，十年後組合本身約 1.03^10
+  assert.ok(Math.abs(r.finalValue / 1_000_000 - Math.pow(1.03, 10)) < 0.01);
+  assert.ok(r.dividendCash > 0);
+  assert.ok(Math.abs(r.total - (r.finalValue + r.dividendCash)) < 1e-6);
+});
+
+test('退休試算：再投入的總額高於領現金 —— 複利差在這裡', () => {
+  const base = {
+    initial: 1_000_000, monthly: 10_000, monthlyGrowthPct: 0, years: 20,
+    returnPct: 8, inflationPct: 0, withdrawPct: 4, yieldPct: 5,
+  };
+  const re = project({ ...base, reinvest: true });
+  const cash = project({ ...base, reinvest: false });
+  assert.ok(re.total > cash.total,
+    `再投入 ${re.total} 應大於領現金 ${cash.total}`);
+  // 兩者投入的本金一樣，差別純粹來自配息有沒有繼續複利
+  assert.ok(Math.abs(re.totalInvested - cash.totalInvested) < 1e-6);
+});
+
+test('退休試算：殖利率高於總報酬時組合會縮水，但不會變成 NaN', () => {
+  const r = project({
+    initial: 1_000_000, monthly: 0, monthlyGrowthPct: 0, years: 10,
+    returnPct: 3, inflationPct: 0, withdrawPct: 4, yieldPct: 8, reinvest: false,
+  });
+  assert.ok(r.finalValue < 1_000_000);
+  assert.ok(Number.isFinite(r.finalValue));
+  assert.ok(Number.isFinite(r.dividendCash));
+});
+
+test('退休試算：逐年列同時帶市值與已領現金', () => {
+  const r = project({
+    initial: 0, monthly: 10_000, monthlyGrowthPct: 0, years: 3,
+    returnPct: 8, inflationPct: 0, withdrawPct: 4, yieldPct: 5, reinvest: false,
+  });
+  assert.equal(r.rows.length, 3);
+  for (const row of r.rows) {
+    assert.ok(row.cash > 0);
+    assert.ok(Math.abs(row.real - (row.value + row.cash)) < 1e-6);  // 通膨 0
+  }
+  // 現金逐年累積
+  assert.ok(r.rows[2].cash > r.rows[1].cash);
 });

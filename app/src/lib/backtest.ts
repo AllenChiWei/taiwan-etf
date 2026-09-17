@@ -334,22 +334,44 @@ export interface ProjectInput {
   inflationPct: number;
   /** 退休後的年提領率（%），4% 法則預設 4 */
   withdrawPct: number;
-  /** 退休後想靠配息生活時假設的殖利率（%） */
+  /** 殖利率（%）。再投入時只用來算退休後能靠配息領多少；
+      不再投入時，它同時決定每年有多少報酬是以現金形式離開組合 */
   yieldPct: number;
+  /**
+   * 配息是否再投入。
+   *
+   * 預設 true，而且這是原本唯一的行為 —— 因為 returnPct 帶入的是我們自己算的
+   * 年化報酬，那是用還原股價（etl:adj_close）算的**含息總報酬**，本來就假設
+   * 配息在除息當天全額買回。所以「有沒有考慮股息再投入」的答案一直是「有」，
+   * 只是畫面上看不出來，會讓人以為漏掉了。
+   *
+   * 設成 false 時，組合只以「總報酬 − 殖利率」成長，配息每月以現金形式取出，
+   * 累積在 dividendCash 裡不再產生複利。
+   */
+  reinvest: boolean;
 }
 
 export interface ProjectYear {
   year: number;
   invested: number;
+  /** 組合市值 */
   value: number;
-  /** 換算成今天購買力 */
+  /** 累積領出的配息現金（再投入時為 0） */
+  cash: number;
+  /** (value + cash) 換算成今天購買力 */
   real: number;
 }
 
 export interface ProjectResult {
   rows: ProjectYear[];
+  /** 期末的組合市值（不含已領出的配息現金） */
   finalValue: number;
   finalReal: number;
+  /** 選擇不再投入時，累積領到的配息現金；再投入時為 0 */
+  dividendCash: number;
+  /** finalValue + dividendCash */
+  total: number;
+  totalReal: number;
   totalInvested: number;
   gain: number;
   /** 依提領率，退休後每月可領（名目） */
@@ -362,10 +384,17 @@ export interface ProjectResult {
 }
 
 export function project(input: ProjectInput): ProjectResult {
-  const rm = Math.pow(1 + input.returnPct / 100, 1 / 12) - 1;
+  // 不再投入時，配息那一段報酬是以現金離開組合的，所以組合只剩價格成長。
+  const growthPct = input.reinvest
+    ? input.returnPct
+    : input.returnPct - input.yieldPct;
+  const rm = Math.pow(1 + growthPct / 100, 1 / 12) - 1;
+  const divRate = input.reinvest ? 0 : input.yieldPct / 100 / 12;
+
   const years = Math.max(0, Math.round(input.years));
   let value = input.initial;
   let invested = input.initial;
+  let divCash = 0;
   let monthly = input.monthly;
   const rows: ProjectYear[] = [];
 
@@ -373,24 +402,32 @@ export function project(input: ProjectInput): ProjectResult {
     for (let m = 0; m < 12; m++) {
       // 月初投入，當月就開始複利
       value = (value + monthly) * (1 + rm);
+      // 配息以當月市值計算後取出，不再產生複利
+      divCash += value * divRate;
       invested += monthly;
     }
     monthly *= 1 + input.monthlyGrowthPct / 100;
     const deflator = Math.pow(1 + input.inflationPct / 100, y);
-    rows.push({ year: y, invested, value, real: value / deflator });
+    rows.push({
+      year: y, invested, value, cash: divCash,
+      real: (value + divCash) / deflator,
+    });
   }
 
   const deflator = Math.pow(1 + input.inflationPct / 100, years);
-  const finalReal = value / deflator;
   const withdraw = (value * input.withdrawPct) / 100 / 12;
   const dividend = (value * input.yieldPct) / 100 / 12;
+  const total = value + divCash;
 
   return {
     rows,
     finalValue: value,
-    finalReal,
+    finalReal: value / deflator,
+    dividendCash: divCash,
+    total,
+    totalReal: total / deflator,
     totalInvested: invested,
-    gain: value - invested,
+    gain: total - invested,
     monthlyWithdraw: withdraw,
     monthlyWithdrawReal: withdraw / deflator,
     monthlyDividend: dividend,

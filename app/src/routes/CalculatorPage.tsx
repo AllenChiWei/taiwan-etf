@@ -18,6 +18,23 @@ import {
 
 type Tab = 'backtest' | 'retire';
 
+/** 退休推估「帶入標的」選單的一列。 */
+interface Seed {
+  code: string;
+  name: string;
+  /** 年化報酬假設；上市未滿一年時為 null，因為短期報酬年化出來只是雜訊 */
+  cagr: number | null;
+  /** cagr 是用哪一段期間算的，顯示給使用者看 */
+  basis: string | null;
+  /** 近一年報酬。只拿來顯示，不當長期假設 */
+  oneYear: number | null;
+  yld: number;
+  /** yld 是由未滿一年的配息年化推估出來的 */
+  yldEstimated: boolean;
+  /** 已上市月數 */
+  months: number;
+}
+
 /* ── 數字格式 ───────────────────────────────────────────── */
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -445,37 +462,77 @@ function RetireTab({ index }: { index: CalcIndex }) {
   const [inflation, setInflation] = useState(2);
   const [withdraw, setWithdraw] = useState(4);
   const [yieldPct, setYieldPct] = useState(5);
+  const [reinvest, setReinvest] = useState(true);
 
-  /** 從實際標的帶入假設 —— 自己憑空填一個年化報酬率，很容易填得太樂觀。 */
+  /**
+   * 從實際標的帶入假設 —— 自己憑空填一個年化報酬率，很容易填得太樂觀。
+   *
+   * 用「最長的可用期間」而不是一律要求近五年。原本只收 r60，結果 345 檔裡
+   * 只有 198 檔進得了選單，2024 年後上市的主動型 ETF 全部消失（00406A、00981A
+   * 就是這樣不見的）。
+   *
+   * 但**不把不滿一年的報酬年化**：00406A 只有近三月 −4.48%，年化出來會是
+   * −16%，那是雜訊不是趨勢。這種標的照樣列出來、可以帶入殖利率，
+   * 只是不動年化報酬那一格，由使用者自己填。
+   */
   const seeds = useMemo(() => {
-    const out: Array<{ code: string; name: string; cagr: number; yld: number }> = [];
+    const out: Seed[] = [];
+    const lastMonth = index.months.length - 1;
+
     for (const e of data.etfs) {
-      if (!(e.code in index.codes)) continue;
-      const r60 = Number(e.r60);
-      const y = index.codes[e.code].ttmYield;
-      if (!Number.isFinite(r60) || y === null) continue;
-      // r60 是五年累積報酬，換成年化
-      const cagr = (Math.pow(1 + r60 / 100, 1 / 5) - 1) * 100;
-      out.push({ code: e.code, name: e.name, cagr, yld: y });
+      const info = index.codes[e.code];
+      if (!info) continue;
+
+      // 由長到短取第一個有值的期間。**只收多年期** —— 單一年度的報酬不是
+      // 長期年化：00981A 近一年 +120.98%，拿它推 20 年會得到天文數字。
+      // 近一年仍然顯示在選項上供參考，只是不會自動填進假設。
+      let cagr: number | null = null;
+      let basis: string | null = null;
+      for (const [key, years] of [['r60', 5], ['r36', 3]] as const) {
+        const v = Number(e[key]);
+        if (!Number.isFinite(v)) continue;
+        cagr = (Math.pow(1 + v / 100, 1 / years) - 1) * 100;
+        basis = `近${years}年`;
+        break;
+      }
+      const r12 = Number(e.r12);
+      const oneYear = Number.isFinite(r12) ? r12 : null;
+
+      // 上市未滿一年的，TTM 配息只涵蓋幾個月，直接當殖利率會低估。
+      // 按實際上市月數年化，並標示成推估。
+      const listed = lastMonth - index.months.indexOf(info.first) + 1;
+      const short = listed < 12;
+      const yld = short && listed > 0
+        ? (info.ttmYield ?? 0) * 12 / listed
+        : (info.ttmYield ?? 0);
+
+      out.push({
+        code: e.code, name: e.name, cagr, basis, oneYear,
+        yld, yldEstimated: short, months: listed,
+      });
     }
     return out.sort((a, b) => a.code.localeCompare(b.code));
-  }, [data.etfs, index.codes]);
+  }, [data.etfs, index.codes, index.months]);
+
+  const [seedNote, setSeedNote] = useState<string | null>(null);
 
   const result = useMemo(() => project({
     initial, monthly: monthlyAmt, monthlyGrowthPct: growth, years,
-    returnPct, inflationPct: inflation, withdrawPct: withdraw, yieldPct,
-  }), [initial, monthlyAmt, growth, years, returnPct, inflation, withdraw, yieldPct]);
+    returnPct, inflationPct: inflation, withdrawPct: withdraw, yieldPct, reinvest,
+  }), [initial, monthlyAmt, growth, years, returnPct, inflation, withdraw,
+       yieldPct, reinvest]);
 
   const points: GrowthPoint[] = useMemo(
     () => result.rows.map(r => ({
-      label: `${r.year}年`, invested: r.invested, value: r.value,
+      // 領現金時，曲線要含已領出的配息，否則看起來像憑空虧損
+      label: `${r.year}年`, invested: r.invested, value: r.value + r.cash,
     })), [result.rows]);
 
   return (
     <>
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <Field label="用實際標的的歷史數字帶入假設"
-               hint="套用該檔近五年的年化報酬與目前殖利率。近五年是一段大多頭，
+               hint="取該檔最長可用期間的年化報酬與目前殖利率。近幾年是一段大多頭，
                      直接拿來推估未來會過度樂觀 —— 帶進來是給一個起點，不是預測。">
           <select
             className={inputClass}
@@ -483,18 +540,46 @@ function RetireTab({ index }: { index: CalcIndex }) {
             onChange={e => {
               const s = seeds.find(x => x.code === e.target.value);
               if (!s) return;
-              setReturnPct(Number(s.cagr.toFixed(2)));
               setYieldPct(Number(s.yld.toFixed(2)));
+              if (s.cagr !== null) {
+                setReturnPct(Number(s.cagr.toFixed(2)));
+                setSeedNote(
+                  `已帶入 ${s.code} ${s.name}：年化 ${nf2.format(s.cagr)}%（${s.basis}）、`
+                  + `殖利率 ${nf2.format(s.yld)}%${s.yldEstimated ? '（年化推估）' : ''}`);
+              } else {
+                // 只帶殖利率。年化留空是刻意的 —— 用一年（甚至幾個月）的報酬
+                // 去推 20 年，得到的數字看起來很精確但毫無意義。
+                setSeedNote(
+                  s.oneYear !== null
+                    ? `${s.code} ${s.name} 只有近一年的報酬（${nf2.format(s.oneYear)}%），`
+                      + '單一年度不能當長期年化，所以沒有填進去 —— 20 年的假設請自己給一個。'
+                      + `殖利率 ${nf2.format(s.yld)}% 已帶入。`
+                    : `${s.code} ${s.name} 上市才 ${s.months} 個月，沒有滿一年的報酬可以參考，`
+                      + `所以只帶入殖利率 ${nf2.format(s.yld)}%（由 ${s.months} 個月的配息年化推估）。`
+                      + '年化報酬那一格請自己填一個假設。');
+              }
             }}
           >
-            <option value="">選一檔帶入…</option>
+            <option value="">選一檔帶入…（共 {seeds.length} 檔）</option>
             {seeds.map(s => (
               <option key={s.code} value={s.code}>
-                {s.code}　{s.name}　年化 {nf2.format(s.cagr)}%　殖利率 {nf2.format(s.yld)}%
+                {s.code}　{s.name}　
+                {s.cagr !== null
+                  ? `${s.basis}年化 ${nf2.format(s.cagr)}%`
+                  : s.oneYear !== null
+                    ? `近1年 ${nf2.format(s.oneYear)}%（僅供參考）`
+                    : `上市 ${s.months} 個月`}
+                　殖利率 {nf2.format(s.yld)}%{s.yldEstimated ? '*' : ''}
               </option>
             ))}
           </select>
         </Field>
+
+        {seedNote && (
+          <p className="mt-2 rounded-lg bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
+            {seedNote}
+          </p>
+        )}
 
         <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Field label="目前資產">
@@ -518,9 +603,22 @@ function RetireTab({ index }: { index: CalcIndex }) {
           <Field label="退休提領率" hint="4% 法則">
             <NumberInput value={withdraw} onChange={setWithdraw} step={0.5} suffix="%" />
           </Field>
-          <Field label="退休時殖利率" hint="只花配息時用">
+          <Field label="殖利率" hint={reinvest ? '只花配息時用' : '每年以現金領出的比例'}>
             <NumberInput value={yieldPct} onChange={setYieldPct} step={0.5} suffix="%" />
           </Field>
+        </div>
+
+        <div className="mt-2 border-t border-line pt-1">
+          <Toggle
+            checked={reinvest}
+            onChange={setReinvest}
+            label="股息再投入"
+            hint={reinvest
+              ? '上面的年化報酬是「含息總報酬」，本來就假設配息全部買回 —— 這是預設行為'
+              : `組合只以 ${nf2.format(Math.max(0, returnPct - yieldPct))}% 成長`
+                + `（總報酬 ${nf2.format(returnPct)}% 減掉殖利率 ${nf2.format(yieldPct)}%），`
+                + '配息每月領成現金，不再產生複利'}
+          />
         </div>
       </section>
 
@@ -535,9 +633,11 @@ function RetireTab({ index }: { index: CalcIndex }) {
       )}
 
       <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat label={`${years} 年後資產`} value={money(result.finalValue)} tone="up"
-              sub={`投入 ${money(result.totalInvested)}`} />
-        <Stat label="換算今天購買力" value={money(result.finalReal)}
+        <Stat label={`${years} 年後資產`} value={money(result.total)} tone="up"
+              sub={reinvest
+                ? `投入 ${money(result.totalInvested)}`
+                : `其中配息現金 ${money(result.dividendCash)}`} />
+        <Stat label="換算今天購買力" value={money(result.totalReal)}
               sub={`通膨 ${inflation}%`} />
         <Stat label={`每月可提領（${withdraw}%）`} value={money(result.monthlyWithdraw)}
               sub={`今天購買力 ${money(result.monthlyWithdrawReal)}`} />
