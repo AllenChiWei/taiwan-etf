@@ -160,6 +160,9 @@ jobs:
     needs: update
     if: needs.update.outputs.changed == 'true'
     uses: ./.github/workflows/deploy.yml
+    # workflow_call 不會自動把 secrets 傳給被呼叫的流程。少了這行，部署端就拿不到
+    # FINLAB_API_TOKEN 與 SITE_PASSWORD，績效曲線會被靜默跳過。
+    secrets: inherit
     permissions:
       contents: read
       pages: write

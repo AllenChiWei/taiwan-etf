@@ -35,6 +35,11 @@ jobs:
       SITE_SALT: ${{ vars.SITE_SALT }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 一律取 main 的最新內容。被 update-data 以 workflow_call 呼叫時，
+          # 預設會 checkout「觸發當下」的 commit —— 那是機器人推送資料之前的版本，
+          # 結果就是資料更新了、部署出去的卻是舊的。
+          ref: main
 
       - uses: actions/setup-node@v4
         with:
