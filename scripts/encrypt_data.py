@@ -51,9 +51,14 @@ DATA = os.path.join(ROOT, 'app', 'public', 'data')
 MANIFEST = os.path.join(DATA, 'secure.json')
 
 ENV_VAR = 'SITE_PASSWORD'
-# 200k 次 PBKDF2 在手機上約一秒 —— 使用者只在輸入密碼時付一次這個成本，
-# 但暴力破解者每一次猜測都要付。
-ITERATIONS = 200_000
+# PBKDF2 的次數。OWASP 目前對 PBKDF2-HMAC-SHA256 的建議是 60 萬次；
+# 60 萬在手機上約三秒，而使用者只在輸入密碼時付一次這個成本（之後存的是
+# 導出的金鑰，不是密碼）。
+#
+# 改這個數字會讓既有的解鎖工作階段失效一次：存下來的金鑰是用舊次數導出的，
+# 解不開新的密文，使用者要再輸入一次密碼。manifest 會帶新的次數，所以
+# 前端不需要改。
+ITERATIONS = 600_000
 # 工作階段效期。過期就要重新輸入密碼。
 TTL_HOURS = 12
 CHECK_PLAINTEXT = b'twetf-ok'

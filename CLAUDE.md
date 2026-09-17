@@ -18,6 +18,8 @@ Where each field comes from, because it is not one source:
 | US returns | computed from FinLab `us_fund_price` — **price return only**, see below |
 | 籌碼（法人期貨／選擇權未平倉、Put/Call Ratio、大額交易人） | 期交所的 CSV 下載端點 |
 | 籌碼（法人買賣超前十大） | TWSE `T86` + TPEx `insti/dailyTrade`，金額是估算 |
+| 新聞 | 鉅亨網 API + 中央社 RSS（只存標題與連結） |
+| 公告 | 公開資訊觀測站重大訊息（TWSE `t187ap04_L` + TPEx `mopsfin_t187ap04_O`） |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -32,6 +34,8 @@ app/                       React 19 + TypeScript + Vite + Tailwind v4 — the si
   tests/                     node --test, runs the real modules
 scripts/                   the Python data pipeline (scrape → JSON + legacy HTML)
   fetch_chips.py             籌碼：期交所 + 兩家交易所 → chips.json（部署時產生）
+  fetch_news.py              新聞與重大訊息 → news.json（部署時產生）
+  reuse_calc.py              FinLab 失敗時，從線上抓回試算資料當備援
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -150,6 +154,50 @@ unstyled pill.
 （純函式、有測試）。單位換算特別容易錯，JSON 一律保留原始單位（契約金額千元、
 買賣超股數與估算金額元），換算只在畫面上做。
 
+## 新聞資料
+
+`scripts/fetch_news.py` → `app/public/data/news.json`（不進版控，部署時產生）。
+
+**只存標題、時間、來源與連結，不存內文。** 這是規矩，不是實作細節：新聞內文有
+著作權，這一頁做的是索引與導流。`tests/news.test.ts` 有一條測試就在盯這件事
+（斷言沒有 `content`／`summary` 欄位、標題長度不像內文）。
+
+來源與為什麼是這三個：
+
+- **鉅亨網** `api.cnyes.com` — robots.txt 對所有人 `Allow: /`，而且每則新聞有掛
+  個股代號，可以標出「跟清單裡哪一檔有關」。
+- **中央社 RSS** — 官方提供的 RSS，content-signal 是 `ai-train=no, search=yes`；
+  我們不訓練任何東西，只放標題與外連。
+- **公開資訊觀測站** — 上市與上櫃的重大訊息 OpenAPI，官方原始公告。
+
+**查過但不採用：奇摩股市**的 robots.txt 有一組點名 AI 代理的清單（anthropic-ai、
+ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/caas`、
+`/_td-news`，新聞 JSON 正在那些路徑下。**Google News** 的 robots 是 `Disallow: /`
+且 `/rss` 不在開放清單，抓搜尋結果頁也違反服務條款。這兩個不要再試。
+
+重大訊息的連結用 `mopsov.twse.com.tw/mops/web/t05st01?firstin=1&co_id=…` ——
+新版觀測站是 SPA、沒辦法用 GET 帶公司代號深連結，這個舊版路徑實測可以。
+
+## FinLab 的每日流量
+
+**FinLab 是按下載量計費的，每天 5 GB，而 `etl:adj_close` 這種矩陣一抓就是
+數百 MB。** 這個限制曾經把一整天的部署全部打掉，所以流程是照它設計的：
+
+- **一般的程式碼推送不重抓 FinLab。** `deploy.yml` 先用 `actions/cache` 取回上次
+  產生的 `series/`、`calc/`、`secure.json`（三者是一組，序列是照 manifest 的參數
+  加密的，只能一起沿用或一起重做），有就直接用。
+- **一天只重抓一次**：`update-data.yml` 呼叫部署時帶 `refresh_finlab: true`。
+  要手動重抓就在 Actions 頁面用 workflow_dispatch 勾那個選項。
+- **抓失敗時退回舊資料**，分兩層：快取裡的上一份，或 `reuse_calc.py` 直接抓線上
+  那份試算資料。兩層都沒有才讓部署失敗（線上就維持前一版，總比部署出一個
+  試算頁壞掉的網站好）。
+- **同一次執行裡不重複下載**：`finlab_client.login()` 把資料集存放處設成
+  `.cache/finlab_db`，所以 `fetch_series.py` 與 `fetch_calc.py` 共用同一份
+  `etl:adj_close`，不會各抓一次。
+
+**在本機跑 FinLab 腳本會吃掉當天 CI 的額度。**`fetch_calc.py` 跑一次就是好幾 GB。
+非不得已要跑，先確認今天的 CI 不需要它，跑完也要知道當天的部署可能因此失敗。
+
 ## The React app
 
 No state management library: filter state lives in the URL (TanStack Router search params,
@@ -216,6 +264,21 @@ keeps working. `.filter-bar` drops `position: sticky` on phones, and its labels 
 
 Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` counts tags with
 `<tr[ >]` and will report the page as unbalanced.
+
+## 安全相關的既定作法
+
+- **CSP 是建置時產生的**（`app/vite-plugins.ts` 的 `cspMeta`），內嵌的主題腳本用
+  **從 HTML 算出來的 sha256** 放行，不是寫死的雜湊、也不是 `unsafe-inline`。
+  開發模式刻意不加 CSP —— Vite 的 HMR 會注入內嵌腳本，加了只會讓 `npm run dev`
+  壞掉。`tests/csp.test.ts` 盯著「每段內嵌腳本都有被放行」。
+- **未加密的價格序列不可能進到產物**：同一個外掛的 `dropPlaintextSeries` 會在
+  建置最後遞迴刪掉 `dist/data/series` 底下所有 `.json`（只留 `.enc`）。
+  本機的 `public/data/series` 有明文，少了這一步，在本機 build 一次就有一千多個
+  付費資料檔躺在 `dist/` 裡。CI 另外有一道 `find` 檢查，兩層都要留著。
+- 正式產物不出 source map；`SITE_PASSWORD` 只給需要它的那一個步驟；CI 的 pip
+  鎖版本（那個 job 握著 FinLab token）。
+- PBKDF2 是 60 萬次（OWASP 目前對 PBKDF2-SHA256 的建議）。改這個數字會讓既有的
+  解鎖工作階段失效一次，manifest 會帶新參數所以前端不用改。
 
 ## Conventions
 

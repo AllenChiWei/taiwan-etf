@@ -12,7 +12,17 @@ on:
       - 'taiwan_etf_list.html'
       - '.github/workflows/deploy.yml'
   workflow_call:
+    inputs:
+      refresh_finlab:
+        description: 從 FinLab 重新產生績效曲線與試算資料
+        type: boolean
+        default: false
   workflow_dispatch:
+    inputs:
+      refresh_finlab:
+        description: 從 FinLab 重新產生績效曲線與試算資料（會吃掉每日流量）
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -29,6 +39,13 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FINLAB_API_TOKEN: ${{ secrets.FINLAB_API_TOKEN }}
+      # FinLab 的流量是按下載量計費的（5 GB／日），而 etl:adj_close 這種矩陣
+      # 一抓就是數百 MB。一天推四次程式碼就抓四次，額度當天就見底 ——
+      # 實際發生過，結果是後面每一次部署都失敗。
+      #
+      # 所以只有每日更新流程（與手動勾選）會重抓；一般的程式碼推送沿用上一次
+      # 產生好的資料。inputs 在 push 事件下是空的，所以預設就是「沿用」。
+      REFRESH_FINLAB: ${{ inputs.refresh_finlab && 'true' || 'false' }}
       # SITE_PASSWORD 不放在 job 層級：放這裡的話，每一個步驟（包括 pip install
       # 與它拉進來的第三方套件）都讀得到它。只有加密那一步需要，就只給那一步。
       # FINLAB_API_TOKEN 留在這裡是因為步驟的 if: 條件要判斷它在不在。
@@ -55,15 +72,63 @@ jobs:
 
       - name: 安裝相依套件
         run: |
-          pip install --quiet finlab cryptography
+          # 鎖版本：這個 job 握著 FINLAB_API_TOKEN，pip 抓到被動過手腳的新版就等於
+          # 把 token 交出去。鎖住之後升級要手動改這裡 —— 那個麻煩是刻意換來的。
+          # 版本要往上帶時，先在本機跑一次 fetch_series.py 與 fetch_calc.py 確認。
+          pip install --quiet finlab==2.0.19 cryptography==50.0.1
           cd app && npm ci
+
+      # 上一次產生的 FinLab 資料（已加密的序列、試算資料、解鎖 manifest）。
+      # 這三樣是一組：序列是用 manifest 裡的參數加密的，所以要嘛一起沿用、
+      # 要嘛一起重新產生，不能只換一邊。
+      - name: 取回上次的 FinLab 資料
+        id: datacache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            app/public/data/series
+            app/public/data/calc
+            app/public/data/secure.json
+          key: finlab-data-${{ github.run_id }}
+          restore-keys: |
+            finlab-data-
+
+      - name: 決定要不要重抓 FinLab
+        id: plan
+        run: |
+          # 有可用的舊資料、又不是明確要求重抓，就沿用
+          if [ -f app/public/data/calc/index.json ] && [ "$REFRESH_FINLAB" != "true" ]; then
+            echo "reuse=true" >> $GITHUB_OUTPUT
+            echo "沿用上次的 FinLab 資料（沒有動用今天的流量）"
+          else
+            echo "reuse=false" >> $GITHUB_OUTPUT
+            if [ "$REFRESH_FINLAB" = "true" ]; then
+              echo "這次要重抓 FinLab（每日更新或手動指定）"
+            else
+              echo "::warning::沒有可沿用的 FinLab 資料，這次會重抓"
+            fi
+          fi
+
+      # 重抓之前先把沿用到的那份留一份備份。FinLab 掛掉或額度用完時（兩種都遇過）
+      # 就退回這一份 —— 資料舊一天，但試算與圖表都還在，而且不相關的新功能照樣上線。
+      - name: 備份可沿用的資料
+        id: backup
+        if: ${{ hashFiles('app/public/data/calc/index.json') != '' }}
+        run: |
+          mkdir -p .cache/prev
+          cp -r app/public/data/calc .cache/prev/
+          [ -d app/public/data/series ] && cp -r app/public/data/series .cache/prev/ || true
+          [ -f app/public/data/secure.json ] && cp app/public/data/secure.json .cache/prev/ || true
+          echo "已備份可沿用的資料"
 
       # 美股清單已在版控中（每日更新流程會提交它）。這裡只產生價格序列：
       # 那是 11 MB、每天全部重算，進版控會讓 repo 每年膨脹數百 MB。
       # 沒有 FinLab 憑證時網站照常運作，只是沒有績效圖。
       - name: 產生績效曲線
         id: finlab
-        if: ${{ env.FINLAB_API_TOKEN != '' }}
+        if: ${{ env.FINLAB_API_TOKEN != '' && steps.plan.outputs.reuse != 'true' }}
+        # 失敗不直接中止：下面的「退回上一份資料」會接手，沒有舊資料時才真的失敗
+        continue-on-error: true
         run: |
           python scripts/fetch_series.py
           echo "generated=true" >> $GITHUB_OUTPUT
@@ -72,8 +137,16 @@ jobs:
       # 交易所與投信公開的資訊，這裡只是整理成月度摘要，不是那份按日的付費資料集。
       # 不加密，計算機才能免密碼使用。
       - name: 產生試算資料
-        if: ${{ env.FINLAB_API_TOKEN != '' }}
+        id: calc
+        if: ${{ env.FINLAB_API_TOKEN != '' && steps.plan.outputs.reuse != 'true' }}
+        continue-on-error: true
         run: python scripts/fetch_calc.py
+
+      # 新聞與重大訊息。同樣不需要 FinLab，也同樣容許失敗：媒體或觀測站掛掉時
+      # 新聞頁自己會說「還沒有資料」，不該連帶讓整個網站不能部署。
+      - name: 產生新聞資料
+        continue-on-error: true
+        run: python scripts/fetch_news.py
 
       # 籌碼面（期交所三大法人／大額交易人、交易所法人買賣超）。不需要 FinLab，
       # 來源都是公開端點。continue-on-error 是刻意的：交易所偶爾維護或逾時，
@@ -81,6 +154,26 @@ jobs:
       - name: 產生籌碼資料
         continue-on-error: true
         run: python scripts/fetch_chips.py
+
+      # FinLab 失敗（額度用完、服務中斷、或改版）時退回備份。半途失敗的產出不能
+      # 只補一半 —— 那會混出一份新舊相間的資料，所以整組換回去。
+      - name: 重抓失敗時退回上一份資料
+        if: ${{ steps.finlab.outcome == 'failure' || steps.calc.outcome == 'failure' }}
+        run: |
+          rm -rf app/public/data/calc app/public/data/series app/public/data/secure.json
+          if [ -d .cache/prev/calc ]; then
+            cp -r .cache/prev/calc app/public/data/
+            [ -d .cache/prev/series ] && cp -r .cache/prev/series app/public/data/ || true
+            [ -f .cache/prev/secure.json ] && cp .cache/prev/secure.json app/public/data/ || true
+            echo "::warning title=FinLab 抓取失敗::已退回快取裡的上一份資料，日期會比今天舊。常見原因是每日流量用完。"
+          elif python scripts/reuse_calc.py; then
+            # 快取被淘汰、或這個機制剛啟用還沒有快取。直接抓線上那份試算資料。
+            # 績效曲線沒有一起抓（1000 多個加密檔），所以圖表這次會缺。
+            echo "::warning title=FinLab 抓取失敗::已改用線上那份試算資料；這次的部署不含績效曲線。"
+          else
+            echo "::error title=FinLab 抓取失敗::而且沒有任何可退回的資料，這次不部署（線上維持前一版）。"
+            exit 1
+          fi
 
       - name: 加密受保護的資料
         if: ${{ steps.finlab.outputs.generated == 'true' }}
@@ -100,7 +193,7 @@ jobs:
           python scripts/encrypt_data.py
 
       - name: 沒有 FinLab 憑證時的提醒
-        if: ${{ env.FINLAB_API_TOKEN == '' }}
+        if: ${{ env.FINLAB_API_TOKEN == '' && steps.plan.outputs.reuse != 'true' }}
         run: |
           echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含績效曲線與試算資料。"
           echo "::warning::台股與美股清單不受影響（兩份都在版控中）。"
@@ -117,6 +210,20 @@ jobs:
             exit 1
           fi
           echo "檢查通過：價格序列都已加密"
+
+      # 存進快取給後續的程式碼推送用。一定要在上面那道明文檢查之後 ——
+      # 不然可能把未加密的價格序列寫進快取。
+      - name: 存下這次的 FinLab 資料
+        if: ${{ steps.plan.outputs.reuse != 'true'
+                && steps.finlab.outcome != 'failure' && steps.calc.outcome != 'failure'
+                && hashFiles('app/public/data/calc/index.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            app/public/data/series
+            app/public/data/calc
+            app/public/data/secure.json
+          key: finlab-data-${{ github.run_id }}
 
       - name: 驗證資料
         run: |

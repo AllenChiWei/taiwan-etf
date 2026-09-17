@@ -13,6 +13,8 @@ app/                    React 19 + TypeScript + Vite + Tailwind v4 — the site
   tests/                  node --test, exercises the real modules
 scripts/                Python pipeline: scrape → etfs.json + legacy HTML
   fetch_chips.py          籌碼 (TAIFEX + TWSE/TPEx) → chips.json, built at deploy time
+  fetch_news.py           新聞 + 重大訊息 → news.json, built at deploy time
+  reuse_calc.py           pulls the published calc data back when FinLab fails
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
@@ -54,6 +56,15 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   total on every run. If that check warns, the columns moved — fix the indices, don't
   silence it.
 
+- **FinLab bills by download volume: 5 GB/day.** Ordinary code pushes must not
+  re-pull it — `deploy.yml` reuses an `actions/cache` copy and only refreshes when
+  `refresh_finlab: true` (the daily update, or a manual dispatch). Running
+  `fetch_calc.py` / `fetch_series.py` locally spends the same daily budget and has
+  already broken a day of deploys; don't unless you know CI won't need it.
+- News data stores **headline, time, source and link only** — never article text.
+  Yahoo 股市 and Google News are off-limits (robots.txt disallows AI agents /
+  disallows everything); the sources are 鉅亨網 API, 中央社 RSS and MOPS filings.
+
 ## Conventions that are deliberate
 
 - **紅漲綠跌**: gains are red, losses green — the Taiwan convention, opposite of the US one.
@@ -70,6 +81,7 @@ cd app && npm test                                      # 篩選/排序/顏色�
 cd app && npm run build                                 # tsc -b && vite build
 python scripts/verify_data.py app/public/data/etfs.json
 python scripts/fetch_chips.py .cache/chips.json          # 籌碼管線（會打外部端點）
+python scripts/fetch_news.py .cache/news.json            # 新聞管線（會打外部端點）
 python scripts/verify_page.py taiwan_etf_list.html
 node scripts/test_sort.js taiwan_etf_list.html
 ```

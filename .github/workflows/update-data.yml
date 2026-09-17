@@ -43,7 +43,8 @@ jobs:
 
       - name: 安裝相依套件
         run: |
-          pip install --quiet certifi finlab
+          # 鎖版本，理由同 deploy.yml：這個 job 也帶著 FINLAB_API_TOKEN。
+          pip install --quiet certifi==2026.7.22 finlab==2.0.19
           cd app && npm ci
 
       # 報酬率自 2026-09 起只由 FinLab 計算，沒有憑證就算不出來。
@@ -167,6 +168,10 @@ jobs:
     needs: update
     if: needs.update.outputs.changed == 'true'
     uses: ./.github/workflows/deploy.yml
+    # 一天一次的重抓就在這裡。其他時候（程式碼推送）部署會沿用快取，
+    # 不動用 FinLab 流量。
+    with:
+      refresh_finlab: true
     # workflow_call 不會自動把 secrets 傳給被呼叫的流程。少了這行，部署端就拿不到
     # FINLAB_API_TOKEN 與 SITE_PASSWORD，績效曲線會被靜默跳過。
     secrets: inherit
