@@ -12,6 +12,7 @@ app/                    React 19 + TypeScript + Vite + Tailwind v4 — the site
   src/lib/                pure logic (filters, sorting, formatting) — no React imports
   tests/                  node --test, exercises the real modules
 scripts/                Python pipeline: scrape → etfs.json + legacy HTML
+  fetch_chips.py          籌碼 (TAIFEX + TWSE/TPEx) → chips.json, built at deploy time
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
@@ -44,6 +45,15 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   `SORT_OPTIONS` (FilterBar.tsx), plus the legacy page's header, `NCELLS` in
   verify_page.py and its mobile `nth-child` block.
 
+- 籌碼 (`chips.json`) is a daily snapshot built at deploy time and **not in version
+  control**. Institutional buy/sell **amounts are estimates** — the exchanges publish
+  share counts only; the pipeline multiplies by that day's average price (turnover ÷
+  volume). Never present them as actual amounts.
+- TPEx's institutional table repeats the same field names for all seven investor types,
+  so columns are taken by position and checked against the published three-institution
+  total on every run. If that check warns, the columns moved — fix the indices, don't
+  silence it.
+
 ## Conventions that are deliberate
 
 - **紅漲綠跌**: gains are red, losses green — the Taiwan convention, opposite of the US one.
@@ -59,6 +69,7 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
 cd app && npm test                                      # 篩選/排序/顏色，含真實資料檢查
 cd app && npm run build                                 # tsc -b && vite build
 python scripts/verify_data.py app/public/data/etfs.json
+python scripts/fetch_chips.py .cache/chips.json          # 籌碼管線（會打外部端點）
 python scripts/verify_page.py taiwan_etf_list.html
 node scripts/test_sort.js taiwan_etf_list.html
 ```

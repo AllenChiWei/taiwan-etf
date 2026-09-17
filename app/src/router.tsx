@@ -13,23 +13,24 @@ import {
   createRouter,
 } from '@tanstack/react-router';
 
-import { lazy } from 'react';
-
 import { AppShell } from './components/AppShell';
 import { ListPage } from './routes/ListPage';
+import { lazyRoute } from './lib/lazyRoute';
+import { RouteError } from './components/RouteError';
 
 // 台股清單是首頁，跟著主程式一起載。其餘分頁按需求載入 ——
 // 美股頁帶著虛擬捲動、收藏頁帶著圖表與 WebCrypto 解密，
 // 只看台股的訪客沒有理由為那些付下載成本。
-// React.lazy 需要 default export，這些是具名匯出，所以在這裡轉一層。
-const UsPage = lazy(() => import('./routes/UsPage').then(m => ({ default: m.UsPage })));
-const FavoritesPage = lazy(() =>
-  import('./routes/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
-const AboutPage = lazy(() => import('./routes/AboutPage').then(m => ({ default: m.AboutPage })));
-const CalculatorPage = lazy(() =>
-  import('./routes/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
-const PokerPage = lazy(() =>
-  import('./routes/PokerPage').then(m => ({ default: m.PokerPage })));
+//
+// 用 lazyRoute 而不是直接用 React.lazy：分塊檔名帶內容雜湊，部署換版之後
+// 開著的分頁會去要一個已經不存在的檔名。lazyRoute 會重新整理一次救回來。
+// 這正是「首頁好好的，點收藏或美股就跳錯誤」的成因。
+const UsPage = lazyRoute(() => import('./routes/UsPage'), m => m.UsPage);
+const FavoritesPage = lazyRoute(() => import('./routes/FavoritesPage'), m => m.FavoritesPage);
+const AboutPage = lazyRoute(() => import('./routes/AboutPage'), m => m.AboutPage);
+const CalculatorPage = lazyRoute(() => import('./routes/CalculatorPage'), m => m.CalculatorPage);
+const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage);
+const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
 
 export interface ListSearch {
   q: string;
@@ -84,6 +85,12 @@ const calcRoute = createRoute({
   component: CalculatorPage,
 });
 
+const chipsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/chips',
+  component: ChipsPage,
+});
+
 const pokerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/poker',
@@ -97,10 +104,14 @@ const aboutRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, pokerRoute, aboutRoute]);
+  [listRoute, favoritesRoute, usRoute, calcRoute, chipsRoute, pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,
+  // 任何分頁載入或渲染失敗都走這個畫面。交給 router 而不是自寫錯誤邊界，
+  // 因為它的 reset 會一併重設路由的比對狀態 —— 自訂邊界做不到，
+  // 從壞掉的分頁切走之後 Outlet 會再渲染一次那個分頁並再次拋錯。
+  defaultErrorComponent: RouteError,
   history: createHashHistory(),
   defaultPreload: 'intent',
   // 空字串的參數不要寫進網址，否則每次都會多出 ?q=&cust=&freq=

@@ -16,6 +16,7 @@ const TABS = [
   { to: '/us', label: '美股' },
   { to: '/favorites', label: '收藏' },
   { to: '/calc', label: '試算' },
+  { to: '/chips', label: '籌碼' },
   { to: '/poker', label: '撲克' },
   { to: '/about', label: '說明' },
 ] as const;
@@ -62,7 +63,7 @@ export function AppShell() {
               <Link
                 key={t.to}
                 to={t.to}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3.5 py-2.5 text-sm font-semibold
+                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2.5 text-sm font-semibold sm:px-3.5
                   ${active ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'}`}
                 aria-current={active ? 'page' : undefined}
               >
@@ -94,7 +95,9 @@ export function AppShell() {
 
         {state.status === 'ready' && (
           <AppProvider value={{ data: state.data, favorites }}>
-            {/* 分頁是動態載入的，切換時會有一瞬間的空白 */}
+            {/* 分頁是動態載入的，切換時會有一瞬間的空白。
+                錯誤處理交給 router 的 defaultErrorComponent（見 router.tsx）—— 
+                自訂的 React 錯誤邊界清不掉路由自己的比對狀態。 */}
             <Suspense fallback={<p className="py-16 text-center text-muted">載入中…</p>}>
               <Outlet />
             </Suspense>

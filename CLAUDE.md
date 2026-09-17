@@ -16,6 +16,8 @@ Where each field comes from, because it is not one source:
 | Taiwan 保管銀行 / 配息頻率 / 殖利率 | MoneyDJ `Basic0004` — no FinLab equivalent exists |
 | US ETF list | Nasdaq Trader's public symbol file ∩ FinLab price matrix |
 | US returns | computed from FinLab `us_fund_price` — **price return only**, see below |
+| 籌碼（法人期貨／選擇權未平倉、Put/Call Ratio、大額交易人） | 期交所的 CSV 下載端點 |
+| 籌碼（法人買賣超前十大） | TWSE `T86` + TPEx `insti/dailyTrade`，金額是估算 |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -29,6 +31,7 @@ app/                       React 19 + TypeScript + Vite + Tailwind v4 — the si
   src/routes/                one file per page
   tests/                     node --test, runs the real modules
 scripts/                   the Python data pipeline (scrape → JSON + legacy HTML)
+  fetch_chips.py             籌碼：期交所 + 兩家交易所 → chips.json（部署時產生）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -116,6 +119,36 @@ rules, payout labels, return periods. A new payout label needs `FREQ_CLASS`/`FRE
 there, `PILL` in `app/src/lib/format.ts`, a `.pill-*` rule in `app/src/styles.css`, and
 `FreqLabel` in `app/src/types.ts` — `build_data.py` refuses to write rather than emit an
 unstyled pill.
+
+## 籌碼資料
+
+`scripts/fetch_chips.py` → `app/public/data/chips.json`（**不進版控**，跟 `calc/` 一樣
+部署時產生；它不需要 FinLab 憑證，來源全是免費的公開端點）。
+
+期交所每個統計頁底下都有一個 CSV 下載端點，欄位固定、參數就是日期區間，比解析網頁穩：
+
+| 端點 | 內容 |
+| --- | --- |
+| `futContractsDateDown` | 三大法人各期貨契約未平倉（含契約金額，近 120 天） |
+| `callsAndPutsDateDown` | 三大法人臺指選擇權買賣權分計 |
+| `pcRatioDown` | Put/Call Ratio（成交量比、未平倉量比） |
+| `largeTraderFutDown` / `largeTraderOptDown` | 大額交易人前五大／前十大 |
+
+三個踩過的坑，改動前先讀 `fetch_chips.py` 的 docstring：
+
+- **PC ratio 一次最多查一個月**，查兩個月會回一頁 HTML（不是錯誤訊息），所以歷史是切段抓的。
+- **大額交易人只抓最新一日**：那份表涵蓋全市場 346 種契約，查三個月會變成 89000 行。
+- **買賣超金額是估算**。交易所公佈的法人買賣超只有**股數**；這裡用當日成交均價
+  （成交金額÷成交股數）推估金額，畫面上必須標明。不要把它講成實際成交金額。
+
+櫃買的法人買賣超表格裡，七個身份別的欄位名稱全都叫「買進／賣出／買賣超股數」，
+`fields.index()` 永遠回第一組，只能靠位置取。所以 `tpex_top()` 每次都用
+「三家相加 = 公佈的三大法人合計」驗一次 —— 櫃買改版挪動欄位時會先叫出來，
+而不是默默給出錯的排行。證交所那邊同理，且外資要把外資自營商加回來才對得上合計。
+
+籌碼頁 `app/src/routes/ChipsPage.tsx` 只負責呈現，計算都在 `app/src/lib/chips.ts`
+（純函式、有測試）。單位換算特別容易錯，JSON 一律保留原始單位（契約金額千元、
+買賣超股數與估算金額元），換算只在畫面上做。
 
 ## The React app
 

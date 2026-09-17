@@ -73,6 +73,13 @@ jobs:
         if: ${{ env.FINLAB_API_TOKEN != '' }}
         run: python scripts/fetch_calc.py
 
+      # 籌碼面（期交所三大法人／大額交易人、交易所法人買賣超）。不需要 FinLab，
+      # 來源都是公開端點。continue-on-error 是刻意的：交易所偶爾維護或逾時，
+      # 那不該讓整個網站的部署失敗 —— 缺檔時籌碼頁自己會說「今天還沒有資料」。
+      - name: 產生籌碼資料
+        continue-on-error: true
+        run: python scripts/fetch_chips.py
+
       - name: 加密受保護的資料
         if: ${{ steps.finlab.outputs.generated == 'true' }}
         run: |
