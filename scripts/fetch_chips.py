@@ -44,6 +44,7 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
 """
 import io
 import json
+import re
 import os
 import sys
 import time
@@ -153,7 +154,14 @@ def num(s):
 
 
 def iso(d):
-    u"""期交所的 2026/09/16 -> 2026-09-16。"""
+    u"""期交所的 2026/09/16 -> 2026-09-16。格式不對就拒絕。
+
+    這個值後面會被插進證交所與櫃買的網址。來源是期交所的 CSV，不是使用者輸入，
+    但「從遠端拿到的字串直接接進網址」這件事本身值得擋一下 —— 成本是一行。
+    """
+    d = (d or '').strip()
+    if not re.match(r'^\d{4}/\d{2}/\d{2}$', d):
+        raise ValueError(u'期交所回傳了看不懂的日期：%r' % d)
     return d.replace('/', '-')
 
 

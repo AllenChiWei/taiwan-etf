@@ -27,6 +27,9 @@ DROP_TOLERANCE = 0.05
 REQUIRED_FIELDS = ['code', 'name', 'cust', 'freq', 'yield', 'sec',
                    'r3', 'r6', 'r12', 'r36', 'r60']
 
+# 0050 / 00679B / 00400A -- four to six digits, optionally one trailing letter.
+CODE_RE = re.compile(r'^[0-9]{4,6}[A-Z]?$')
+
 fails = []
 warns = []
 
@@ -68,6 +71,13 @@ for i, e in enumerate(etfs):
             fail('etfs[%d] (%s) missing field %s' % (i, e.get('code', '?'), f))
     if not str(e.get('code', '')).strip():
         fail('etfs[%d] has a blank code' % i)
+    elif not CODE_RE.match(str(e['code'])):
+        # Codes are interpolated into URLs and (in the legacy page) into HTML
+        # attributes. They come from the exchanges, so this has never fired -- but
+        # a code carrying a quote or angle bracket would end up in the markup, and
+        # this is the gate that is supposed to stop bad scrapes reaching the page.
+        fail('%r is not a plausible code (expected 4-6 digits, optional letter)'
+             % e['code'])
     if not str(e.get('name', '')).strip():
         fail('%s has a blank name' % e.get('code'))
 
