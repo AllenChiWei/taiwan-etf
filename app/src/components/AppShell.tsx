@@ -18,6 +18,7 @@ const TABS = [
   { to: '/calc', label: '試算' },
   { to: '/chips', label: '籌碼' },
   { to: '/news', label: '新聞' },
+  { to: '/stock', label: '個股' },
   { to: '/poker', label: '撲克' },
   { to: '/about', label: '說明' },
 ] as const;
@@ -57,7 +58,7 @@ export function AppShell() {
           </button>
         </div>
 
-        <nav aria-label="主要導覽" className="mx-auto flex w-full max-w-6xl gap-0.5 overflow-x-auto px-3 sm:gap-1 sm:px-4">
+        <nav aria-label="主要導覽" className="mx-auto flex w-full max-w-6xl flex-wrap gap-0.5 px-3 sm:flex-nowrap sm:gap-1 sm:px-4">
           {TABS.map(t => {
             const active = pathname === t.to;
             return (

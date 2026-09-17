@@ -15,6 +15,7 @@ scripts/                Python pipeline: scrape → etfs.json + legacy HTML
   fetch_chips.py          籌碼 (TAIFEX + TWSE/TPEx) → chips.json, built at deploy time
   fetch_news.py           新聞 + 重大訊息 → news.json, built at deploy time
   reuse_calc.py           pulls the published calc data back when FinLab fails
+  fetch_stocks.py         per-stock fundamentals (accumulated) + chips → stocks/
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
@@ -65,6 +66,12 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   Yahoo 股市 and Google News are off-limits (robots.txt disallows AI agents /
   disallows everything); the sources are 鉅亨網 API, 中央社 RSS and MOPS filings.
 
+- Per-stock financials come from MOPS OpenAPI, which returns **only the current period**.
+  `fin_history.json` accumulates them and **is** in version control — the daily update
+  workflow commits it; deploy only reads it. Quarterly figures are **cumulative**
+  (Q2 = first half), and amounts are in **thousands of NTD**; both are handled in
+  `app/src/lib/stock.ts` and pinned by tests with real TSMC numbers.
+
 ## Conventions that are deliberate
 
 - **紅漲綠跌**: gains are red, losses green — the Taiwan convention, opposite of the US one.
@@ -82,6 +89,7 @@ cd app && npm run build                                 # tsc -b && vite build
 python scripts/verify_data.py app/public/data/etfs.json
 python scripts/fetch_chips.py .cache/chips.json          # 籌碼管線（會打外部端點）
 python scripts/fetch_news.py .cache/news.json            # 新聞管線（會打外部端點）
+python scripts/fetch_stocks.py --no-chips                # 個股財報（累積，會改 fin_history.json）
 python scripts/verify_page.py taiwan_etf_list.html
 node scripts/test_sort.js taiwan_etf_list.html
 ```

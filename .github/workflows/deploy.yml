@@ -142,6 +142,29 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_calc.py
 
+      # 個股籌碼的累積（近 20 個交易日的三大法人買賣超）。用自己的快取，
+      # 跟 FinLab 那份分開 —— 它每天都要更新，而 FinLab 那份刻意一天只動一次。
+      - name: 取回個股籌碼快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/stock_chips.json
+          key: stock-chips-${{ github.run_id }}
+          restore-keys: |
+            stock-chips-
+
+      # 快取是空的時候會自己回補 20 個交易日（T86 可以指定日期）。
+      - name: 產生個股資料
+        id: stocks
+        continue-on-error: true
+        run: python scripts/fetch_stocks.py
+
+      - name: 存下個股籌碼快取
+        if: ${{ steps.stocks.outcome == 'success' && hashFiles('.cache/stock_chips.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/stock_chips.json
+          key: stock-chips-${{ github.run_id }}
+
       # 新聞與重大訊息。同樣不需要 FinLab，也同樣容許失敗：媒體或觀測站掛掉時
       # 新聞頁自己會說「還沒有資料」，不該連帶讓整個網站不能部署。
       - name: 產生新聞資料
@@ -190,6 +213,11 @@ jobs:
               echo "::warning title=$f.json 沒有產生::這次部署不含這一頁的資料，頁面會顯示「還沒有資料」。"
             fi
           done
+          if [ -f app/public/data/stocks/index.json ]; then
+            echo "個股 $(python -c "import io,json;print(json.load(io.open('app/public/data/stocks/index.json',encoding='utf-8'))['meta']['stocks'])") 檔"
+          else
+            echo "::warning title=個股資料沒有產生::個股頁會顯示「還沒有資料」。"
+          fi
 
       - name: 加密受保護的資料
         if: ${{ steps.finlab.outputs.generated == 'true' }}

@@ -20,6 +20,8 @@ Where each field comes from, because it is not one source:
 | 籌碼（法人買賣超前十大） | TWSE `T86` + TPEx `insti/dailyTrade`，金額是估算 |
 | 新聞 | 鉅亨網 API + 中央社 RSS（只存標題與連結） |
 | 公告 | 公開資訊觀測站重大訊息（TWSE `t187ap04_L` + TPEx `mopsfin_t187ap04_O`） |
+| 個股財報 | 公開資訊觀測站 OpenAPI（基本資料／月營收／損益表／資產負債表）——**累積式** |
+| 個股籌碼 | TWSE `T86`／`MI_MARGN`／`MI_QFIIS`、TPEx 對應端點、集保 TDCC |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -36,6 +38,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_chips.py             籌碼：期交所 + 兩家交易所 → chips.json（部署時產生）
   fetch_news.py              新聞與重大訊息 → news.json（部署時產生）
   reuse_calc.py              FinLab 失敗時，從線上抓回試算資料當備援
+  fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -177,6 +180,34 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 
 重大訊息的連結用 `mopsov.twse.com.tw/mops/web/t05st01?firstin=1&co_id=…` ——
 新版觀測站是 SPA、沒辦法用 GET 帶公司代號深連結，這個舊版路徑實測可以。
+
+## 個股資料
+
+`scripts/fetch_stocks.py`，來源全是官方免費端點，**不動用 FinLab 額度**。產出三份：
+
+| 檔案 | 進版控？ | 誰產生 |
+| --- | --- | --- |
+| `app/public/data/fin_history.json` | **是** | 每日更新流程（`--no-chips`），它才會 commit |
+| `.cache/stock_chips.json` | 否 | 部署流程，用 Actions 快取保存 |
+| `app/public/data/stocks/*.json` | 否 | 部署流程，前端實際讀的（每檔約 600 bytes） |
+
+三個一定要知道的資料性質：
+
+- **財報端點只回當期**（本季、本月），沒有任何歷史參數。所以季度趨勢是逐期累積的，
+  `fin_history.json` 進版控、每次執行合併、已有的期別不覆蓋。要一次補回幾年份只有
+  用 FinLab 抓一次（吃額度）或對每家公司逐季查觀測站（兩萬多次請求，不做）。
+- **季報是累計數**：季別 2 是上半年、季別 3 是前三季。台積電 2026Q2 營收 2.40 兆，
+  而 1～8 月累計月營收 3.39 兆 —— 當成單季會差一倍。`singleQuarter()` 在有連續兩期
+  時還原單季，畫面一律標「累計」。資產負債表是時點數，不受影響。
+- **單位**：財報是千元（1 億元 = 100,000 千元、1 兆元 = 1,000,000,000 千元），
+  買賣超是股，融資融券是張。`lib/stock.ts` 收斂換算，`tests/stock.test.ts` 用台積電
+  的真實數字釘住 —— 這兩個常數寫錯十倍時畫面看起來仍然正常。
+
+融資融券那兩張表把「前日餘額」排在「今日餘額」前面（上市 5/6、上櫃 2/6），
+取錯一格會整頁顯示昨天的數字而且毫無異狀；第一版就取錯過，靠比對原始列才發現。
+
+集保股權分散表一次 9 MB、68000 列，只留三個數字：400 張以上（分級 12–15）、
+千張以上（分級 15）、股東人數（分級 17）。它每週更新，日期與買賣超不同天。
 
 ## FinLab 的每日流量
 

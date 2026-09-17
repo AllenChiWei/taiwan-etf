@@ -32,6 +32,7 @@ const CalculatorPage = lazyRoute(() => import('./routes/CalculatorPage'), m => m
 const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage);
 const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
 const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
+const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
 
 export interface ListSearch {
   q: string;
@@ -98,6 +99,14 @@ const newsRoute = createRoute({
   component: NewsPage,
 });
 
+/** 個股頁只有一個參數：看哪一檔。型別不對就當成沒選。 */
+const stockRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/stock',
+  validateSearch: (search: Record<string, unknown>) => ({ code: str(search.code) }),
+  component: StockPage,
+});
+
 const pokerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/poker',
@@ -112,7 +121,7 @@ const aboutRoute = createRoute({
 
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, chipsRoute, newsRoute,
-   pokerRoute, aboutRoute]);
+   stockRoute, pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,
