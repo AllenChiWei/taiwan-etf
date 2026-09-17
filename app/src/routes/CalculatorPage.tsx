@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useEtfData } from '../context/AppContext';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
 import { DividendPlanner } from '../components/DividendPlanner';
+import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
 import {
   runBacktest, project, monthIndex,
@@ -132,11 +133,16 @@ function Stat({ label, value, tone, sub }: {
 
 function BacktestTab({ index }: { index: CalcIndex }) {
   // 名稱取自索引而不是 etfs.json —— 個股（金控）不在那份裡面
-  const available = useMemo(
-    () => Object.keys(index.codes).sort(), [index.codes]);
+  // 個股排在前面、ETF 在後；名稱取自索引而不是 etfs.json（金控不在那份裡）
+  const available = useMemo<SelectOption[]>(() => {
+    const pick = (kind: 'etf' | 'stock', group: string) => Object.keys(index.codes)
+      .filter(c => index.codes[c].kind === kind).sort()
+      .map(c => ({ value: c, label: c, hint: index.codes[c].name, group }));
+    return [...pick('stock', '個股'), ...pick('etf', 'ETF')];
+  }, [index.codes]);
 
   const [code, setCode] = useState(() =>
-    available.includes('0050') ? '0050' : (available[0] ?? ''));
+    (index.codes['0050'] ? '0050' : Object.keys(index.codes).sort()[0]) ?? '');
   const [series, setSeries] = useState<CalcSeries | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -233,15 +239,12 @@ function BacktestTab({ index }: { index: CalcIndex }) {
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="標的"
                  hint={info ? `資料自 ${info.first}　近一年配息 ${info.payouts} 次` : undefined}>
-            <select value={code}
-                    onChange={(e: React.ChangeEvent<HTMLSelectElement>) => {
-                      setCode(e.target.value); setFrom(''); setTo('');
-                    }}
-                    className={inputClass}>
-              {available.map(c => (
-                <option key={c} value={c}>{c}　{index.codes[c].name}</option>
-              ))}
-            </select>
+            <SearchableSelect
+              options={available}
+              value={code}
+              onChange={next => { setCode(next); setFrom(''); setTo(''); }}
+              placeholder="輸入代號或名稱…"
+            />
           </Field>
 
           <div className="grid grid-cols-2 gap-3">
@@ -514,6 +517,18 @@ function RetireTab({ index }: { index: CalcIndex }) {
 
   const [seedNote, setSeedNote] = useState<string | null>(null);
 
+  const seedOptions = useMemo<SelectOption[]>(() => seeds.map(s => ({
+    value: s.code,
+    label: s.code,
+    hint: `${s.name}　`
+      + (s.cagr !== null
+        ? `${s.basis}年化 ${nf2.format(s.cagr)}%`
+        : s.oneYear !== null
+          ? `近1年 ${nf2.format(s.oneYear)}%（僅供參考）`
+          : `上市 ${s.months} 個月`)
+      + `　殖利率 ${nf2.format(s.yld)}%${s.yldEstimated ? '*' : ''}`,
+  })), [seeds]);
+
   const result = useMemo(() => project({
     initial, monthly: monthlyAmt, monthlyGrowthPct: growth, years,
     returnPct, inflationPct: inflation, withdrawPct: withdraw, yieldPct, reinvest,
@@ -532,11 +547,12 @@ function RetireTab({ index }: { index: CalcIndex }) {
         <Field label="用實際標的的歷史數字帶入假設"
                hint="取該檔最長可用期間的年化報酬與目前殖利率。近幾年是一段大多頭，
                      直接拿來推估未來會過度樂觀 —— 帶進來是給一個起點，不是預測。">
-          <select
-            className={inputClass}
+          <SearchableSelect
+            options={seedOptions}
             value=""
-            onChange={e => {
-              const s = seeds.find(x => x.code === e.target.value);
+            placeholder="輸入代號或名稱帶入…"
+            onChange={picked => {
+              const s = seeds.find(x => x.code === picked);
               if (!s) return;
               setYieldPct(Number(s.yld.toFixed(2)));
               if (s.cagr !== null) {
@@ -557,20 +573,7 @@ function RetireTab({ index }: { index: CalcIndex }) {
                       + '年化報酬那一格請自己填一個假設。');
               }
             }}
-          >
-            <option value="">選一檔帶入…（共 {seeds.length} 檔）</option>
-            {seeds.map(s => (
-              <option key={s.code} value={s.code}>
-                {s.code}　{s.name}　
-                {s.cagr !== null
-                  ? `${s.basis}年化 ${nf2.format(s.cagr)}%`
-                  : s.oneYear !== null
-                    ? `近1年 ${nf2.format(s.oneYear)}%（僅供參考）`
-                    : `上市 ${s.months} 個月`}
-                　殖利率 {nf2.format(s.yld)}%{s.yldEstimated ? '*' : ''}
-              </option>
-            ))}
-          </select>
+          />
         </Field>
 
         {seedNote && (

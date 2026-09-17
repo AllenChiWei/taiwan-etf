@@ -4,6 +4,7 @@
  * 每次都要重打的話等於沒做。 */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   type HoldingProjection,
@@ -130,13 +131,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
 
   // 只列出真的有配息紀錄的標的 —— 沒配過息的加進來只會是一排 0。
   // 分成 ETF 與個股兩組：金控股跟三百多檔 ETF 混在同一個清單裡會很難找。
-  const options = useMemo(() => {
-    const pick = (kind: 'etf' | 'stock') => Object.keys(index.codes)
+  const options = useMemo<SelectOption[]>(() => {
+    const pick = (kind: 'etf' | 'stock', group: string) => Object.keys(index.codes)
       .filter(c => index.codes[c].kind === kind)
       .filter(c => (index.codes[c].payouts ?? 0) > 0)
       .filter(c => !entries.some(e => e.code === c))
-      .sort();
-    return { etf: pick('etf'), stock: pick('stock') };
+      .sort()
+      .map(c => ({ value: c, label: c, hint: index.codes[c].name, group }));
+    return [...pick('stock', '個股'), ...pick('etf', 'ETF')];
   }, [index.codes, entries]);
 
   const add = useCallback(() => {
@@ -162,24 +164,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">加入持股</h2>
         <div className="mt-2 grid grid-cols-[1fr_auto_auto] gap-2">
-          <select value={pick} onChange={e => setPick(e.target.value)}
-                  className={`${inputCls} w-full min-w-0`}>
-            <option value="">選一檔…</option>
-            {options.stock.length > 0 && (
-              <optgroup label="個股">
-                {options.stock.map(c => (
-                  <option key={c} value={c}>{c}　{index.codes[c].name}</option>
-                ))}
-              </optgroup>
-            )}
-            {options.etf.length > 0 && (
-              <optgroup label="ETF">
-                {options.etf.map(c => (
-                  <option key={c} value={c}>{c}　{index.codes[c].name}</option>
-                ))}
-              </optgroup>
-            )}
-          </select>
+          <SearchableSelect
+            options={options}
+            value={pick}
+            onChange={setPick}
+            placeholder="輸入代號或名稱…"
+            className="min-w-0"
+          />
           <span className="relative">
             <input
               type="number" inputMode="numeric" min={0} step={1000}
