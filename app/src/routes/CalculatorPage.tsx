@@ -131,10 +131,7 @@ function Stat({ label, value, tone, sub }: {
 /* ── 回測 ───────────────────────────────────────────────── */
 
 function BacktestTab({ index }: { index: CalcIndex }) {
-  const data = useEtfData();
-  const names = useMemo(
-    () => new Map(data.etfs.map(e => [e.code, e.name] as const)), [data.etfs]);
-
+  // 名稱取自索引而不是 etfs.json —— 個股（金控）不在那份裡面
   const available = useMemo(
     () => Object.keys(index.codes).sort(), [index.codes]);
 
@@ -242,7 +239,7 @@ function BacktestTab({ index }: { index: CalcIndex }) {
                     }}
                     className={inputClass}>
               {available.map(c => (
-                <option key={c} value={c}>{c}　{names.get(c) ?? ''}</option>
+                <option key={c} value={c}>{c}　{index.codes[c].name}</option>
               ))}
             </select>
           </Field>

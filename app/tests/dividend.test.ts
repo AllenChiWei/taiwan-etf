@@ -28,11 +28,12 @@ function series(over: Partial<CalcSeries> = {}): CalcSeries {
   };
 }
 
-test('一張是 1000 股', () => {
-  assert.equal(SHARES_PER_LOT, 1000);
+test('以股為單位，不再換算張數', () => {
+  assert.equal(SHARES_PER_LOT, 1000, '常數仍留著，只用在畫面上的「幾張」提示');
   const d = new Array(12).fill(0); d[0] = 1;
-  const r = projectHolding(series({ d }), MONTHS, 5);
-  assert.equal(r.shares, 5000);
+  const r = projectHolding(series({ freq: '年配', d }), MONTHS, 5000);
+  assert.equal(r.shares, 5000, '傳進去多少股就是多少股');
+  assert.equal(r.annual, 5000, '年配、每股 1 元 × 5000 股');
 });
 
 test('年配息 = 最近一次 × 一年幾次，不是把過去一年加總', () => {
@@ -41,7 +42,7 @@ test('年配息 = 最近一次 × 一年幾次，不是把過去一年加總', (
   d[3] = 0.6;   // 4月
   d[6] = 0.5;   // 7月
   d[9] = 0.8;   // 10月 ← 最近一次，剛調高
-  const r = projectHolding(series({ freq: '季配', d }), MONTHS, 10);
+  const r = projectHolding(series({ freq: '季配', d }), MONTHS, 10_000);
 
   assert.equal(r.payouts, 4);
   assert.equal(r.freq, '季配');
@@ -64,7 +65,7 @@ test('配息落在實際發生的月份，不是機械式平均分配', () => {
   d[4] = 0.5;   // 5月
   d[7] = 0.5;   // 8月
   d[10] = 0.5;  // 11月
-  const r = projectHolding(series({ freq: '季配', d }), MONTHS, 1);
+  const r = projectHolding(series({ freq: '季配', d }), MONTHS, 1000);
   assert.deepEqual(r.payoutMonths, [1, 4, 7, 10], '2/5/8/11 月，不是 1/4/7/10');
   assert.equal(r.byMonth[1], 0.5);
   assert.equal(r.byMonth[0], 0, '1月沒有');
@@ -74,14 +75,14 @@ test('配息落在實際發生的月份，不是機械式平均分配', () => {
 test('月份加總等於年配息', () => {
   const d = new Array(12).fill(0);
   d[2] = 1.2; d[8] = 1.5;                       // 半年配，最近一次 1.5
-  const r = projectHolding(series({ freq: '半年配', d }), MONTHS, 3);
+  const r = projectHolding(series({ freq: '半年配', d }), MONTHS, 3000);
   const sum = r.byMonth.reduce((a, b) => a + b, 0) * r.shares;
   assert.ok(Math.abs(sum - r.annual) < 1e-6,
     `月份加總 ${sum} 應等於年配息 ${r.annual}`);
 });
 
 test('月配 12 個月都有', () => {
-  const r = projectHolding(series({ freq: '月配', d: new Array(12).fill(0.1) }), MONTHS, 2);
+  const r = projectHolding(series({ freq: '月配', d: new Array(12).fill(0.1) }), MONTHS, 2000);
   assert.equal(r.payouts, 12);
   assert.equal(r.freq, '月配');
   assert.equal(r.byMonth.filter(v => v > 0).length, 12);
@@ -105,7 +106,7 @@ test('記錄到的月份不足時，按間隔往後補而不是隨便挑空月',
 test('公告頻率認不得時才退回用實際次數推', () => {
   const d = new Array(12).fill(0);
   d[0] = 1; d[6] = 1;
-  const r = projectHolding(series({ freq: '—', d }), MONTHS, 1);
+  const r = projectHolding(series({ freq: '—', d }), MONTHS, 1000);
   assert.equal(r.freq, '半年配', '公告是 — 就用實際兩次推');
   assert.equal(r.perYear, 2);
 });
@@ -113,7 +114,7 @@ test('公告頻率認不得時才退回用實際次數推', () => {
 test('殖利率用推估的年配息除以最新股價', () => {
   const d = new Array(12).fill(0); d[5] = 2.0;
   const r = projectHolding(series({ freq: '年配', d, last: { date: '2025-12-31', close: 25 } }),
-    MONTHS, 1);
+    MONTHS, 1000);
   assert.equal(r.freq, '年配');
   assert.ok(Math.abs(r.perShare - 2.0) < 1e-9);
   assert.ok(Math.abs(r.yieldPct - 8) < 1e-9, '2 / 25 = 8%');
@@ -128,7 +129,7 @@ test('只看最後 12 個月', () => {
   const d = [...new Array(12).fill(1), ...new Array(12).fill(0.1)];
   const r = projectHolding(series({
     d, p: new Array(24).fill(20), q: new Array(24).fill(null),
-  }), months24, 1);
+  }), months24, 1000);
   assert.equal(r.latest, 0.1, '最近一次是 0.1，不是更早的 1');
   assert.ok(Math.abs(r.perShareTtm - 1.2) < 1e-9);
 });
@@ -137,7 +138,7 @@ test('資料不滿一年時據實回報月數，頻率仍以公告為準', () =>
   const r = projectHolding(series({
     freq: '半年配', first: 8, d: [0.3, 0, 0, 0.4],
     p: new Array(4).fill(20), q: new Array(4).fill(null),
-  }), MONTHS, 1);
+  }), MONTHS, 1000);
   assert.equal(r.monthsListed, 4);
   assert.equal(r.payouts, 2);
   assert.equal(r.freq, '半年配');
@@ -154,7 +155,7 @@ test('新上市的月配 ETF 不會被當成半年配 —— 00406A 的情況', 
     d: [0, 0.13, 0, 0.14],
     p: new Array(4).fill(9.34), q: new Array(4).fill(null),
     last: { date: '2026-09-16', close: 9.34 },
-  }), MONTHS, 10);
+  }), MONTHS, 10_000);
 
   assert.equal(r.freq, '月配', '要用公告頻率，不是從兩次除息推');
   assert.equal(r.perYear, 12);
@@ -170,10 +171,10 @@ test('新上市的月配 ETF 不會被當成半年配 —— 00406A 的情況', 
 test('投資組合把各檔加總到同一份月曆', () => {
   const dA = new Array(12).fill(0); dA[0] = 1; dA[6] = 1;        // 半年配
   const dB = new Array(12).fill(0.05);                          // 月配
-  const a = projectHolding(series({ code: 'A', freq: '半年配', d: dA }), MONTHS, 1);
+  const a = projectHolding(series({ code: 'A', freq: '半年配', d: dA }), MONTHS, 1000);
   const b = projectHolding(
     series({ code: 'B', freq: '月配', d: dB, last: { date: '2025-12-31', close: 10 } }),
-    MONTHS, 2);
+    MONTHS, 2000);
   const p = buildPortfolio([a, b]);
 
   // 1月：A 配 1 × 1000 = 1000，B 配 0.05 × 2000 = 100
@@ -197,7 +198,7 @@ test('空投資組合不會變成 NaN', () => {
 });
 
 test('近一年沒配息的標的不會產生假數字', () => {
-  const r = projectHolding(series({ freq: '—', d: new Array(12).fill(0) }), MONTHS, 10);
+  const r = projectHolding(series({ freq: '—', d: new Array(12).fill(0) }), MONTHS, 10_000);
   assert.equal(r.payouts, 0);
   assert.equal(r.freq, '近一年未配息');
   assert.equal(r.perYear, 0);
@@ -210,7 +211,7 @@ test('近一年沒配息的標的不會產生假數字', () => {
 test('股價為 0 時殖利率不會爆掉', () => {
   const d = new Array(12).fill(0); d[0] = 1;
   const r = projectHolding(series({ d, last: { date: '2025-12-31', close: 0 } }),
-    MONTHS, 1);
+    MONTHS, 1000);
   assert.equal(r.yieldPct, 0);
   assert.ok(Number.isFinite(r.annual));
 });
@@ -226,4 +227,31 @@ test('頻率與次數的對應', () => {
   assert.equal(payoutsPerYear('月配'), 12);
   assert.equal(payoutsPerYear('季配'), 4);
   assert.equal(payoutsPerYear('近一年未配息'), 0);
+});
+
+test('「約略值」只看最近一次那筆的來源，不是整檔', () => {
+  // 舊的配息是回推的，最近一次是交易所公告的 —— 畫面顯示的是最近那筆，
+  // 所以應該標成精確。整檔有一筆回推就全部標約略，會讓正確的數字看起來不可信。
+  const d = new Array(12).fill(0);
+  d[0] = 1.0; d[6] = 1.5;
+  const r = projectHolding(series({
+    freq: '半年配', d,
+    dSrc: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0],
+  }), MONTHS, 1000);
+  assert.equal(r.latestMonth, '2025-07');
+  assert.equal(r.exact, true, '最近一次是官方值');
+
+  // 反過來：最近一次是回推的
+  const r2 = projectHolding(series({
+    freq: '半年配', d,
+    dSrc: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+  }), MONTHS, 1000);
+  assert.equal(r2.exact, false);
+});
+
+test('沒有 dSrc 時一律當成約略值', () => {
+  // 舊版的資料檔沒有這個欄位。寧可標成約略，不要假裝精確。
+  const d = new Array(12).fill(0); d[0] = 1;
+  const r = projectHolding(series({ freq: '年配', d }), MONTHS, 1000);
+  assert.equal(r.exact, false);
 });

@@ -58,6 +58,7 @@ import json
 import os
 import sys
 import warnings
+from datetime import date as _date
 
 warnings.filterwarnings('ignore')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -77,6 +78,9 @@ SPLIT_MIN_PCT = 20.0
 
 # 事件要算數的最小金額。浮點雜訊會在 ratio 上造成 1e-9 等級的抖動。
 MIN_DIV = 0.001
+
+# 回推的除息日與交易所公告日可以差幾天。除息相隔數月，這個窗口不會誤配。
+MATCH_DAYS = 5
 
 
 def log(msg):
@@ -147,26 +151,51 @@ def split_adjust(close, adj, official=None):
     divs = divs[divs > MIN_DIV]
 
     # 官方金額覆蓋回推值。官方數字是原始股數的，要乘 g 換到分割還原後的尺度。
-    n_official = 0
+    #
+    # 日期通常完全吻合，但偶爾差幾天 —— 還原股價的跳動會落在公告日的下一個
+    # 交易日（2891 中信金 2026 年就是回推 07-13、公告 07-10）。只比對完全相同的
+    # 日期會讓那些紀錄默默退回回推值，而畫面上看不出來。除息相隔數月，
+    # 容許幾天的誤差不會誤配到別筆。
+    official_dates = set()
     if official:
+        used = set()
+        keys = sorted(official)
         for d in list(divs.index):
             key = d.strftime('%Y-%m-%d')
-            if key in official:
-                divs.loc[d] = official[key] * float(g.loc[d])
-                n_official += 1
+            amount = official.get(key) if key not in used else None
+            hit = key if amount is not None else None
+            if amount is None:
+                best, gap = None, MATCH_DAYS + 1
+                for k in keys:
+                    if k in used:
+                        continue
+                    g2 = abs((_date.fromisoformat(k) - d.date()).days)
+                    if g2 < gap:
+                        best, gap = k, g2
+                if best is not None:
+                    amount, hit = official[best], best
+            if amount is not None:
+                divs.loc[d] = amount * float(g.loc[d])
+                used.add(hit)
+                official_dates.add(d)
 
     splits = [{'date': d.strftime('%Y-%m-%d'), 'ratio': round(1.0 / float(f.loc[d]), 4)}
               for d in f.index[is_split]]
-    return sclose, divs, splits, n_official
+    return sclose, divs, splits, official_dates
 
 
-def monthly(sclose, divs, months):
-    u"""把日資料壓成每月三個數字。months 是整個市場共用的月份清單。"""
+def monthly(sclose, divs, months, official_dates=()):
+    u"""把日資料壓成每月三個數字，外加「這個月的金額是不是官方值」。
+
+    來源要逐月記錄，不能只記整檔。使用者看到的「最近一次配息」是某一筆，
+    整檔裡有一筆回推值就把整檔標成約略，會讓其實精確的那筆看起來不可信。
+    """
     pos = {m: i for i, m in enumerate(months)}
     n = len(months)
     p = [None] * n
     d = [0.0] * n
     q = [None] * n
+    src = [0] * n                       # 1 = 這個月的金額來自交易所公告
 
     # p：每個月第一個交易日的收盤價
     keys = sclose.index.strftime('%Y-%m')
@@ -184,6 +213,8 @@ def monthly(sclose, divs, months):
             continue
         i = pos[key]
         d[i] += float(amt)
+        if dt in official_dates:
+            src[i] = 1
         v = sclose.get(dt)
         if v is not None and v == v:
             q[i] = float(v)
@@ -193,7 +224,53 @@ def monthly(sclose, divs, months):
         if d[i] > 0 and q[i] is None:
             q[i] = p[i]
 
-    return p, d, q
+    return p, d, q, src
+
+
+def stock_freq(records):
+    u"""由近 12 個月的實際除息次數推配息頻率。
+
+    個股沒有「公告配息頻率」這種欄位可讀（ETF 有，來自 MoneyDJ），只能看實際。
+    金控多半是年配，少數改成半年配 —— 這個推法對已經配過一整年的標的是準的，
+    問題只出在新上市，而金控股沒有那個問題。
+    """
+    from datetime import date, timedelta
+    if not records:
+        return u'—'
+    cut = (date.today() - timedelta(days=365)).isoformat()
+    n = sum(1 for d, _ in records if d > cut)
+    if n >= 11:
+        return u'月配'
+    if n >= 5:
+        return u'雙月配'
+    if n >= 3:
+        return u'季配'
+    if n == 2:
+        return u'半年配'
+    if n == 1:
+        return u'年配'
+    return u'—'
+
+
+def extra_stock_rows(data, official):
+    u"""EXTRA_STOCKS 的 {code, name, freq, kind}。名稱取自 FinLab，不寫死。"""
+    from etfdata import EXTRA_STOCKS
+    try:
+        cat = data.get('security_categories')
+        names = dict(zip(cat['stock_id'].astype(str), cat['name'].astype(str)))
+    except Exception as e:                                # noqa: BLE001
+        log(u'  取不到個股名稱（%s），改用代號當名稱' % str(e)[:50])
+        names = {}
+    out = []
+    for code in EXTRA_STOCKS:
+        out.append({
+            'code': code,
+            'name': names.get(code, code),
+            'freq': stock_freq(official.get(code, {}).items()),
+            'kind': 'stock',
+        })
+    log(u'  個股 %d 檔：%s' % (len(out), u'、'.join(r['name'] for r in out)))
+    return out
 
 
 def main():
@@ -204,12 +281,17 @@ def main():
 
     log(u'輸出目錄：%s' % OUTDIR)
 
-    doc = json.load(io.open(os.path.join(ROOT, 'app', 'public', 'data', 'etfs.json'),
-                            encoding='utf-8'))
-    rows = doc['etfs']
-
     log(u'載入交易所公告的配息…')
     official = load_official_dividends()
+
+    doc = json.load(io.open(os.path.join(ROOT, 'app', 'public', 'data', 'etfs.json'),
+                            encoding='utf-8'))
+    rows = [dict(r, kind='etf') for r in doc['etfs']]
+
+    # 個股（目前是全部上市金控）也產一份，配息試算與回測才選得到。
+    # 它們不進 etfs.json，所以台股頁的分區與統計完全不受影響。
+    # 配息頻率要靠 official 的實際紀錄推，所以順序上得先載入配息。
+    rows += extra_stock_rows(data, official)
 
     log(u'讀取收盤價與還原收盤價…')
     close = data.get(u'price:收盤價').loc[START:]
@@ -228,13 +310,13 @@ def main():
         if code not in close.columns:
             skipped += 1
             continue
-        sclose, divs, splits, n_official = split_adjust(
+        sclose, divs, splits, official_dates = split_adjust(
             close[code].dropna(), adj[code].dropna(), official.get(code))
         if sclose is None or len(sclose) < 60:      # 不到三個月，回測沒有意義
             skipped += 1
             continue
 
-        p, d, q = monthly(sclose, divs, months)
+        p, d, q, src = monthly(sclose, divs, months, official_dates)
         have = [i for i, v in enumerate(p) if v is not None]
         if not have:
             skipped += 1
@@ -245,19 +327,22 @@ def main():
             'code': code,
             'name': r['name'],
             'freq': r.get('freq', u'—'),
+            'kind': r.get('kind', 'etf'),
             'first': first,
             'p': [None if v is None else round(v, PRICE_DECIMALS)
                   for v in p[first:last_i + 1]],
             'd': [round(v, DECIMALS) for v in d[first:last_i + 1]],
             'q': [None if v is None else round(v, PRICE_DECIMALS)
                   for v in q[first:last_i + 1]],
+            # 每個月的配息金額是不是交易所公告的原始值（1）或回推的約略值（0）
+            'dSrc': src[first:last_i + 1],
             'last': {'date': sclose.index[-1].strftime('%Y-%m-%d'),
                      'close': round(float(sclose.iloc[-1]), PRICE_DECIMALS)},
             'splits': splits,
             # 配息金額的來源：official 全部來自交易所公告、derived 全部是回推的、
             # mixed 兩者都有（櫃買沒有歷史資料，所以債券 ETF 多半是 derived）
-            'divSource': ('official' if n_official and n_official == len(divs)
-                          else 'derived' if not n_official else 'mixed'),
+            'divSource': ('official' if official_dates and len(official_dates) == len(divs)
+                          else 'derived' if not official_dates else 'mixed'),
         }
         src_count[payload['divSource']] += 1
         path = os.path.join(OUTDIR, 'tw', '%s.json' % code)
@@ -270,6 +355,10 @@ def main():
         ttm = float(divs[divs.index > cut].sum()) if len(divs) else 0.0
         px = float(sclose.iloc[-1])
         index['codes'][code] = {
+            # 名稱放進索引，前端的下拉選單才不必另外去 etfs.json 查
+            # —— 個股本來就不在那份裡面
+            'name': r['name'],
+            'kind': r.get('kind', 'etf'),
             'first': months[first],
             'ttmYield': round(ttm / px * 100.0, 2) if px else None,
             'payouts': int((divs.index > cut).sum()) if len(divs) else 0,

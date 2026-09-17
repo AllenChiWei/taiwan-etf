@@ -26,6 +26,8 @@ export interface CalcSeries {
   d: number[];
   /** 該月最後一次除息當天的收盤價；沒配息為 null */
   q: (number | null)[];
+  /** 每個月的配息金額來源：1 = 交易所公告的原始值，0 = 由還原股價回推的約略值 */
+  dSrc?: number[];
   last: { date: string; close: number };
   splits: { date: string; ratio: number }[];
   /**
@@ -44,7 +46,15 @@ export interface CalcSeries {
 
 export interface CalcIndex {
   months: string[];
-  codes: Record<string, { first: string; ttmYield: number | null; payouts: number }>;
+  codes: Record<string, {
+    name: string;
+    /** 'etf' 或 'stock'。個股（目前是上市金控）不在 etfs.json 裡，
+        所以名稱要由索引提供，前端不能只查 etfs.json */
+    kind: 'etf' | 'stock';
+    first: string;
+    ttmYield: number | null;
+    payouts: number;
+  }>;
 }
 
 /** 買進時點。 */

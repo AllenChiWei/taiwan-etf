@@ -25,19 +25,18 @@
 
 import type { CalcSeries } from './backtest.ts';
 
-/** 台股一張是 1000 股。 */
+/** 台股一張是 1000 股。介面以股為單位，這個常數只用在「換算成幾張」的提示。 */
 export const SHARES_PER_LOT = 1000;
 
 export interface Holding {
   code: string;
-  /** 持有張數，可以是小數（零股） */
-  lots: number;
+  /** 持有股數 */
+  shares: number;
 }
 
 export interface HoldingProjection {
   code: string;
   name: string;
-  lots: number;
   shares: number;
 
   /** 最近一次每股配息 */
@@ -144,17 +143,17 @@ export function expectedMonths(known: number[], perYear: number): number[] {
  * 起始位置。只看最後 12 個有資料的月份 —— 不足 12 個就有多少算多少。
  */
 export function projectHolding(
-  series: CalcSeries, months: string[], lots: number,
+  series: CalcSeries, months: string[], shares: number,
 ): HoldingProjection {
   const n = series.d.length;
   const take = Math.min(12, n);
-  const shares = lots * SHARES_PER_LOT;
 
   const payoutMonths: number[] = [];
   let perShareTtm = 0;
   let payouts = 0;
   let latest = 0;
   let latestMonth = '';
+  let latestExact = false;
 
   for (let i = n - take; i < n; i++) {
     const amount = series.d[i] ?? 0;
@@ -166,6 +165,7 @@ export function projectHolding(
     payouts += 1;
     latest = amount;                                     // 迴圈往後跑，最後一個就是最近的
     latestMonth = label;
+    latestExact = (series.dSrc?.[i] ?? 0) === 1;
   }
   payoutMonths.sort((a, b) => a - b);
 
@@ -183,7 +183,6 @@ export function projectHolding(
   return {
     code: series.code,
     name: series.name,
-    lots,
     shares,
     latest,
     latestMonth,
@@ -201,7 +200,9 @@ export function projectHolding(
     yieldPct: price > 0 ? (perShare / price) * 100 : 0,
     value: price * shares,
     monthsListed: n,
-    exact: series.divSource === 'official',
+    // 只看「最近一次」那筆的來源。整檔有一筆回推值就把整檔標成約略，
+    // 會讓其實精確的那個數字看起來不可信 —— 而畫面上顯示的正是那一筆。
+    exact: latestExact,
   };
 }
 

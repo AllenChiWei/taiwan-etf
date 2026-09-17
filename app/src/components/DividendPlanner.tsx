@@ -4,22 +4,60 @@
  * 每次都要重打的話等於沒做。 */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useEtfData } from '../context/AppContext';
 import {
-  projectHolding, buildPortfolio, MONTH_LABELS,
+  projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   type HoldingProjection,
 } from '../lib/dividend';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
 
 const STORAGE_KEY = 'twetf.holdings';
 
+/* 月曆柱狀圖每檔一個顏色。刻意避開紅綠 —— 這裡是多檔並列比較，
+   紅綠在台股語境代表漲跌，用在這會被誤讀。 */
+const SERIES_COLORS = [
+  '#1f6feb', '#e06c00', '#7b4fd6', '#0f9b8e',
+  '#c2185b', '#5d7a17', '#0277bd', '#8d6e63',
+  '#00695c', '#ad1457', '#4527a0', '#827717',
+];
+
+/** 代號 -> 0..n 的穩定雜湊。同一檔 ETF 永遠落在同一個位置。 */
+function hashCode(code: string): number {
+  let h = 0;
+  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) | 0;
+  return Math.abs(h) % SERIES_COLORS.length;
+}
+
+/**
+ * 決定每一檔的顏色。
+ *
+ * 顏色由**代號**決定而不是清單位置 —— 照位置給的話，移除中間一檔會讓後面
+ * 每一檔都換色，而使用者是靠顏色記住哪條是哪檔的。
+ *
+ * 撞色時往後找還沒用到的顏色。用排序後的順序決定誰先挑，這樣同一組持股
+ * 不論加入先後都得到同一份配色。
+ */
+function buildColorMap(codes: string[]): Map<string, string> {
+  const map = new Map<string, string>();
+  const used = new Set<number>();
+  for (const code of [...codes].sort()) {
+    let slot = hashCode(code);
+    for (let k = 0; used.has(slot) && k < SERIES_COLORS.length; k++) {
+      slot = (slot + 1) % SERIES_COLORS.length;
+    }
+    used.add(slot);
+    map.set(code, SERIES_COLORS[slot]);
+  }
+  return map;
+}
+
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
-/** 配息常是 0.138 這種三位數，用兩位會把交易所給的精度丟掉 */
-const nf4 = (v: number) => v.toFixed(3).replace(/0$/, '');
+/** 配息常是 0.138 這種三位數，用兩位會把交易所公告的精度丟掉。
+    末尾的 0 去掉比較好讀（1.010 -> 1.01），但不能把小數點也留著（1.000 -> 1）。 */
+const nf4 = (v: number) => v.toFixed(3).replace(/\.?0+$/, '') || '0';
 const money = (v: number) => nf0.format(Math.round(v));
 
-interface Entry { code: string; lots: number }
+interface Entry { code: string; shares: number }
 
 function loadHoldings(): Entry[] {
   try {
@@ -30,7 +68,7 @@ function loadHoldings(): Entry[] {
     return v.filter((x): x is Entry =>
       typeof x === 'object' && x !== null
       && typeof (x as Entry).code === 'string'
-      && Number.isFinite((x as Entry).lots));
+      && Number.isFinite((x as Entry).shares));
   } catch {
     return [];
   }
@@ -41,10 +79,9 @@ function saveHoldings(v: Entry[]): void {
 }
 
 export function DividendPlanner({ index }: { index: CalcIndex }) {
-  const data = useEtfData();
   const [entries, setEntries] = useState<Entry[]>(loadHoldings);
   const [pick, setPick] = useState('');
-  const [lots, setLots] = useState(1);
+  const [shares, setShares] = useState(1000);
   const [series, setSeries] = useState<Map<string, CalcSeries>>(new Map());
   const [loading, setLoading] = useState(false);
 
@@ -78,32 +115,36 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     for (const e of entries) {
       const s = series.get(e.code);
       if (!s) continue;
-      out.push(projectHolding(s, index.months, e.lots));
+      out.push(projectHolding(s, index.months, e.shares));
     }
     return out;
   }, [entries, series, index.months]);
 
   const portfolio = useMemo(() => buildPortfolio(rows), [rows]);
   const maxMonth = Math.max(1, ...portfolio.byMonth);
+  const colors = useMemo(() => buildColorMap(rows.map(r => r.code)), [rows]);
+  const colorOf = (code: string) => colors.get(code) ?? SERIES_COLORS[0];
 
-  const names = useMemo(
-    () => new Map(data.etfs.map(e => [e.code, e.name] as const)), [data.etfs]);
-
-  // 只列出真的有配息紀錄的標的 —— 沒配過息的加進來只會是一排 0
-  const options = useMemo(
-    () => Object.keys(index.codes)
+  // 只列出真的有配息紀錄的標的 —— 沒配過息的加進來只會是一排 0。
+  // 分成 ETF 與個股兩組：金控股跟三百多檔 ETF 混在同一個清單裡會很難找。
+  const options = useMemo(() => {
+    const pick = (kind: 'etf' | 'stock') => Object.keys(index.codes)
+      .filter(c => index.codes[c].kind === kind)
       .filter(c => (index.codes[c].payouts ?? 0) > 0)
       .filter(c => !entries.some(e => e.code === c))
-      .sort(),
-    [index.codes, entries]);
+      .sort();
+    return { etf: pick('etf'), stock: pick('stock') };
+  }, [index.codes, entries]);
 
   const add = useCallback(() => {
-    if (!pick || !(lots > 0)) return;
-    setEntries(prev => [...prev, { code: pick, lots }]);
+    if (!pick || !(shares > 0)) return;
+    setEntries(prev => [...prev, { code: pick, shares }]);
     setPick('');
-  }, [pick, lots]);
+  }, [pick, shares]);
 
-  const inputCls = 'h-11 w-full rounded-lg border border-line bg-bg px-3 text-base text-ink '
+  // 不要把 w-full 寫進共用的 class：下面數字框需要 w-24，兩個寬度 utility
+  // 權重相同，誰贏取決於 CSS 產生的先後，會變成不可靠的版面。寬度各自指定。
+  const inputCls = 'h-11 rounded-lg border border-line bg-bg px-3 text-base text-ink '
     + 'focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none';
 
   return (
@@ -111,27 +152,39 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">加入持股</h2>
         <div className="mt-2 grid grid-cols-[1fr_auto_auto] gap-2">
-          <select value={pick} onChange={e => setPick(e.target.value)} className={inputCls}>
+          <select value={pick} onChange={e => setPick(e.target.value)}
+                  className={`${inputCls} w-full min-w-0`}>
             <option value="">選一檔…</option>
-            {options.map(c => (
-              <option key={c} value={c}>{c}　{names.get(c) ?? ''}</option>
-            ))}
+            {options.stock.length > 0 && (
+              <optgroup label="個股">
+                {options.stock.map(c => (
+                  <option key={c} value={c}>{c}　{index.codes[c].name}</option>
+                ))}
+              </optgroup>
+            )}
+            {options.etf.length > 0 && (
+              <optgroup label="ETF">
+                {options.etf.map(c => (
+                  <option key={c} value={c}>{c}　{index.codes[c].name}</option>
+                ))}
+              </optgroup>
+            )}
           </select>
           <span className="relative">
             <input
-              type="number" inputMode="decimal" min={0} step={1}
-              value={Number.isFinite(lots) ? lots : ''}
-              onChange={e => setLots(Number(e.target.value) || 0)}
-              className={`${inputCls} w-24 pr-8`}
-              aria-label="張數"
+              type="number" inputMode="numeric" min={0} step={1000}
+              value={Number.isFinite(shares) ? shares : ''}
+              onChange={e => setShares(Number(e.target.value) || 0)}
+              className={`${inputCls} w-28 pr-8`}
+              aria-label="股數"
             />
             <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2
-                             text-[13px] text-faint">張</span>
+                             text-[13px] text-faint">股</span>
           </span>
           <button
             type="button"
             onClick={add}
-            disabled={!pick || !(lots > 0)}
+            disabled={!pick || !(shares > 0)}
             className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
                        transition-opacity disabled:opacity-40"
           >
@@ -139,7 +192,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           </button>
         </div>
         <p className="mt-1 text-[11px] text-faint">
-          一張 = 1000 股。零股可以填小數，例如 0.5 張 = 500 股。
+          以股為單位。一張 = 1000 股，零股直接填實際股數。
         </p>
       </section>
 
@@ -166,28 +219,48 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">配息月曆</h2>
-              <span className="text-[11.5px] text-faint">
-                依各檔實際的除息月份排列
-              </span>
+              <span className="text-[11.5px] text-faint">柱子依各檔金額分段</span>
             </div>
+
+            {/* 圖例。每檔的顏色在十二個月裡固定，才看得出誰佔比大 */}
+            <ul className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+              {rows.map(r => (
+                <li key={r.code} className="flex items-center gap-1.5 text-[11.5px]">
+                  <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                        style={{ background: colorOf(r.code) }} />
+                  <span className="font-mono font-semibold text-ink">{r.code}</span>
+                  <span className="text-muted">{money(r.annual)}</span>
+                </li>
+              ))}
+            </ul>
+
             <ul className="mt-2 space-y-1">
               {MONTH_LABELS.map((label, m) => {
                 const v = portfolio.byMonth[m];
-                const who = rows.filter(r => r.byMonth[m] > 0);
+                const parts = rows
+                  .map(r => ({ r, amount: r.byMonth[m] * r.shares }))
+                  .filter(x => x.amount > 0);
                 return (
                   <li key={label} className="flex items-center gap-2">
                     <span className="w-9 shrink-0 text-right text-[12px] text-muted">{label}</span>
                     <span className="relative h-6 flex-1 overflow-hidden rounded bg-sunken">
-                      <span
-                        className="absolute inset-y-0 left-0 bg-yield"
-                        style={{ width: `${(v / maxMonth) * 100}%`, opacity: 0.85 }}
-                      />
-                      {who.length > 0 && (
-                        <span className="absolute inset-y-0 left-1.5 flex items-center
-                                         text-[10.5px] text-ink">
-                          {who.map(r => r.code).join(' ')}
-                        </span>
-                      )}
+                      {/* 外層寬度 = 這個月佔最高月份的比例；內層再按各檔金額分段。
+                          兩層分開，分段比例才不會被外層的縮放扭曲 */}
+                      <span className="absolute inset-y-0 left-0 flex"
+                            style={{ width: `${(v / maxMonth) * 100}%` }}>
+                        {parts.map(({ r, amount }) => (
+                          <span
+                            key={r.code}
+                            title={`${label}　${r.code} ${r.name}　${money(amount)} 元`}
+                            className="flex items-center justify-center overflow-hidden
+                                       text-[10px] font-semibold whitespace-nowrap text-white"
+                            style={{ width: `${(amount / v) * 100}%`,
+                                     background: colorOf(r.code) }}
+                          >
+                            {amount / v > 0.22 ? r.code : ''}
+                          </span>
+                        ))}
+                      </span>
                     </span>
                     <span className="w-20 shrink-0 text-right font-mono text-[12.5px]
                                      font-semibold tabular-nums text-ink">
@@ -205,7 +278,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               {rows.map(r => (
                 <li key={r.code} className="py-2.5 first:pt-0 last:pb-0">
                   <div className="flex items-baseline justify-between gap-2">
-                    <div className="min-w-0">
+                    <div className="flex min-w-0 items-center gap-1.5">
+                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                            style={{ background: colorOf(r.code) }} />
                       <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
                       <span className="ml-1.5 text-[13px] text-muted">{r.name}</span>
                     </div>
@@ -218,7 +293,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     </button>
                   </div>
                   <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-6">
-                    <Cell label="張數" value={`${nf2.format(r.lots)} 張`} />
+                    <Cell label="股數" value={`${nf0.format(r.shares)} 股`}
+                          hint={r.shares >= 1000
+                            ? `${nf2.format(r.shares / SHARES_PER_LOT)} 張` : undefined} />
                     <Cell label="配息頻率" value={`${r.freq}`} />
                     <Cell label="最近一次" value={`${nf4(r.latest)} 元`}
                           hint={`${r.latestMonth}${r.exact ? '' : '　約略值'}`} />
@@ -232,13 +309,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       這檔上市才 {r.monthsListed} 個月，只配過 {r.payouts} 次
                       （實際共 {money(r.annualTtm)} 元）。上面的年配息是照公告的
-                      「{r.freq}」用最近一次 {nf2.format(r.latest)} 元推算滿一年的結果。
+                      「{r.freq}」用最近一次 {nf4(r.latest)} 元推算滿一年的結果。
                     </p>
                   ) : Math.abs(r.annual - r.annualTtm) > r.annualTtm * 0.15
                       && r.annualTtm > 0 ? (
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       近 12 個月實際配了 {money(r.annualTtm)} 元，跟推估差不少。
-                      推估用的是最近一次的 {nf2.format(r.latest)} 元 ——
+                      推估用的是最近一次的 {nf4(r.latest)} 元 ——
                       {r.annual > r.annualTtm ? '最近調高了配息' : '最近那次配得比平常少'}。
                     </p>
                   ) : null}

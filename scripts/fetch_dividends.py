@@ -169,10 +169,15 @@ def load_existing(path):
 
 
 def main():
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from etfdata import EXTRA_STOCKS
+
     etfs = json.load(io.open(
         os.path.join(ROOT, 'app', 'public', 'data', 'etfs.json'), encoding='utf-8'))
     codes = set(e['code'] for e in etfs['etfs'])
-    log(u'名單裡有 %d 檔 ETF' % len(codes))
+    # 證交所那張表本來就涵蓋所有上市證券，個股不必另外抓，只要別過濾掉
+    codes |= set(EXTRA_STOCKS)
+    log(u'名單裡有 %d 檔 ETF，另加 %d 檔個股' % (len(etfs['etfs']), len(EXTRA_STOCKS)))
 
     merged = load_existing(OUT)
     before = sum(len(v) for v in merged.values())
