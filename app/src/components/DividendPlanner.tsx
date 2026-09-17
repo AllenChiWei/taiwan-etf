@@ -163,7 +163,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     <>
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">加入持股</h2>
-        <div className="mt-2 grid grid-cols-[1fr_auto_auto] gap-2">
+        {/* 手機上搜尋框自己佔一列。三個控制項擠在同一列時，1fr 只剩一百多 px，
+            打「國泰」就看不到自己打了什麼，選單也被壓在螢幕邊上。 */}
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
           <SearchableSelect
             options={options}
             value={pick}
@@ -171,26 +173,28 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             placeholder="輸入代號或名稱…"
             className="min-w-0"
           />
-          <span className="relative">
-            <input
-              type="number" inputMode="numeric" min={0} step={1000}
-              value={Number.isFinite(shares) ? shares : ''}
-              onChange={e => setShares(Number(e.target.value) || 0)}
-              className={`${inputCls} w-28 pr-8`}
-              aria-label="股數"
-            />
-            <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2
-                             text-[13px] text-faint">股</span>
-          </span>
-          <button
-            type="button"
-            onClick={add}
-            disabled={!pick || !(shares > 0)}
-            className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
-                       transition-opacity disabled:opacity-40"
-          >
-            加入
-          </button>
+          <div className="grid grid-cols-[1fr_auto] gap-2 sm:contents">
+            <span className="relative">
+              <input
+                type="number" inputMode="numeric" min={0} step={1000}
+                value={Number.isFinite(shares) ? shares : ''}
+                onChange={e => setShares(Number(e.target.value) || 0)}
+                className={`${inputCls} w-full pr-8 sm:w-28`}
+                aria-label="股數"
+              />
+              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2
+                               text-[13px] text-faint">股</span>
+            </span>
+            <button
+              type="button"
+              onClick={add}
+              disabled={!pick || !(shares > 0)}
+              className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
+                         transition-opacity disabled:opacity-40"
+            >
+              加入
+            </button>
+          </div>
         </div>
         <p className="mt-1 text-[11px] text-faint">
           以股為單位。一張 = 1000 股，零股直接填實際股數。
