@@ -28,6 +28,8 @@ app/public/data/series/
 app/public/data/calc/
 # 籌碼是每日快照，部署時重抓（來源是免費的公開端點，不需要憑證）
 app/public/data/chips.json
+# 新聞同理：每次部署重抓，只存標題與連結
+app/public/data/news.json
 
 # 抓取資料的中間產物
 *.tmp

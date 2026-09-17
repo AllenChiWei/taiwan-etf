@@ -31,6 +31,7 @@ const AboutPage = lazyRoute(() => import('./routes/AboutPage'), m => m.AboutPage
 const CalculatorPage = lazyRoute(() => import('./routes/CalculatorPage'), m => m.CalculatorPage);
 const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage);
 const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
+const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
 
 export interface ListSearch {
   q: string;
@@ -91,6 +92,12 @@ const chipsRoute = createRoute({
   component: ChipsPage,
 });
 
+const newsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/news',
+  component: NewsPage,
+});
+
 const pokerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/poker',
@@ -104,7 +111,8 @@ const aboutRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, chipsRoute, pokerRoute, aboutRoute]);
+  [listRoute, favoritesRoute, usRoute, calcRoute, chipsRoute, newsRoute,
+   pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,
