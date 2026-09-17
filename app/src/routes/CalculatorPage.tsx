@@ -12,6 +12,7 @@ import { useEtfData } from '../context/AppContext';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
 import { DividendPlanner } from '../components/DividendPlanner';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
+import { NumberInput as SharedNumberInput } from '../components/NumberInput';
 import { EmptyState } from '../components/EmptyState';
 import {
   runBacktest, project, monthIndex,
@@ -71,30 +72,13 @@ const inputClass =
   'mt-1 h-11 w-full rounded-lg border border-line bg-bg px-3 text-base text-ink ' +
   'focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none';
 
-function NumberInput({ value, onChange, step = 1, min = 0, suffix }: {
+/* 數字輸入框共用 components/NumberInput —— 之前這裡與配息試算各有一份，
+   兩邊都踩到同一個「清空後 0 刪不掉」的 bug。 */
+function NumberInput(props: {
   value: number; onChange: (v: number) => void;
   step?: number; min?: number; suffix?: string;
 }) {
-  return (
-    <span className="relative block">
-      <input
-        type="number"
-        inputMode="decimal"
-        value={Number.isFinite(value) ? value : ''}
-        min={min}
-        step={step}
-        onChange={e => {
-          const n = Number(e.target.value);
-          onChange(e.target.value === '' ? 0 : Number.isFinite(n) ? n : 0);
-        }}
-        className={`${inputClass} ${suffix ? 'pr-10' : ''}`}
-      />
-      {suffix && (
-        <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2
-                         text-[13px] text-faint">{suffix}</span>
-      )}
-    </span>
-  );
+  return <SharedNumberInput {...props} decimal className={inputClass} />;
 }
 
 function Toggle({ checked, onChange, label, hint }: {

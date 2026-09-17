@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
+import { NumberInput } from './NumberInput';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   type HoldingProjection,
@@ -174,17 +175,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             className="min-w-0"
           />
           <div className="grid grid-cols-[1fr_auto] gap-2 sm:contents">
-            <span className="relative">
-              <input
-                type="number" inputMode="numeric" min={0} step={1000}
-                value={Number.isFinite(shares) ? shares : ''}
-                onChange={e => setShares(Number(e.target.value) || 0)}
-                className={`${inputCls} w-full pr-8 sm:w-28`}
-                aria-label="股數"
-              />
-              <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2
-                               text-[13px] text-faint">股</span>
-            </span>
+            <NumberInput
+              value={shares}
+              onChange={setShares}
+              step={1000}
+              suffix="股"
+              aria-label="股數"
+              className={`${inputCls} w-full sm:w-28`}
+            />
             <button
               type="button"
               onClick={add}
@@ -314,19 +312,16 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   </div>
                   {editing === r.code && (
                     <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-sunken p-2">
-                      <span className="relative flex-1">
-                        <input
-                          type="number" inputMode="numeric" min={0} step={1000}
-                          value={Number.isFinite(draft) ? draft : ''}
-                          onChange={e => setDraft(Number(e.target.value) || 0)}
-                          onKeyDown={e => { if (e.key === 'Enter') save(r.code); }}
-                          autoFocus
-                          aria-label={`${r.code} 的股數`}
-                          className={`${inputCls} w-full pr-8`}
-                        />
-                        <span className="pointer-events-none absolute top-1/2 right-3
-                                         -translate-y-1/2 text-[13px] text-faint">股</span>
-                      </span>
+                      <NumberInput
+                        value={draft}
+                        onChange={setDraft}
+                        step={1000}
+                        suffix="股"
+                        autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') save(r.code); }}
+                        aria-label={`${r.code} 的股數`}
+                        className={`${inputCls} w-full`}
+                      />
                       <button
                         type="button"
                         onClick={() => save(r.code)}
