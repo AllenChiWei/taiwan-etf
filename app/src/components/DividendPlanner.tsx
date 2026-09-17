@@ -84,6 +84,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   const [shares, setShares] = useState(1000);
   const [series, setSeries] = useState<Map<string, CalcSeries>>(new Map());
   const [loading, setLoading] = useState(false);
+  /** 正在改股數的那一檔；null 代表沒有在編輯 */
+  const [editing, setEditing] = useState<string | null>(null);
+  const [draft, setDraft] = useState(0);
 
   useEffect(() => { saveHoldings(entries); }, [entries]);
 
@@ -144,6 +147,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
 
   // 不要把 w-full 寫進共用的 class：下面數字框需要 w-24，兩個寬度 utility
   // 權重相同，誰贏取決於 CSS 產生的先後，會變成不可靠的版面。寬度各自指定。
+  /** 存下新的股數並收起編輯框。0 或空值不存 —— 那等於把持股變成沒有意義的 0。 */
+  const save = useCallback((code: string) => {
+    if (!(draft > 0)) return;
+    setEntries(prev => prev.map(e => (e.code === code ? { ...e, shares: draft } : e)));
+    setEditing(null);
+  }, [draft]);
+
   const inputCls = 'h-11 rounded-lg border border-line bg-bg px-3 text-base text-ink '
     + 'focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none';
 
@@ -284,14 +294,56 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
                       <span className="ml-1.5 text-[13px] text-muted">{r.name}</span>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => setEntries(prev => prev.filter(e => e.code !== r.code))}
-                      className="shrink-0 text-[11.5px] font-semibold text-muted hover:text-up"
-                    >
-                      移除
-                    </button>
+                    <span className="flex shrink-0 items-center gap-2.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditing(editing === r.code ? null : r.code);
+                          setDraft(r.shares);
+                        }}
+                        className="text-[11.5px] font-semibold text-accent"
+                      >
+                        {editing === r.code ? '取消' : '修改'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEntries(prev => prev.filter(e => e.code !== r.code));
+                          if (editing === r.code) setEditing(null);
+                        }}
+                        className="text-[11.5px] font-semibold text-muted hover:text-up"
+                      >
+                        移除
+                      </button>
+                    </span>
                   </div>
+                  {editing === r.code && (
+                    <div className="mt-1.5 flex items-center gap-2 rounded-lg bg-sunken p-2">
+                      <span className="relative flex-1">
+                        <input
+                          type="number" inputMode="numeric" min={0} step={1000}
+                          value={Number.isFinite(draft) ? draft : ''}
+                          onChange={e => setDraft(Number(e.target.value) || 0)}
+                          onKeyDown={e => { if (e.key === 'Enter') save(r.code); }}
+                          autoFocus
+                          aria-label={`${r.code} 的股數`}
+                          className={`${inputCls} w-full pr-8`}
+                        />
+                        <span className="pointer-events-none absolute top-1/2 right-3
+                                         -translate-y-1/2 text-[13px] text-faint">股</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => save(r.code)}
+                        disabled={!(draft > 0)}
+                        className="h-11 shrink-0 rounded-lg bg-accent px-4 text-sm font-semibold
+                                   text-accent-ink transition-opacity disabled:opacity-40"
+                      >
+                        儲存
+                      </button>
+                    </div>
+                  )}
+
                   <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-6">
                     <Cell label="股數" value={`${nf0.format(r.shares)} 股`}
                           hint={r.shares >= 1000

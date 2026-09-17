@@ -105,16 +105,21 @@ def load_official_dividends():
     path = os.path.join(ROOT, 'app', 'public', 'data', 'dividends.json')
     if not os.path.exists(path):
         log(u'  找不到 dividends.json，全部改用回推值')
-        return {}
+        return {}, {}
     doc = json.load(io.open(path, encoding='utf-8'))
     out = {}
     for code, rows in (doc.get('dividends') or {}).items():
-        out[code] = dict((d, float(a)) for d, a in rows)
-    log(u'  官方配息：%d 檔、%d 筆' % (len(out), sum(len(v) for v in out.values())))
-    return out
+        # 每筆是 [日期, 金額, 是否精確]；舊格式只有前兩項
+        out[code] = dict((r[0], (float(r[1]), bool(r[2]) if len(r) > 2 else True))
+                         for r in rows)
+    stock_only = dict((k, set(v)) for k, v in (doc.get('stockOnly') or {}).items())
+    log(u'  官方配息：%d 檔、%d 筆；純股票股利需排除的日期 %d 個'
+        % (len(out), sum(len(v) for v in out.values()),
+           sum(len(v) for v in stock_only.values())))
+    return out, stock_only
 
 
-def split_adjust(close, adj, official=None):
+def split_adjust(close, adj, official=None, stock_only=()):
     u"""-> (只還原分割的收盤價, 除息事件 Series, 分割事件 list, 用了幾筆官方值)
 
     回傳的配息金額與價格在同一個尺度上（皆為分割還原後），所以模擬時
@@ -156,15 +161,26 @@ def split_adjust(close, adj, official=None):
     # 交易日（2891 中信金 2026 年就是回推 07-13、公告 07-10）。只比對完全相同的
     # 日期會讓那些紀錄默默退回回推值，而畫面上看不出來。除息相隔數月，
     # 容許幾天的誤差不會誤配到別筆。
+    # 純股票股利要整筆拿掉。它一樣會讓還原股價跳動，回推會算出一個「配息」
+    # 金額，但那一毛現金都沒有 —— 富邦金九月的股票股利若留著，它看起來就會是
+    # 半年配，年現金收入也被灌水。
+    if stock_only:
+        drop = [d for d in divs.index
+                if any(abs((_date.fromisoformat(k) - d.date()).days) <= MATCH_DAYS
+                       for k in stock_only)]
+        if drop:
+            divs = divs.drop(drop)
+
     official_dates = set()
+    inexact_dates = set()
     if official:
         used = set()
         keys = sorted(official)
         for d in list(divs.index):
             key = d.strftime('%Y-%m-%d')
-            amount = official.get(key) if key not in used else None
-            hit = key if amount is not None else None
-            if amount is None:
+            rec = official.get(key) if key not in used else None
+            hit = key if rec is not None else None
+            if rec is None:
                 best, gap = None, MATCH_DAYS + 1
                 for k in keys:
                     if k in used:
@@ -173,11 +189,16 @@ def split_adjust(close, adj, official=None):
                     if g2 < gap:
                         best, gap = k, g2
                 if best is not None:
-                    amount, hit = official[best], best
-            if amount is not None:
+                    rec, hit = official[best], best
+            if rec is not None:
+                amount, exact = rec
                 divs.loc[d] = amount * float(g.loc[d])
                 used.add(hit)
-                official_dates.add(d)
+                if exact:
+                    official_dates.add(d)
+                else:
+                    # 「權息」合併計價又沒有宣告數字可拆，金額會高估
+                    inexact_dates.add(d)
 
     splits = [{'date': d.strftime('%Y-%m-%d'), 'ratio': round(1.0 / float(f.loc[d]), 4)}
               for d in f.index[is_split]]
@@ -266,7 +287,7 @@ def extra_stock_rows(data, official):
         out.append({
             'code': code,
             'name': names.get(code, code),
-            'freq': stock_freq(official.get(code, {}).items()),
+            'freq': stock_freq([(d, v[0]) for d, v in official.get(code, {}).items()]),
             'kind': 'stock',
         })
     log(u'  個股 %d 檔：%s' % (len(out), u'、'.join(r['name'] for r in out)))
@@ -282,7 +303,7 @@ def main():
     log(u'輸出目錄：%s' % OUTDIR)
 
     log(u'載入交易所公告的配息…')
-    official = load_official_dividends()
+    official, stock_only = load_official_dividends()
 
     doc = json.load(io.open(os.path.join(ROOT, 'app', 'public', 'data', 'etfs.json'),
                             encoding='utf-8'))
@@ -311,7 +332,8 @@ def main():
             skipped += 1
             continue
         sclose, divs, splits, official_dates = split_adjust(
-            close[code].dropna(), adj[code].dropna(), official.get(code))
+            close[code].dropna(), adj[code].dropna(),
+            official.get(code), stock_only.get(code, ()))
         if sclose is None or len(sclose) < 60:      # 不到三個月，回測沒有意義
             skipped += 1
             continue
