@@ -28,6 +28,8 @@ const FavoritesPage = lazy(() =>
 const AboutPage = lazy(() => import('./routes/AboutPage').then(m => ({ default: m.AboutPage })));
 const CalculatorPage = lazy(() =>
   import('./routes/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
+const PokerPage = lazy(() =>
+  import('./routes/PokerPage').then(m => ({ default: m.PokerPage })));
 
 export interface ListSearch {
   q: string;
@@ -82,6 +84,12 @@ const calcRoute = createRoute({
   component: CalculatorPage,
 });
 
+const pokerRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/poker',
+  component: PokerPage,
+});
+
 const aboutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/about',
@@ -89,7 +97,7 @@ const aboutRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, aboutRoute]);
+  [listRoute, favoritesRoute, usRoute, calcRoute, pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,

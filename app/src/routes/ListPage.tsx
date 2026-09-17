@@ -29,6 +29,7 @@ export function ListPage() {
           activeAct={filters.act}
           onPickSec={sec => setFilters({ sec })}
           onPickAct={act => setFilters({ act })}
+          onClearAll={() => setFilters({ sec: '', act: '' })}
         />
       </div>
 

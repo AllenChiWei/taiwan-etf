@@ -16,6 +16,7 @@ const TABS = [
   { to: '/us', label: '美股' },
   { to: '/favorites', label: '收藏' },
   { to: '/calc', label: '試算' },
+  { to: '/poker', label: '撲克' },
   { to: '/about', label: '說明' },
 ] as const;
 
@@ -101,10 +102,18 @@ export function AppShell() {
         )}
       </main>
 
+      {/* 頁尾講的是 ETF 資料來源，撲克頁跟那些資料無關 ——
+          掛在那裡會讓人以為那張開牌表也是從 TWSE 來的。 */}
       <footer className="mx-auto w-full max-w-6xl border-t border-line px-3 py-6 text-center
                          text-[12.5px] text-faint sm:px-4">
-        <p>資料來源：TWSE／TPEx 公開資料、FinLab、MoneyDJ。本頁僅供參考，不構成投資建議。</p>
-        {meta && <p className="mt-1">共 {meta.total} 檔　·　更新於 {meta.updated}</p>}
+        {pathname === '/poker' ? (
+          <p>開牌範圍為公開的近似範圍，僅供參考。</p>
+        ) : (
+          <>
+            <p>資料來源：TWSE／TPEx 公開資料、FinLab、MoneyDJ。本頁僅供參考，不構成投資建議。</p>
+            {meta && <p className="mt-1">共 {meta.total} 檔　·　更新於 {meta.updated}</p>}
+          </>
+        )}
       </footer>
 
       <ScrollTopButton />

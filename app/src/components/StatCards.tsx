@@ -23,22 +23,25 @@ interface Props {
   activeAct: string;
   onPickSec: (sec: string) => void;
   onPickAct: (act: string) => void;
+  /** 一次清掉兩個維度。分開呼叫 onPickSec('') 與 onPickAct('') 會送出兩次
+      導航，第二次可能讀到還沒更新的網址參數而把第一次的結果蓋回去。 */
+  onClearAll: () => void;
 }
 
 type Card =
-  | { label: string; value: number; kind: 'total' }
+  | { label: string; value: number; kind: 'all' }
   | { label: string; value: number; kind: 'sec'; value2: SectionId }
   | { label: string; value: number; kind: 'act' };
 
 export function StatCards({
-  sections, etfs, total, activeSec, activeAct, onPickSec, onPickAct,
+  sections, etfs, total, activeSec, activeAct, onPickSec, onPickAct, onClearAll,
 }: Props) {
   const count = (id: SectionId) => sections.find(s => s.id === id)?.count ?? 0;
   const leveraged = LEVERAGED_GROUP.reduce((n, id) => n + count(id), 0);
   const activeCount = etfs.reduce((n, e) => n + (e.act ? 1 : 0), 0);
 
   const cards: Card[] = [
-    { label: '總計 ETF', value: total, kind: 'total' },
+    { label: '全部 ETF', value: total, kind: 'all' },
     { label: '台股 ETF', value: count('cat-domestic'), kind: 'sec', value2: 'cat-domestic' },
     { label: '海外 ETF', value: count('cat-foreign'), kind: 'sec', value2: 'cat-foreign' },
     { label: '債券 ETF', value: count('cat-bond'), kind: 'sec', value2: 'cat-bond' },
@@ -60,15 +63,24 @@ export function StatCards({
           </>
         );
 
-        // 總計卡沒有對應的篩選，維持非互動
-        if (c.kind === 'total') {
+        // 「全部」不是第三個維度，而是把兩個維度都清掉。它原本是不能點的
+        // 純顯示卡，但使用者按了沒反應會以為壞掉 —— 想回到完整清單時，
+        // 最直覺的動作就是按那顆最大的數字。
+        if (c.kind === 'all') {
+          const on = !activeSec && !activeAct;
           return (
-            <div
+            <button
               key={c.label}
-              className={`${common} col-span-2 border-line bg-surface text-muted sm:col-span-1`}
+              type="button"
+              aria-pressed={on}
+              onClick={onClearAll}
+              className={`${common} col-span-2 cursor-pointer sm:col-span-1
+                ${on
+                  ? 'border-accent bg-accent-soft text-ink'
+                  : 'border-line bg-surface text-muted hover:border-accent'}`}
             >
               {body}
-            </div>
+            </button>
           );
         }
 
