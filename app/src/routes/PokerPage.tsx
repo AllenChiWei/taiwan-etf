@@ -8,6 +8,7 @@
 
 import { useMemo, useState } from 'react';
 import { HandMatrix, type MatrixAction } from '../components/HandMatrix';
+import { EquityCalculator } from '../components/EquityCalculator';
 import {
   POSITIONS, VS_OPEN, HERO_SPOT_LABEL, resolve, resolveDefense,
 } from '../lib/ranges';
@@ -21,7 +22,7 @@ const THREE_BET: MatrixAction = { id: '3bet', label: '3-bet（再加注）', col
 const CALL: MatrixAction = { id: 'call', label: '跟注', color: '#1f6feb' };
 const DEFEND_ACTIONS = [THREE_BET, CALL];
 
-type Mode = 'rfi' | 'vs';
+type Mode = 'rfi' | 'vs' | 'equity';
 
 export function PokerPage() {
   const [mode, setMode] = useState<Mode>('rfi');
@@ -43,13 +44,13 @@ export function PokerPage() {
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted">100bb 現金局。</p>
 
       <div className="mt-3 flex gap-1.5 rounded-lg bg-sunken p-1">
-        {([['rfi', '開牌範圍'], ['vs', '面對開牌']] as const).map(([id, label]) => (
+        {([['rfi', '開牌範圍'], ['vs', '面對開牌'], ['equity', '勝率計算']] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => setMode(id)}
             aria-pressed={mode === id}
-            className={`h-9 flex-1 rounded-md text-[13.5px] font-semibold transition-colors ${
+            className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
               mode === id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {label}
@@ -58,6 +59,7 @@ export function PokerPage() {
       </div>
 
       {mode === 'vs' && <VsOpenView />}
+      {mode === 'equity' && <EquityCalculator />}
       {mode === 'rfi' && <>
 
       {/* 位置選擇。用按鈕列而不是下拉 —— 六個選項，而且使用者會想來回比較 */}
@@ -125,6 +127,7 @@ export function PokerPage() {
 
       </>}
 
+      {mode !== 'equity' && (
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">這些範圍怎麼來的</h2>
         <div className="mt-1.5 space-y-2 text-[12px] leading-relaxed text-muted">
@@ -143,6 +146,7 @@ export function PokerPage() {
           </p>
         </div>
       </section>
+      )}
     </>
   );
 }
