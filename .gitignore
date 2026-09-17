@@ -23,6 +23,9 @@ app/public/data/secure.json
 
 # 績效曲線：部署時即時產生，不進版控（每天全部重算，commit 會爆掉）
 app/public/data/series/
+# 試算用的月頻價格與配息，同樣在部署時產生。345 檔、共 0.4 MB，
+# 但每天都會因為最新一個月的價格而全部改動 —— 進版控一年會多出上百 MB。
+app/public/data/calc/
 
 # 抓取資料的中間產物
 *.tmp

@@ -66,6 +66,13 @@ jobs:
           python scripts/fetch_series.py
           echo "generated=true" >> $GITHUB_OUTPUT
 
+      # 試算用的月頻價格與配息。這份**不加密**：月頻收盤價與除息金額本來就是
+      # 交易所與投信公開的資訊，這裡只是整理成月度摘要，不是那份按日的付費資料集。
+      # 不加密，計算機才能免密碼使用。
+      - name: 產生試算資料
+        if: ${{ env.FINLAB_API_TOKEN != '' }}
+        run: python scripts/fetch_calc.py
+
       - name: 加密受保護的資料
         if: ${{ steps.finlab.outputs.generated == 'true' }}
         run: |
@@ -75,6 +82,7 @@ jobs:
             # 丟掉曲線、照常部署，圖表會顯示「這個部署版本沒有包含績效曲線」。
             echo "::warning title=缺少 SITE_PASSWORD::績效曲線已產生但無法加密，本次部署將不包含它。"
             echo "::warning::到 Settings → Secrets 建立 SITE_PASSWORD 即可啟用圖表。"
+            # 只丟曲線。試算資料本來就是明文的，不受密碼有無影響。
             rm -rf app/public/data/series
             exit 0
           fi
@@ -83,7 +91,7 @@ jobs:
       - name: 沒有 FinLab 憑證時的提醒
         if: ${{ env.FINLAB_API_TOKEN == '' }}
         run: |
-          echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含績效曲線。"
+          echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含績效曲線與試算資料。"
           echo "::warning::台股與美股清單不受影響（兩份都在版控中）。"
 
       - name: 確認價格序列沒有以明文上線

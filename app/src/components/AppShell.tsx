@@ -15,6 +15,7 @@ const TABS = [
   { to: '/', label: '台股' },
   { to: '/us', label: '美股' },
   { to: '/favorites', label: '收藏' },
+  { to: '/calc', label: '試算' },
   { to: '/about', label: '說明' },
 ] as const;
 

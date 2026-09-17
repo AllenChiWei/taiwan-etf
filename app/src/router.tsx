@@ -26,6 +26,8 @@ const UsPage = lazy(() => import('./routes/UsPage').then(m => ({ default: m.UsPa
 const FavoritesPage = lazy(() =>
   import('./routes/FavoritesPage').then(m => ({ default: m.FavoritesPage })));
 const AboutPage = lazy(() => import('./routes/AboutPage').then(m => ({ default: m.AboutPage })));
+const CalculatorPage = lazy(() =>
+  import('./routes/CalculatorPage').then(m => ({ default: m.CalculatorPage })));
 
 export interface ListSearch {
   q: string;
@@ -71,13 +73,20 @@ const usRoute = createRoute({
   component: UsPage,
 });
 
+const calcRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/calc',
+  component: CalculatorPage,
+});
+
 const aboutRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/about',
   component: AboutPage,
 });
 
-const routeTree = rootRoute.addChildren([listRoute, favoritesRoute, usRoute, aboutRoute]);
+const routeTree = rootRoute.addChildren(
+  [listRoute, favoritesRoute, usRoute, calcRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,
