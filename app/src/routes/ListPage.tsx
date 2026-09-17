@@ -23,9 +23,12 @@ export function ListPage() {
       <div className="pt-4">
         <StatCards
           sections={data.sections}
+          etfs={data.etfs}
           total={data.meta.total}
           activeSec={filters.sec}
-          onPick={sec => setFilters({ sec })}
+          activeAct={filters.act}
+          onPickSec={sec => setFilters({ sec })}
+          onPickAct={act => setFilters({ act })}
         />
       </div>
 

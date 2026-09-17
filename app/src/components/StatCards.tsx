@@ -1,32 +1,56 @@
-import type { Section, SectionId } from '../types';
+/* 頁首的統計卡，同時也是快速篩選鈕。
+ *
+ * 卡片分成兩種維度，刻意不互斥：
+ *
+ *   分區（台股／海外／債券／槓桿）—— 一檔 ETF 只屬於其中一個
+ *   類型（主動）              —— 跨分區的屬性
+ *
+ * 所以「台股 ETF」與「主動 ETF」可以同時按下去，得到主動的台股 ETF。
+ * 一檔主動海外 ETF 同時算在「海外 ETF」與「主動 ETF」兩張卡的數字裡 ——
+ * 這些數字相加不等於總計，那是對的，不是 bug。
+ */
+
+import type { Etf, Section, SectionId } from '../types';
 
 /** 槓桿卡代表三個分區的總和，點它就篩到主要的那一個。 */
 const LEVERAGED_GROUP: SectionId[] = ['cat-leveraged', 'cat-futures', 'cat-leveraged-futures'];
 
 interface Props {
   sections: Section[];
+  etfs: readonly Etf[];
   total: number;
   activeSec: string;
-  onPick: (sec: string) => void;
+  activeAct: string;
+  onPickSec: (sec: string) => void;
+  onPickAct: (act: string) => void;
 }
 
-export function StatCards({ sections, total, activeSec, onPick }: Props) {
+type Card =
+  | { label: string; value: number; kind: 'total' }
+  | { label: string; value: number; kind: 'sec'; value2: SectionId }
+  | { label: string; value: number; kind: 'act' };
+
+export function StatCards({
+  sections, etfs, total, activeSec, activeAct, onPickSec, onPickAct,
+}: Props) {
   const count = (id: SectionId) => sections.find(s => s.id === id)?.count ?? 0;
   const leveraged = LEVERAGED_GROUP.reduce((n, id) => n + count(id), 0);
+  const activeCount = etfs.reduce((n, e) => n + (e.act ? 1 : 0), 0);
 
-  const cards: Array<{ label: string; value: number; sec?: SectionId }> = [
-    { label: '總計 ETF', value: total },
-    { label: '台股 ETF', value: count('cat-domestic'), sec: 'cat-domestic' },
-    { label: '海外 ETF', value: count('cat-foreign'), sec: 'cat-foreign' },
-    { label: '債券 ETF', value: count('cat-bond'), sec: 'cat-bond' },
-    { label: '槓桿/期貨', value: leveraged, sec: 'cat-leveraged' },
+  const cards: Card[] = [
+    { label: '總計 ETF', value: total, kind: 'total' },
+    { label: '台股 ETF', value: count('cat-domestic'), kind: 'sec', value2: 'cat-domestic' },
+    { label: '海外 ETF', value: count('cat-foreign'), kind: 'sec', value2: 'cat-foreign' },
+    { label: '債券 ETF', value: count('cat-bond'), kind: 'sec', value2: 'cat-bond' },
+    { label: '槓桿/期貨', value: leveraged, kind: 'sec', value2: 'cat-leveraged' },
+    { label: '主動 ETF', value: activeCount, kind: 'act' },
   ];
 
+  const common = 'rounded-xl border px-3 py-3 text-center text-xs leading-tight transition-colors';
+
   return (
-    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       {cards.map(c => {
-        const active = c.sec !== undefined && c.sec === activeSec;
-        const common = 'rounded-xl border px-3 py-3 text-center text-xs leading-tight transition-colors';
         const body = (
           <>
             <strong className="tabular block font-mono text-2xl font-bold tracking-tight text-ink">
@@ -37,21 +61,33 @@ export function StatCards({ sections, total, activeSec, onPick }: Props) {
         );
 
         // 總計卡沒有對應的篩選，維持非互動
-        if (!c.sec) {
+        if (c.kind === 'total') {
           return (
-            <div key={c.label} className={`${common} col-span-2 border-line bg-surface text-muted sm:col-span-1`}>
+            <div
+              key={c.label}
+              className={`${common} col-span-2 border-line bg-surface text-muted sm:col-span-1`}
+            >
               {body}
             </div>
           );
         }
+
+        const isSec = c.kind === 'sec';
+        const on = isSec ? c.value2 === activeSec : activeAct === 'active';
+
         return (
           <button
             key={c.label}
             type="button"
-            aria-pressed={active}
-            onClick={() => onPick(active ? '' : c.sec!)}
+            aria-pressed={on}
+            // 再按一次就取消，兩個維度各自獨立 —— 按下「主動」不會清掉「債券」
+            onClick={() => (isSec
+              ? onPickSec(on ? '' : c.value2)
+              : onPickAct(on ? '' : 'active'))}
             className={`${common} cursor-pointer
-              ${active ? 'border-accent bg-accent-soft text-ink' : 'border-line bg-surface text-muted hover:border-accent'}`}
+              ${on
+                ? 'border-accent bg-accent-soft text-ink'
+                : 'border-line bg-surface text-muted hover:border-accent'}`}
           >
             {body}
           </button>
