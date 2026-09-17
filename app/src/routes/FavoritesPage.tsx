@@ -3,7 +3,8 @@ import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { useUsDataset } from '../hooks/useUsDataset';
 import { fetchCalendar, fetchSeries, type Market } from '../api/series';
 import { alignSeries, periodStart, type AlignedResult, type SeriesInput } from '../lib/series';
-import { returnTone, TONE_CLASS } from '../lib/format';
+import { returnTone, TONE_CLASS, yieldClass } from '../lib/format';
+import { toNumber } from '../lib/filters';
 import { PerformanceChart, lineColor } from '../components/PerformanceChart';
 import { EmptyState } from '../components/EmptyState';
 import { PasswordGate } from '../components/PasswordGate';
@@ -23,8 +24,26 @@ interface Item {
   code: string;
   name: string;
   market: Market;
+  /** 美股沒有殖利率（資料來源缺配息），以 null 表示「不適用」而非 0 */
+  yield: string | null;
+  r3: string;
+  r6: string;
   r12: string;
+  r36: string;
+  r60: string;
 }
+
+/** 收藏清單可排序的欄位。美股沒有殖利率，排序時那些會沉底。 */
+const SORT_FIELDS = [
+  { key: 'yield', label: '殖利率' },
+  { key: 'r3', label: '近3月' },
+  { key: 'r6', label: '近6月' },
+  { key: 'r12', label: '近1年' },
+  { key: 'r36', label: '近3年' },
+  { key: 'r60', label: '近5年' },
+] as const;
+
+type SortField = (typeof SORT_FIELDS)[number]['key'];
 
 export function FavoritesPage() {
   const tw = useEtfData();
@@ -46,15 +65,39 @@ export function FavoritesPage() {
     const out: Item[] = [];
     for (const code of favorites.codes) {
       const t = twMap.get(code);
-      if (t) { out.push({ code, name: t.name, market: 'tw', r12: t.r12 }); continue; }
+      if (t) {
+        out.push({ code, name: t.name, market: 'tw', yield: t.yield,
+                   r3: t.r3, r6: t.r6, r12: t.r12, r36: t.r36, r60: t.r60 });
+        continue;
+      }
       const u = usMap.get(code);
-      if (u) out.push({ code, name: u.name, market: 'us', r12: u.r12 });
+      if (u) {
+        out.push({ code, name: u.name, market: 'us', yield: null,
+                   r3: u.r3, r6: u.r6, r12: u.r12, r36: u.r36, r60: u.r60 });
+      }
     }
     return out;
   }, [favorites.codes, twMap, usState]);
 
   const [selected, setSelected] = useState<string[]>([]);
   const [period, setPeriod] = useState('1y');
+  const [sortBy, setSortBy] = useState<SortField | ''>('');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // 排序只影響清單的顯示順序，不影響勾選內容，也不影響圖表的線條顏色對應
+  const shown = useMemo(() => {
+    if (!sortBy) return items;
+    const sign = sortDir === 'asc' ? 1 : -1;
+    return [...items].sort((a, b) => {
+      const x = toNumber(a[sortBy]);
+      const y = toNumber(b[sortBy]);
+      if (x === null && y === null) return a.code.localeCompare(b.code);
+      if (x === null) return 1;            // N/A 與不適用一律沉底
+      if (y === null) return -1;
+      if (x !== y) return (x - y) * sign;
+      return a.code.localeCompare(b.code);
+    });
+  }, [items, sortBy, sortDir]);
 
   // 取消收藏後要跟著移出比較清單
   useEffect(() => {
@@ -127,14 +170,47 @@ export function FavoritesPage() {
         我的收藏 <span className="tabular font-mono text-[13px] font-semibold text-muted">{items.length} 檔</span>
       </h2>
 
+      <div className="mb-2.5 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-muted">排序</span>
+        {SORT_FIELDS.map(f => {
+          const active = sortBy === f.key;
+          return (
+            <button
+              key={f.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => {
+                if (sortBy !== f.key) { setSortBy(f.key); setSortDir('desc'); return; }
+                if (sortDir === 'desc') { setSortDir('asc'); return; }
+                setSortBy(''); setSortDir('desc');   // 第三次還原成收藏順序
+              }}
+              className={`rounded-full border px-2.5 py-1 text-xs font-semibold transition-colors
+                ${active ? 'border-accent bg-accent text-accent-ink'
+                         : 'border-line bg-surface text-accent hover:bg-hover'}`}
+            >
+              {f.label}
+              <span aria-hidden="true" className="ml-0.5">
+                {active ? (sortDir === 'asc' ? '↑' : '↓') : '↕'}
+              </span>
+            </button>
+          );
+        })}
+        {sortBy && (
+          <button type="button" onClick={() => { setSortBy(''); setSortDir('desc'); }}
+                  className="text-xs text-muted underline hover:text-ink">
+            還原順序
+          </button>
+        )}
+      </div>
+
       <ul className="flex flex-col gap-1.5">
-        {items.map(it => {
+        {shown.map(it => {
           const checked = selected.includes(it.code);
           const color = checked ? colorOf(it.code) : undefined;
           const full = !checked && selected.length >= MAX_COMPARE;
           return (
             <li key={it.code}>
-              <label className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors
+              <label className={`flex items-center gap-3 rounded-t-lg border border-b-0 px-3 py-2.5 transition-colors
                 ${checked ? 'border-accent bg-accent-soft' : 'border-line bg-surface'}
                 ${full ? 'opacity-50' : 'cursor-pointer hover:bg-hover'}`}>
                 <input type="checkbox" checked={checked} disabled={full}
@@ -148,13 +224,34 @@ export function FavoritesPage() {
                 <span className="rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-muted">
                   {it.market === 'tw' ? '台股' : '美股'}
                 </span>
-                <span className={`tabular w-16 text-right font-mono text-sm ${TONE_CLASS[returnTone(it.r12)]}`}>
-                  {it.r12}
-                </span>
                 <button type="button" aria-label={`移除收藏 ${it.code}`}
                         onClick={e => { e.preventDefault(); favorites.toggle(it.code); }}
                         className="shrink-0 rounded px-1 text-sm text-faint hover:text-ink">✕</button>
               </label>
+
+              {/* 指標。放在第二排而不是擠進上面那行 —— 六個數字在手機上排不下。 */}
+              <dl className={`grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-b-lg border border-t-0 px-3 py-2
+                              sm:grid-cols-6 ${checked ? 'border-accent bg-accent-soft' : 'border-line bg-surface'}`}>
+                {SORT_FIELDS.map(f => {
+                  const v = it[f.key];
+                  const isYield = f.key === 'yield';
+                  const text = v === null ? '—' : v;
+                  const cls = v === null ? 'text-faint'
+                            : isYield ? yieldClass(v) : TONE_CLASS[returnTone(v)];
+                  return (
+                    <div key={f.key}>
+                      <dt className={`text-[10px] font-semibold whitespace-nowrap
+                                      ${sortBy === f.key ? 'text-accent' : 'text-faint'}`}>
+                        {f.label}
+                      </dt>
+                      <dd className={`tabular font-mono text-[13px] ${cls}`}
+                          title={v === null ? '美股清單沒有殖利率（資料來源缺配息）' : undefined}>
+                        {text}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
             </li>
           );
         })}

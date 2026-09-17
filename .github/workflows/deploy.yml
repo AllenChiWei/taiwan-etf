@@ -70,9 +70,13 @@ jobs:
         if: ${{ steps.finlab.outputs.generated == 'true' }}
         run: |
           if [ -z "$SITE_PASSWORD" ]; then
-            echo "::error::已產生 FinLab 資料但沒有設定 SITE_PASSWORD secret。"
-            echo "::error::未加密就部署等於公開付費訂閱的資料，因此中止。"
-            exit 1
+            # 沒有密碼就不能加密，而未加密的付費資料絕不能上線。但也不該因此
+            # 讓整個部署掛掉 —— 台股與美股表格是公開資料，不該被圖表的設定缺失連累。
+            # 丟掉曲線、照常部署，圖表會顯示「這個部署版本沒有包含績效曲線」。
+            echo "::warning title=缺少 SITE_PASSWORD::績效曲線已產生但無法加密，本次部署將不包含它。"
+            echo "::warning::到 Settings → Secrets 建立 SITE_PASSWORD 即可啟用圖表。"
+            rm -rf app/public/data/series
+            exit 0
           fi
           python scripts/encrypt_data.py
 
