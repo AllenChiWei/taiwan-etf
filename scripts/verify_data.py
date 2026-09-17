@@ -186,8 +186,14 @@ if PREV and os.path.exists(PREV):
         if p['cust'] != c['cust']:
             warn('%s custodian changed: %s -> %s' % (code, p['cust'], c['cust']))
         if p['sec'] != c['sec']:
-            fail('%s moved section %s -> %s (existing rows must keep their section)'
-                 % (code, p['sec'], c['sec']))
+            # 唯一允許的搬動：搬進 cat-active。主動 ETF 這個分類是後來才加的，
+            # 那 40 檔原本散在台股／海外／債券三區，一定得搬一次。除此之外
+            # 換 section 幾乎都代表分類規則被意外改動，要擋下來。
+            if c['sec'] == 'cat-active' and c['name'].startswith(u'主動'):
+                warn('%s moved to 主動ETF (%s -> %s)' % (code, p['sec'], c['sec']))
+            else:
+                fail('%s moved section %s -> %s (existing rows must keep their section)'
+                     % (code, p['sec'], c['sec']))
 
 # ---- report ------------------------------------------------------------------
 print('%s: %d ETFs  updated=%s snapshot=%s'

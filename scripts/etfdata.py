@@ -195,6 +195,7 @@ SECTIONS = [
     ('cat-domestic',          u'台股ETF'),
     ('cat-foreign',           u'海外ETF'),
     ('cat-bond',              u'債券ETF'),
+    ('cat-active',            u'主動ETF'),
     ('cat-leveraged',         u'槓桿/反向ETF'),
     ('cat-futures',           u'期貨ETF'),
     ('cat-leveraged-futures', u'槓桿期貨ETF'),
@@ -202,8 +203,19 @@ SECTIONS = [
 SECTION_IDS = [s for s, _ in SECTIONS]
 
 
+# 主動式 ETF 的名稱一律以「主動」開頭（00400A 主動國泰動能高息、
+# 00980D 主動統一美債等）。代號字尾 A 是主動股票型、D 是主動債券型，但用名稱判斷
+# 比用字尾穩：字尾規則是後來才有的，名稱規則從第一檔主動 ETF 上市就成立。
+ACTIVE_PREFIX = u'主動'
+
+
 def section(code, name, target, area):
     """target = MoneyDJ 投資標的, area = MoneyDJ 投資區域."""
+    # 主動型優先於其他所有規則 —— 包括債券。主動債券 ETF（00980D~00987D）
+    # 因此會離開「債券ETF」而進入「主動ETF」：使用者要的是一個地方看完所有主動型，
+    # 而 section 之間是互斥的，同一檔不能同時出現在兩區。
+    if (name or '').startswith(ACTIVE_PREFIX):
+        return 'cat-active'
     suffix = re.sub(r'^\d+', '', code)          # 00679B -> B, 00631L -> L, 0050 -> ''
     if suffix == 'U':
         return 'cat-futures'                     # 期貨 ETF (00635U 期元大S&P黃金 ...)
@@ -228,6 +240,21 @@ def load_tw_returns(work):
     except ValueError:
         return {}, ''
     return doc.get('returns') or {}, doc.get('asof') or ''
+
+
+def pick_section(code, name, page, current_sections):
+    u"""既有代號沿用原本的 section，主動型除外。
+
+    沿用是為了保住人工判斷（00735 國泰臺韓科技 留在海外，即使 MoneyDJ 說投資區域
+    是台灣）。但 cat-active 是後來才加的分類，那 40 檔主動 ETF 早就散在台股／海外／
+    債券三區，只沿用舊值的話新分類會永遠是空的。
+
+    所以主動型一律重新分類。這個判斷是冪等的：搬過去之後每次都算出 cat-active。
+    """
+    if (name or '').startswith(ACTIVE_PREFIX):
+        return 'cat-active'
+    return current_sections.get(code) or section(
+        code, name, page.get(u'投資標的', ''), page.get(u'投資區域', ''))
 
 
 def load_rows(work, universe, current_sections):
@@ -272,8 +299,7 @@ def load_rows(work, universe, current_sections):
             'freq': norm_freq(d.get(u'配息頻率', '')),
             'yield': yld,
             'ret': ret,
-            'sec': current_sections.get(code) or section(
-                code, name, d.get(u'投資標的', ''), d.get(u'投資區域', '')),
+            'sec': pick_section(code, name, d, current_sections),
         })
     top = lambda c: (c.most_common(1)[0][0] if c else '')
     # FinLab 的 asof 是完整日期（2026-09-11），MoneyDJ 的是 MM/DD；前端只顯示字串

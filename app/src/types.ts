@@ -25,6 +25,7 @@ export type SectionId =
   | 'cat-domestic'
   | 'cat-foreign'
   | 'cat-bond'
+  | 'cat-active'
   | 'cat-leveraged'
   | 'cat-futures'
   | 'cat-leveraged-futures';
