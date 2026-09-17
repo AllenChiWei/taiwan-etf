@@ -52,6 +52,7 @@ ratio 只在除息或分割當天跳動，且
 交易所與投信公開的資訊，這裡只是把它整理成月度摘要，不是那份按日的付費資料集。
 不加密才能讓計算機免密碼使用。
 """
+import collections
 import io
 import json
 import os
@@ -90,11 +91,33 @@ def write_json(path, obj):
         fh.write(json.dumps(obj, ensure_ascii=False, separators=(',', ':')))
 
 
-def split_adjust(close, adj):
-    u"""-> (只還原分割的收盤價, 除息事件 Series, 分割事件 list)
+def load_official_dividends():
+    u"""交易所公告的除息金額 {代號: {日期: 金額}}；沒有檔案就回空的。
+
+    由 fetch_dividends.py 產生。有官方數字就用官方的 —— 從還原股價回推的
+    金額只準到「分」，因為除權息參考價本來就依最小跳動單位取整
+    （00406A 公告 0.138，參考價 9.82，回推只能得到 0.14）。
+    """
+    path = os.path.join(ROOT, 'app', 'public', 'data', 'dividends.json')
+    if not os.path.exists(path):
+        log(u'  找不到 dividends.json，全部改用回推值')
+        return {}
+    doc = json.load(io.open(path, encoding='utf-8'))
+    out = {}
+    for code, rows in (doc.get('dividends') or {}).items():
+        out[code] = dict((d, float(a)) for d, a in rows)
+    log(u'  官方配息：%d 檔、%d 筆' % (len(out), sum(len(v) for v in out.values())))
+    return out
+
+
+def split_adjust(close, adj, official=None):
+    u"""-> (只還原分割的收盤價, 除息事件 Series, 分割事件 list, 用了幾筆官方值)
 
     回傳的配息金額與價格在同一個尺度上（皆為分割還原後），所以模擬時
     「股數 × 每股配息」直接就對，不必再另外處理分割。
+
+    official 是 {日期字串: 官方金額}。有對應日期就用官方金額取代回推值，
+    但要乘上分割係數 g 換到同一個尺度。
     """
     import pandas as pd
 
@@ -104,7 +127,7 @@ def split_adjust(close, adj):
     ok = c.notna() & a.notna() & (c > 0)
     c, a = c[ok], a[ok]
     if len(c) < 2:
-        return None, None, None
+        return None, None, None, 0
 
     ratio = a / c
     f = ratio.shift(1) / ratio          # 事件當天 < 1，其餘 == 1
@@ -123,9 +146,18 @@ def split_adjust(close, adj):
     divs = (sclose.shift(1) * (1.0 - f))[is_div]
     divs = divs[divs > MIN_DIV]
 
+    # 官方金額覆蓋回推值。官方數字是原始股數的，要乘 g 換到分割還原後的尺度。
+    n_official = 0
+    if official:
+        for d in list(divs.index):
+            key = d.strftime('%Y-%m-%d')
+            if key in official:
+                divs.loc[d] = official[key] * float(g.loc[d])
+                n_official += 1
+
     splits = [{'date': d.strftime('%Y-%m-%d'), 'ratio': round(1.0 / float(f.loc[d]), 4)}
               for d in f.index[is_split]]
-    return sclose, divs, splits
+    return sclose, divs, splits, n_official
 
 
 def monthly(sclose, divs, months):
@@ -176,6 +208,9 @@ def main():
                             encoding='utf-8'))
     rows = doc['etfs']
 
+    log(u'載入交易所公告的配息…')
+    official = load_official_dividends()
+
     log(u'讀取收盤價與還原收盤價…')
     close = data.get(u'price:收盤價').loc[START:]
     adj = data.get('etl:adj_close').loc[START:]
@@ -186,13 +221,15 @@ def main():
     index = {'months': months, 'codes': {}}
     written = skipped = 0
     total_bytes = 0
+    src_count = collections.Counter()
 
     for r in rows:
         code = r['code']
         if code not in close.columns:
             skipped += 1
             continue
-        sclose, divs, splits = split_adjust(close[code].dropna(), adj[code].dropna())
+        sclose, divs, splits, n_official = split_adjust(
+            close[code].dropna(), adj[code].dropna(), official.get(code))
         if sclose is None or len(sclose) < 60:      # 不到三個月，回測沒有意義
             skipped += 1
             continue
@@ -217,7 +254,12 @@ def main():
             'last': {'date': sclose.index[-1].strftime('%Y-%m-%d'),
                      'close': round(float(sclose.iloc[-1]), PRICE_DECIMALS)},
             'splits': splits,
+            # 配息金額的來源：official 全部來自交易所公告、derived 全部是回推的、
+            # mixed 兩者都有（櫃買沒有歷史資料，所以債券 ETF 多半是 derived）
+            'divSource': ('official' if n_official and n_official == len(divs)
+                          else 'derived' if not n_official else 'mixed'),
         }
+        src_count[payload['divSource']] += 1
         path = os.path.join(OUTDIR, 'tw', '%s.json' % code)
         write_json(path, payload)
         total_bytes += os.path.getsize(path)
@@ -236,6 +278,9 @@ def main():
     write_json(os.path.join(OUTDIR, 'index.json'), index)
     log(u'  台股 %d 檔（略過 %d 檔資料過短或無報價），共 %.1f MB，平均每檔 %.1f KB'
         % (written, skipped, total_bytes / 1e6, total_bytes / max(1, written) / 1024))
+    log(u'  配息來源：官方 %d 檔、混合 %d 檔、回推 %d 檔'
+        % (src_count.get('official', 0), src_count.get('mixed', 0),
+           src_count.get('derived', 0)))
 
     check_against_moneydj(rows, index)
     log(u'完成')

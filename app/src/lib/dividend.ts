@@ -70,6 +70,8 @@ export interface HoldingProjection {
   value: number;
   /** 這檔有幾個月的資料。不滿 12 表示推估的次數可能不準 */
   monthsListed: number;
+  /** 配息金額是交易所公告的原始值（而非由還原股價回推的約略值） */
+  exact: boolean;
 }
 
 export interface Portfolio {
@@ -199,6 +201,7 @@ export function projectHolding(
     yieldPct: price > 0 ? (perShare / price) * 100 : 0,
     value: price * shares,
     monthsListed: n,
+    exact: series.divSource === 'official',
   };
 }
 

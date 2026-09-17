@@ -28,6 +28,18 @@ export interface CalcSeries {
   q: (number | null)[];
   last: { date: string; close: number };
   splits: { date: string; ratio: number }[];
+  /**
+   * 配息金額的來源。
+   *
+   * 'official' 全部來自交易所公告（精確到小數第六位）
+   * 'derived'  全部由還原股價回推，只準到「分」—— 除權息參考價本來就依
+   *            最小跳動單位取整，那個精度在資料來源端就沒了
+   * 'mixed'    兩者都有
+   *
+   * 櫃買中心只提供當前的除息清單、查不到歷史，所以在櫃買掛牌的債券 ETF
+   * 目前多半是 derived。
+   */
+  divSource?: 'official' | 'derived' | 'mixed';
 }
 
 export interface CalcIndex {

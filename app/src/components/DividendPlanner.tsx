@@ -15,6 +15,8 @@ const STORAGE_KEY = 'twetf.holdings';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
+/** 配息常是 0.138 這種三位數，用兩位會把交易所給的精度丟掉 */
+const nf4 = (v: number) => v.toFixed(3).replace(/0$/, '');
 const money = (v: number) => nf0.format(Math.round(v));
 
 interface Entry { code: string; lots: number }
@@ -218,8 +220,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-6">
                     <Cell label="張數" value={`${nf2.format(r.lots)} 張`} />
                     <Cell label="配息頻率" value={`${r.freq}`} />
-                    <Cell label="最近一次" value={`${nf2.format(r.latest)} 元`}
-                          hint={r.latestMonth} />
+                    <Cell label="最近一次" value={`${nf4(r.latest)} 元`}
+                          hint={`${r.latestMonth}${r.exact ? '' : '　約略值'}`} />
                     <Cell label="預估年配息/股" value={`${nf2.format(r.perShare)} 元`} />
                     <Cell label="殖利率" value={`${nf2.format(r.yieldPct)}%`} tone />
                     <Cell label="一年可領" value={`${money(r.annual)} 元`} tone />
@@ -260,9 +262,11 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               —— 同樣是季配，各家的月份不一樣。
             </p>
             <p>
-              配息金額是從還原股價回推的，而
-              <strong className="text-ink">資料來源本身只取到小數第二位</strong>：
-              公告 0.138 元的話，這裡會顯示 0.13 或 0.14。單價低的標的影響比較明顯。
+              配息金額優先採用
+              <strong className="text-ink">交易所公告的原始數字</strong>（精確到小數第六位）。
+              標示「約略值」的是從還原股價回推的 —— 除權息參考價依最小跳動單位取整，
+              所以那種只準到「分」（公告 0.138 會變成 0.14）。
+              櫃買中心查不到歷史除息，所以在櫃買掛牌的債券 ETF 目前多半是約略值。
             </p>
             <p>
               配息金額每次都會變，ETF 也可能調整配息政策 —— 這是依現況的推估，不是保證。
