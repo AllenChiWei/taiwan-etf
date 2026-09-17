@@ -10,13 +10,14 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEtfData } from '../context/AppContext';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
+import { DividendPlanner } from '../components/DividendPlanner';
 import { EmptyState } from '../components/EmptyState';
 import {
   runBacktest, project, monthIndex,
   type CalcIndex, type CalcSeries, type Timing,
 } from '../lib/backtest';
 
-type Tab = 'backtest' | 'retire';
+type Tab = 'backtest' | 'retire' | 'dividend';
 
 /** 退休推估「帶入標的」選單的一列。 */
 interface Seed {
@@ -680,6 +681,7 @@ export function CalculatorPage() {
   const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'backtest', label: '歷史回測' },
     { id: 'retire', label: '退休推估' },
+    { id: 'dividend', label: '配息試算' },
   ];
 
   return (
@@ -693,7 +695,7 @@ export function CalculatorPage() {
             type="button"
             onClick={() => setTab(t.id)}
             aria-pressed={tab === t.id}
-            className={`h-9 flex-1 rounded-md text-[13.5px] font-semibold transition-colors ${
+            className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
               tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {t.label}
@@ -710,9 +712,9 @@ export function CalculatorPage() {
       )}
       {!index && !error && <p className="py-16 text-center text-muted">載入試算資料中…</p>}
 
-      {index && (tab === 'backtest'
-        ? <BacktestTab index={index} />
-        : <RetireTab index={index} />)}
+      {index && tab === 'backtest' && <BacktestTab index={index} />}
+      {index && tab === 'retire' && <RetireTab index={index} />}
+      {index && tab === 'dividend' && <DividendPlanner index={index} />}
 
       {index && (
         <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
