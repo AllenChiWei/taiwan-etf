@@ -51,9 +51,13 @@ export function PasswordGate({ children, what }: Props) {
   if (status === 'unavailable') {
     return (
       <div className="mt-6 rounded-xl border border-line bg-surface px-4 py-8 text-center">
-        <p className="text-sm text-muted">
+        <p className="text-sm leading-relaxed text-muted">
           這個部署版本沒有包含{what}。<br />
-          （資料是部署時產生的，需要在 GitHub Actions 設定 FinLab 憑證。）
+          曲線資料是部署時即時產生並加密的，需要 GitHub Actions 同時有
+          <code className="mx-1 rounded bg-sunken px-1.5 py-0.5 font-mono text-[12px]">FINLAB_API_TOKEN</code>
+          與
+          <code className="mx-1 rounded bg-sunken px-1.5 py-0.5 font-mono text-[12px]">SITE_PASSWORD</code>
+          兩個 secret 才會產生。
         </p>
       </div>
     );
