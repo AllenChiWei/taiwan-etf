@@ -222,3 +222,47 @@ export function prepareLarge(rows: LargeRow[]): LargeRow[] {
     return a.term < b.term ? -1 : 1;
   });
 }
+
+export interface Bar {
+  x: number;
+  /** 柱子的頂端（SVG 座標，往下為正） */
+  y: number;
+  w: number;
+  h: number;
+  /** 正數（淨多單／買超）為 true，畫紅色 */
+  up: boolean;
+}
+
+/**
+ * 把一串數字換成柱狀圖的矩形。
+ *
+ * 柱狀圖比折線適合這種資料：每天的未平倉淨額是一個獨立的量，不是連續變化的
+ * 軌跡，而且正負一眼要分得出來（紅多綠空）。折線在跨越零軸時反而不明顯。
+ *
+ * 與 linePoints 一樣：null 跳過（不是當成 0），值域固定含 0 —— 柱子本來就從
+ * 零軸長出來，值域不含 0 的話柱高會變成沒有意義的相對量。
+ * 每根至少 1px 寬、0.8px 高，否則接近 0 的那幾天會整根消失。
+ */
+export function bars(
+  values: (number | null)[], width: number, height: number, pad = 2,
+): Bar[] {
+  const nums = values.filter((v): v is number => v !== null && Number.isFinite(v));
+  if (nums.length === 0) return [];
+  const min = Math.min(0, ...nums);
+  const max = Math.max(0, ...nums);
+  const span = max - min || 1;
+  const inner = height - pad * 2;
+  const slot = (width - pad * 2) / values.length;
+  const w = Math.max(1, slot * 0.72);
+  const zero = pad + (1 - (0 - min) / span) * inner;
+
+  const out: Bar[] = [];
+  values.forEach((v, i) => {
+    if (v === null || !Number.isFinite(v)) return;
+    const y = pad + (1 - (v - min) / span) * inner;
+    const top = Math.min(y, zero);
+    const h = Math.max(0.8, Math.abs(zero - y));
+    out.push({ x: pad + i * slot + (slot - w) / 2, y: top, w, h, up: v > 0 });
+  });
+  return out;
+}

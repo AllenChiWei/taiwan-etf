@@ -9,7 +9,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import {
   toYi, yuanToYi, sharesToLots, netTone, sharePct,
-  contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge,
+  contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge, bars,
   type ChipsData,
 } from '../src/lib/chips.ts';
 
@@ -205,5 +205,40 @@ test('prepareLarge', async (t) => {
       { ...base, term: '所有契約', who: '特定法人', b5: 1, s5: 2, b10: 3, s10: 4 },
     ]);
     assert.equal(rows.length, 2);
+  });
+});
+
+test('柱狀圖', async (t) => {
+  const H = 50;
+
+  await t.test('正負分邊，零軸在中間', () => {
+    const b = bars([10, -10], 100, H);
+    assert.equal(b.length, 2);
+    assert.equal(b[0].up, true);
+    assert.equal(b[1].up, false);
+    // 兩根等長、分別在零軸上下
+    assert.ok(Math.abs(b[0].h - b[1].h) < 0.01);
+    assert.ok(b[0].y < b[1].y, '正值的柱子要在上面');
+  });
+
+  await t.test('全部是負數時零軸在頂端，柱子往下長', () => {
+    const b = bars([-5, -10], 100, H);
+    assert.ok(b.every(x => x.up === false));
+    assert.ok(b[1].h > b[0].h, '越負的柱子越長');
+  });
+
+  await t.test('null 不畫柱子，也不佔掉別人的位置', () => {
+    const b = bars([10, null, 20], 120, H);
+    assert.equal(b.length, 2);
+    assert.ok(b[1].x > b[0].x + b[0].w, '第三天的柱子要在第一天右邊、隔一個空位');
+  });
+
+  await t.test('接近零的值仍然畫得出來（至少 0.8px）', () => {
+    const b = bars([1000, 1], 100, H);
+    assert.ok(b[1].h >= 0.8);
+  });
+
+  await t.test('沒有有效值就不畫', () => {
+    assert.deepEqual(bars([null, null], 100, H), []);
   });
 });

@@ -130,17 +130,26 @@ def load_json(path, default):
         return default
 
 
-def fetch(url, label):
-    u"""抓一個端點。失敗回 None 並記下來 —— 一個來源掛掉不該讓整份沒有。"""
-    try:
-        req = urllib.request.Request(url, headers={'User-Agent': UA})
-        raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
-        time.sleep(DELAY)
-        # TDCC 的 JSON 帶 BOM，utf-8-sig 兩種都吃得下
-        return json.loads(raw.decode('utf-8-sig'))
-    except Exception as e:                                    # noqa: BLE001
-        note(u'%s：%s' % (label, str(e)[:80]))
-        return None
+def fetch(url, label, tries=3):
+    u"""抓一個端點。失敗回 None 並記下來 —— 一個來源掛掉不該讓整份沒有。
+
+    會重試：櫃買的幾個大端點（月營收、損益表）偶爾在傳輸中途斷掉，
+    回 IncompleteRead。那不是資料問題，下一次同樣的請求通常就完整。
+    """
+    for attempt in range(1, tries + 1):
+        try:
+            req = urllib.request.Request(url, headers={'User-Agent': UA})
+            raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
+            time.sleep(DELAY)
+            # TDCC 的 JSON 帶 BOM，utf-8-sig 兩種都吃得下
+            return json.loads(raw.decode('utf-8-sig'))
+        except Exception as e:                                # noqa: BLE001
+            if attempt == tries:
+                note(u'%s：%s（試了 %d 次）' % (label, str(e)[:70], tries))
+                return None
+            log(u'  %s 第 %d 次失敗（%s），重試' % (label, attempt, str(e)[:50]))
+            time.sleep(DELAY * attempt)
+    return None
 
 
 def num(v):

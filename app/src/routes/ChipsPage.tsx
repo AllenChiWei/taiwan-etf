@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
-  contractSeries, linePoints, linePath, zeroY, lastValue, prepareLarge,
+  contractSeries, bars, zeroY, lastValue, prepareLarge,
   type ChipsData, type LargeRow, type TopByWho, type TopRow,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -65,14 +65,22 @@ function Switch<T extends string>({ options, value, onChange, label }: {
   );
 }
 
-/** 走勢線。刻意畫零軸 —— 由多翻空是這張圖唯一要講的事。 */
-function Sparkline({ values, color, height = 56 }: {
-  values: (number | null)[]; color: string; height?: number;
+/**
+ * 柱狀圖。每天一根，從零軸長出來，紅多綠空。
+ *
+ * 用柱子而不是折線：每天的未平倉淨額是一個獨立的量，不是連續變化的軌跡；
+ * 而且正負一眼要分得出來，折線跨越零軸時反而看不出來。
+ *
+ * preserveAspectRatio="none" 讓它橫向填滿，所以柱寬會被拉伸 —— 這裡只看形狀
+ * 與正負，不需要等比例。
+ */
+function Bars({ values, height = 56 }: {
+  values: (number | null)[]; height?: number;
 }) {
   const W = 320;
-  const pts = linePoints(values, W, height);
+  const rects = bars(values, W, height);
   const z = zeroY(values, height);
-  if (pts.length === 0) return null;
+  if (rects.length === 0) return null;
   return (
     <svg viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" role="presentation"
          className="h-14 w-full">
@@ -80,8 +88,10 @@ function Sparkline({ values, color, height = 56 }: {
         <line x1="0" x2={W} y1={z} y2={z} stroke="currentColor"
               className="text-line" strokeWidth="1" strokeDasharray="3 3" />
       )}
-      <path d={linePath(pts)} fill="none" stroke={color} strokeWidth="1.6"
-            strokeLinejoin="round" strokeLinecap="round" />
+      {rects.map((b, i) => (
+        <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h}
+              className={b.up ? 'fill-up' : 'fill-down'} />
+      ))}
     </svg>
   );
 }
@@ -101,10 +111,6 @@ function Stat({ label, value, sub, tone }: {
 }
 
 /* ── 三大法人期貨未平倉 ─────────────────────────────────── */
-
-const WHO_COLOR: Record<string, string> = {
-  外資: '#1f6feb', 投信: '#e06c00', 自營商: '#7b4fd6',
-};
 
 function FuturesSection({ data }: { data: ChipsData }) {
   const contracts = useMemo(() => {
@@ -135,11 +141,9 @@ function FuturesSection({ data }: { data: ChipsData }) {
           return (
             <div key={who} className="rounded-lg border border-line bg-bg p-2.5">
               <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                <span className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
-                  <span className="inline-block h-2.5 w-2.5 rounded-sm"
-                        style={{ background: WHO_COLOR[who] }} />
-                  {who}
-                </span>
+                {/* 不再給每家法人一個代表色：柱子的顏色現在表示多空（紅多綠空），
+                    旁邊再放一個不同色的點只會讓人以為那是這條資料的顏色 */}
+                <span className="text-[13px] font-semibold text-ink">{who}</span>
                 <span className={`font-mono text-[15px] font-bold tabular-nums
                                   ${TONE_CLASS[netTone(latest)]}`}>
                   {signed(latest)} 口
@@ -152,7 +156,7 @@ function FuturesSection({ data }: { data: ChipsData }) {
                   <span>當日淨 {signed(row.tn)} 口</span>
                 </div>
               )}
-              <Sparkline values={line} color={WHO_COLOR[who]} />
+              <Bars values={line} />
             </div>
           );
         })}
@@ -186,11 +190,11 @@ function PcSection({ data }: { data: ChipsData }) {
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg border border-line bg-bg p-2.5">
           <div className="text-[11.5px] text-muted">成交量比走勢（虛線 = 100%）</div>
-          <Sparkline values={volRel} color="#0f9b8e" />
+          <Bars values={volRel} />
         </div>
         <div className="rounded-lg border border-line bg-bg p-2.5">
           <div className="text-[11.5px] text-muted">未平倉量比走勢（虛線 = 100%）</div>
-          <Sparkline values={oiRel} color="#c2185b" />
+          <Bars values={oiRel} />
         </div>
       </div>
       <p className="mt-2 text-[11px] text-faint">

@@ -15,7 +15,7 @@ import {
   moneyFromThousands, moneyFromYuan, isoDate,
   type StockData, type StockIndex, type Quarter,
 } from '../lib/stock';
-import { linePoints, linePath, zeroY, netTone } from '../lib/chips';
+import { bars, zeroY, netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
@@ -225,7 +225,8 @@ function ChipsSection({ data }: { data: StockData }) {
 
   const W = 320;
   const H = 46;
-  const pts = linePoints(totals, W, H);
+  // 與籌碼頁同一種資料（每日淨額），所以同樣用柱狀圖：紅買綠賣，一眼看正負
+  const rects = bars(totals, W, H);
   const z = zeroY(totals, H);
 
   return (
@@ -248,7 +249,7 @@ function ChipsSection({ data }: { data: StockData }) {
               sub={`實際 ${d20.days} 個交易日`} />
       </div>
 
-      {pts.length > 1 && (
+      {rects.length > 1 && (
         <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
           <div className="text-[11.5px] text-muted">三大法人每日合計（張）</div>
           <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="presentation"
@@ -257,8 +258,10 @@ function ChipsSection({ data }: { data: StockData }) {
               <line x1="0" x2={W} y1={z} y2={z} stroke="currentColor"
                     className="text-line" strokeWidth="1" strokeDasharray="3 3" />
             )}
-            <path d={linePath(pts)} fill="none" stroke="#1f6feb" strokeWidth="1.6"
-                  strokeLinejoin="round" strokeLinecap="round" />
+            {rects.map((b, i) => (
+              <rect key={i} x={b.x} y={b.y} width={b.w} height={b.h}
+                    className={b.up ? 'fill-up' : 'fill-down'} />
+            ))}
           </svg>
         </div>
       )}
