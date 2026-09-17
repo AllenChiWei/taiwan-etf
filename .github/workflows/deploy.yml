@@ -175,6 +175,22 @@ jobs:
             exit 1
           fi
 
+      # continue-on-error 會把失敗的步驟記成 conclusion=success，在 Actions 的畫面上
+      # 看不出哪裡少了東西（籌碼第一次上線就是這樣靜靜地缺掉）。這一步把結果講清楚。
+      - name: 檢查選配資料是否齊備
+        if: ${{ always() }}
+        run: |
+          for f in chips news; do
+            path="app/public/data/$f.json"
+            if [ -f "$path" ]; then
+              echo "$f.json 已產生（$(wc -c < "$path") bytes）"
+              # meta.errors 是資料自己記下的缺漏（某個來源拒絕連線之類）
+              python -c "import io,json,sys;d=json.load(io.open(sys.argv[1],encoding='utf-8'));[print('::warning title=%s 有缺漏::%s'%(sys.argv[2],e)) for e in (d.get('meta') or {}).get('errors') or []]" "$path" "$f"
+            else
+              echo "::warning title=$f.json 沒有產生::這次部署不含這一頁的資料，頁面會顯示「還沒有資料」。"
+            fi
+          done
+
       - name: 加密受保護的資料
         if: ${{ steps.finlab.outputs.generated == 'true' }}
         env:

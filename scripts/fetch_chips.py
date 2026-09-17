@@ -39,6 +39,16 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
 「買超金額」都是推估的。這裡用當日成交均價（成交金額 ÷ 成交股數）乘上買賣超股數，
 比用收盤價接近實際成交，但仍然不是法人的真實成交均價 —— 前端必須標明是估算。
 
+**查詢區間的結束日不能是「還沒有資料的今天」。** 期交所對這種查詢回一頁 HTML
+而不是空的 CSV：收盤後查當天可以，開盤前查當天就被拒。因為整份資料的日期是從
+回傳內容推的，被拒的那一段會靜靜地少掉最近幾天，畫面上看起來像「資料到上週為止」。
+所以先用 PC ratio 逐日往回問出「最新有資料的一天」，再以它為結束日組出所有區間。
+
+**一個來源掛掉不該讓整份沒有。** 期交所與交易所偶爾會拒絕來自雲端主機的請求
+（GitHub Actions 就是雲端），而這支腳本原本任何一個 urlopen 拋錯就整份不產生。
+現在每個來源各自 try/except，取到多少寫多少，取不到的寫進 meta.errors ——
+CI 的日誌不是每個人都讀得到，但產出的 JSON 本身會說哪一段缺了、為什麼。
+
 **契約金額的單位是千元。** 期交所原始欄位就是千元，這裡原樣保留，換算交給前端，
 免得在 JSON 裡再乘一次、之後看到數字時搞不清楚是哪一種單位。
 """
@@ -50,7 +60,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import date, timedelta
+from datetime import datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'app', 'public', 'data', 'chips.json')
@@ -68,6 +78,8 @@ TIMEOUT = 60
 HISTORY_DAYS = 120
 # 期交所單次查詢的上限（實測 PC ratio 超過一個月就回 HTML）
 WINDOW_DAYS = 28
+
+TPE = timezone(timedelta(hours=8))
 
 TAIFEX = 'https://www.taifex.com.tw/cht/3/%s'
 TWSE_T86 = ('https://www.twse.com.tw/rwd/zh/fund/T86'
@@ -94,8 +106,17 @@ TERM_ALL = '999999'
 TERM_WEEK = '666666'
 
 
+ERRORS = []
+
+
 def log(m):
     print(m, flush=True)
+
+
+def note(msg):
+    u"""記下一段抓不到的來源。會同時印出來與寫進 meta.errors。"""
+    log(u'  ⚠ %s' % msg)
+    ERRORS.append(msg)
 
 
 def write_json(path, obj):
@@ -114,20 +135,39 @@ def fetch(url, data=None):
     return raw
 
 
-def fetch_csv(page, params):
+def fetch_csv(page, params, tries=3):
     u"""期交所的下載端點。回傳已切好的資料列（不含表頭與註腳）。
 
     編碼兩種都出現過：多數是 UTF-8，少數頁面是 Big5，所以先試 UTF-8 再退回。
-    回 HTML 代表參數被拒（例如區間太長），這時當成沒有資料而不是硬解析。
+
+    **會重試。** 期交所偶爾對某一個區間回一頁 HTML（不是錯誤訊息，是首頁），
+    下一次同樣的請求又正常 —— 看起來是流量限制。不重試的話那一段就靜靜地少掉，
+    而少掉的往往是最近幾天，畫面上看起來像「資料到上週為止」。
     """
-    raw = fetch(TAIFEX % page, params)
-    try:
-        txt = raw.decode('utf-8')
-    except UnicodeDecodeError:
-        txt = raw.decode('big5', 'replace')
-    lines = [l for l in txt.splitlines() if l.strip()]
-    if not lines or lines[0].lstrip().startswith('<'):
-        log(u'  %s 回傳的不是 CSV（區間太長或被拒），這段跳過' % page)
+    for attempt in range(1, tries + 1):
+        try:
+            raw = fetch(TAIFEX % page, params)
+        except Exception as e:                                # noqa: BLE001
+            if attempt == tries:
+                note(u'期交所 %s：%s' % (page, str(e)[:80]))
+                return []
+            time.sleep(DELAY * attempt)
+            continue
+        try:
+            txt = raw.decode('utf-8')
+        except UnicodeDecodeError:
+            txt = raw.decode('big5', 'replace')
+        lines = [l for l in txt.splitlines() if l.strip()]
+        if lines and not lines[0].lstrip().startswith('<'):
+            break
+        if attempt == tries:
+            note(u'期交所 %s 連 %d 次都不是 CSV（%s ~ %s）'
+                 % (page, tries, params.get('queryStartDate'),
+                    params.get('queryEndDate')))
+            return []
+        log(u'  %s 回傳的不是 CSV，第 %d 次重試' % (page, attempt))
+        time.sleep(DELAY * attempt)
+    else:
         return []
     out = []
     for line in lines[1:]:
@@ -165,15 +205,38 @@ def iso(d):
     return d.replace('/', '-')
 
 
-def windows(days, step):
-    u"""把 days 天切成不超過 step 天的區間，由舊到新。"""
-    today = date.today()
-    start = today - timedelta(days=days)
+def latest_available_date(max_back=8):
+    u"""期交所最新有資料的那一天（台北時間往回找）。
+
+    用 PC ratio 試：它一天只有一列，是最便宜的探針。假日、開盤前、以及連假
+    都靠同一個迴圈處理 —— 不必自己維護交易日曆。
+    """
+    today = datetime.now(TPE).date()
+    for back in range(max_back):
+        day = today - timedelta(days=back)
+        probe = day.strftime('%Y/%m/%d')
+        if fetch_csv('pcRatioDown',
+                     {'queryStartDate': probe, 'queryEndDate': probe}, tries=1):
+            if back:
+                log(u'  期交所最新資料日：%s（今天還沒有）' % day.isoformat())
+            return day
+    note(u'期交所最近 %d 天都查不到資料' % max_back)
+    return None
+
+
+def windows(days, step, end=None):
+    u"""把 days 天切成不超過 step 天的區間，由舊到新。
+
+    end 是結束日（預設今天）。傳入「最新有資料的一天」可以避免最後一段被期交所
+    以「結束日還沒有資料」為由拒絕。
+    """
+    last = end or datetime.now(TPE).date()
+    start = last - timedelta(days=days)
     out = []
-    while start <= today:
-        end = min(start + timedelta(days=step - 1), today)
-        out.append((start.strftime('%Y/%m/%d'), end.strftime('%Y/%m/%d')))
-        start = end + timedelta(days=1)
+    while start <= last:
+        stop = min(start + timedelta(days=step - 1), last)
+        out.append((start.strftime('%Y/%m/%d'), stop.strftime('%Y/%m/%d')))
+        start = stop + timedelta(days=1)
     return out
 
 
@@ -187,7 +250,9 @@ def futures(rows):
     """
     if not rows:
         return [], {'dates': [], 'contracts': {}}, None
-    last_day = rows[-1][0]
+    # 取最大值而不是最後一列：某個區間被拒時，接起來的資料尾端會是較舊的那一段，
+    # 用最後一列當「最新」就會把整頁的日期往前拉好幾天（實際踩過）。
+    last_day = max(c[0] for c in rows)
     latest = []
     hist = {}
     dates = []
@@ -218,7 +283,7 @@ def options(rows):
     u"""最新一日的三大法人選擇權未平倉（買權／賣權分計，含契約金額）。"""
     if not rows:
         return []
-    last_day = rows[-1][0]
+    last_day = max(c[0] for c in rows)
     out = []
     for c in rows:
         if c[0] != last_day or c[1] != u'臺指選擇權':
@@ -232,10 +297,10 @@ def options(rows):
     return out
 
 
-def pc_ratio(days):
+def pc_ratio(days, end=None):
     u"""Put/Call Ratio 的歷史。一次最多一個月，所以切段抓。"""
     dates, vol, oi = [], [], []
-    for a, b in windows(days, WINDOW_DAYS):
+    for a, b in windows(days, WINDOW_DAYS, end):
         for c in fetch_csv('pcRatioDown', {'queryStartDate': a, 'queryEndDate': b}):
             day = iso(c[0])
             if day in dates:
@@ -281,8 +346,15 @@ def large_traders(rows, ids, is_option):
 # ── 交易所：法人買賣超前十大 ─────────────────────────────────
 
 def twse_prices(day):
-    u"""上市個股的當日成交均價 {代號: 均價}。均價 = 成交金額 ÷ 成交股數。"""
-    doc = json.loads(fetch(TWSE_PRICE % day).decode('utf-8'))
+    u"""上市個股的當日成交均價 {代號: 均價}。均價 = 成交金額 ÷ 成交股數。
+
+    拿不到就回空的：買賣超的張數照樣有，只是金額變成 null（前端顯示破折號）。
+    """
+    try:
+        doc = json.loads(fetch(TWSE_PRICE % day).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'證交所收盤行情（估算金額用）：%s' % str(e)[:80])
+        return {}
     out = {}
     for t in doc.get('tables') or []:
         fields = t.get('fields') or []
@@ -298,7 +370,11 @@ def twse_prices(day):
 
 def tpex_prices(day):
     u"""上櫃個股的當日成交均價。櫃買的欄位名稱帶空白，所以用 strip 後比對。"""
-    doc = json.loads(fetch(TPEX_PRICE % day).decode('utf-8'))
+    try:
+        doc = json.loads(fetch(TPEX_PRICE % day).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買收盤行情（估算金額用）：%s' % str(e)[:80])
+        return {}
     out = {}
     for t in doc.get('tables') or []:
         fields = [f.strip() for f in (t.get('fields') or [])]
@@ -332,7 +408,11 @@ def top_n(rows, prices, n=10):
 
 def twse_top(day):
     u"""上市：外資／投信／自營商各自的買賣超前十大。"""
-    doc = json.loads(fetch(TWSE_T86 % day).decode('utf-8'))
+    try:
+        doc = json.loads(fetch(TWSE_T86 % day).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'證交所法人買賣超 T86：%s' % str(e)[:80])
+        return None
     if doc.get('stat') != 'OK':
         log(u'  證交所 T86 回 %s，當天可能不是交易日' % doc.get('stat'))
         return None
@@ -373,7 +453,11 @@ def tpex_top(day):
     櫃買改版把欄位挪動時，這行會先叫出來，而不是默默給出錯的排行。
     """
     date_roc = '%d/%02d/%02d' % (int(day[:4]) - 1911, int(day[4:6]), int(day[6:]))
-    doc = json.loads(fetch(TPEX_INSTI % date_roc).decode('utf-8'))
+    try:
+        doc = json.loads(fetch(TPEX_INSTI % date_roc).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買法人買賣超：%s' % str(e)[:80])
+        return None
     tables = doc.get('tables') or []
     if not tables or not tables[0].get('data'):
         log(u'  櫃買 dailyTrade 沒有資料，當天可能不是交易日')
@@ -399,13 +483,21 @@ def tpex_top(day):
 def main():
     log(u'輸出：%s' % OUT)
 
+    log(u'期交所：確認最新資料日…')
+    last_date = latest_available_date()
+
     log(u'期交所：三大法人期貨（近 %d 天）…' % HISTORY_DAYS)
     fut_rows = []
-    for a, b in windows(HISTORY_DAYS, WINDOW_DAYS):
+    for a, b in windows(HISTORY_DAYS, WINDOW_DAYS, last_date):
         fut_rows += fetch_csv('futContractsDateDown', {
             'firstDate': '', 'lastDate': '', 'commodityId': '',
             'queryStartDate': a, 'queryEndDate': b})
     fut_latest, fut_hist, fut_day = futures(fut_rows)
+    if fut_day is None:
+        # 期交所整段拿不到。日期是後面兩個交易所查詢的依據，所以退回「今天」
+        # （台北時間）—— 假日或收盤前那兩邊會回空，前端顯示「今天還沒有資料」。
+        note(u'期交所三大法人期貨：一筆都沒拿到')
+        fut_day = (last_date or datetime.now(TPE).date()).isoformat()
     log(u'  %d 筆，最新 %s，契約 %d 種'
         % (len(fut_rows), fut_day, len(fut_hist['contracts'])))
 
@@ -418,7 +510,7 @@ def main():
     log(u'  臺指選擇權 %d 筆' % len(opt_latest))
 
     log(u'期交所：Put/Call Ratio（近 %d 天）…' % HISTORY_DAYS)
-    pc = pc_ratio(HISTORY_DAYS)
+    pc = pc_ratio(HISTORY_DAYS, last_date)
     log(u'  %d 個交易日，最新未平倉比 %s%%'
         % (len(pc['dates']), pc['oi'][-1] if pc['oi'] else u'—'))
 
@@ -443,11 +535,14 @@ def main():
     payload = {
         'meta': {
             'date': fut_day,
-            'updated': date.today().isoformat(),
+            # 台北時間。CI 跑在 UTC，用 date.today() 會在台灣凌晨標成前一天
+            'updated': datetime.now(TPE).date().isoformat(),
             'source': u'臺灣期貨交易所／臺灣證券交易所／證券櫃檯買賣中心',
             'note': (u'買賣超金額為估算：交易所只公佈股數，這裡以當日成交均價'
                      u'（成交金額÷成交股數）乘上買賣超股數推估。'
                      u'期貨與選擇權的契約金額單位為千元。'),
+            # 哪幾段沒抓到。CI 的日誌不見得讀得到，但這份 JSON 會說。
+            'errors': ERRORS,
         },
         'futures': fut_latest,
         'futHistory': fut_hist,
@@ -456,10 +551,22 @@ def main():
         'large': {'fut': large_fut, 'opt': large_opt},
         'top': {'twse': twse, 'tpex': tpex},
     }
+    have = (bool(fut_latest) or bool(opt_latest) or bool(pc['dates'])
+            or bool(large_fut) or twse is not None or tpex is not None)
+    if not have:
+        log(u'每一個來源都失敗了，不寫出半空的檔案 —— 籌碼頁會顯示「今天還沒有資料」')
+        for e in ERRORS:
+            log(u'  %s' % e)
+        return 1
+
     write_json(OUT, payload)
     size = os.path.getsize(OUT) / 1024.0
-    log(u'完成：%s（%.0f KB）' % (OUT, size))
+    log(u'完成：%s（%.0f KB）%s'
+        % (OUT, size, u'' if not ERRORS else u'，但有 %d 段缺漏' % len(ERRORS)))
+    for e in ERRORS:
+        log(u'  缺：%s' % e)
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())
