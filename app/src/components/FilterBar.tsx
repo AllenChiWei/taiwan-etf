@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import type { EtfDataset, Filters, NumericKey } from '../types';
 import type { SortSpec } from '../lib/filters';
 
@@ -53,7 +53,11 @@ export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset
   }, []);
 
   const sortValue = sort ? `${sort.key}-${sort.dir}` : '';
-  const hasAny = Boolean(filters.q || filters.cust || filters.freq || filters.sec || sort);
+  const activeCount = useMemo(
+    () => data.etfs.reduce((n, e) => n + (e.act ? 1 : 0), 0), [data.etfs]);
+
+  const hasAny = Boolean(
+    filters.q || filters.cust || filters.freq || filters.sec || filters.act || sort);
 
   const selectCls = 'h-10 w-full cursor-pointer rounded-lg border border-line bg-surface '
                   + 'px-2.5 text-[15px] text-ink focus:border-accent focus:outline-none';
@@ -96,7 +100,7 @@ export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:grid-cols-[repeat(4,1fr)_auto] lg:items-end">
+      <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:grid-cols-[repeat(5,1fr)_auto] lg:items-end">
         <div className="flex flex-col gap-1">
           <label className={labelCls} htmlFor="f-cust">保管銀行</label>
           <select id="f-cust" className={selectCls} value={filters.cust}
@@ -114,6 +118,16 @@ export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset
             {data.frequencies.map(f => (
               <option key={f} value={f}>{f === '—' ? '— (不配息)' : f}</option>
             ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className={labelCls} htmlFor="f-act">類型</label>
+          <select id="f-act" className={selectCls} value={filters.act}
+                  onChange={e => onChange({ act: e.target.value })}>
+            <option value="">全部</option>
+            <option value="active">主動式（{activeCount}）</option>
+            <option value="passive">被動式（{data.etfs.length - activeCount}）</option>
           </select>
         </div>
 

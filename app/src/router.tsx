@@ -34,6 +34,8 @@ export interface ListSearch {
   cust: string;
   freq: string;
   sec: string;
+  /** '' 全部 / 'active' 主動 / 'passive' 被動 */
+  act: string;
   /** 'yield-desc' 之類；空字串代表預設的代號排序 */
   sort: string;
 }
@@ -47,6 +49,7 @@ function validateListSearch(search: Record<string, unknown>): ListSearch {
     cust: str(search.cust),
     freq: str(search.freq),
     sec: str(search.sec),
+    act: str(search.act),
     sort: str(search.sort),
   };
 }

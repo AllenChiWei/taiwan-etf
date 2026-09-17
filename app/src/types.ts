@@ -19,13 +19,15 @@ export interface Etf {
   /** 近 5 年市價報酬率（累積，非年化）*/
   r60: string;
   sec: SectionId;
+  /** 主動式 ETF（名稱以「主動」開頭）。跨分區的屬性，不是一個分區 ——
+      主動債券 ETF 同時屬於「債券ETF」與「主動」。 */
+  act: boolean;
 }
 
 export type SectionId =
   | 'cat-domestic'
   | 'cat-foreign'
   | 'cat-bond'
-  | 'cat-active'
   | 'cat-leveraged'
   | 'cat-futures'
   | 'cat-leveraged-futures';
@@ -66,6 +68,8 @@ export interface Filters {
   cust: string;
   freq: string;
   sec: string;
+  /** '' 全部 / 'active' 只看主動 / 'passive' 只看被動 */
+  act: string;
 }
 
 // ---- 美股 ETF ----------------------------------------------------------------

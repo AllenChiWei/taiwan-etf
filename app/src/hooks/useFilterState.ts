@@ -19,8 +19,9 @@ export function useFilterState(from: '/' | '/favorites') {
   const navigate = useNavigate({ from });
 
   const filters: Filters = useMemo(
-    () => ({ q: search.q, cust: search.cust, freq: search.freq, sec: search.sec }),
-    [search.q, search.cust, search.freq, search.sec],
+    () => ({ q: search.q, cust: search.cust, freq: search.freq,
+             sec: search.sec, act: search.act }),
+    [search.q, search.cust, search.freq, search.sec, search.act],
   );
 
   const sort = useMemo(() => parseSort(search.sort), [search.sort]);
@@ -51,7 +52,7 @@ export function useFilterState(from: '/' | '/favorites') {
   );
 
   const reset = useCallback(
-    () => patch({ q: '', cust: '', freq: '', sec: '', sort: '' }),
+    () => patch({ q: '', cust: '', freq: '', sec: '', act: '', sort: '' }),
     [patch],
   );
 

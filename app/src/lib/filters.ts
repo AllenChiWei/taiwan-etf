@@ -24,10 +24,10 @@ export function matchesQuery(etf: Etf, q: string): boolean {
       || etf.cust.toLowerCase().includes(needle);
 }
 
-/** 四個條件是 AND；下拉選單一律完全相等比對（值來自資料本身）。 */
+/** 五個條件是 AND；下拉選單一律完全相等比對（值來自資料本身）。 */
 export function filterEtfs(
   etfs: readonly Etf[],
-  { q = '', cust = '', freq = '', sec = '' }: Partial<Filters>,
+  { q = '', cust = '', freq = '', sec = '', act = '' }: Partial<Filters>,
   onlyCodes?: readonly string[] | null,
 ): Etf[] {
   const allow = onlyCodes ? new Set(onlyCodes) : null;
@@ -36,6 +36,9 @@ export function filterEtfs(
     (!cust || e.cust === cust) &&
     (!freq || e.freq === freq) &&
     (!sec || e.sec === sec) &&
+    // 主動與分區是兩個維度：選了「債券ETF」+「主動」會得到主動債券 ETF，
+    // 而不是兩者擇一。做成第七個分區的時候就做不到這件事。
+    (!act || (act === 'active' ? e.act : !e.act)) &&
     matchesQuery(e, q));
 }
 

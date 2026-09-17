@@ -14,7 +14,7 @@ import {
   groupBySection, activeFilterCount, compareNumeric,
 } from '../src/lib/filters.ts';
 import { returnTone, yieldClass, freqPillClass } from '../src/lib/format.ts';
-import type { Etf, EtfDataset, Section } from '../src/types.ts';
+import type { Etf, EtfDataset, Filters, Section } from '../src/types.ts';
 
 const mk = (code: string, o: Partial<Etf> = {}): Etf => ({
   code,
@@ -195,6 +195,19 @@ describe('真實資料（public/data/etfs.json）', () => {
     readFileSync(new URL('../public/data/etfs.json', import.meta.url), 'utf8'),
   ) as EtfDataset;
 
+  test('每一檔都有 act 欄位，且與名稱一致', () => {
+    for (const e of data.etfs) {
+      assert.equal(typeof e.act, 'boolean', `${e.code} 缺少 act`);
+      assert.equal(e.act, e.name.startsWith('主動'),
+        `${e.code} ${e.name} 的 act=${e.act} 與名稱不符`);
+    }
+    assert.ok(data.etfs.some(e => e.act), '應該要有主動 ETF');
+    // 主動 ETF 不該全部擠在同一個分區 —— 那正是「做成第七個分區」的症狀
+    const secs = new Set(data.etfs.filter(e => e.act).map(e => e.sec));
+    assert.ok(secs.size > 1,
+      `主動 ETF 只出現在 ${[...secs]}，主動應該是跨分區的屬性`);
+  });
+
   test('筆數與 meta 相符且不為空', () => {
     assert.equal(data.etfs.length, data.meta.total);
     assert.ok(data.etfs.length > 300, `只有 ${data.etfs.length} 筆`);
@@ -236,4 +249,29 @@ describe('真實資料（public/data/etfs.json）', () => {
       assert.ok(sorted.slice(firstNA).every(e => toNumber(e.r12) === null), 'N/A 之後還混著數值');
     }
   });
+});
+
+
+test('主動與分區是兩個維度，可以同時成立', () => {
+  // 做成第七個分區的時候，主動債券 ETF 會從債券區消失；改成獨立欄位後
+  // 「債券ETF」+「主動」要能交集出主動債券 ETF。
+  const rows = [
+    { code: '0050',   name: '元大台灣50',      sec: 'cat-domestic', act: false },
+    { code: '00400A', name: '主動國泰動能高息', sec: 'cat-domestic', act: true  },
+    { code: '00679B', name: '元大美債20年',    sec: 'cat-bond',     act: false },
+    { code: '00980D', name: '主動統一美債',    sec: 'cat-bond',     act: true  },
+  ].map(r => ({ cust: '—', freq: '—', yield: 'N/A', r3: 'N/A', r6: 'N/A',
+                r12: 'N/A', r36: 'N/A', r60: 'N/A', ...r })) as unknown as Etf[];
+
+  const codes = (f: Partial<Filters>) => filterEtfs(rows, f).map(e => e.code);
+
+  assert.deepEqual(codes({}), ['0050', '00400A', '00679B', '00980D']);
+  assert.deepEqual(codes({ act: 'active' }), ['00400A', '00980D']);
+  assert.deepEqual(codes({ act: 'passive' }), ['0050', '00679B']);
+
+  // 債券區照樣看得到主動債券
+  assert.deepEqual(codes({ sec: 'cat-bond' }), ['00679B', '00980D']);
+  // 兩個維度交集
+  assert.deepEqual(codes({ sec: 'cat-bond', act: 'active' }), ['00980D']);
+  assert.deepEqual(codes({ sec: 'cat-domestic', act: 'active' }), ['00400A']);
 });
