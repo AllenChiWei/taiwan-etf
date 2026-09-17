@@ -29,7 +29,15 @@ export function useFilterState(from: '/' | '/favorites') {
   const patch = useCallback(
     (next: Partial<Filters & { sort: string }>) => {
       // replace: 打字時每個字都推一筆歷史紀錄會讓「上一頁」變得沒用
-      void navigate({ search: (prev) => ({ ...prev, ...next }), replace: true });
+      //
+      // resetScroll: false —— 篩選與排序只是換網址上的參數，不是換頁。
+      // router 預設每次導覽都把畫面捲回頂端，所以捲到清單中間再點「報酬率排行」
+      // 會整頁跳回最上面，使用者得再捲一次才看得到剛排好的結果。
+      void navigate({
+        search: (prev) => ({ ...prev, ...next }),
+        replace: true,
+        resetScroll: false,
+      });
     },
     [navigate],
   );
