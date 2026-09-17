@@ -13,11 +13,14 @@
  * 通常代表最近調整過配息，或是那次配息不具代表性 —— 那是值得看見的訊號，
  * 不該被平均掉。
  *
- * ## 一年配幾次是推出來的，不是讀欄位
+ * ## 一年配幾次以「公告頻率」為準
  *
- * 用實際的除息月份推，而不是直接信 etfs.json 的 freq。那個欄位來自 MoneyDJ
- * 的公告頻率，跟實際發生的次數偶爾對不上（中途改頻率、當年少配一次）。
- * 這裡要回答的是「我實際會在幾月拿到錢」，所以看實際紀錄。
+ * 曾經改成從實際除息次數推，結果 00406A（2026-06 才上市的月配 ETF）只有兩筆
+ * 除息紀錄，被判成半年配，年配息因此算成實際的六分之一。新上市的標的還沒配滿
+ * 一年，用次數推一定錯 —— 而這種標的正是使用者最會想試算的。
+ *
+ * 所以以 etfs.json 的公告頻率為準。只有在公告頻率是「—」或認不得時，
+ * 才退回用實際次數推。實際次數仍然留著，跟公告頻率對不上時畫面會提醒。
  */
 
 import type { CalcSeries } from './backtest.ts';
@@ -44,8 +47,10 @@ export interface HoldingProjection {
   /** 一年配幾次，由實際除息月份推得 */
   perYear: number;
   freq: string;
-  /** 預期會除息的月份（0=一月），依過去一年的實際月份 */
+  /** 預期會除息的月份（0=一月）。已記錄到的一定在裡面，不足處按間隔補 */
   payoutMonths: number[];
+  /** 實際記錄到的除息月份，用來判斷推估可不可靠 */
+  actualMonths: number[];
 
   /** 年配息（每股）= 最近一次 × 一年幾次 */
   perShare: number;
@@ -106,6 +111,31 @@ export function payoutsPerYear(freq: string): number {
 }
 
 /**
+ * 推出「一年會在哪幾個月除息」。
+ *
+ * 已經記錄到的月份一定算數。不夠 perYear 個時，從最近一次除息的月份往後
+ * 按間隔補（月配間隔 1、季配 3、半年配 6），而不是隨便挑空的月份塞。
+ *
+ * 這對新上市的標的特別重要：00406A 只配過 7 月與 9 月，但它是月配 ——
+ * 正確的月曆是十二個月都有，而不是「7、9 月再加十個隨機月份」。
+ */
+export function expectedMonths(known: number[], perYear: number): number[] {
+  if (perYear <= 0) return [];
+  const out = new Set(known);
+  if (out.size >= perYear) return [...out].sort((a, b) => a - b).slice(0, perYear);
+
+  const interval = Math.round(12 / perYear);
+  // 從最近一次已知的除息月往後推
+  let cursor = known.length ? known[known.length - 1] : 0;
+  let guard = 0;
+  while (out.size < perYear && guard++ < 24) {
+    cursor = (cursor + interval) % 12;
+    out.add(cursor);
+  }
+  return [...out].sort((a, b) => a - b);
+}
+
+/**
  * 把一檔 ETF 的配息攤成日曆月份。
  *
  * months 是整個市場共用的月份清單（'YYYY-MM'），series.first 是這檔在裡面的
@@ -137,25 +167,15 @@ export function projectHolding(
   }
   payoutMonths.sort((a, b) => a - b);
 
-  const freq = inferFrequency(payouts);
+  // 公告頻率優先；認不得才退回用實際次數推
+  const declared = payoutsPerYear(series.freq) > 0 ? series.freq : inferFrequency(payouts);
+  const freq = declared;
   const perYear = payoutsPerYear(freq);
   const perShare = latest * perYear;
 
-  // 把「最近一次的金額」放到每個預期會除息的月份。
-  // 用過去一年實際發生的月份，而不是機械式地平均分配 —— 季配不一定落在
-  // 1/4/7/10，各家的除息月份不同。
+  const expected = expectedMonths(payoutMonths, perYear);
   const byMonth = new Array<number>(12).fill(0);
-  if (payoutMonths.length > 0) {
-    for (const m of payoutMonths) byMonth[m] = latest;
-    // 推出來的次數比實際記錄到的月份多時（例如月配但只記到 11 個月），
-    // 差額平均補到其餘月份，讓月份加總與年配息一致
-    const missing = perYear - payoutMonths.length;
-    if (missing > 0) {
-      const spare = [];
-      for (let m = 0; m < 12; m++) if (!payoutMonths.includes(m)) spare.push(m);
-      for (let k = 0; k < missing && k < spare.length; k++) byMonth[spare[k]] = latest;
-    }
-  }
+  for (const m of expected) byMonth[m] = latest;
 
   const price = series.last.close;
   return {
@@ -167,7 +187,8 @@ export function projectHolding(
     latestMonth,
     perYear,
     freq,
-    payoutMonths,
+    payoutMonths: expected,
+    actualMonths: payoutMonths,
     perShare,
     byMonth,
     annual: perShare * shares,

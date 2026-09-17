@@ -224,18 +224,27 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     <Cell label="殖利率" value={`${nf2.format(r.yieldPct)}%`} tone />
                     <Cell label="一年可領" value={`${money(r.annual)} 元`} tone />
                   </dl>
-                  {Math.abs(r.annual - r.annualTtm) > r.annualTtm * 0.15
-                    && r.annualTtm > 0 && (
+                  {/* 上市未滿一年時，推估與近 12 個月實際本來就會差很多
+                      —— 那是「還沒配滿一年」，不是「調整了配息」，不能說成同一件事 */}
+                  {r.monthsListed < 12 ? (
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
-                      近 12 個月實際只配了 {money(r.annualTtm)} 元。
-                      推估值用的是最近一次的 {nf2.format(r.latest)} 元 ——
-                      {r.annual > r.annualTtm ? '最近調高了配息' : '最近那次配得比平常少'}，
-                      兩個數字差這麼多時要留意。
+                      這檔上市才 {r.monthsListed} 個月，只配過 {r.payouts} 次
+                      （實際共 {money(r.annualTtm)} 元）。上面的年配息是照公告的
+                      「{r.freq}」用最近一次 {nf2.format(r.latest)} 元推算滿一年的結果。
                     </p>
-                  )}
-                  {r.monthsListed < 12 && (
-                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] text-muted">
-                      這檔只有 {r.monthsListed} 個月的資料，配息頻率是推的，可能不準。
+                  ) : Math.abs(r.annual - r.annualTtm) > r.annualTtm * 0.15
+                      && r.annualTtm > 0 ? (
+                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
+                      近 12 個月實際配了 {money(r.annualTtm)} 元，跟推估差不少。
+                      推估用的是最近一次的 {nf2.format(r.latest)} 元 ——
+                      {r.annual > r.annualTtm ? '最近調高了配息' : '最近那次配得比平常少'}。
+                    </p>
+                  ) : null}
+
+                  {r.monthsListed >= 12 && r.payouts > 0 && r.payouts !== r.perYear && (
+                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
+                      公告是{r.freq}（一年 {r.perYear} 次），但過去 12 個月實際配了
+                      {r.payouts} 次。年配息按公告的次數算。
                     </p>
                   )}
                 </li>
@@ -243,12 +252,23 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             </ul>
           </section>
 
-          <p className="mt-3 rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
-            年配息 = <strong className="text-ink">最近一次配息 × 一年配幾次</strong>，
-            一年幾次是從過去 12 個月實際的除息月份推出來的。
-            配息金額每次都會變，ETF 也可能調整配息政策 —— 這是依現況的推估，不是保證。
-            數字是稅前的，沒有扣二代健保補充保費與所得稅。
-          </p>
+          <div className="mt-3 space-y-1.5 rounded-lg bg-sunken px-3 py-2.5
+                          text-[12px] leading-relaxed text-muted">
+            <p>
+              年配息 = <strong className="text-ink">最近一次配息 × 一年配幾次</strong>。
+              一年幾次以公告的配息頻率為準，除息月份則照這檔實際發生過的月份排
+              —— 同樣是季配，各家的月份不一樣。
+            </p>
+            <p>
+              配息金額是從還原股價回推的，而
+              <strong className="text-ink">資料來源本身只取到小數第二位</strong>：
+              公告 0.138 元的話，這裡會顯示 0.13 或 0.14。單價低的標的影響比較明顯。
+            </p>
+            <p>
+              配息金額每次都會變，ETF 也可能調整配息政策 —— 這是依現況的推估，不是保證。
+              數字是稅前的，沒有扣二代健保補充保費與所得稅。
+            </p>
+          </div>
         </>
       )}
     </>
