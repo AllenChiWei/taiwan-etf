@@ -227,3 +227,69 @@ export function buildPortfolio(rows: HoldingProjection[]): Portfolio {
     monthlyAverage: annual / 12,
   };
 }
+
+/* ── 年配息佔比（圓餅圖） ───────────────────────────────── */
+
+export interface Slice {
+  /** 對應的持股在輸入陣列裡的索引 */
+  i: number;
+  /** 佔全部年配息的百分比 */
+  pct: number;
+  /** SVG 的 path d；整圈時是空字串，改用 full 旗標畫圓 */
+  d: string;
+  /** 這一片是不是整圈（只有一檔有配息時） */
+  full: boolean;
+}
+
+/**
+ * 甜甜圈圖的扇形。
+ *
+ * 自己算路徑而不是引圖表套件：需要的就是幾條 arc，而這個專案的圖表一律是內嵌
+ * SVG（見籌碼頁的柱狀圖）。
+ *
+ * 兩個邊界條件是這個函式存在的理由：
+ *
+ * - **只有一檔有配息時畫不出扇形**。SVG 的 arc 起點與終點重合時什麼都不會畫，
+ *   所以那種情況回 full=true，讓呼叫端改畫一個圓環。
+ * - **金額為 0 的不佔位置**。沒配過息的持股不該在圖上分到一片薄薄的角度，
+ *   它會有顏色卻沒有意義。
+ */
+export function donutSlices(
+  values: number[], radius = 42, inner = 26, cx = 50, cy = 50,
+): Slice[] {
+  const total = values.reduce((a, b) => a + (b > 0 ? b : 0), 0);
+  if (total <= 0) return [];
+
+  const usable = values
+    .map((v, i) => ({ i, v }))
+    .filter(x => x.v > 0);
+
+  if (usable.length === 1) {
+    return [{ i: usable[0].i, pct: 100, d: '', full: true }];
+  }
+
+  const out: Slice[] = [];
+  let angle = -Math.PI / 2;                    // 從十二點鐘方向開始，順時針
+  for (const { i, v } of usable) {
+    const sweep = (v / total) * Math.PI * 2;
+    const end = angle + sweep;
+    const p = (r: number, a: number) =>
+      `${(cx + r * Math.cos(a)).toFixed(2)} ${(cy + r * Math.sin(a)).toFixed(2)}`;
+    // 超過半圈要把 large-arc-flag 打開，否則 SVG 會畫成另一邊的短弧
+    const large = sweep > Math.PI ? 1 : 0;
+    out.push({
+      i,
+      pct: Math.round((v / total) * 1000) / 10,
+      d: [
+        `M${p(radius, angle)}`,
+        `A${radius} ${radius} 0 ${large} 1 ${p(radius, end)}`,
+        `L${p(inner, end)}`,
+        `A${inner} ${inner} 0 ${large} 0 ${p(inner, angle)}`,
+        'Z',
+      ].join(' '),
+      full: false,
+    });
+    angle = end;
+  }
+  return out;
+}

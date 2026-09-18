@@ -6,6 +6,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { NumberInput } from './NumberInput';
+import { DividendPie } from './DividendPie';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   type HoldingProjection,
@@ -122,6 +123,10 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       if (!s) continue;
       out.push(projectHolding(s, index.months, e.shares));
     }
+    // 依一年可領金額由大到小。圖例、月曆的分段、佔比圖與各檔明細都吃這個順序，
+    // 四處才會一致 —— 加入的先後對「誰貢獻最多」沒有意義。
+    // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
+    out.sort((a, b) => b.annual - a.annual);
     return out;
   }, [entries, series, index.months]);
 
@@ -222,7 +227,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">配息月曆</h2>
-              <span className="text-[11.5px] text-faint">柱子依各檔金額分段</span>
+              <span className="text-[11.5px] text-faint">依一年可領金額排序</span>
             </div>
 
             {/* 圖例。每檔的顏色在十二個月裡固定，才看得出誰佔比大 */}
@@ -274,6 +279,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               })}
             </ul>
           </section>
+
+          <DividendPie rows={rows} total={portfolio.annual} colorOf={colorOf} />
 
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <h2 className="text-sm font-bold text-ink">各檔明細</h2>

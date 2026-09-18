@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   projectHolding, buildPortfolio, inferFrequency, payoutsPerYear, expectedMonths,
-  SHARES_PER_LOT,
+  SHARES_PER_LOT, donutSlices,
 } from '../src/lib/dividend.ts';
 import type { CalcSeries } from '../src/lib/backtest.ts';
 
@@ -254,4 +254,41 @@ test('沒有 dSrc 時一律當成約略值', () => {
   const d = new Array(12).fill(0); d[0] = 1;
   const r = projectHolding(series({ freq: '年配', d }), MONTHS, 1000);
   assert.equal(r.exact, false);
+});
+
+test('年配息佔比的甜甜圈', async (t) => {
+  await t.test('百分比加起來是 100，順序與輸入一致', () => {
+    const s = donutSlices([50, 30, 20]);
+    assert.deepEqual(s.map(x => x.i), [0, 1, 2]);
+    assert.deepEqual(s.map(x => x.pct), [50, 30, 20]);
+  });
+
+  await t.test('只有一檔有配息時回整圈旗標 —— 起終點重合畫不出扇形', () => {
+    const s = donutSlices([100, 0, 0]);
+    assert.equal(s.length, 1);
+    assert.equal(s[0].full, true);
+    assert.equal(s[0].pct, 100);
+    assert.equal(s[0].d, '');
+  });
+
+  await t.test('金額 0 的不佔角度，但保留原本的索引', () => {
+    const s = donutSlices([60, 0, 40]);
+    assert.deepEqual(s.map(x => x.i), [0, 2]);
+  });
+
+  await t.test('全部是 0 或負數就沒有圖', () => {
+    assert.deepEqual(donutSlices([0, 0]), []);
+    assert.deepEqual(donutSlices([-5]), []);
+  });
+
+  await t.test('超過半圈的扇形要打開 large-arc-flag', () => {
+    const [big, small] = donutSlices([80, 20]);
+    assert.match(big.d, /A42 42 0 1 1/, '80% 的那片要用長弧');
+    assert.match(small.d, /A42 42 0 0 1/, '20% 的那片要用短弧');
+  });
+
+  await t.test('從十二點鐘方向開始', () => {
+    const [first] = donutSlices([50, 50]);
+    assert.ok(first.d.startsWith('M50.00 8.00'), first.d.slice(0, 20));
+  });
 });
