@@ -4,7 +4,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-A searchable Traditional-Chinese directory of Taiwan and US ETFs, published at
+A Traditional-Chinese market dashboard（站名「職業賭徒日誌」）：Taiwan and US ETFs,
+per-stock fundamentals and chips, options positioning and 價平和, published at
 <https://allenchiwei.github.io/taiwan-etf/>. Refreshed on a weekday cron and committed back.
 
 Where each field comes from, because it is not one source:
@@ -23,6 +24,7 @@ Where each field comes from, because it is not one source:
 | 個股財報 | 公開資訊觀測站 OpenAPI（基本資料／月營收／損益表／資產負債表）——**累積式** |
 | 個股籌碼 | TWSE `T86`／`MI_MARGN`／`MI_QFIIS`、TPEx 對應端點、集保 TDCC |
 | 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
+| 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
@@ -41,7 +43,8 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_news.py              新聞與重大訊息 → news.json（部署時產生）
   reuse_calc.py              FinLab 失敗時，從線上抓回試算資料當備援
   fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
-  fetch_highs.py             創 200 日新高 → highs.json（跟著試算資料一起跑）
+  fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
+  fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -227,6 +230,35 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 - **類股成交比重**（`chips.json` 的 `sectors`）：證交所的分類指數有階層，「電子」與
   「化學生技醫療」是彙總類，等於底下幾個細類的總和（實測到小數點後四位一樣）。
   算比重時分母要扣掉彙總類，否則電子被算兩次、半導體會從 36% 被稀釋成 19%。
+
+## 週選價平和
+
+`scripts/fetch_atm.py` → `app/public/data/atm.json`（**進版控**，每天四列、一年約 150 KB）。
+畫面在籌碼頁的「週選價平和」區塊，統計在 `app/src/lib/atm.ts`（純函式、有測試）。
+
+    價平履約價 = 同一到期合約中 |Call 收盤 − Put 收盤| 最小者
+    價平和     = 該履約價的 Call + Put
+
+取**一般交易時段**（日盤）收盤價，無成交時退回結算價。所以每一列的意思是「該交易日
+收盤的價平和」，也就是**隔一個交易日開盤前**看到的數字。期交所 CSV 裡的「盤後」是
+前一交易日 15:00 起的夜盤，比同一份檔案的日盤還舊，流動性也低到 |C−P| 的判定會偏掉，
+所以不用它。
+
+四件在資料上踩過、寫成註解與測試的事：
+
+- **系列要看合約代號，不要看到期日的星期。** W 系列是週三到期、F 系列是週五到期，
+  但遇連假會移位 —— `202609F4` 的到期日是 2026-09-29（星期二），因為 09-25 是中秋。
+- **月選算進週三系列。** 月選到期那一週沒有 W 合約（九月只有 W1、W2、W4、W5），
+  那一週的「週三到期合約」就是月選本身。
+- **每天每系列記兩口**（`r=0` 最近到期、`r=1` 換倉後那一口）。只記一口的話，
+  「排除到期當日」之後週四早上的週三系列會變成沒有樣本 —— 因為週三收盤時最近的
+  那口正好當天到期。前端的 `pickRow()` 取「符合條件中最近到期的那口」，
+  所以排除之後自然退到第二口，那才是那天早上真正在看的數字。
+- **到期當日的價平和趨近 0**（實測週三系列在週三平均 15，換倉後 1350）。
+  把它混進平均，那一格講的就不是同一件事，所以預設排除，但保留選項。
+
+「週三的價平和」有兩種問法，畫面用 `basis` 切換：`preopen`（當天早上看到的，
+＝前一交易日收盤，預設）與 `data`（當天收盤本身）。
 
 ## FinLab 的每日流量
 

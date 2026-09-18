@@ -41,7 +41,7 @@ export function AppShell() {
       <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex w-full max-w-6xl items-start justify-between gap-3 px-3 pt-4 pb-3 sm:px-4">
           <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight">台灣 ETF 總覽</h1>
+            <h1 className="text-xl font-bold tracking-tight">職業賭徒日誌</h1>
             <p className="mt-0.5 text-[12.5px] text-muted">
               {meta ? metaLine(meta.source, meta.updated, meta.snapshot, meta.yieldAsof) : '載入中…'}
             </p>

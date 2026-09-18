@@ -16,6 +16,7 @@ import {
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { EmptyState } from '../components/EmptyState';
+import { AtmSection } from '../components/AtmSection';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
@@ -491,6 +492,7 @@ export function ChipsPage() {
       <FuturesSection data={data} />
       <PcSection data={data} />
       <OptionsSection data={data} />
+      <AtmSection />
       <LargeSection data={data} />
       <SectorSection data={data} />
       <TopSection data={data} />

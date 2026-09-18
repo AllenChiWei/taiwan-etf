@@ -16,7 +16,8 @@ scripts/                Python pipeline: scrape → etfs.json + legacy HTML
   fetch_news.py           新聞 + 重大訊息 → news.json, built at deploy time
   reuse_calc.py           pulls the published calc data back when FinLab fails
   fetch_stocks.py         per-stock fundamentals (accumulated) + chips → stocks/
-  fetch_highs.py          200-day highs → highs.json (rides fetch_calc's download)
+  fetch_highs.py          150/200/250-day highs + returns → highs.json
+  fetch_atm.py            weekly-option ATM straddle → atm.json (accumulated, committed)
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
@@ -78,6 +79,12 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   and its current revenue is large so a current-period floor alone won't catch it.
 - TWSE sector indices are hierarchical — 電子 and 化學生技醫療 are aggregates of their
   sub-sectors. Exclude them from the denominator when computing turnover share.
+
+- 價平和 (ATM straddle) classifies weeklies by **contract series** (W = Wednesday,
+  F = Friday), never by the expiry date's weekday — holidays shift expiries
+  (202609F4 settles on a Tuesday). The monthly counts as that week's Wednesday
+  contract. Two contracts are stored per day per series so that excluding the
+  expiry-day row falls through to the rolled contract instead of emptying the cell.
 
 ## Conventions that are deliberate
 

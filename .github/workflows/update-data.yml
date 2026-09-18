@@ -115,6 +115,11 @@ jobs:
           python scripts/fetch_us_etfs.py
           python scripts/verify_us_data.py app/public/data/us_etfs.json "${WORK}/previous_us.json"
 
+      # 週選價平和。期交所的每日行情收盤後就發布，所以這裡記的是「今天收盤」，
+      # 也就是明天開盤前會看到的那個數字。同樣是累積式，同樣要進版控。
+      - name: 記錄週選價平和
+        run: python scripts/fetch_atm.py
+
       # 個股財報。那些端點只回當期，所以 fin_history.json 是逐期累積的，而且要
       # 進版控 —— 累積發生在這個會 commit 的流程裡，部署流程只負責讀它產出畫面用的檔。
       # --no-chips：籌碼是每天變的，交給部署流程與它的快取。
@@ -129,7 +134,7 @@ jobs:
       - name: 提交變更
         id: commit
         run: |
-          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json                app/public/data/dividends.json app/public/data/fin_history.json taiwan_etf_list.html; then
+          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json                app/public/data/dividends.json app/public/data/fin_history.json                app/public/data/atm.json taiwan_etf_list.html; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
@@ -143,7 +148,7 @@ jobs:
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/public/data/etfs.json app/public/data/us_etfs.json                   app/public/data/dividends.json app/public/data/fin_history.json                   taiwan_etf_list.html
+          git add app/public/data/etfs.json app/public/data/us_etfs.json                   app/public/data/dividends.json app/public/data/fin_history.json                   app/public/data/atm.json taiwan_etf_list.html
           if [ -n "$NEW" ]; then
             git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "新上市：${NEW}"
             echo "::notice title=新上市 ETF::${NEW}"
@@ -167,7 +172,7 @@ jobs:
       - name: 還原未通過驗證的資料
         if: failure()
         run: |
-          git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json                           app/public/data/dividends.json app/public/data/fin_history.json                           taiwan_etf_list.html || true
+          git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json                           app/public/data/dividends.json app/public/data/fin_history.json                           app/public/data/atm.json taiwan_etf_list.html || true
 
   # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程
   deploy:
