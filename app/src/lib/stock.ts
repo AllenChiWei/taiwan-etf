@@ -318,28 +318,47 @@ export function rankRevenue(rows: RankRow[], opts: RankOptions): RankRow[] {
   return limit ? out.slice(0, limit) : out;
 }
 
-/* ── 創新高／新低 ───────────────────────────────────────── */
+/* ── 創新高／新低與漲跌幅 ───────────────────────────────── */
+
+/** 一個窗口（150／200／250 日）的位階。h/l 已換算成原始股價的尺度。 */
+export interface HighWindow {
+  h: number;
+  l: number;
+  /** 距高點幾 %（負數） */
+  fh: number;
+  /** 距低點幾 %（正數） */
+  fl: number;
+  nh: 0 | 1;
+  nl: 0 | 1;
+  days: number;
+}
 
 export interface HighRow {
   c: string; n: string;
   /** '上市' / '上櫃' / 'ETF' */
   k: string;
   p: number;
-  h: number | null;
-  l: number | null;
-  /** 距高點幾 %（負數） */
-  fh: number | null;
-  /** 距低點幾 %（正數） */
-  fl: number | null;
-  nh: 0 | 1;
-  nl: 0 | 1;
   days: number;
+  /** 以窗口天數（字串）為鍵：'150' / '200' / '250' */
+  w: Record<string, HighWindow>;
+  /** 一週／一月／一季／半年的漲跌幅（%）；資料不足時是 null */
+  r5?: number | null;
+  r20?: number | null;
+  r60?: number | null;
+  r120?: number | null;
 }
 
 export interface Highs {
   meta: {
-    date: string; updated: string; window: number; count: number;
-    newHighs: number; newLows: number; source: string; note: string;
+    date: string; updated: string;
+    windows: number[];
+    defaultWindow: number;
+    returns: string[];
+    count: number;
+    /** 以窗口天數為鍵的家數 */
+    newHighs: Record<string, number>;
+    newLows: Record<string, number>;
+    source: string; note: string;
   };
   rows: HighRow[];
 }
@@ -351,28 +370,77 @@ export const NEAR_PCT = -5;
 
 export interface HighOptions {
   view: HighView;
+  /** 窗口天數，例如 200 */
+  window: number;
   /** 類別：'' 全部 / '上市' / '上櫃' / 'ETF' */
   kind?: string;
   limit?: number;
 }
 
 /**
- * 依檢視方式挑出要顯示的列。
+ * 依檢視方式與窗口挑出要顯示的列。
  *
- * 'near'（接近高點）= 還沒創新高、但距高點 5% 以內。兩個條件都要：
- * 排除已創新高的（那些在 'high' 那一頁），也排除距高點 40% 的 —— 那不叫接近，
- * 不設界線的話這個檢視就是「除了新高以外的全市場」，等於沒有篩選。
+ * 'near'（接近高點）= 還沒創新高、但距高點 5% 以內。兩個條件都要：排除已創新高的
+ * （那些在 'high' 那一頁），也排除距高點 40% 的 —— 那不叫接近，不設界線的話這個
+ * 檢視就是「除了新高以外的全市場」，等於沒有篩選。
+ *
+ * 沒有那個窗口資料的（上市不到那麼久）直接略過，不要當成「沒創新高」。
  */
 export function filterHighs(rows: HighRow[], opts: HighOptions): HighRow[] {
-  const { view, kind = '', limit } = opts;
-  let out = rows.filter(r => !kind || r.k === kind);
+  const { view, window: win, kind = '', limit } = opts;
+  const key = String(win);
+  const at = (r: HighRow) => r.w?.[key];
+  let out = rows.filter(r => (!kind || r.k === kind) && at(r));
   if (view === 'high') {
-    out = out.filter(r => r.nh === 1).sort((a, b) => b.p - a.p);
+    out = out.filter(r => at(r)!.nh === 1).sort((a, b) => b.p - a.p);
   } else if (view === 'low') {
-    out = out.filter(r => r.nl === 1).sort((a, b) => (a.fl ?? 0) - (b.fl ?? 0));
+    out = out.filter(r => at(r)!.nl === 1).sort((a, b) => at(a)!.fl - at(b)!.fl);
   } else {
-    out = out.filter(r => r.nh === 0 && r.fh !== null && r.fh >= NEAR_PCT)
-      .sort((a, b) => (b.fh ?? -999) - (a.fh ?? -999));
+    out = out.filter(r => at(r)!.nh === 0 && at(r)!.fh >= NEAR_PCT)
+      .sort((a, b) => at(b)!.fh - at(a)!.fh);
   }
+  return limit ? out.slice(0, limit) : out;
+}
+
+/* ── 漲跌幅排行 ─────────────────────────────────────────── */
+
+export type ReturnKey = 'r5' | 'r20' | 'r60' | 'r120';
+
+export const RETURN_LABELS: Record<ReturnKey, string> = {
+  r5: '一週',
+  r20: '一月',
+  r60: '一季',
+  r120: '半年',
+};
+
+export interface ReturnOptions {
+  key: ReturnKey;
+  /** 由高到低（預設）；跌幅排行就是把它設成 true */
+  asc?: boolean;
+  kind?: string;
+  /** 最低股價（元）。銅板股的百分比跳動大，門檻讓使用者自己決定 */
+  minPrice?: number;
+  limit?: number;
+}
+
+/**
+ * 漲跌幅排行。
+ *
+ * 沒有該期間報酬的（上市不足那麼多交易日）排除而不是當成 0 —— 新股上市首月常常
+ * 漲很多，混進「近半年漲幅」會是誤導。
+ */
+export function rankReturns(rows: HighRow[], opts: ReturnOptions): HighRow[] {
+  const { key, asc = false, kind = '', minPrice = 0, limit } = opts;
+  const out = rows.filter(r => {
+    if (kind && r.k !== kind) return false;
+    if (minPrice && r.p < minPrice) return false;
+    const v = r[key];
+    return v !== null && v !== undefined;
+  });
+  out.sort((a, b) => {
+    const av = a[key] as number;
+    const bv = b[key] as number;
+    return asc ? av - bv : bv - av;
+  });
   return limit ? out.slice(0, limit) : out;
 }

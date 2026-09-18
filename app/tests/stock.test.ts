@@ -7,8 +7,8 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import {
   parsePeriod, periodLabel, singleQuarter, pct, ratios, toLots,
   sumInst, instTotals, moneyFromThousands, moneyFromYuan, isoDate,
-  rankRevenue, filterHighs, impliedBase,
-  type Quarter, type StockChips, type StockIndex, type StockData, type HighRow,
+  rankRevenue, filterHighs, impliedBase, rankReturns,
+  type Quarter, type StockChips, type StockIndex, type StockData, type HighRow, type HighWindow,
 } from '../src/lib/stock.ts';
 
 /* ── 期別 ───────────────────────────────────────────────── */
@@ -258,30 +258,80 @@ test('營收排行', async (t) => {
 });
 
 test('創新高清單', async (t) => {
+  const win = (over: Partial<HighWindow> = {}): HighWindow =>
+    ({ h: 100, l: 50, fh: -1, fl: 98, nh: 0, nl: 0, days: 200, ...over });
   const rows: HighRow[] = [
-    { c: 'A', n: '新高股', k: '上市', p: 100, h: 100, l: 50, fh: 0, fl: 100,
-      nh: 1, nl: 0, days: 200 },
-    { c: 'B', n: '接近高點', k: '上市', p: 99, h: 100, l: 50, fh: -1, fl: 98,
-      nh: 0, nl: 0, days: 200 },
-    { c: 'C', n: '遠離高點', k: 'ETF', p: 60, h: 100, l: 50, fh: -40, fl: 20,
-      nh: 0, nl: 0, days: 200 },
-    { c: 'D', n: '新低股', k: '上櫃', p: 50, h: 100, l: 50, fh: -50, fl: 0,
-      nh: 0, nl: 1, days: 200 },
+    { c: 'A', n: '新高股', k: '上市', p: 100, days: 250,
+      w: { '200': win({ fh: 0, nh: 1 }), '250': win({ fh: -8 }) }, r20: 12 },
+    { c: 'B', n: '接近高點', k: '上市', p: 99, days: 250,
+      w: { '200': win({ fh: -1 }), '250': win({ fh: -20 }) }, r20: 3 },
+    { c: 'C', n: '遠離高點', k: 'ETF', p: 60, days: 250,
+      w: { '200': win({ fh: -40 }), '250': win({ fh: -45 }) }, r20: -5 },
+    { c: 'D', n: '新低股', k: '上櫃', p: 50, days: 250,
+      w: { '200': win({ fh: -50, fl: 0, nl: 1 }) }, r20: -30 },
+    { c: 'E', n: '新股', k: '上市', p: 80, days: 40,
+      w: { '150': win({ fh: 0, nh: 1 }) }, r20: 50, r120: null },
   ];
 
   await t.test('接近高點：排除已創新高的，也排除離高點太遠的', () => {
-    // B 距高點 1%（接近）、C 距 40%（不算接近）、A 已創新高、D 是新低
-    assert.deepEqual(filterHighs(rows, { view: 'near' }).map(r => r.c), ['B']);
+    assert.deepEqual(filterHighs(rows, { view: 'near', window: 200 }).map(r => r.c),
+      ['B']);
   });
 
   await t.test('創新高與創新低各自成一份', () => {
-    assert.deepEqual(filterHighs(rows, { view: 'high' }).map(r => r.c), ['A']);
-    assert.deepEqual(filterHighs(rows, { view: 'low' }).map(r => r.c), ['D']);
+    assert.deepEqual(filterHighs(rows, { view: 'high', window: 200 }).map(r => r.c),
+      ['A']);
+    assert.deepEqual(filterHighs(rows, { view: 'low', window: 200 }).map(r => r.c),
+      ['D']);
+  });
+
+  await t.test('換窗口會換一組答案 —— 150 日新高不等於 200 日新高', () => {
+    assert.deepEqual(filterHighs(rows, { view: 'high', window: 150 }).map(r => r.c),
+      ['E']);
+    assert.deepEqual(filterHighs(rows, { view: 'high', window: 250 }).map(r => r.c), []);
+  });
+
+  await t.test('沒有那個窗口資料的略過，不要當成沒創新高', () => {
+    // D 沒有 250 日的資料，不該出現在 250 日的任何檢視裡
+    assert.ok(!filterHighs(rows, { view: 'low', window: 250 }).some(r => r.c === 'D'));
   });
 
   await t.test('類別篩選', () => {
-    assert.deepEqual(filterHighs(rows, { view: 'high', kind: '上市' }).map(r => r.c),
-      ['A']);
-    assert.deepEqual(filterHighs(rows, { view: 'near', kind: 'ETF' }).map(r => r.c), []);
+    assert.deepEqual(filterHighs(rows, { view: 'high', window: 200, kind: '上市' })
+      .map(r => r.c), ['A']);
+  });
+});
+
+test('漲跌幅排行', async (t) => {
+  const win = (): HighWindow => ({ h: 1, l: 1, fh: 0, fl: 0, nh: 0, nl: 0, days: 200 });
+  const rows: HighRow[] = [
+    { c: 'A', n: '大漲', k: '上市', p: 100, days: 250, w: { '200': win() },
+      r5: 5, r20: 40, r60: 10, r120: 3 },
+    { c: 'B', n: '大跌', k: '上櫃', p: 20, days: 250, w: { '200': win() },
+      r5: -8, r20: -30, r60: -20, r120: -40 },
+    { c: 'C', n: '銅板股', k: '上市', p: 5, days: 250, w: { '200': win() },
+      r5: 1, r20: 60, r60: 5, r120: 2 },
+    { c: 'D', n: '新股', k: '上市', p: 88, days: 30, w: { '200': win() },
+      r5: 9, r20: 80, r60: null, r120: null },
+  ];
+
+  await t.test('漲幅榜由高到低、跌幅榜由低到高', () => {
+    assert.deepEqual(rankReturns(rows, { key: 'r20' }).map(r => r.c),
+      ['D', 'C', 'A', 'B']);
+    assert.deepEqual(rankReturns(rows, { key: 'r20', asc: true }).map(r => r.c),
+      ['B', 'A', 'C', 'D']);
+  });
+
+  await t.test('股價門檻擋掉銅板股', () => {
+    assert.ok(!rankReturns(rows, { key: 'r20', minPrice: 10 }).some(r => r.c === 'C'));
+  });
+
+  await t.test('期間不足的不列入，不要當成 0%', () => {
+    assert.deepEqual(rankReturns(rows, { key: 'r60' }).map(r => r.c), ['A', 'C', 'B']);
+  });
+
+  await t.test('類別篩選與 limit', () => {
+    assert.deepEqual(rankReturns(rows, { key: 'r5', kind: '上櫃' }).map(r => r.c), ['B']);
+    assert.equal(rankReturns(rows, { key: 'r5', limit: 2 }).length, 2);
   });
 });

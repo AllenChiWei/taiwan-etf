@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-u"""創新高／新低：每檔個股與 ETF 距離近 200 個交易日高低點的位置。
+u"""創新高／新低與漲跌幅：每檔個股與 ETF 的位階與各期間報酬。
 
     python scripts/fetch_highs.py [outfile]
 
@@ -45,8 +45,14 @@ OUT = (sys.argv[1] if len(sys.argv) > 1
 
 TPE = timezone(timedelta(hours=8))
 
-# 200 個交易日約等於十個月。市場上講「創 200 日新高」通常就是這個窗口。
-WINDOW = 200
+# 三個常用的窗口。150 約七個月、200 約十個月、250 約一年。
+WINDOWS = (150, 200, 250)
+# 預設顯示哪一個（前端的初始值也用它）
+DEFAULT_WINDOW = 200
+
+# 漲跌幅的期間，以交易日計：一週、一月、一季、半年。
+# 用交易日而不是日曆日，才不會因為連假讓不同標的的期間長度不一樣。
+RETURN_DAYS = [('r5', 5), ('r20', 20), ('r60', 60), ('r120', 120)]
 # 低於這個成交價的不收：一兩元的雞蛋水餃股，百分比變動沒有參考意義
 MIN_PRICE = 1.0
 
@@ -94,19 +100,20 @@ def main():
     log(u'讀取還原股價與收盤價（與 fetch_calc.py 共用同一份，不會重複下載）…')
     adj = data.get('etl:adj_close')
     close = data.get(u'price:收盤價')
-    # 只留最近 WINDOW 個交易日，後面的計算都在這個窗口內
-    window = adj.tail(WINDOW)
+    # 取最長的窗口就夠：150 與 200 都是它的尾段
+    span = max(max(WINDOWS), max(d for _, d in RETURN_DAYS))
+    window = adj.tail(span)
     asof = window.index[-1]
     log(u'  %d 個交易日，最新 %s，%d 檔有報價'
         % (len(window), asof.date().isoformat(), window.shape[1]))
 
     rows = []
-    highs = lows = 0
+    counts = dict((w, {'high': 0, 'low': 0}) for w in WINDOWS)
     for code in window.columns:
         if code not in names:
             continue                                   # 權證、受益證券之類的不收
         series = window[code].dropna()
-        if len(series) < 20:                           # 上市不到一個月，高低點沒有意義
+        if len(series) < 20:                           # 上市不到一個月，位階沒有意義
             continue
         last = float(series.iloc[-1])                  # 還原價，只用來比較
         # 畫面上要顯示的是原始收盤價 —— 使用者看的是現在多少錢
@@ -114,50 +121,79 @@ def main():
         shown = float(raw.iloc[-1]) if raw is not None and len(raw) else last
         if shown < MIN_PRICE:
             continue
-        high = float(series.max())
-        low = float(series.min())
-        # 用 >= 而不是 ==：收盤價有小數，浮點比較用等號會漏掉真正的新高
-        is_high = last >= high - 1e-9
-        is_low = last <= low + 1e-9
-        highs += 1 if is_high else 0
-        lows += 1 if is_low else 0
-        name, kind = names[code]
-        rows.append({
-            'c': code, 'n': name, 'k': kind,
-            'p': round(shown, 2),
-            # 高低點是還原價，與 p 不同單位，所以換算成「距高／低點幾 %」才給前端；
-            # 原始的還原價本身不輸出，避免有人拿它跟 p 直接比較
-            'h': round(high / last * shown, 2) if last else None,
-            'l': round(low / last * shown, 2) if last else None,
-            # 距離高點幾 %（負數代表還在高點下方）
-            'fh': round((last / high - 1) * 100, 2) if high else None,
-            'fl': round((last / low - 1) * 100, 2) if low else None,
-            'nh': 1 if is_high else 0,
-            'nl': 1 if is_low else 0,
-            'days': len(series),
-        })
 
-    # 創新高的排前面，其餘照「離高點多近」排 —— fh 是負數，所以由大到小才是由近到遠。
+        # 每個窗口一組：高、低（換算成原始價的尺度）、距高點 %、距低點 %
+        wins = {}
+        for w in WINDOWS:
+            seg = series.tail(w)
+            if len(seg) < min(20, w):
+                continue
+            high = float(seg.max())
+            low = float(seg.min())
+            if not high or not low:
+                continue
+            is_high = last >= high - 1e-9
+            is_low = last <= low + 1e-9
+            counts[w]['high'] += 1 if is_high else 0
+            counts[w]['low'] += 1 if is_low else 0
+            wins[str(w)] = {
+                'h': round(high / last * shown, 2),
+                'l': round(low / last * shown, 2),
+                'fh': round((last / high - 1) * 100, 2),
+                'fl': round((last / low - 1) * 100, 2),
+                'nh': 1 if is_high else 0,
+                'nl': 1 if is_low else 0,
+                'days': len(seg),
+            }
+        if not wins:
+            continue
+
+        # 漲跌幅用還原股價 —— 不然除息當天會變成「大跌」。與台股頁的報酬率同一套算法。
+        rets = {}
+        for key, days in RETURN_DAYS:
+            if len(series) <= days:
+                rets[key] = None
+                continue
+            base = float(series.iloc[-(days + 1)])
+            rets[key] = round((last / base - 1) * 100, 2) if base else None
+
+        name, kind = names[code]
+        row = {'c': code, 'n': name, 'k': kind, 'p': round(shown, 2),
+               'days': len(series), 'w': wins}
+        row.update(rets)
+        rows.append(row)
+
+    # 預設窗口的創新高排前面，其餘照「離高點多近」排 —— fh 是負數，由大到小才是由近到遠。
     # 第一版寫成由小到大，結果排在最前面的是距高點 -96% 的那些，剛好相反。
-    rows.sort(key=lambda r: (-(r['nh'] or 0), -(r['fh'] if r['fh'] is not None else -999)))
+    def sort_key(r):
+        w = r['w'].get(str(DEFAULT_WINDOW)) or {}
+        return (-(w.get('nh') or 0), -(w.get('fh') if w.get('fh') is not None else -999))
+    rows.sort(key=sort_key)
+
     payload = {
         'meta': {
             'date': asof.date().isoformat(),
             'updated': datetime.now(TPE).date().isoformat(),
-            'window': WINDOW,
+            'windows': list(WINDOWS),
+            'defaultWindow': DEFAULT_WINDOW,
+            'returns': [k for k, _ in RETURN_DAYS],
             'count': len(rows),
-            'newHighs': highs,
-            'newLows': lows,
+            # 每個窗口各自的家數
+            'newHighs': dict((str(w), counts[w]['high']) for w in WINDOWS),
+            'newLows': dict((str(w), counts[w]['low']) for w in WINDOWS),
             'source': u'依還原股價計算（FinLab etl:adj_close），為衍生統計',
-            'note': (u'「創 %d 日新高」是指最新收盤價等於近 %d 個交易日的最高收盤價。'
-                     u'以**還原股價**的收盤價計算（避免除權息與分割造成假性創低），'
-                     u'不看盤中高低。顯示的股價則是原始收盤價。' % (WINDOW, WINDOW)),
+            'note': (u'創 N 日新高是指最新收盤價等於近 N 個交易日的最高收盤價。'
+                     u'以還原股價計算（避免除權息與分割造成假性創低），不看盤中高低；'
+                     u'漲跌幅同樣以還原股價計算，期間以交易日計（一週 5 日、一月 20 日、'
+                     u'一季 60 日、半年 120 日）。顯示的股價則是原始收盤價。'),
         },
         'rows': rows,
     }
     write_json(OUT, payload)
-    log(u'完成：%s（%.0f KB）；創新高 %d 檔、創新低 %d 檔'
-        % (OUT, os.path.getsize(OUT) / 1024.0, highs, lows))
+    log(u'完成：%s（%.0f KB）' % (OUT, os.path.getsize(OUT) / 1024.0))
+    for w in WINDOWS:
+        log(u'  %d 日：創新高 %d 檔、創新低 %d 檔'
+            % (w, counts[w]['high'], counts[w]['low']))
     return 0
 
 

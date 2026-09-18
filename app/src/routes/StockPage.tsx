@@ -14,9 +14,10 @@ import {
 } from '../api/stocks';
 import {
   periodLabel, singleQuarter, ratios, sumInst, instTotals, toLots,
-  moneyFromThousands, moneyFromYuan, isoDate, rankRevenue, filterHighs, NEAR_PCT,
+  moneyFromThousands, moneyFromYuan, isoDate, rankRevenue, filterHighs, rankReturns,
+  NEAR_PCT, RETURN_LABELS,
   type StockData, type StockIndex, type Quarter, type Ranking, type Highs,
-  type RankKey, type HighView,
+  type RankKey, type HighView, type ReturnKey,
 } from '../lib/stock';
 import { bars, zeroY, netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -448,6 +449,7 @@ function HighsTab() {
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<HighView>('high');
   const [kind, setKind] = useState('');
+  const [win, setWin] = useState(200);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -458,9 +460,14 @@ function HighsTab() {
     return () => ac.abort();
   }, []);
 
+  // 資料裡帶著它自己的預設窗口，所以新增窗口時前端不用跟著改
+  useEffect(() => {
+    if (data?.meta.defaultWindow) setWin(data.meta.defaultWindow);
+  }, [data]);
+
   const rows = useMemo(
-    () => (data ? filterHighs(data.rows, { view, kind, limit: 80 }) : []),
-    [data, view, kind]);
+    () => (data ? filterHighs(data.rows, { view, window: win, kind, limit: 80 }) : []),
+    [data, view, win, kind]);
 
   if (loading) {
     return <p className="py-12 text-center text-[13px] text-muted">載入創新高資料中…</p>;
@@ -475,13 +482,21 @@ function HighsTab() {
     <>
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-          <h2 className="text-sm font-bold text-ink">創 {data.meta.window} 日新高</h2>
+          <h2 className="text-sm font-bold text-ink">創 {win} 日新高</h2>
           <span className="text-[11.5px] text-faint">收盤 {data.meta.date}</span>
         </div>
 
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {data.meta.windows.map(w => (
+            <Chip key={w} active={win === w} onClick={() => setWin(w)}>{w} 日</Chip>
+          ))}
+        </div>
+
         <div className="mt-2 grid grid-cols-3 gap-2">
-          <Cell label="創新高" value={`${nf0.format(data.meta.newHighs)} 檔`} tone="text-up" />
-          <Cell label="創新低" value={`${nf0.format(data.meta.newLows)} 檔`} tone="text-down" />
+          <Cell label="創新高" value={`${nf0.format(data.meta.newHighs[String(win)] ?? 0)} 檔`}
+                tone="text-up" />
+          <Cell label="創新低" value={`${nf0.format(data.meta.newLows[String(win)] ?? 0)} 檔`}
+                tone="text-down" />
           <Cell label="統計範圍" value={`${nf0.format(data.meta.count)} 檔`} sub="個股＋ETF" />
         </div>
 
@@ -503,28 +518,31 @@ function HighsTab() {
 
       <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
         <ol>
-          {rows.map(r => (
-            <li key={r.c}
-                className="grid grid-cols-[1fr_auto] items-baseline gap-2
-                           border-b border-line/60 py-1.5 last:border-0">
-              <span className="min-w-0">
-                <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
-                <span className="ml-1.5 text-[12.5px] text-muted">{r.n}</span>
-                <span className="mt-0.5 block text-[11px] text-faint">
-                  {r.k}　區間 {r.l} ～ {r.h}
+          {rows.map(r => {
+            const w = r.w[String(win)];
+            return (
+              <li key={r.c}
+                  className="grid grid-cols-[1fr_auto] items-baseline gap-2
+                             border-b border-line/60 py-1.5 last:border-0">
+                <span className="min-w-0">
+                  <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
+                  <span className="ml-1.5 text-[12.5px] text-muted">{r.n}</span>
+                  <span className="mt-0.5 block text-[11px] text-faint">
+                    {r.k}　{win} 日區間 {w.l} ～ {w.h}
+                  </span>
                 </span>
-              </span>
-              <span className="text-right">
-                <span className="block font-mono text-[14px] font-bold tabular-nums text-ink">
-                  {nf2.format(r.p)}
+                <span className="text-right">
+                  <span className="block font-mono text-[14px] font-bold tabular-nums text-ink">
+                    {nf2.format(r.p)}
+                  </span>
+                  <span className={`block font-mono text-[11px] tabular-nums ${
+                    view === 'low' ? 'text-down' : 'text-up'}`}>
+                    {view === 'low' ? `距低點 ${signedPct(w.fl)}` : `距高點 ${signedPct(w.fh)}`}
+                  </span>
                 </span>
-                <span className={`block font-mono text-[11px] tabular-nums ${
-                  view === 'low' ? 'text-down' : 'text-up'}`}>
-                  {view === 'low' ? `距低點 ${signedPct(r.fl)}` : `距高點 ${signedPct(r.fh)}`}
-                </span>
-              </span>
-            </li>
-          ))}
+              </li>
+            );
+          })}
         </ol>
         {rows.length === 0 && (
           <p className="py-6 text-center text-[12.5px] text-muted">今天沒有符合的標的。</p>
@@ -536,14 +554,131 @@ function HighsTab() {
   );
 }
 
+/* ── 漲跌幅排行 ─────────────────────────────────────────── */
+
+const RETURN_KEYS: ReturnKey[] = ['r5', 'r20', 'r60', 'r120'];
+
+/** 股價門檻（元）。銅板股的百分比跳動大，讓使用者自己決定要不要看。 */
+const MIN_PRICE_OPTIONS: Array<{ label: string; v: number }> = [
+  { label: '不限', v: 0 },
+  { label: '10 元以上', v: 10 },
+  { label: '50 元以上', v: 50 },
+];
+
+function ReturnsTab() {
+  const [data, setData] = useState<Highs | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [key, setKey] = useState<ReturnKey>('r20');
+  const [asc, setAsc] = useState(false);
+  const [kind, setKind] = useState('');
+  const [minPrice, setMinPrice] = useState(0);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchHighs(ac.signal)
+      .then(d => { if (!ac.signal.aborted) setData(d); })
+      .catch(() => { if (!ac.signal.aborted) setData(null); })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
+  }, []);
+
+  const rows = useMemo(
+    () => (data ? rankReturns(data.rows, { key, asc, kind, minPrice, limit: 80 }) : []),
+    [data, key, asc, kind, minPrice]);
+
+  if (loading) {
+    return <p className="py-12 text-center text-[13px] text-muted">載入漲跌幅中…</p>;
+  }
+  if (!data) {
+    return <EmptyState title="還沒有漲跌幅資料"
+                       hint="這份與創新高同一個來源，FinLab 額度用完時會缺席，隔天補上。"
+                       icon="📈" />;
+  }
+
+  return (
+    <>
+      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <h2 className="text-sm font-bold text-ink">
+            {asc ? '跌幅' : '漲幅'}排行 · {RETURN_LABELS[key]}
+          </h2>
+          <span className="text-[11.5px] text-faint">收盤 {data.meta.date}</span>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {RETURN_KEYS.map(k => (
+            <Chip key={k} active={key === k} onClick={() => setKey(k)}>
+              {RETURN_LABELS[k]}
+            </Chip>
+          ))}
+          <Chip active={asc} onClick={() => setAsc(v => !v)}>
+            {asc ? '跌幅榜' : '漲幅榜'}
+          </Chip>
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {['', '上市', '上櫃', 'ETF'].map(k => (
+            <Chip key={k || 'all'} active={kind === k} onClick={() => setKind(k)}>
+              {k || '全部'}
+            </Chip>
+          ))}
+          {MIN_PRICE_OPTIONS.map(o => (
+            <Chip key={o.label} active={minPrice === o.v} onClick={() => setMinPrice(o.v)}>
+              {o.label}
+            </Chip>
+          ))}
+        </div>
+        <p className="mt-1.5 text-[11px] text-faint">
+          以還原股價計算（含除權息），期間以交易日計：一週 5 日、一月 20 日、
+          一季 60 日、半年 120 日。上市不足該期間的不列入。
+        </p>
+      </section>
+
+      <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
+        <ol>
+          {rows.map((r, i) => (
+            <li key={r.c}
+                className="grid grid-cols-[1.6em_1fr_auto] items-baseline gap-2
+                           border-b border-line/60 py-1.5 last:border-0">
+              <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
+              <span className="min-w-0">
+                <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
+                <span className="ml-1.5 text-[12.5px] text-muted">{r.n}</span>
+                <span className="mt-0.5 block text-[11px] text-faint">
+                  {r.k}　收盤 {nf2.format(r.p)}
+                </span>
+              </span>
+              <span className="text-right">
+                <span className={`block font-mono text-[14px] font-bold tabular-nums ${
+                  TONE_CLASS[netTone(r[key] ?? Number.NaN)]}`}>
+                  {signedPct(r[key])}
+                </span>
+                <span className="block font-mono text-[11px] tabular-nums text-faint">
+                  {RETURN_KEYS.filter(k => k !== key).slice(0, 2)
+                    .map(k => `${RETURN_LABELS[k]} ${signedPct(r[k])}`).join('　')}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        {rows.length === 0 && (
+          <p className="py-6 text-center text-[12.5px] text-muted">沒有符合條件的標的。</p>
+        )}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-faint">{data.meta.note}</p>
+    </>
+  );
+}
+
 /* ── 頁面 ───────────────────────────────────────────────── */
 
-type Tab = 'search' | 'rank' | 'high';
+type Tab = 'search' | 'rank' | 'high' | 'ret';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'search', label: '查個股' },
   { id: 'rank', label: '營收排行' },
   { id: 'high', label: '創新高' },
+  { id: 'ret', label: '漲跌幅' },
 ];
 
 export function StockPage() {
@@ -614,7 +749,9 @@ export function StockPage() {
       <>
         <h1 className="sr-only">個股</h1>
         {tabBar}
-        {tab === 'rank' ? <RankingTab /> : <HighsTab />}
+        {tab === 'rank' && <RankingTab />}
+        {tab === 'high' && <HighsTab />}
+        {tab === 'ret' && <ReturnsTab />}
       </>
     );
   }
