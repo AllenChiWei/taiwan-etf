@@ -32,6 +32,8 @@ app/public/data/chips.json
 app/public/data/news.json
 # 個股頁的產出：每檔一個小檔，部署時由 fin_history.json ＋ 籌碼快取產生
 app/public/data/stocks/
+# 創新高：與試算資料同源（都靠 FinLab），一起在部署時產生
+app/public/data/highs.json
 
 # 抓取資料的中間產物
 *.tmp

@@ -7,7 +7,8 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import {
   parsePeriod, periodLabel, singleQuarter, pct, ratios, toLots,
   sumInst, instTotals, moneyFromThousands, moneyFromYuan, isoDate,
-  type Quarter, type StockChips, type StockIndex, type StockData,
+  rankRevenue, filterHighs, impliedBase,
+  type Quarter, type StockChips, type StockIndex, type StockData, type HighRow,
 } from '../src/lib/stock.ts';
 
 /* ── 期別 ───────────────────────────────────────────────── */
@@ -207,3 +208,80 @@ test('真實個股資料', { skip: !existsSync(INDEX) && '沒有個股資料（�
       assert.equal(tsmc.chips.inst.length, tsmc.chips.days.length);
     });
   });
+
+/* ── 排行與創新高 ───────────────────────────────────────── */
+
+test('營收排行', async (t) => {
+  const rows = [
+    { c: '1101', n: '大公司', m: '上市', i: '水泥', rev: 500_000, yoy: 5, mom: 1,
+      cum: 4_000_000, cumYoy: 6 },
+    { c: '5206', n: '建設股', m: '上市', i: '建材營造', rev: 89_000, yoy: 2_630_241,
+      mom: 900, cum: 200_000, cumYoy: 3000 },
+    { c: '6488', n: '上櫃股', m: '上櫃', i: '半導體', rev: 2_000_000, yoy: 40, mom: -3,
+      cum: 9_000_000, cumYoy: 35 },
+    { c: '9999', n: '沒公告', m: '上市', i: '其他', rev: 1_000_000, yoy: null, mom: null,
+      cum: null, cumYoy: null },
+  ];
+
+  await t.test('門檻同時套在本期與基期：本期夠大但去年近零的要被擋掉', () => {
+    // 5206 本期 8,900 萬也許過得了本期門檻，但去年同月只有 8.9 億/26302 ≈ 3 萬
+    const r = rankRevenue(rows, { key: 'yoy', minRev: 100_000 });
+    assert.deepEqual(r.map(x => x.c), ['6488', '1101']);
+  });
+
+  await t.test('不設門檻時那一檔會排第一，證明門檻真的有用', () => {
+    assert.equal(rankRevenue(rows, { key: 'yoy' })[0].c, '5206');
+  });
+
+  await t.test('基期反推：+100% 代表基期是現在的一半', () => {
+    assert.equal(impliedBase(200, 100), 100);
+    assert.equal(impliedBase(200, -50), 400);
+    // 由負轉正之類的情況算不出比較基礎
+    assert.equal(impliedBase(200, -150), null);
+    assert.equal(impliedBase(null, 10), null);
+  });
+
+  await t.test('沒有數值的不列入，不要當成 0%', () => {
+    assert.ok(!rankRevenue(rows, { key: 'yoy' }).some(x => x.c === '9999'));
+  });
+
+  await t.test('市場篩選與由低到高', () => {
+    assert.deepEqual(rankRevenue(rows, { key: 'yoy', market: '上櫃' }).map(x => x.c),
+      ['6488']);
+    assert.equal(rankRevenue(rows, { key: 'mom', asc: true, minRev: 100_000 })[0].c,
+      '6488');
+  });
+
+  await t.test('limit 只取前幾名', () => {
+    assert.equal(rankRevenue(rows, { key: 'rev', limit: 1 })[0].c, '6488');
+  });
+});
+
+test('創新高清單', async (t) => {
+  const rows: HighRow[] = [
+    { c: 'A', n: '新高股', k: '上市', p: 100, h: 100, l: 50, fh: 0, fl: 100,
+      nh: 1, nl: 0, days: 200 },
+    { c: 'B', n: '接近高點', k: '上市', p: 99, h: 100, l: 50, fh: -1, fl: 98,
+      nh: 0, nl: 0, days: 200 },
+    { c: 'C', n: '遠離高點', k: 'ETF', p: 60, h: 100, l: 50, fh: -40, fl: 20,
+      nh: 0, nl: 0, days: 200 },
+    { c: 'D', n: '新低股', k: '上櫃', p: 50, h: 100, l: 50, fh: -50, fl: 0,
+      nh: 0, nl: 1, days: 200 },
+  ];
+
+  await t.test('接近高點：排除已創新高的，也排除離高點太遠的', () => {
+    // B 距高點 1%（接近）、C 距 40%（不算接近）、A 已創新高、D 是新低
+    assert.deepEqual(filterHighs(rows, { view: 'near' }).map(r => r.c), ['B']);
+  });
+
+  await t.test('創新高與創新低各自成一份', () => {
+    assert.deepEqual(filterHighs(rows, { view: 'high' }).map(r => r.c), ['A']);
+    assert.deepEqual(filterHighs(rows, { view: 'low' }).map(r => r.c), ['D']);
+  });
+
+  await t.test('類別篩選', () => {
+    assert.deepEqual(filterHighs(rows, { view: 'high', kind: '上市' }).map(r => r.c),
+      ['A']);
+    assert.deepEqual(filterHighs(rows, { view: 'near', kind: 'ETF' }).map(r => r.c), []);
+  });
+});

@@ -88,6 +88,7 @@ jobs:
           path: |
             app/public/data/series
             app/public/data/calc
+            app/public/data/highs.json
             app/public/data/secure.json
           key: finlab-data-${{ github.run_id }}
           restore-keys: |
@@ -118,6 +119,7 @@ jobs:
           mkdir -p .cache/prev
           cp -r app/public/data/calc .cache/prev/
           [ -d app/public/data/series ] && cp -r app/public/data/series .cache/prev/ || true
+          [ -f app/public/data/highs.json ] && cp app/public/data/highs.json .cache/prev/ || true
           [ -f app/public/data/secure.json ] && cp app/public/data/secure.json .cache/prev/ || true
           echo "已備份可沿用的資料"
 
@@ -165,6 +167,14 @@ jobs:
           path: .cache/stock_chips.json
           key: stock-chips-${{ github.run_id }}
 
+      # 創 200 日新高。放在試算資料之後：它用的 etl:adj_close 與 price:收盤價 就是
+      # 上一步抓過的那兩份，同一次執行共用 .cache/finlab_db，所以不會再下載一次。
+      - name: 產生創新高資料
+        id: highs
+        if: ${{ env.FINLAB_API_TOKEN != '' && steps.plan.outputs.reuse != 'true' }}
+        continue-on-error: true
+        run: python scripts/fetch_highs.py
+
       # 新聞與重大訊息。同樣不需要 FinLab，也同樣容許失敗：媒體或觀測站掛掉時
       # 新聞頁自己會說「還沒有資料」，不該連帶讓整個網站不能部署。
       - name: 產生新聞資料
@@ -181,12 +191,15 @@ jobs:
       # FinLab 失敗（額度用完、服務中斷、或改版）時退回備份。半途失敗的產出不能
       # 只補一半 —— 那會混出一份新舊相間的資料，所以整組換回去。
       - name: 重抓失敗時退回上一份資料
+        # 只看績效曲線與試算資料：創新高失敗只是少一頁的資料，把整組退回反而
+        # 讓試算與圖表一起變舊，代價大於好處。
         if: ${{ steps.finlab.outcome == 'failure' || steps.calc.outcome == 'failure' }}
         run: |
-          rm -rf app/public/data/calc app/public/data/series app/public/data/secure.json
+          rm -rf app/public/data/calc app/public/data/series app/public/data/secure.json                 app/public/data/highs.json
           if [ -d .cache/prev/calc ]; then
             cp -r .cache/prev/calc app/public/data/
             [ -d .cache/prev/series ] && cp -r .cache/prev/series app/public/data/ || true
+            [ -f .cache/prev/highs.json ] && cp .cache/prev/highs.json app/public/data/ || true
             [ -f .cache/prev/secure.json ] && cp .cache/prev/secure.json app/public/data/ || true
             echo "::warning title=FinLab 抓取失敗::已退回快取裡的上一份資料，日期會比今天舊。常見原因是每日流量用完。"
           elif python scripts/reuse_calc.py; then
@@ -266,6 +279,7 @@ jobs:
           path: |
             app/public/data/series
             app/public/data/calc
+            app/public/data/highs.json
             app/public/data/secure.json
           key: finlab-data-${{ github.run_id }}
 

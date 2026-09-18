@@ -90,6 +90,9 @@ TPEX_INSTI = ('https://www.tpex.org.tw/www/zh-tw/insti/dailyTrade'
               '?type=Daily&sect=EW&date=%s&id=&response=json')
 TPEX_PRICE = ('https://www.tpex.org.tw/www/zh-tw/afterTrading/otc'
               '?date=%s&type=EW&response=json')
+# 各類股成交比重。只有上市有這份，櫃買沒有對應端點，所以畫面要標明是上市。
+TWSE_SECTORS = ('https://www.twse.com.tw/rwd/zh/afterTrading/BFIAMU'
+                '?date=%s&response=json')
 
 # 追蹤這幾種契約就夠了。全市場 346 種裡絕大多數是個股期貨，籌碼面在看的是大盤。
 FUT_CONTRACTS = [u'臺股期貨', u'電子期貨', u'金融期貨', u'小型臺指期貨', u'微型臺指期貨']
@@ -177,6 +180,15 @@ def fetch_csv(page, params, tries=3):
             continue
         out.append(cells)
     return out
+
+
+def fetch_json(url, label):
+    u"""抓 JSON 端點。失敗記進 meta.errors，不讓整份資料沒有。"""
+    try:
+        return json.loads(fetch(url).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'%s：%s' % (label, str(e)[:80]))
+        return None
 
 
 def num(s):
@@ -406,6 +418,43 @@ def top_n(rows, prices, n=10):
     return {'buy': buy, 'sell': sell}
 
 
+# 證交所的分類指數有階層：這兩類是彙總，等於底下那幾個子類的總和（實測到小數點
+# 後四位都一樣）。算比重時分母要扣掉它們，否則電子會被算兩次，每一類的比重都被
+# 稀釋 —— 半導體會從 36% 變成 19%。
+SECTOR_AGGREGATES = {
+    u'電子': (u'半導體', u'電腦及週邊設備', u'光電', u'通信網路',
+              u'電子零組件', u'電子通路', u'資訊服務', u'其他電子'),
+    u'化學生技醫療': (u'化學', u'生技醫療'),
+}
+
+
+def sectors(day):
+    u"""各類股成交比重（上市）。
+
+    交易所只公佈各類的成交金額，沒有給比重 —— 自己除才有意義，而分母是「扣掉
+    彙總類之後的合計」，見 SECTOR_AGGREGATES。彙總類本身仍然留在清單裡並標記
+    agg=1，因為「電子占今天成交的幾成」正是最常被引用的那個數字。
+
+    櫃買沒有對應端點，所以這份只有上市，畫面必須標明。
+    """
+    doc = fetch_json(TWSE_SECTORS % day, u'證交所類股成交比重')
+    if not doc or not doc.get('data'):
+        return []
+    rows = []
+    for r in doc['data']:
+        name = r[0].strip().replace(u'類指數', '')
+        value = num(r[2])
+        if not name or value is None:
+            continue
+        rows.append({'n': name, 'v': value, 'sh': num(r[1]), 'tx': num(r[3]),
+                     'agg': 1 if name in SECTOR_AGGREGATES else 0})
+    base = sum(r['v'] for r in rows if not r['agg']) or 1
+    for r in rows:
+        r['pct'] = round(r['v'] / float(base) * 100, 2)
+    rows.sort(key=lambda r: -r['v'])
+    return rows
+
+
 def twse_top(day):
     u"""上市：外資／投信／自營商各自的買賣超前十大。"""
     try:
@@ -527,6 +576,10 @@ def main():
     log(u'  期貨 %d 筆、選擇權 %d 筆' % (len(large_fut), len(large_opt)))
 
     day_compact = fut_day.replace('-', '')
+    log(u'證交所：各類股成交比重…')
+    sector_rows = sectors(day_compact)
+    log(u'  %d 類' % len(sector_rows))
+
     log(u'證交所：上市三大法人買賣超（%s）…' % fut_day)
     twse = twse_top(day_compact)
     log(u'櫃買：上櫃三大法人買賣超…')
@@ -550,9 +603,11 @@ def main():
         'pc': pc,
         'large': {'fut': large_fut, 'opt': large_opt},
         'top': {'twse': twse, 'tpex': tpex},
+        'sectors': sector_rows,
     }
     have = (bool(fut_latest) or bool(opt_latest) or bool(pc['dates'])
-            or bool(large_fut) or twse is not None or tpex is not None)
+            or bool(large_fut) or bool(sector_rows)
+            or twse is not None or tpex is not None)
     if not have:
         log(u'每一個來源都失敗了，不寫出半空的檔案 —— 籌碼頁會顯示「今天還沒有資料」')
         for e in ERRORS:

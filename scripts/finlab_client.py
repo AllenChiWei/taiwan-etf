@@ -71,6 +71,23 @@ def load_token():
     return None, u'未提供'
 
 
+def _storage_path():
+    u"""給 FinLab 的資料夾路徑。Windows 上回相對路徑，理由見下。
+
+    finlab 的 FileStorage 會把資料集名稱裡的冒號換成 '#'（price:收盤價 ->
+    price#收盤價.pickle），但它是對**整個路徑**做替換 —— 在 Windows 上會把
+    磁碟代號的冒號也換掉，變成 'D#\ai\...'，存檔時直接 FileNotFoundError。
+    所以這裡給相對路徑，讓路徑裡根本沒有冒號。
+    """
+    if os.name != 'nt':
+        return DB_DIR
+    try:
+        rel = os.path.relpath(DB_DIR)
+    except ValueError:
+        return None                                   # 不同磁碟，算不出相對路徑
+    return None if ':' in rel else rel
+
+
 def _use_shared_storage(quiet=False):
     u"""讓所有腳本共用同一個資料集存放處，同一份資料集就不會被下載兩次。
 
@@ -78,11 +95,17 @@ def _use_shared_storage(quiet=False):
     改名，也不該讓整條管線掛掉 —— 最差的情況就是回到「各自下載」，也就是
     加這段之前的行為。成功或失敗都會印出來，不要靜靜地失效。
     """
+    path = _storage_path()
+    if path is None:
+        if not quiet:
+            print(u'提醒：這個工作目錄無法給 FinLab 一個不含冒號的路徑，'
+                  u'改用套件預設的存放處')
+        return
     try:
         if not os.path.isdir(DB_DIR):
             os.makedirs(DB_DIR)
         from finlab import data
-        data.set_storage(data.FileStorage(DB_DIR))
+        data.set_storage(data.FileStorage(path))
         if not quiet:
             print(u'FinLab 資料集存放處：%s（跨腳本共用，避免重複下載）' % DB_DIR)
     except Exception as e:                                    # noqa: BLE001

@@ -246,3 +246,133 @@ export function isoDate(compact: string | null | undefined): string {
   if (!/^\d{8}$/.test(s)) return '—';
   return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6)}`;
 }
+
+/* ── 營收排行 ───────────────────────────────────────────── */
+
+export interface RankRow {
+  c: string; n: string; m: string; i: string;
+  rev: number | null;
+  yoy: number | null;
+  mom: number | null;
+  cum: number | null;
+  cumYoy: number | null;
+}
+
+export interface Ranking {
+  meta: { period: string | null; count: number; updated: string; source: string };
+  rows: RankRow[];
+}
+
+export type RankKey = 'yoy' | 'mom' | 'rev' | 'cumYoy';
+
+export interface RankOptions {
+  key: RankKey;
+  /** 由高到低（預設）或由低到高 */
+  asc?: boolean;
+  /** 市場：'' 全部 / '上市' / '上櫃' */
+  market?: string;
+  /** 營收門檻（千元）。見下方說明，預設值由呼叫端決定 */
+  minRev?: number;
+  limit?: number;
+}
+
+/**
+ * 成長率的「基期」：從本期金額與成長率反推上一期。
+ *
+ * 排行榜被洗掉的真正原因不是公司小，而是**基期近零**：建設公司依完工比例認列，
+ * 去年同月可能只有幾十萬，今年 8.9 億就變成 +2,630,241%。這種數字沒有解讀價值。
+ * 光用本期營收當門檻擋不住它們 —— 它們的本期營收很大。
+ */
+export function impliedBase(value: number | null | undefined,
+                            growthPct: number | null | undefined): number | null {
+  if (value === null || value === undefined) return null;
+  if (growthPct === null || growthPct === undefined) return null;
+  const factor = 1 + growthPct / 100;
+  if (factor <= 0) return null;                 // 由負轉正之類，比較基礎不成立
+  return value / factor;
+}
+
+/**
+ * 營收排行。
+ *
+ * 門檻同時套在本期與基期上：兩期都要有實質營收，年增率才有意義。沒有該項數值的
+ * （例如當月沒公告）直接排除，不要當成 0 —— 0% 成長與「沒有資料」是兩件事。
+ */
+export function rankRevenue(rows: RankRow[], opts: RankOptions): RankRow[] {
+  const { key, asc = false, market = '', minRev = 0, limit } = opts;
+  const out = rows.filter(r => {
+    if (market && r.m !== market) return false;
+    if (r[key] === null || r[key] === undefined) return false;
+    if (!minRev) return true;
+    const value = key === 'cumYoy' ? r.cum : r.rev;
+    if ((value ?? 0) < minRev) return false;
+    if (key === 'rev') return true;
+    const base = impliedBase(value, r[key] as number);
+    return base !== null && base >= minRev;
+  });
+  out.sort((a, b) => {
+    const av = a[key] as number;
+    const bv = b[key] as number;
+    return asc ? av - bv : bv - av;
+  });
+  return limit ? out.slice(0, limit) : out;
+}
+
+/* ── 創新高／新低 ───────────────────────────────────────── */
+
+export interface HighRow {
+  c: string; n: string;
+  /** '上市' / '上櫃' / 'ETF' */
+  k: string;
+  p: number;
+  h: number | null;
+  l: number | null;
+  /** 距高點幾 %（負數） */
+  fh: number | null;
+  /** 距低點幾 %（正數） */
+  fl: number | null;
+  nh: 0 | 1;
+  nl: 0 | 1;
+  days: number;
+}
+
+export interface Highs {
+  meta: {
+    date: string; updated: string; window: number; count: number;
+    newHighs: number; newLows: number; source: string; note: string;
+  };
+  rows: HighRow[];
+}
+
+export type HighView = 'high' | 'near' | 'low';
+
+/** 「接近高點」的界線：距高點 5% 以內。再遠就不算「接近」了。 */
+export const NEAR_PCT = -5;
+
+export interface HighOptions {
+  view: HighView;
+  /** 類別：'' 全部 / '上市' / '上櫃' / 'ETF' */
+  kind?: string;
+  limit?: number;
+}
+
+/**
+ * 依檢視方式挑出要顯示的列。
+ *
+ * 'near'（接近高點）= 還沒創新高、但距高點 5% 以內。兩個條件都要：
+ * 排除已創新高的（那些在 'high' 那一頁），也排除距高點 40% 的 —— 那不叫接近，
+ * 不設界線的話這個檢視就是「除了新高以外的全市場」，等於沒有篩選。
+ */
+export function filterHighs(rows: HighRow[], opts: HighOptions): HighRow[] {
+  const { view, kind = '', limit } = opts;
+  let out = rows.filter(r => !kind || r.k === kind);
+  if (view === 'high') {
+    out = out.filter(r => r.nh === 1).sort((a, b) => b.p - a.p);
+  } else if (view === 'low') {
+    out = out.filter(r => r.nl === 1).sort((a, b) => (a.fl ?? 0) - (b.fl ?? 0));
+  } else {
+    out = out.filter(r => r.nh === 0 && r.fh !== null && r.fh >= NEAR_PCT)
+      .sort((a, b) => (b.fh ?? -999) - (a.fh ?? -999));
+  }
+  return limit ? out.slice(0, limit) : out;
+}

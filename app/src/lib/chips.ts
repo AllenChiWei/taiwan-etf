@@ -57,6 +57,18 @@ export interface TopRow {
 export interface TopSide { buy: TopRow[]; sell: TopRow[] }
 export type TopByWho = Record<string, TopSide>;
 
+/** 一個類股的成交統計。agg=1 是彙總類（電子、化學生技醫療）。 */
+export interface SectorRow {
+  n: string;
+  /** 成交金額（元） */
+  v: number;
+  sh: number | null;
+  tx: number | null;
+  agg: 0 | 1;
+  /** 佔各細類合計的百分比 */
+  pct: number;
+}
+
 export interface ChipsData {
   meta: ChipsMeta;
   futures: FutRow[];
@@ -70,6 +82,8 @@ export interface ChipsData {
   pc: { dates: string[]; vol: number[]; oi: number[] };
   large: { fut: LargeRow[]; opt: LargeRow[] };
   top: { twse: TopByWho | null; tpex: TopByWho | null };
+  /** 各類股成交比重（上市）。舊版的 chips.json 沒有這個欄位。 */
+  sectors?: SectorRow[];
 }
 
 /** 畫面上三大法人固定這個順序：外資部位最大、最常被看。 */

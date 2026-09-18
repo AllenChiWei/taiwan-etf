@@ -4,7 +4,7 @@
  * 每檔一個小檔（平均 600 bytes）。不把兩千檔的財報塞進一份 —— 使用者一次只看一檔。
  */
 
-import type { StockData, StockIndex } from '../lib/stock.ts';
+import type { StockData, StockIndex, Ranking, Highs } from '../lib/stock.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -58,4 +58,22 @@ export async function fetchStock(
   const d = json as Partial<StockData>;
   if (!d.code || !d.info) throw new StockError('個股資料格式不正確');
   return json as StockData;
+}
+
+/** 營收排行（全市場最新一個月）。回 null 代表這次部署沒有產生。 */
+export async function fetchRanking(signal?: AbortSignal): Promise<Ranking | null> {
+  const json = await getJson(`${BASE}data/stocks/ranking.json`, signal);
+  if (json === null) return null;
+  const d = json as Partial<Ranking>;
+  if (!Array.isArray(d.rows)) throw new StockError('營收排行格式不正確');
+  return json as Ranking;
+}
+
+/** 創新高／新低。這份由 FinLab 那條路徑產生，所以可能因為額度而缺席。 */
+export async function fetchHighs(signal?: AbortSignal): Promise<Highs | null> {
+  const json = await getJson(`${BASE}data/highs.json`, signal);
+  if (json === null) return null;
+  const d = json as Partial<Highs>;
+  if (!Array.isArray(d.rows)) throw new StockError('創新高資料格式不正確');
+  return json as Highs;
 }

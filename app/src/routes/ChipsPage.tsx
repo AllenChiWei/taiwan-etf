@@ -327,6 +327,50 @@ function LargeSection({ data }: { data: ChipsData }) {
   );
 }
 
+/* ── 各類股成交比重 ─────────────────────────────────────── */
+
+function SectorSection({ data }: { data: ChipsData }) {
+  const rows = data.sectors ?? [];
+  if (rows.length === 0) return null;
+  const details = rows.filter(r => !r.agg);
+  const aggregates = rows.filter(r => r.agg);
+  const max = Math.max(...details.map(r => r.pct), 1);
+
+  return (
+    <Section title="各類股成交比重" hint="上市，依成交金額">
+      {aggregates.length > 0 && (
+        <div className="mt-2 grid grid-cols-2 gap-2.5">
+          {aggregates.map(a => (
+            <Stat key={a.n} label={`${a.n}（彙總）`} value={`${nf1.format(a.pct)}%`}
+                  sub={`${nf0.format(Math.round(a.v / 1e8))} 億`} />
+          ))}
+        </div>
+      )}
+
+      <ul className="mt-2 space-y-1">
+        {details.slice(0, 15).map(r => (
+          <li key={r.n} className="grid grid-cols-[5.5em_1fr_4em] items-center gap-2">
+            <span className="truncate text-[12px] text-muted">{r.n}</span>
+            <span className="h-4 rounded bg-sunken">
+              <span className="block h-4 rounded bg-accent/70"
+                    style={{ width: `${Math.max(2, (r.pct / max) * 100)}%` }} />
+            </span>
+            <span className="text-right font-mono text-[11.5px] tabular-nums text-ink">
+              {nf2.format(r.pct)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-2 text-[11px] text-faint">
+        比重的分母是各細類的合計。「電子」與「化學生技醫療」是彙總類（等於底下幾個
+        細類的總和），另外列出以免被算兩次 —— 一起算的話半導體會從 36% 被稀釋成 19%。
+        櫃買沒有對應的公開端點，所以這份只有上市。
+      </p>
+    </Section>
+  );
+}
+
 /* ── 法人買賣超前十大 ───────────────────────────────────── */
 
 function TopList({ rows, side }: { rows: TopRow[]; side: 'buy' | 'sell' }) {
@@ -448,6 +492,7 @@ export function ChipsPage() {
       <PcSection data={data} />
       <OptionsSection data={data} />
       <LargeSection data={data} />
+      <SectorSection data={data} />
       <TopSection data={data} />
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">

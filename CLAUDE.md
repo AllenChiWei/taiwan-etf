@@ -22,6 +22,8 @@ Where each field comes from, because it is not one source:
 | 公告 | 公開資訊觀測站重大訊息（TWSE `t187ap04_L` + TPEx `mopsfin_t187ap04_O`） |
 | 個股財報 | 公開資訊觀測站 OpenAPI（基本資料／月營收／損益表／資產負債表）——**累積式** |
 | 個股籌碼 | TWSE `T86`／`MI_MARGN`／`MI_QFIIS`、TPEx 對應端點、集保 TDCC |
+| 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
+| 創 200 日新高 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -39,6 +41,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_news.py              新聞與重大訊息 → news.json（部署時產生）
   reuse_calc.py              FinLab 失敗時，從線上抓回試算資料當備援
   fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
+  fetch_highs.py             創 200 日新高 → highs.json（跟著試算資料一起跑）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -208,6 +211,20 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 
 集保股權分散表一次 9 MB、68000 列，只留三個數字：400 張以上（分級 12–15）、
 千張以上（分級 15）、股東人數（分級 17）。它每週更新，日期與買賣超不同天。
+
+### 營收排行、創新高、類股成交比重
+
+- **營收排行**（`stocks/ranking.json`）：全市場最新一個月，兩千檔一份，前端才排得動。
+  **門檻同時套在本期與基期**：建設公司依完工比例認列，去年同月可能只有幾十萬，
+  今年 8.9 億就是 +2,630,241%，會把整張榜洗掉。只擋本期營收沒有用 —— 它們的本期
+  營收很大。`impliedBase()` 從成長率反推基期，兩期都要過門檻。
+- **創新高**（`highs.json`）：`fetch_highs.py` 用的兩份資料集正是 `fetch_calc.py`
+  抓過的，同一次執行共用 `.cache/finlab_db`，所以**不會多花流量** —— 但單獨跑它會
+  真的下載一次。高低點用**還原股價**算，不然 00631L 那類做過分割的會顯示「距高點
+  -93%」；畫面顯示的股價則是原始收盤價。
+- **類股成交比重**（`chips.json` 的 `sectors`）：證交所的分類指數有階層，「電子」與
+  「化學生技醫療」是彙總類，等於底下幾個細類的總和（實測到小數點後四位一樣）。
+  算比重時分母要扣掉彙總類，否則電子被算兩次、半導體會從 36% 被稀釋成 19%。
 
 ## FinLab 的每日流量
 

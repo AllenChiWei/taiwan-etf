@@ -529,6 +529,28 @@ def build_outputs(history, chips):
         write_json(os.path.join(OUTDIR, code + '.json'), payload)
         written += 1
 
+    # 營收排行用的一份：所有個股的最新一個月。前端要排序兩千檔，不可能逐檔去抓。
+    latest_month = max((r['p'] for rows in months.values() for r in rows), default=None)
+    ranking = []
+    for code, rows in months.items():
+        row = next((r for r in rows if r['p'] == latest_month), None)
+        meta = info.get(code)
+        if not row or not meta or row.get('rev') is None:
+            continue
+        ranking.append({
+            'c': code, 'n': meta.get('name') or code,
+            'm': meta.get('market'), 'i': meta.get('industry') or '',
+            'rev': row.get('rev'), 'yoy': row.get('yoy'), 'mom': row.get('mom'),
+            'cum': row.get('cum'), 'cumYoy': row.get('cumYoy'),
+        })
+    write_json(os.path.join(OUTDIR, 'ranking.json'), {
+        'meta': {'period': latest_month, 'count': len(ranking),
+                 'updated': datetime.now(TPE).date().isoformat(),
+                 'source': u'公開資訊觀測站月營收（公司自行公告，未經會計師查核）'},
+        'rows': ranking,
+    })
+    log(u'  營收排行 %d 檔（%s）' % (len(ranking), latest_month))
+
     write_json(os.path.join(OUTDIR, 'index.json'), {
         'meta': {
             'updated': datetime.now(TPE).date().isoformat(),

@@ -16,6 +16,7 @@ scripts/                Python pipeline: scrape → etfs.json + legacy HTML
   fetch_news.py           新聞 + 重大訊息 → news.json, built at deploy time
   reuse_calc.py           pulls the published calc data back when FinLab fails
   fetch_stocks.py         per-stock fundamentals (accumulated) + chips → stocks/
+  fetch_highs.py          200-day highs → highs.json (rides fetch_calc's download)
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
@@ -71,6 +72,12 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   workflow commits it; deploy only reads it. Quarterly figures are **cumulative**
   (Q2 = first half), and amounts are in **thousands of NTD**; both are handled in
   `app/src/lib/stock.ts` and pinned by tests with real TSMC numbers.
+
+- Revenue rankings filter on **both** the current and the implied base period: a
+  builder with near-zero revenue a year ago shows +2,630,241% and swamps the board,
+  and its current revenue is large so a current-period floor alone won't catch it.
+- TWSE sector indices are hierarchical — 電子 and 化學生技醫療 are aggregates of their
+  sub-sectors. Exclude them from the denominator when computing turnover share.
 
 ## Conventions that are deliberate
 
