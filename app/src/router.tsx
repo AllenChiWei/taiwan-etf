@@ -33,6 +33,8 @@ const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage
 const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
 const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
 const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
+const DividendPage = lazyRoute(
+  () => import('./routes/DividendPage'), m => m.DividendPage);
 
 export interface ListSearch {
   q: string;
@@ -87,6 +89,12 @@ const calcRoute = createRoute({
   component: CalculatorPage,
 });
 
+const dividendRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/dividend',
+  component: DividendPage,
+});
+
 const chipsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/chips',
@@ -120,8 +128,8 @@ const aboutRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, chipsRoute, newsRoute,
-   stockRoute, pokerRoute, aboutRoute]);
+  [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, chipsRoute,
+   newsRoute, stockRoute, pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,

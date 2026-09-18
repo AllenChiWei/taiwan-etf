@@ -10,16 +10,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEtfData } from '../context/AppContext';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
-import { DividendPlanner } from '../components/DividendPlanner';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { NumberInput as SharedNumberInput } from '../components/NumberInput';
 import { EmptyState } from '../components/EmptyState';
+import { useCalcIndex } from '../hooks/useCalcIndex';
 import {
   runBacktest, project, monthIndex,
   type CalcIndex, type CalcSeries, type Timing,
 } from '../lib/backtest';
 
-type Tab = 'backtest' | 'retire' | 'dividend';
+type Tab = 'backtest' | 'retire';
 
 /** 退休推估「帶入標的」選單的一列。 */
 interface Seed {
@@ -650,22 +650,12 @@ function RetireTab({ index }: { index: CalcIndex }) {
 
 export function CalculatorPage() {
   const [tab, setTab] = useState<Tab>('backtest');
-  const [index, setIndex] = useState<CalcIndex | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`${import.meta.env.BASE_URL}data/calc/index.json`)
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((d: CalcIndex) => { if (!cancelled) setIndex(d); })
-      .catch((e: Error) => { if (!cancelled) setError(e.message); });
-    return () => { cancelled = true; };
-  }, []);
+  // 索引與配息頁共用同一個 hook，兩頁的載入與錯誤狀態才不會各長一套
+  const { index, error } = useCalcIndex();
 
   const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'backtest', label: '歷史回測' },
     { id: 'retire', label: '退休推估' },
-    { id: 'dividend', label: '配息試算' },
   ];
 
   return (
@@ -698,7 +688,6 @@ export function CalculatorPage() {
 
       {index && tab === 'backtest' && <BacktestTab index={index} />}
       {index && tab === 'retire' && <RetireTab index={index} />}
-      {index && tab === 'dividend' && <DividendPlanner index={index} />}
 
       {index && (
         <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">

@@ -16,6 +16,7 @@ const TABS = [
   { to: '/us', label: '美股' },
   { to: '/favorites', label: '收藏' },
   { to: '/calc', label: '試算' },
+  { to: '/dividend', label: '配息' },
   { to: '/chips', label: '籌碼' },
   { to: '/news', label: '新聞' },
   { to: '/stock', label: '個股' },
