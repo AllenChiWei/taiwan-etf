@@ -465,17 +465,28 @@ export function ChipsPage() {
     return () => ac.abort();
   }, []);
 
+  // 價平和是另一份資料（atm.json，進版控），所以就算籌碼那份缺席也要照樣顯示 ——
+  // 第一版寫成早退，結果某次部署沒產生 chips.json，連價平和整區都跟著消失。
   if (state === 'loading') {
-    return <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>;
-  }
-  if (state === 'missing') {
     return (
-      <EmptyState title="今天還沒有籌碼資料"
-                  hint="資料在每個交易日收盤後更新，假日與收盤前會是空的。" />
+      <>
+        <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>
+        <AtmSection />
+      </>
     );
   }
-  if (state === 'error' || !data) {
-    return <EmptyState title="籌碼資料載入失敗" hint={message} />;
+  if (state === 'missing' || state === 'error' || !data) {
+    return (
+      <>
+        {state === 'missing' ? (
+          <EmptyState title="今天還沒有籌碼資料"
+                      hint="資料在每個交易日收盤後更新，假日與收盤前會是空的。" />
+        ) : (
+          <EmptyState title="籌碼資料載入失敗" hint={message} />
+        )}
+        <AtmSection />
+      </>
+    );
   }
 
   return (

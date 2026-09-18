@@ -623,5 +623,22 @@ def main():
     return 0
 
 
+def run_with_retry(tries=2):
+    u"""整份都失敗時再跑一輪。
+
+    CI 上遇過一次「每個來源都失敗」—— 本機同一時間正常，所以那是連線抖動而不是
+    資料問題。整份重跑一次的成本是幾十秒，換掉的是「那天整頁沒有籌碼」。
+    """
+    for attempt in range(1, tries + 1):
+        del ERRORS[:]
+        code = main()
+        if code == 0:
+            return 0
+        if attempt < tries:
+            log(u'整份都沒拿到，%d 秒後重跑一次' % (DELAY * 5))
+            time.sleep(DELAY * 5)
+    return 1
+
+
 if __name__ == '__main__':
-    sys.exit(main())
+    sys.exit(run_with_retry())
