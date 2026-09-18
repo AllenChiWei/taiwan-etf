@@ -33,9 +33,14 @@ export interface FutRow {
 /** 三大法人的選擇權部位，買權賣權分計。 */
 export interface OptRow {
   cp: string; w: string;
-  n: number; a: number;
+  /** 未平倉：買方口數／金額、賣方口數／金額、淨額口數／金額（金額單位千元） */
   bn: number; ba: number;
   sn: number; sa: number;
+  n: number; a: number;
+  /** 當日交易：同樣三組。舊版的 chips.json 沒有這幾個欄位 */
+  vbn?: number; vba?: number;
+  vsn?: number; vsa?: number;
+  vn?: number; va?: number;
 }
 
 /** 大額交易人未沖銷部位。b5/s5 前五大買賣方，b10/s10 前十大，oi 全市場。 */
@@ -92,6 +97,24 @@ export const WHO_ORDER = ['外資', '投信', '自營商'] as const;
 /** 一億元 = 100,000 千元。 */
 export function toYi(thousand: number): number {
   return thousand / 100_000;
+}
+
+/**
+ * 契約金額（千元）的顯示字串。
+ *
+ * 不足 0.01 億就改用萬元：投信的選擇權部位常常只有幾十萬，顯示成「0 億」等於
+ * 沒有資訊。1 萬元 = 10 千元。
+ */
+export function contractAmount(thousand: number | null | undefined,
+                               signed = false): string {
+  if (thousand === null || thousand === undefined || !Number.isFinite(thousand)) {
+    return '—';
+  }
+  const yi = toYi(thousand);
+  const sign = signed && thousand > 0 ? '+' : '';
+  if (Math.abs(yi) >= 0.01) return `${sign}${yi.toFixed(2)} 億`;
+  if (thousand === 0) return '0 億';
+  return `${sign}${(thousand / 10).toFixed(1)} 萬`;
 }
 
 /** 估算金額是「元」，跟契約金額不同單位，不要共用同一個換算。 */

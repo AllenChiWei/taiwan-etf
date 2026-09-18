@@ -10,6 +10,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge, bars,
+  contractAmount,
   type ChipsData,
 } from '../src/lib/chips.ts';
 
@@ -240,5 +241,74 @@ test('柱狀圖', async (t) => {
 
   await t.test('沒有有效值就不畫', () => {
     assert.deepEqual(bars([null, null], 100, H), []);
+  });
+});
+
+test('真實 chips.json 的選擇權明細',
+  { skip: !existsSync(PATH) && '沒有 chips.json（部署時才產生）' }, async (t) => {
+    const data = JSON.parse(readFileSync(PATH, 'utf8')) as ChipsData;
+
+    await t.test('買權與賣權、三個身份別都齊', () => {
+      for (const cp of ['CALL', 'PUT']) {
+        for (const who of WHO_ORDER) {
+          assert.ok(data.options.some(o => o.cp === cp && o.w === who),
+            `缺少 ${cp} ${who}`);
+        }
+      }
+    });
+
+    // 契約金額允許 1 千元的誤差：期交所把買方、賣方、淨額三欄各自四捨五入到
+    // 千元，所以「買 − 賣」與它公佈的淨額可以差 1（今天六列裡有兩列就差 1）。
+    // 口數沒有這個問題，要精準相等。
+    const AMOUNT_TOLERANCE = 1;
+
+    await t.test('未平倉：買方 − 賣方 = 淨額', () => {
+      for (const o of data.options) {
+        assert.equal(o.bn - o.sn, o.n, `${o.cp} ${o.w} 的未平倉口數淨額對不上`);
+        assert.ok(Math.abs((o.ba - o.sa) - o.a) <= AMOUNT_TOLERANCE,
+          `${o.cp} ${o.w} 的未平倉金額淨額差太多：${o.ba - o.sa} vs ${o.a}`);
+      }
+    });
+
+    await t.test('當日交易那一側同樣成立（舊格式沒有這幾欄就跳過）', () => {
+      for (const o of data.options) {
+        if (o.vn === undefined) continue;
+        assert.equal((o.vbn ?? 0) - (o.vsn ?? 0), o.vn, `${o.cp} ${o.w} 交易口數對不上`);
+        assert.ok(Math.abs(((o.vba ?? 0) - (o.vsa ?? 0)) - (o.va ?? 0)) <= AMOUNT_TOLERANCE,
+          `${o.cp} ${o.w} 交易金額差太多`);
+      }
+    });
+
+    await t.test('口數不會是負的 —— 買方與賣方各自都是部位，不是淨額', () => {
+      for (const o of data.options) {
+        assert.ok(o.bn >= 0 && o.sn >= 0, `${o.cp} ${o.w} 出現負的買賣方口數`);
+      }
+    });
+  });
+
+test('契約金額的顯示', async (t) => {
+  await t.test('億為主', () => {
+    assert.equal(contractAmount(877431), '8.77 億');
+    assert.equal(contractAmount(-423449), '-4.23 億');
+  });
+
+  await t.test('不足 0.01 億改用萬元 —— 投信的部位常常只有幾十萬', () => {
+    assert.equal(contractAmount(385), '38.5 萬');
+    assert.equal(contractAmount(183), '18.3 萬');
+  });
+
+  await t.test('0 就是 0，不要寫成 0.0 萬', () => {
+    assert.equal(contractAmount(0), '0 億');
+  });
+
+  await t.test('只有要求時才加正號', () => {
+    assert.equal(contractAmount(877431, true), '+8.77 億');
+    assert.equal(contractAmount(385, true), '+38.5 萬');
+    assert.equal(contractAmount(-423449, true), '-4.23 億');
+  });
+
+  await t.test('缺值回破折號', () => {
+    assert.equal(contractAmount(null), '—');
+    assert.equal(contractAmount(undefined), '—');
   });
 });

@@ -292,7 +292,11 @@ def futures(rows):
 
 
 def options(rows):
-    u"""最新一日的三大法人選擇權未平倉（買權／賣權分計，含契約金額）。"""
+    u"""最新一日的三大法人臺指選擇權，買權／賣權分計。
+
+    未平倉與當日交易兩側都收，各自的買方、賣方與淨額（口數＋契約金額），
+    對應期交所 callsAndPutsDate 那一頁的欄位。
+    """
     if not rows:
         return []
     last_day = max(c[0] for c in rows)
@@ -302,9 +306,15 @@ def options(rows):
             continue
         out.append({
             'cp': c[2], 'w': WHO.get(c[3], c[3]),
-            'n': num(c[14]), 'a': num(c[15]),          # 未平倉買賣淨額：口數、金額(千元)
-            'bn': num(c[10]), 'ba': num(c[11]),        # 買方未平倉
-            'sn': num(c[12]), 'sa': num(c[13]),        # 賣方未平倉
+            # 未平倉：買方、賣方、淨額（口數與契約金額，金額單位千元）
+            'bn': num(c[10]), 'ba': num(c[11]),
+            'sn': num(c[12]), 'sa': num(c[13]),
+            'n': num(c[14]), 'a': num(c[15]),
+            # 當日交易：同樣三組。期交所那一頁（callsAndPutsDate）兩側並列，
+            # 只給未平倉會少掉「今天實際買賣了多少」這一半。
+            'vbn': num(c[4]), 'vba': num(c[5]),
+            'vsn': num(c[6]), 'vsa': num(c[7]),
+            'vn': num(c[8]), 'va': num(c[9]),
         })
     return out
 

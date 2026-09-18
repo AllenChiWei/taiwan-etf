@@ -11,7 +11,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
-  contractSeries, bars, zeroY, lastValue, prepareLarge,
+  contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount,
   type ChipsData, type LargeRow, type TopByWho, type TopRow,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -206,33 +206,74 @@ function PcSection({ data }: { data: ChipsData }) {
   );
 }
 
-/* ── 三大法人選擇權未平倉 ───────────────────────────────── */
+/* ── 三大法人選擇權 ─────────────────────────────────────── */
+
+/** 未平倉 / 當日交易。期交所那一頁兩側並列，這裡用切換，手機才排得下。 */
+const OPT_SIDES = ['未平倉', '當日交易'] as const;
+
+/**
+ * 一個身份別的一組數字：口數在上、契約金額在下（億元）。
+ *
+ * 只有淨額帶正負號。買方與賣方是各自的部位，一律是正數 —— 給它們加上「+」
+ * 會讓人以為那是淨額的方向。
+ */
+function OptTriple({ label, lots, amount, net = false }: {
+  label: string; lots: number | undefined; amount: number | undefined; net?: boolean;
+}) {
+  const tone = net && lots !== undefined ? TONE_CLASS[netTone(lots)] : 'text-ink';
+  return (
+    <div className="min-w-0">
+      <div className="text-[10.5px] text-faint">{label}</div>
+      <div className={`font-mono text-[12.5px] font-semibold tabular-nums ${tone}`}>
+        {lots === undefined ? '—'
+          : `${net ? signed(lots) : nf0.format(lots)} 口`}
+      </div>
+      <div className="font-mono text-[10.5px] tabular-nums text-muted">
+        {contractAmount(amount, net)}
+      </div>
+    </div>
+  );
+}
 
 function OptionsSection({ data }: { data: ChipsData }) {
+  const [side, setSide] = useState<(typeof OPT_SIDES)[number]>('未平倉');
   if (data.options.length === 0) return null;
-  const sides = ['CALL', 'PUT'];
+  const oi = side === '未平倉';
+  // 舊版資料沒有交易側，那就不要給一個切了也沒東西的按鈕
+  const hasVol = data.options.some(o => o.vn !== undefined);
+
   return (
-    <Section title="三大法人臺指選擇權未平倉" hint="口數與契約金額（億元）">
+    <Section title="三大法人臺指選擇權"
+             hint={oi ? '未平倉口數與契約金額' : '當日交易口數與契約金額'}>
+      {hasVol && (
+        <Switch options={OPT_SIDES} value={side} onChange={setSide} label="資料類型" />
+      )}
+
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        {sides.map(cp => (
+        {['CALL', 'PUT'].map(cp => (
           <div key={cp} className="rounded-lg border border-line bg-bg p-2.5">
             <div className="text-[12.5px] font-semibold text-ink">
               {cp === 'CALL' ? '買權 CALL' : '賣權 PUT'}
             </div>
-            <ul className="mt-1.5 space-y-1.5">
+            <ul className="mt-1.5 space-y-2">
               {WHO_ORDER.map(who => {
                 const r = data.options.find(o => o.cp === cp && o.w === who);
                 if (!r) return null;
+                const buyLots = oi ? r.bn : r.vbn;
+                const buyAmt = oi ? r.ba : r.vba;
+                const sellLots = oi ? r.sn : r.vsn;
+                const sellAmt = oi ? r.sa : r.vsa;
+                const netLots = oi ? r.n : r.vn;
+                const netAmt = oi ? r.a : r.va;
                 return (
-                  <li key={who} className="grid grid-cols-[3.5em_1fr_auto] items-baseline gap-2">
-                    <span className="text-[12.5px] text-muted">{who}</span>
-                    <span className={`font-mono text-[13.5px] font-semibold tabular-nums
-                                      ${TONE_CLASS[netTone(r.n)]}`}>
-                      {signed(r.n)} 口
-                    </span>
-                    <span className="font-mono text-[12px] tabular-nums text-muted">
-                      {signedYi(toYi(r.a))} 億
-                    </span>
+                  <li key={who}
+                      className="border-t border-line/60 pt-1.5 first:border-0 first:pt-0">
+                    <div className="text-[12px] font-semibold text-muted">{who}</div>
+                    <div className="mt-0.5 grid grid-cols-3 gap-x-2">
+                      <OptTriple label="買方" lots={buyLots} amount={buyAmt} />
+                      <OptTriple label="賣方" lots={sellLots} amount={sellAmt} />
+                      <OptTriple label="買賣淨額" lots={netLots} amount={netAmt} net />
+                    </div>
                   </li>
                 );
               })}
@@ -240,9 +281,11 @@ function OptionsSection({ data }: { data: ChipsData }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] text-faint">
-        數字是「買方未平倉 − 賣方未平倉」。選擇權的買賣方風險不對稱，
-        金額大不等於部位大，兩欄要一起看。
+
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        欄位對應期交所「三大法人－臺指選擇權買賣權分計」。買方與賣方是各自的部位，
+        不是同一筆的兩端；買賣淨額 = 買方 − 賣方。選擇權的買賣方風險不對稱，
+        金額大不等於部位大，口數與金額要一起看。
       </p>
     </Section>
   );
