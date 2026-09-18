@@ -293,3 +293,33 @@ export function donutSlices(
   }
   return out;
 }
+
+/** 「前幾名 + 其他」的摺疊摘要。 */
+export interface RestSummary {
+  /** 併進「其他」的檔數 */
+  count: number;
+  /** 併進「其他」的佔比合計（%） */
+  pct: number;
+  /** 併進「其他」的年配息合計（元） */
+  annual: number;
+}
+
+/**
+ * 把排名 topN 之後的併成一列「其他」。
+ *
+ * 百分比用相加而不是「100 減前幾名」：後者會把四捨五入的誤差全部堆到這一列，
+ * 出現 100 − 52.8 − 27.4 = 19.8 這種剛好對得上、但換一組資料就差 0.1 的數字。
+ * 相加得到的是各片自己的誤差總和，跟圖上的角度一致。
+ *
+ * 不足 topN 時回 count 0，呼叫端就不必畫那一列。
+ */
+export function summarizeRest(
+  slices: Slice[], rows: HoldingProjection[], topN: number,
+): RestSummary {
+  const rest = slices.slice(topN);
+  return {
+    count: rest.length,
+    pct: Math.round(rest.reduce((a, s) => a + s.pct, 0) * 10) / 10,
+    annual: rest.reduce((a, s) => a + (rows[s.i]?.annual ?? 0), 0),
+  };
+}

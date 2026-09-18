@@ -5,9 +5,10 @@ import assert from 'node:assert/strict';
 
 import {
   projectHolding, buildPortfolio, inferFrequency, payoutsPerYear, expectedMonths,
-  SHARES_PER_LOT, donutSlices,
+  SHARES_PER_LOT, donutSlices, summarizeRest,
 } from '../src/lib/dividend.ts';
 import type { CalcSeries } from '../src/lib/backtest.ts';
+import type { HoldingProjection } from '../src/lib/dividend.ts';
 
 /** 2025-01 ~ 2025-12 共 12 個月。 */
 const MONTHS = Array.from({ length: 12 },
@@ -290,5 +291,36 @@ test('年配息佔比的甜甜圈', async (t) => {
   await t.test('從十二點鐘方向開始', () => {
     const [first] = donutSlices([50, 50]);
     assert.ok(first.d.startsWith('M50.00 8.00'), first.d.slice(0, 20));
+  });
+});
+
+test('前幾名 + 其他', async (t) => {
+  const mk = (code: string, annual: number): HoldingProjection => ({
+    code, name: code, freq: '季配', shares: 1000, price: 10, value: 10000,
+    perShare: 1, annual, annualTtm: annual, payouts: 4, months: [],
+    byMonth: new Array(12).fill(0), estimated: false, lastAmount: 1,
+    lastMonth: '2026-08',
+  } as unknown as HoldingProjection);
+
+  const rows = [mk('A', 500), mk('B', 300), mk('C', 100), mk('D', 60), mk('E', 30),
+                mk('F', 8), mk('G', 2)];
+  const slices = donutSlices(rows.map(r => r.annual));
+
+  await t.test('併掉第六名之後的，檔數與金額都對', () => {
+    const rest = summarizeRest(slices, rows, 5);
+    assert.equal(rest.count, 2);
+    assert.equal(rest.annual, 10);
+  });
+
+  await t.test('佔比是相加而不是 100 減前幾名 —— 誤差不該全堆在其他那一列', () => {
+    const rest = summarizeRest(slices, rows, 5);
+    const head = slices.slice(0, 5).reduce((a, s) => a + s.pct, 0);
+    assert.ok(Math.abs(head + rest.pct - 100) < 0.2, `${head} + ${rest.pct}`);
+    assert.equal(rest.pct, Math.round((slices[5].pct + slices[6].pct) * 10) / 10);
+  });
+
+  await t.test('不足 topN 時 count 是 0，呼叫端就不畫那一列', () => {
+    const few = donutSlices([10, 5]);
+    assert.equal(summarizeRest(few, rows.slice(0, 2), 5).count, 0);
   });
 });
