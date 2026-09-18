@@ -69,11 +69,18 @@ export async function fetchRanking(signal?: AbortSignal): Promise<Ranking | null
   return json as Ranking;
 }
 
-/** 創新高／新低。這份由 FinLab 那條路徑產生，所以可能因為額度而缺席。 */
+/**
+ * 創新高／新低與漲跌幅。這份由 FinLab 那條路徑產生，所以可能因為額度而缺席。
+ *
+ * 舊格式（單一窗口）也當成缺席而不是丟錯：部署會沿用快取裡的資料，所以在格式
+ * 改版之後、下一次重抓之前，線上那份可能還是舊的。頁面顯示「還沒有資料」，
+ * 比整頁壞掉好 —— 這個情況實際發生過一次。
+ */
 export async function fetchHighs(signal?: AbortSignal): Promise<Highs | null> {
   const json = await getJson(`${BASE}data/highs.json`, signal);
   if (json === null) return null;
   const d = json as Partial<Highs>;
   if (!Array.isArray(d.rows)) throw new StockError('創新高資料格式不正確');
+  if (!Array.isArray(d.meta?.windows)) return null;
   return json as Highs;
 }

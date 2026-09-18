@@ -78,7 +78,10 @@ jobs:
           pip install --quiet finlab==2.0.19 cryptography==50.0.1
           cd app && npm ci
 
-      # 上一次產生的 FinLab 資料（已加密的序列、試算資料、解鎖 manifest）。
+      # 上一次產生的 FinLab 資料（已加密的序列、試算資料、創新高、解鎖 manifest）。
+      #
+      # 鍵上的 v2 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用
+      # 舊格式的快取，而新版前端讀不懂它。創新高從單一窗口改成三個窗口時踩過一次。
       # 這三樣是一組：序列是用 manifest 裡的參數加密的，所以要嘛一起沿用、
       # 要嘛一起重新產生，不能只換一邊。
       - name: 取回上次的 FinLab 資料
@@ -90,9 +93,9 @@ jobs:
             app/public/data/calc
             app/public/data/highs.json
             app/public/data/secure.json
-          key: finlab-data-${{ github.run_id }}
+          key: finlab-data-v2-${{ github.run_id }}
           restore-keys: |
-            finlab-data-
+            finlab-data-v2-
 
       - name: 決定要不要重抓 FinLab
         id: plan
@@ -281,7 +284,7 @@ jobs:
             app/public/data/calc
             app/public/data/highs.json
             app/public/data/secure.json
-          key: finlab-data-${{ github.run_id }}
+          key: finlab-data-v2-${{ github.run_id }}
 
       - name: 驗證資料
         run: |
