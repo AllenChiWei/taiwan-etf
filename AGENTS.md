@@ -85,6 +85,10 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   (202609F4 settles on a Tuesday). The monthly counts as that week's Wednesday
   contract. Two contracts are stored per day per series so that excluding the
   expiry-day row falls through to the rolled contract instead of emptying the cell.
+  `atm.json` also carries `taiex` ({trading day: TAIEX close}) so the straddle can be
+  scored against what the index actually did. TWSE answers **307** (not 429) when you
+  poll it too fast, and then blocks dates it would otherwise serve — so the index
+  backfill is capped at 20 days per run.
 
 - Performance curves for **both** markets come from FinMind and ship as plaintext
   (`fetch_series_tw.py`, `fetch_series_us.py`, shared machinery in

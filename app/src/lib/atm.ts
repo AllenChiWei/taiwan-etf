@@ -52,6 +52,8 @@ export interface AtmData {
     errors: string[];
   };
   rows: AtmRow[];
+  /** {交易日: 加權指數收盤}。用來把價平和跟實際走幅對照。 */
+  taiex?: Record<string, number>;
 }
 
 export const SERIES_LABEL: Record<Series, string> = {
@@ -194,4 +196,129 @@ export function recentOf(rows: AtmRow[], f: AtmFilter, limit = 10): AtmRow[] {
     if (out.length >= limit) break;
   }
   return out;
+}
+
+/* ── 預估區間：價平和準不準 ──────────────────────────────────
+ *
+ * 價平和是市場對「到到期為止會走多少」的定價：買方付這個價，指數走得比它多才
+ * 賺；賣方收這個價，指數走得比它少才賺。所以把每一天的價平和跟「那天到到期日
+ * 之間指數實際走了多少」放在一起，就看得出這個定價偏貴還是偏便宜。
+ *
+ * 兩邊都用**收盤價**比較：價平和取自當日收盤，實際走幅取收盤指數的差。用結算價
+ * 會更貼近真實結算，但台指選擇權的最後結算價是最後結算日開盤十五分鐘的平均價，
+ * 跟收盤不同時點，混用反而比較難解釋。
+ */
+
+/** 這個市場為那一天定價的波動區間。 */
+export interface ExpectedRange {
+  /** 觀察日（價平和取自這天收盤） */
+  day: string;
+  series: Series;
+  contract: string;
+  expiry: string;
+  /** 剩餘日曆天數 */
+  dte: number;
+  /** 價平和＝預估走幅（點） */
+  straddle: number;
+  /** 觀察日的收盤指數 */
+  index: number;
+  low: number;
+  high: number;
+  /** 預估走幅占指數的百分比 */
+  pct: number;
+}
+
+/** 已經到期、可以驗收的一筆。 */
+export interface StraddleOutcome extends ExpectedRange {
+  /** 到期日收盤指數 */
+  settle: number;
+  /** 實際走幅（絕對值，點） */
+  moved: number;
+  /** 實際走的方向：正為漲 */
+  change: number;
+  /** 實際走幅 ÷ 價平和。小於 1 代表賣方賺 */
+  ratio: number;
+  /** true = 沒走出區間，賣方賺 */
+  inside: boolean;
+}
+
+/** 目前還沒到期的那一口（每個系列最新一天、最近到期的合約）的預估區間。 */
+export function expectedRange(
+  rows: AtmRow[], taiex: Record<string, number>, series: Series,
+): ExpectedRange | null {
+  // 到期當日那口的價平和趨近 0，拿它算區間只會得到一條線，所以排除 ——
+  // 那天早上交易者看的本來就是換倉後的新合約（見 pickRow）。
+  const row = latestOf(rows, { series, basis: 'data', excludeExpiry: true });
+  if (!row) return null;
+  const index = taiex[row.d];
+  if (!index) return null;
+  return {
+    day: row.d, series, contract: row.c, expiry: row.e, dte: row.dte,
+    straddle: row.sum, index,
+    low: index - row.sum, high: index + row.sum,
+    pct: (row.sum / index) * 100,
+  };
+}
+
+/**
+ * 每個合約一筆驗收紀錄，新到舊。
+ *
+ * 一個合約會被觀察很多天（剩 6 天、5 天…），每天的價平和都不一樣。這裡取
+ * **第一次看到它**的那天 —— 也就是前一口剛到期、它成為最近到期合約的那天，
+ * 對應使用者實際會做決定的時點（「這週市場定價多少？」）。
+ */
+export function straddleOutcomes(
+  rows: AtmRow[], taiex: Record<string, number>, series: Series, limit = 12,
+): StraddleOutcome[] {
+  const first = new Map<string, AtmRow>();
+  for (const r of rows) {
+    if (r.s !== series || r.r !== 0 || r.dte === 0) continue;
+    const seen = first.get(r.c);
+    if (!seen || r.d < seen.d) first.set(r.c, r);
+  }
+  const out: StraddleOutcome[] = [];
+  for (const row of first.values()) {
+    const index = taiex[row.d];
+    const settle = taiex[row.e];
+    // 還沒到期（或那天的指數還沒補到）就不算 —— 驗收只看已經有答案的
+    if (!index || !settle) continue;
+    const change = settle - index;
+    const moved = Math.abs(change);
+    out.push({
+      day: row.d, series, contract: row.c, expiry: row.e, dte: row.dte,
+      straddle: row.sum, index, low: index - row.sum, high: index + row.sum,
+      pct: (row.sum / index) * 100,
+      settle, moved, change,
+      ratio: row.sum > 0 ? moved / row.sum : 0,
+      inside: moved < row.sum,
+    });
+  }
+  out.sort((a, b) => (a.expiry < b.expiry ? 1 : a.expiry > b.expiry ? -1 : 0));
+  return out.slice(0, limit);
+}
+
+/** 驗收的彙總。樣本太少時前端要照實說，所以 n 一起回傳。 */
+export interface OutcomeSummary {
+  n: number;
+  /** 沒走出區間的比例（賣方勝率） */
+  insideRate: number;
+  /** 平均 實際走幅 ÷ 價平和 */
+  avgRatio: number;
+  /** 平均價平和與平均實際走幅（點） */
+  avgStraddle: number;
+  avgMoved: number;
+}
+
+export function summarise(rows: StraddleOutcome[]): OutcomeSummary | null {
+  if (rows.length === 0) return null;
+  const n = rows.length;
+  const sum = (f: (r: StraddleOutcome) => number) =>
+    rows.reduce((a, r) => a + f(r), 0);
+  return {
+    n,
+    insideRate: rows.filter(r => r.inside).length / n,
+    avgRatio: sum(r => r.ratio) / n,
+    avgStraddle: sum(r => r.straddle) / n,
+    avgMoved: sum(r => r.moved) / n,
+  };
 }

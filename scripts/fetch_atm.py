@@ -73,6 +73,20 @@ DEFAULT_BACKFILL = 90
 COL_DATE, COL_CONTRACT, COL_STRIKE, COL_CP = 0, 2, 3, 4
 COL_CLOSE, COL_SETTLE, COL_SESSION, COL_EXPIRY = 8, 10, 17, 20
 
+# 加權指數收盤。價平和是「市場對接下來會走多少的定價」，要判斷這個定價準不準，
+# 就得有事後實際走了多少 —— 那需要每個交易日的指數收盤價。
+#
+# 兩個來源各有用途：OpenAPI 那個一次給整個月（當月），每天跑就順便把當月補齊；
+# 舊月份只能一天一個請求（MI_INDEX），所以只在缺的時候補，而且一次最多補 60 天。
+TWSE_MONTH = 'https://openapi.twse.com.tw/v1/indicesReport/MI_5MINS_HIST'
+TWSE_DAY = ('https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX'
+            '?date=%s&type=IND&response=json')
+TAIEX_NAME = u'發行量加權股價指數'
+# 證交所擋太快的請求時回 307（不是 429，也沒有 Retry-After），而且擋住之後連
+# 原本查得到的日期也一起擋。實測一次跑 50 個請求就會踩到，所以一次只補 20 天 ——
+# 反正每天都會跑，缺的幾天過兩天就補齊了。
+TAIEX_BACKFILL_LIMIT = 20
+
 # 配對履約價少於這個數量時，|C−P| 最小的判定可能嚴重偏離（夜盤常見）。
 # 標記起來讓前端可以排除，而不是直接丟掉 —— 丟掉就看不出那天資料有問題。
 MIN_PAIRS = 20
@@ -254,6 +268,74 @@ def rows_for_day(day, contracts):
     return out
 
 
+def _get_json(url):
+    req = urllib.request.Request(url, headers={'User-Agent': UA['User-Agent']})
+    return json.loads(urllib.request.urlopen(req, timeout=60).read().decode('utf-8'))
+
+
+def taiex_this_month():
+    u"""{日期: 收盤指數}，當月。一個請求就給整個月。"""
+    out = {}
+    try:
+        for r in _get_json(TWSE_MONTH):
+            roc = str(r.get('Date') or '')          # 民國：1150918
+            close = str(r.get('ClosingIndex') or '').replace(',', '')
+            if len(roc) == 7 and close:
+                day = '%d-%s-%s' % (int(roc[:3]) + 1911, roc[3:5], roc[5:7])
+                out[day] = float(close)
+    except Exception as e:                                    # noqa: BLE001
+        note(u'當月加權指數抓取失敗：%s' % str(e)[:60])
+    return out
+
+
+def taiex_one_day(day, tries=3):
+    u"""某一天的收盤指數；查無資料（假日）回 None。
+
+    證交所擋太快的請求時回 307 而不是 429，所以重試要拉長間隔 —— 一秒一發會
+    連續吃到 307（回補時實測）。
+    """
+    for attempt in range(1, tries + 1):
+        try:
+            doc = _get_json(TWSE_DAY % day.replace('-', ''))
+            if doc.get('stat') != 'OK':
+                return None
+            for t in doc.get('tables') or []:
+                for row in t.get('data') or []:
+                    if row and row[0].strip() == TAIEX_NAME:
+                        return float(str(row[1]).replace(',', ''))
+            return None
+        except Exception as e:                                # noqa: BLE001
+            if attempt == tries:
+                note(u'%s 加權指數抓取失敗：%s' % (day, str(e)[:50]))
+                return None
+            time.sleep(DELAY * attempt)
+    return None
+
+
+def fill_taiex(taiex, days):
+    u"""補齊這些交易日的收盤指數。回傳補了幾天。
+
+    days 是 atm.json 裡出現過的交易日 —— 只補這些，因為對照只需要這些。
+    """
+    added = 0
+    month = taiex_this_month()
+    for day, close in month.items():
+        if day not in taiex:
+            taiex[day] = close
+            added += 1
+    missing = sorted(d for d in days if d not in taiex)
+    if missing:
+        log(u'還有 %d 個交易日沒有指數收盤，這次補 %d 天'
+            % (len(missing), min(len(missing), TAIEX_BACKFILL_LIMIT)))
+    for day in missing[:TAIEX_BACKFILL_LIMIT]:
+        v = taiex_one_day(day)
+        if v is not None:
+            taiex[day] = v
+            added += 1
+        time.sleep(DELAY)
+    return added
+
+
 def windows(start_date, end_date, step):
     out = []
     cur = start_date
@@ -318,6 +400,10 @@ def main():
                 added += 1
 
     rows.sort(key=lambda r: (r['d'], r['s'], r.get('r', 0)))
+
+    # 指數收盤：價平和只有跟「後來實際走了多少」放在一起才說得出準不準
+    taiex = dict(doc.get('taiex') or {})
+    n_idx = fill_taiex(taiex, set(r['d'] for r in rows))
     by_series = {}
     for r in rows:
         if r.get('r', 0) == 0:
@@ -336,14 +422,18 @@ def main():
                      u'每一列是該交易日收盤的數字，也就是隔一個交易日開盤前看到的值。'
                      u'週三系列含月選（月選到期那一週沒有 W 合約）。'
                      u'每個系列記兩口：r=0 最近到期、r=1 換倉後那一口。'),
+            'taiexDays': len(taiex),
+            'taiexSource': u'證交所 每日收盤行情－發行量加權股價指數',
             'errors': ERRORS,
         },
         'rows': rows,
+        # {日期: 收盤指數}。跟 rows 分開存，因為它是每天一個值，不分系列。
+        'taiex': dict(sorted(taiex.items())),
     }
     write_json(OUT, payload)
-    log(u'完成：%s（新增 %d 列，共 %d 列 / %d 個交易日，%.0f KB）'
+    log(u'完成：%s（新增 %d 列，共 %d 列 / %d 個交易日；指數收盤 +%d 天、共 %d 天；%.0f KB）'
         % (OUT, added, len(rows), payload['meta']['days'],
-           os.path.getsize(OUT) / 1024.0))
+           n_idx, len(taiex), os.path.getsize(OUT) / 1024.0))
     return 0 if rows else 1
 
 

@@ -7,6 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import {
   weekdayOf, nextTradingDay, weekdayAverages, latestOf, recentOf, pickRow,
+  expectedRange, straddleOutcomes, summarise,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmRow, type AtmData, type AtmFilter,
 } from '../src/lib/atm.ts';
@@ -247,6 +248,108 @@ test('真實 atm.json', { skip: !existsSync(PATH) && '沒有 atm.json' }, async 
       const avg = (a: number[]) => a.reduce((x, y) => x + y, 0) / a.length;
       assert.ok(avg(expiry) < avg(fresh) / 5,
         `到期當日平均 ${avg(expiry).toFixed(0)}、換倉後 ${avg(fresh).toFixed(0)}`);
+    }
+  });
+});
+
+test('預估區間', async (t) => {
+  const idx = { '2026-09-17': 46288, '2026-09-23': 46800, '2026-09-10': 45000 };
+
+  await t.test('區間是指數加減價平和，百分比對得上', () => {
+    const rows = [row({ d: '2026-09-17', dte: 6, sum: 968 })];
+    const r = expectedRange(rows, idx, 'wed')!;
+    assert.equal(r.index, 46288);
+    assert.equal(r.low, 46288 - 968);
+    assert.equal(r.high, 46288 + 968);
+    assert.ok(Math.abs(r.pct - (968 / 46288) * 100) < 1e-9);
+  });
+
+  await t.test('取的是換倉後那口，不是到期當日那口（否則區間趨近 0）', () => {
+    const rows = [
+      row({ d: '2026-09-17', dte: 0, c: '202609W3', e: '2026-09-17', sum: 10 }),
+      row({ d: '2026-09-17', dte: 6, c: '202609W4', e: '2026-09-23', r: 1, sum: 968 }),
+    ];
+    const r = expectedRange(rows, idx, 'wed')!;
+    assert.equal(r.straddle, 968);
+    assert.equal(r.contract, '202609W4');
+  });
+
+  await t.test('那天沒有指數收盤就回 null，不要拿別天的頂替', () => {
+    const rows = [row({ d: '2026-09-16', dte: 7 })];
+    assert.equal(expectedRange(rows, idx, 'wed'), null);
+  });
+});
+
+test('價平和驗收', async (t) => {
+  const idx = { '2026-09-17': 46288, '2026-09-23': 46800 };
+  const rows = [
+    // 同一個合約被看了兩天，驗收要用最早看到的那天
+    row({ d: '2026-09-17', c: '202609W4', e: '2026-09-23', dte: 6, sum: 968 }),
+    row({ d: '2026-09-18', c: '202609W4', e: '2026-09-23', dte: 5, sum: 800 }),
+  ];
+
+  await t.test('走幅小於價平和 = 沒走出區間，賣方賺', () => {
+    const [o] = straddleOutcomes(rows, idx, 'wed');
+    assert.equal(o.straddle, 968);          // 取 09-17 那天，不是 09-18
+    assert.equal(o.day, '2026-09-17');
+    assert.equal(o.settle, 46800);
+    assert.equal(o.moved, 512);
+    assert.equal(o.change, 512);
+    assert.equal(o.inside, true);
+    assert.ok(Math.abs(o.ratio - 512 / 968) < 1e-9);
+  });
+
+  await t.test('跌破下緣同樣算走出區間 —— 走幅取絕對值', () => {
+    const o = straddleOutcomes(rows, { '2026-09-17': 46288, '2026-09-23': 44000 },
+                               'wed')[0];
+    assert.equal(o.moved, 2288);
+    assert.equal(o.change, -2288);
+    assert.equal(o.inside, false);
+  });
+
+  await t.test('到期日還沒有指數就不列入 —— 沒有答案的不算驗收', () => {
+    assert.equal(straddleOutcomes(rows, { '2026-09-17': 46288 }, 'wed').length, 0);
+  });
+
+  await t.test('彙總：勝率與平均比值', () => {
+    const outs = straddleOutcomes(rows, idx, 'wed');
+    const s = summarise(outs)!;
+    assert.equal(s.n, 1);
+    assert.equal(s.insideRate, 1);
+    assert.ok(Math.abs(s.avgMoved - 512) < 1e-9);
+    assert.equal(summarise([]), null);
+  });
+});
+
+test('對真實資料的預估區間', { skip: !existsSync(PATH) && '沒有 atm.json' }, async (t) => {
+  const data = JSON.parse(readFileSync(PATH, 'utf8')) as AtmData;
+  const taiex = data.taiex ?? {};
+
+  await t.test('指數收盤覆蓋大部分交易日', () => {
+    const days = new Set(data.rows.map(r => r.d));
+    const have = [...days].filter(d => taiex[d]).length;
+    assert.ok(have / days.size > 0.8,
+      `只有 ${have}/${days.size} 個交易日有指數收盤`);
+  });
+
+  await t.test('預估走幅占指數的比例落在合理範圍（0.5%～8%）', () => {
+    for (const s of ['wed', 'fri'] as const) {
+      const r = expectedRange(data.rows, taiex, s);
+      if (!r) continue;
+      assert.ok(r.pct > 0.5 && r.pct < 8,
+        `${s} 的預估走幅是指數的 ${r.pct.toFixed(2)}%`);
+    }
+  });
+
+  await t.test('每個合約只驗收一次，而且用的是最早看到它的那天', () => {
+    for (const s of ['wed', 'fri'] as const) {
+      const outs = straddleOutcomes(data.rows, taiex, s, 50);
+      assert.equal(new Set(outs.map(o => o.contract)).size, outs.length);
+      for (const o of outs) {
+        const earlier = data.rows.filter(
+          r => r.c === o.contract && r.r === 0 && r.dte !== 0 && r.d < o.day);
+        assert.equal(earlier.length, 0, `${o.contract} 還有更早的 ${earlier[0]?.d}`);
+      }
     }
   });
 });
