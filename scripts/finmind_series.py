@@ -150,8 +150,13 @@ def existing_coverage(outdir, market):
 
 
 def order_by_staleness(codes, coverage):
-    u"""資料最舊的排前面，沒有曲線的排最前（空字串比任何日期小）。"""
-    return sorted(codes, key=lambda c: (coverage.get(c, ''), c))
+    u"""資料最舊的排前面，沒有曲線的排最前（空字串比任何日期小）。
+
+    同樣新舊的維持**呼叫端給的順序**（Python 的 sort 是穩定的），所以呼叫端可以
+    用它表達優先順序。美股就是這樣按成交金額由大到小排的 —— 第一次補抓時如果
+    照代號排，SPY、QYLD 這些最常被比較的會排在字母順序的後段，等好幾輪才輪到。
+    """
+    return sorted(codes, key=lambda c: coverage.get(c, ''))
 
 
 def remap_existing(outdir, market, old_dates, new_index, skip):

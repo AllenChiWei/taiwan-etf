@@ -84,8 +84,12 @@ def main():
     log(fm.quota_line())
 
     doc = json.load(io.open(os.path.join(DATA, 'us_etfs.json'), encoding='utf-8'))
-    # 只畫有流動性的：三千七百檔逐檔請求撐不住，而且沒量的畫出來是階梯
-    all_codes = [r['code'] for r in doc['etfs'] if r.get('liquid')]
+    # 只畫有流動性的：三千七百檔逐檔請求撐不住，而且沒量的畫出來是階梯。
+    # **按成交金額由大到小**：一輪抓不完時，先有曲線的會是 SPY、QQQ 這些真的
+    # 會被拿來比較的（order_by_staleness 對同樣新舊的維持這個順序）。
+    liquid = [r for r in doc['etfs'] if r.get('liquid')]
+    liquid.sort(key=lambda r: -(r.get('adv') or 0))
+    all_codes = [r['code'] for r in liquid]
     log(u'清單 %d 檔，其中有流動性的 %d 檔' % (len(doc['etfs']), len(all_codes)))
 
     coverage = fm.existing_coverage(OUTDIR, 'us')
