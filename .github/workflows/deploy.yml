@@ -187,6 +187,23 @@ jobs:
       # 台股曲線：FinMind 的公開資料，不動用 FinLab，也不必加密。
       # 三百多檔逐檔請求約十分鐘，所以跟其他重抓綁在一起，一天一次。
       #
+      # 台股曲線的快取，跟 FinLab 那組分開。
+      #
+      # 為什麼要分開：FinLab 那份只在「重抓」的執行才存回去（見底下那一步），
+      # 而台股曲線是每次部署都可能補幾檔的。共用的話，沿用快取的推送補到的東西
+      # 全部留不住 —— 實際發生過：線上檔數在 293 與 273 之間跳，因為每次部署都
+      # 從零重抓，每次都在 FinMind 的每小時上限那裡被擋在同一個地方，尾巴那
+      # 八十幾檔永遠輪不到。
+      - name: 取回台股曲線快取
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            app/public/data/series/tw
+            app/public/data/series/_tw.json
+          key: tw-series-${{ github.run_id }}
+          restore-keys: |
+            tw-series-
+
       # **每次部署都跑，但兩種模式。** 重抓的那種（每日更新）跑完整的一輪；
       # 沿用快取的推送只跑 --only-missing —— 通常一檔都不缺，一個請求都不發就結束。
       # 會缺是因為 FinMind 免費層每小時 300 次，一次執行不一定跑得完三百多檔
@@ -207,6 +224,17 @@ jobs:
           fi
           # 快取裡殘留的舊加密檔：現在是公開資料，不該再有加密版本佔空間
           rm -f app/public/data/series/tw/*.json.enc app/public/data/series/_tw.json.enc
+
+      # 補到的就要留住。條件只看「有沒有東西」，不看這次是重抓還是沿用 ——
+      # 沿用的那種正是會一點一點把缺口補起來的。
+      - name: 存下台股曲線快取
+        if: ${{ hashFiles('app/public/data/series/_tw.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            app/public/data/series/tw
+            app/public/data/series/_tw.json
+          key: tw-series-${{ github.run_id }}
 
       # 創 200 日新高。放在試算資料之後：它用的 etl:adj_close 與 price:收盤價 就是
       # 上一步抓過的那兩份，同一次執行共用 .cache/finlab_db，所以不會再下載一次。
