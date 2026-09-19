@@ -14,7 +14,8 @@ Where each field comes from, because it is not one source:
 | --- | --- |
 | Taiwan ETF list | TWSE + TPEx open data (+ a FinMind sweep for stragglers) |
 | Taiwan returns (3m/6m/1y/3y/5y) | computed from FinLab `etl:adj_close` — **total return** |
-| Taiwan 保管銀行 / 配息頻率 / 殖利率 | MoneyDJ `Basic0004` — no FinLab equivalent exists |
+| Taiwan 保管銀行 / 配息頻率 | MoneyDJ `Basic0004` — **每週抓一次**，這兩個欄位幾乎不變 |
+| Taiwan 殖利率 | 自己算：近 12 個月公告配息 ÷ 當日收盤價（全部官方免費端點） |
 | US ETF list | Nasdaq Trader's public symbol file ∩ FinLab price matrix |
 | US returns | computed from FinLab `us_fund_price` — **price return only**, see below |
 | 籌碼（法人期貨／選擇權未平倉、Put/Call Ratio、大額交易人） | 期交所的 CSV 下載端點 |
@@ -45,6 +46,8 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
   fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
+  fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
+  fetch_dividends_finmind.py 一次性：用 FinMind 回補交易所補不到的配息歷史
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -266,6 +269,53 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 
 「週三的價平和」有兩種問法，畫面用 `basis` 切換：`preopen`（當天早上看到的，
 ＝前一交易日收盤，預設）與 `data`（當天收盤本身）。
+
+## 哪些資料不需要 FinLab／MoneyDJ
+
+這份判斷是實測過的，不要憑印象重新選來源。
+
+| 資料 | 來源 | 能不能改免費 |
+| --- | --- | --- |
+| ETF 名單、籌碼、新聞、個股財報、價平和 | 交易所／觀測站／集保 | 已經全部免費 |
+| 殖利率 | 自算（配息 ÷ 收盤價） | ✅ 已改，見下 |
+| 配息紀錄 | 交易所公告 ＋ FinMind 回補 | ✅ 已改，見下 |
+| 保管銀行 | MoneyDJ | ❌ 官方 `t187ap47_L` 有「保管機構」欄位，但**不是同一個概念**：0050 官方寫「臺灣集中保管結算所」、MoneyDJ 寫「中國信託商業銀行」，240 檔裡 116 檔不一致，且我們的 359 檔裡有 119 檔那份根本沒有。換過去等於換掉欄位的意思。 |
+| 配息頻率 | MoneyDJ | △ 有配息紀錄的可以自己推（個股已經這樣做），但仍需 MoneyDJ 兜底；改成每週抓已經解決了量的問題 |
+| 報酬率 3m～5y、試算 calc/、績效曲線、創新高 | FinLab | ❌ 需要多年的還原股價。交易所的免費端點是「一天一個請求」，回補五年＝上千次請求、數 GB，對他們不禮貌。FinMind 可以（一檔一次請求給完整歷史），但免費層不給全市場查詢，換算下來是每天數百次請求 —— 值得做，但要當成一次遷移來規劃，不是順手改。 |
+| 美股清單與曲線 | FinLab | ❌ 三千七百檔，逐檔請求不可行 |
+
+**yfinance 不能用。** 它底下打的是 `query1.finance.yahoo.com`，那台的 robots.txt 是
+`User-agent: * / Disallow: /` —— 對所有人全面禁止，不只是 AI 代理。Stooq 同樣只開放
+Bingbot 與 Googlebot。這與先前排除富邦 PCF（`Disallow: /`）、排除奇摩新聞（點名
+ClaudeBot 等代理）是同一條線：不繞過、不換 host、不假裝成別的 User-Agent。
+
+**FinMind 可以。** `finmindtrade.com/robots.txt` 是 `Allow: /`，本專案本來就在用它
+補 ETF 名單。它的 `TaiwanStockDividendResult` 補上了交易所補不到的上櫃配息歷史 ——
+櫃買只公佈當天的除權息清單，歷史沒有端點可查，所以 359 檔 ETF 原本只有 32% 有配息
+紀錄。回補用 `scripts/fetch_dividends_finmind.py`，那是**一次性**的，每天的新資料
+仍然由交易所的官方端點提供。
+
+## 殖利率怎麼算
+
+`scripts/fetch_yields.py` → `app/public/data/yields.json`（進版控）。
+
+    殖利率 = 近 365 天的公告配息合計 ÷ 當日收盤價
+
+配息來自 `dividends.json`（交易所公告，累積式），收盤價來自證交所 `MI_INDEX` 與
+櫃買 `afterTrading/otc`。`build_data.py` 優先用這份，算不出來的才退回 MoneyDJ。
+
+兩個刻意的差異：**不年化**（MoneyDJ 對上市未滿一年的標的會把單次配息年化，數字好看
+但不是實際發生過的），以及**近一年沒配過息的輸出 null 而不是 0%**（「沒配」與「配了
+0」不是同一件事，這與台股頁對 N/A 的既有處理一致）。
+
+## MoneyDJ 改成每週
+
+`scrape_moneydj.py` 本來就會跳過已經存在的頁面，所以減量是用快取的鑰匙做的：
+`moneydj-pages-<ISO 年-週>`。新的一週抓不到快取就重抓完整的 359 頁，同一週內只抓
+快取裡沒有的（新上市那幾檔）。每日請求量少約 85%。
+
+代價是保管銀行與配息頻率最多會舊一週 —— 這兩個欄位本來就幾乎不變。每天在變的殖利率
+已經改成自己算，所以畫面上每天更新的部分沒有變舊。
 
 ## FinLab 的每日流量
 

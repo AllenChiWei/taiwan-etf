@@ -22,7 +22,12 @@ export function AboutPage() {
           報酬率：由 FinLab 的還原股價計算，是<strong className="text-ink">含息的總報酬</strong>、
           累積非年化
         </li>
-        <li>保管銀行、配息頻率、殖利率：MoneyDJ</li>
+        <li>保管銀行、配息頻率：MoneyDJ（每週更新一次，這兩個欄位幾乎不變）</li>
+        <li>
+          殖利率：<strong className="text-ink">自行計算</strong> ——
+          近 12 個月交易所公告的配息合計 ÷ 當日收盤價，每個交易日更新。
+          沒有配息紀錄的標的才沿用 MoneyDJ 的數字。
+        </li>
         <li>
           資料日期：<strong className="text-ink">{meta.updated}</strong>
           {meta.snapshot && <>　·　報酬率截至 {meta.snapshot}</>}
@@ -45,6 +50,11 @@ export function AboutPage() {
           的是前者。
         </li>
         <li><strong className="text-ink">報酬率是累積報酬</strong>，不是年化，且已含配息再投資。</li>
+        <li>
+          <strong className="text-ink">殖利率不年化</strong>。今年才掛牌的基金只配過一兩次，
+          這裡顯示的是<strong className="text-ink">實際已配發</strong>的金額除以股價；
+          有些網站會把單次配息乘上一年的次數，數字會高出好幾倍，那是推估不是已發生。
+        </li>
       </ul>
 
       <h2 className={h2}>收藏功能</h2>

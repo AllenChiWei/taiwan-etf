@@ -86,6 +86,12 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   contract. Two contracts are stored per day per series so that excluding the
   expiry-day row falls through to the rolled contract instead of emptying the cell.
 
+- **yfinance / Stooq are off-limits**: `query1.finance.yahoo.com` and `stooq.com`
+  both answer `Disallow: /` for everyone. FinMind (`Allow: /`, already used here) is
+  the free Taiwan source we do use. Don't swap a source without reading its robots.
+- 殖利率 is computed here (公告配息 ÷ 當日收盤價), not scraped; MoneyDJ is now fetched
+  **weekly** for the two fields that never change (保管銀行、配息頻率).
+
 ## Conventions that are deliberate
 
 - **紅漲綠跌**: gains are red, losses green — the Taiwan convention, opposite of the US one.

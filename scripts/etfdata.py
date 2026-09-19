@@ -257,6 +257,28 @@ def section(code, name, target, area):
     return 'cat-domestic' if area == u'台灣' else 'cat-foreign'
 
 
+def load_yields(root):
+    u"""自己算的殖利率 {代號: (值, 基準日)}。沒有那個檔就回空的。
+
+    來源是 fetch_yields.py：交易所公告的配息 ÷ 當日收盤價，全部免費端點。
+    MoneyDJ 的值只在這裡算不出來時當退路 —— 那份現在改成每週抓一次，
+    拿它的殖利率會是最多一週前的數字。
+    """
+    import io, json                                   # 與 load_tw_returns 同樣就地匯入
+    path = os.path.join(root, 'app', 'public', 'data', 'yields.json')
+    try:
+        doc = json.load(io.open(path, encoding='utf-8'))
+    except Exception:                                    # noqa: BLE001
+        return {}, ''
+    asof = (doc.get('meta') or {}).get('asof') or ''
+    out = {}
+    for code, v in (doc.get('yields') or {}).items():
+        y = v.get('y')
+        if y is not None:
+            out[code] = '%.2f' % float(y)
+    return out, asof
+
+
 def load_tw_returns(work):
     u"""<work>/tw_returns.json -> ({code: {r3: '8.52', …}}, asof) ；沒有就回 ({}, '')。
 
@@ -295,13 +317,21 @@ def load_rows(work, universe, current_sections):
     rows, missing, no_ret, asof = [], [], [], collections.Counter()
     yld_asof = collections.Counter()
     fin_returns, fin_asof = load_tw_returns(work)
+    # repo 根目錄：etfdata.py 在 scripts/ 底下
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    calc_yields, calc_asof = load_yields(root)
+    used_calc = 0
     for code, name, _market in universe:
         path = os.path.join(work, 'pages', code + '.html')
         d = parse_page(path) if os.path.exists(path) else {}
         if not d:
             missing.append(code)
         yld, ya = parse_yield(d.get(u'殖利率(%)', ''))
-        if ya:
+        if code in calc_yields:
+            # 自己算的優先：它是當日收盤價換算的，MoneyDJ 那份可能是一週前的快照
+            yld = calc_yields[code]
+            used_calc += 1
+        elif ya:
             yld_asof[ya] += 1
 
         if fin_returns:
@@ -329,5 +359,10 @@ def load_rows(work, universe, current_sections):
             'act': is_active(name),
         })
     top = lambda c: (c.most_common(1)[0][0] if c else '')
+    if used_calc:
+        print('yield: %d 檔用自己算的（%s），%d 檔沿用 MoneyDJ'
+              % (used_calc, calc_asof, len(rows) - used_calc))
     # FinLab 的 asof 是完整日期（2026-09-11），MoneyDJ 的是 MM/DD；前端只顯示字串
-    return rows, missing, no_ret, (fin_asof or top(asof)), top(yld_asof)
+    # 殖利率的基準日：自己算的那份涵蓋多數標的時就用它的日期
+    yasof = calc_asof if used_calc > len(rows) / 2 else top(yld_asof)
+    return rows, missing, no_ret, (fin_asof or top(asof)), yasof

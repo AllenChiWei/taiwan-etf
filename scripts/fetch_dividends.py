@@ -78,14 +78,29 @@ def log(m):
     print(m, flush=True)
 
 
-def fetch_json(url):
+def fetch_json(url, tries=3):
+    u"""抓 JSON，失敗重試。
+
+    證交所偶爾會拒絕來自雲端主機的請求，下一次同樣的網址又正常。不重試的話，
+    一次抖動就會讓整個每日更新中止（實際發生過：2026-09-18 的更新就是掛在
+    這一步，而且是在 FinLab 那幾步之前）。
+    """
     try:
         from urllib.request import Request, urlopen
     except ImportError:
         from urllib2 import Request, urlopen          # noqa
-    req = Request(url, headers={'User-Agent': UA, 'Accept': 'application/json'})
-    raw = urlopen(req, timeout=TIMEOUT).read()
-    return json.loads(raw.decode('utf-8', 'replace'))
+    last = None
+    for attempt in range(1, tries + 1):
+        try:
+            req = Request(url, headers={'User-Agent': UA,
+                                        'Accept': 'application/json'})
+            raw = urlopen(req, timeout=TIMEOUT).read()
+            return json.loads(raw.decode('utf-8', 'replace'))
+        except Exception as e:                        # noqa: BLE001
+            last = e
+            if attempt < tries:
+                time.sleep(DELAY * attempt)
+    raise last
 
 
 def to_float(s):
@@ -253,8 +268,16 @@ def main():
 
     log(u'')
     log(u'證交所（上市）：')
+    failed_years = []
     for year in range(FROM_YEAR, this_year + 1):
-        rows = fetch_twse(year)
+        try:
+            rows = fetch_twse(year)
+        except Exception as e:                         # noqa: BLE001
+            # 單一年度失敗不影響其他年度：這份檔案是累積的，缺的那年下次補得回來。
+            # 千萬不要把「抓不到」當成「那年沒有除權息」——這裡只合併、不刪除。
+            failed_years.append(year)
+            log(u'  %d 年：抓取失敗（%s），保留既有紀錄' % (year, str(e)[:50]))
+            continue
         n = 0
         for code, iso, amt, kind in rows:
             if code not in codes:
@@ -344,6 +367,10 @@ def main():
                             separators=(',', ':')))
 
     log(u'')
+    if failed_years:
+        log(u'::warning::有 %d 個年度沒抓到（%s），既有紀錄保留不動'
+            % (len(failed_years), u'、'.join(str(y) for y in failed_years)))
+
     log(u'排除純股票股利 %d 筆；權息用宣告的現金拆開 %d 筆' % (skipped_stock, split_both))
     log(u'新增 %d 筆，合計 %d 筆（%d 檔），寫入 %s（%.0f KB）'
         % (added, payload['meta']['records'], payload['meta']['codes'],

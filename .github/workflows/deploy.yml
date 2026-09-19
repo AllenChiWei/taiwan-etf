@@ -78,6 +78,20 @@ jobs:
           pip install --quiet finlab==2.0.19 cryptography==50.0.1
           cd app && npm ci
 
+      # FinLab 的資料集存放處，與每日更新流程共用同一把鑰匙：那個流程當天已經
+      # 下載過 etl:adj_close，這裡就不必再抓一次（一次一百多 MB）。
+      - name: 今天的快取鑰匙
+        id: day
+        run: echo "key=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
+      - name: 取回 FinLab 資料集快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/finlab_db
+          key: finlab-db-${{ steps.day.outputs.key }}
+          restore-keys: |
+            finlab-db-
+
       # 上一次產生的 FinLab 資料（已加密的序列、試算資料、創新高、解鎖 manifest）。
       #
       # 鍵上的 v2 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用

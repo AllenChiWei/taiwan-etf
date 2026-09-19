@@ -78,11 +78,40 @@ jobs:
           cp taiwan_etf_list.html "${RUNNER_TEMP}/etf/previous.html"
           cp app/public/data/us_etfs.json "${RUNNER_TEMP}/etf/previous_us.json" || true
 
+      # 一週一把鑰匙（ISO 年+週），新的一週自然抓不到上週的快取
+      - name: 本週的快取鑰匙
+        id: week
+        run: echo "key=$(date -u +%G-W%V)" >> $GITHUB_OUTPUT
+
+      - name: 今天的快取鑰匙
+        id: day
+        run: echo "key=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
+
       - name: 抓取 ETF 名單（TWSE / TPEx / FinMind）
         run: python scripts/fetch_universe.py "$WORK"
 
-      - name: 抓取基本資料（保管銀行、配息、殖利率）
+      # MoneyDJ 的 Basic0004 每週抓一次就夠：保管銀行與配息頻率幾乎不會變，
+      # 而每天都在變的殖利率已經改成自己算（見下面那一步）。
+      #
+      # 減量是靠快取的鑰匙做的，腳本本身不用改 —— 它本來就會跳過已經存在的頁面。
+      # 鑰匙帶週數：新的一週抓不到快取，就重新抓完整的 359 頁；同一週內只會抓
+      # 快取裡沒有的（也就是新上市的那幾檔）。每日請求量因此少了大約 85%。
+      - name: 取回本週的 MoneyDJ 快照
+        id: mdjcache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/etf/pages
+          key: moneydj-pages-${{ steps.week.outputs.key }}
+
+      - name: 抓取基本資料（保管銀行、配息頻率）
         run: python scripts/scrape_moneydj.py "$WORK"
+
+      - name: 存下本週的 MoneyDJ 快照
+        if: ${{ steps.mdjcache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/etf/pages
+          key: moneydj-pages-${{ steps.week.outputs.key }}
 
       # 交易所公告的除息金額。證交所可以回補歷史（一年一次請求），櫃買只給
       # 當前清單 —— 所以這一步每天跑，櫃買那半的歷史是靠日積月累補起來的。
@@ -90,8 +119,24 @@ jobs:
       - name: 抓取交易所公告的配息金額
         run: python scripts/fetch_dividends.py
 
-      # 報酬率改由 FinLab 計算。MoneyDJ 那邊只剩 Basic0004（保管銀行／配息／殖利率），
-      # 對他們的請求量因此少了一半。
+      # 殖利率自己算：近 12 個月配息（上一步的產出）÷ 當日收盤價（證交所／櫃買）。
+      # 兩邊都是免費端點，不碰 FinLab 也不必多敲 MoneyDJ 一次。
+      - name: 計算殖利率
+        run: python scripts/fetch_yields.py
+
+      # 報酬率改由 FinLab 計算。MoneyDJ 那邊只剩 Basic0004（保管銀行／配息頻率），
+      # 對他們的請求量因此少了一半，再加上改成每週一次，又少了 85%。
+      # FinLab 的資料集存放處。兩個流程都要 etl:adj_close，各自下載就是雙倍流量；
+      # 快取起來之後，當天第二個 job 讀的是本機檔案。finlab 自己有 expiry，
+      # 資料更新了它會重抓，所以不會拿到過期的東西。
+      - name: 取回 FinLab 資料集快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/finlab_db
+          key: finlab-db-${{ steps.day.outputs.key }}
+          restore-keys: |
+            finlab-db-
+
       - name: 計算報酬率（FinLab）
         if: ${{ github.event.inputs.skip_returns != 'true' }}
         run: python scripts/fetch_tw_returns.py "$WORK"
@@ -126,6 +171,13 @@ jobs:
       - name: 累積個股財報
         run: python scripts/fetch_stocks.py --no-chips
 
+      - name: 存下 FinLab 資料集快取
+        if: ${{ hashFiles('.cache/finlab_db/*') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/finlab_db
+          key: finlab-db-${{ steps.day.outputs.key }}-${{ github.run_id }}
+
       - name: 測試
         run: |
           cd app && npm test
@@ -134,7 +186,7 @@ jobs:
       - name: 提交變更
         id: commit
         run: |
-          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json                app/public/data/dividends.json app/public/data/fin_history.json                app/public/data/atm.json taiwan_etf_list.html; then
+          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json                app/public/data/dividends.json app/public/data/fin_history.json                app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
@@ -148,7 +200,7 @@ jobs:
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/public/data/etfs.json app/public/data/us_etfs.json                   app/public/data/dividends.json app/public/data/fin_history.json                   app/public/data/atm.json taiwan_etf_list.html
+          git add app/public/data/etfs.json app/public/data/us_etfs.json                   app/public/data/dividends.json app/public/data/fin_history.json                   app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html
           if [ -n "$NEW" ]; then
             git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "新上市：${NEW}"
             echo "::notice title=新上市 ETF::${NEW}"
@@ -172,7 +224,7 @@ jobs:
       - name: 還原未通過驗證的資料
         if: failure()
         run: |
-          git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json                           app/public/data/dividends.json app/public/data/fin_history.json                           app/public/data/atm.json taiwan_etf_list.html || true
+          git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json                           app/public/data/dividends.json app/public/data/fin_history.json                           app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html || true
 
   # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程
   deploy:
