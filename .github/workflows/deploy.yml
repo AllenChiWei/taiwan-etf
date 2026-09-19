@@ -187,16 +187,24 @@ jobs:
       # 台股曲線：FinMind 的公開資料，不動用 FinLab，也不必加密。
       # 三百多檔逐檔請求約十分鐘，所以跟其他重抓綁在一起，一天一次。
       #
-      # 第二個條件是自癒用的：沿用快取的推送不重抓，但快取裡可能還是**改版前的
-      # 加密檔**（tw/*.json.enc），而新版前端要的是 .json —— 那樣曲線一樣是空的。
-      # 沒看到明文就補跑一次。用 FinMind 不花 FinLab 額度，所以不必為此把快取
-      # 版本號加一（那會連帶逼出一次幾 GB 的 FinLab 重抓）。
+      # **每次部署都跑，但兩種模式。** 重抓的那種（每日更新）跑完整的一輪；
+      # 沿用快取的推送只跑 --only-missing —— 通常一檔都不缺，一個請求都不發就結束。
+      # 會缺是因為 FinMind 免費層每小時 300 次，一次執行不一定跑得完三百多檔
+      # （第一次上線就在第 293 檔被擋，尾巴那 60 檔整批沒有曲線）。
+      # 用 FinMind 不花 FinLab 額度，所以這樣補很便宜。
       - name: 產生台股績效曲線（FinMind）
         id: twseries
-        if: ${{ steps.plan.outputs.reuse != 'true' || hashFiles('app/public/data/series/tw/0050.json') == '' }}
         continue-on-error: true
+        env:
+          # 免費註冊就有，把 FinMind 的每小時額度從 300 拉到 600 次。沒設定也能跑，
+          # 只是一次跑不完三百多檔，會分兩次補齊。
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: |
-          python scripts/fetch_series_tw.py
+          if [ "${{ steps.plan.outputs.reuse }}" = "true" ]; then
+            python scripts/fetch_series_tw.py --only-missing
+          else
+            python scripts/fetch_series_tw.py
+          fi
           # 快取裡殘留的舊加密檔：現在是公開資料，不該再有加密版本佔空間
           rm -f app/public/data/series/tw/*.json.enc app/public/data/series/_tw.json.enc
 

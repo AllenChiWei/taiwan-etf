@@ -64,8 +64,14 @@ LIMIT = None
 for i, a in enumerate(sys.argv[1:]):
     if a.startswith('--limit'):
         LIMIT = int(a.split('=')[1]) if '=' in a else int(sys.argv[i + 2])
+# 只補「完全沒有曲線」的那幾檔。沿用快取的部署用這個模式：通常一檔都不缺，
+# 於是一個請求都不發就結束；缺的時候（上次被 FinMind 擋下來）才補上。
+ONLY_MISSING = '--only-missing' in sys.argv[1:]
 
 API = 'https://api.finmindtrade.com/api/v4/data'
+# 免費註冊就能拿到的 token，把每小時額度從 300 拉到 600 次。沒有也能跑 ——
+# 只是一次執行跑不完三百多檔，會分兩天補齊（見 main() 裡的排序）。
+TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
 UA = ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
       '+https://allenchiwei.github.io/taiwan-etf/) performance curves')
 START = '2019-01-01'
@@ -101,16 +107,116 @@ def write_json(path, obj):
         fh.write(json.dumps(obj, ensure_ascii=False, separators=(',', ':')))
 
 
+class RateLimited(Exception):
+    u"""FinMind 的每小時額度用完了。這不是可以重試的錯誤 —— 重試只會更慢。"""
+
+
+def _check_limit(err_or_doc):
+    u"""FinMind 額度用完時回 HTTP 402，訊息是 Requests reach the upper limit。"""
+    code = getattr(err_or_doc, 'code', None)
+    if code == 402:
+        raise RateLimited('HTTP 402')
+    msg = ''
+    if isinstance(err_or_doc, dict):
+        msg = str(err_or_doc.get('msg') or '')
+    elif code is not None:
+        try:
+            msg = str(err_or_doc.read()[:200])
+        except Exception:                                     # noqa: BLE001
+            msg = ''
+    if 'upper limit' in msg or 'reach the limit' in msg:
+        raise RateLimited(msg[:80])
+
+
+def remap_existing(outdir, old_dates, new_index, skip):
+    u"""把舊日曆寫的檔案改對到新日曆上。回傳處理了幾檔。
+
+    values 是「從 first 起連續的每個交易日」，所以日曆中間插進新的一天時
+    單純平移是不夠的 —— 拿 (日期, 數值) 重新鋪一次才正確。
+    """
+    d = os.path.join(outdir, 'tw')
+    if not os.path.isdir(d):
+        return 0
+    done = 0
+    for f in sorted(os.listdir(d)):
+        if not f.endswith('.json') or f.startswith('_'):
+            continue
+        code = f[:-5]
+        if code in skip:
+            continue
+        try:
+            doc = json.load(io.open(os.path.join(d, f), encoding='utf-8'))
+            pairs = []
+            for i, v in enumerate(doc['values']):
+                if v is None:
+                    continue
+                oi = doc['first'] + i
+                if 0 <= oi < len(old_dates):
+                    ni = new_index.get(old_dates[oi])
+                    if ni is not None:
+                        pairs.append((ni, v))
+            if not pairs:
+                continue
+            first = pairs[0][0]
+            values = [None] * (pairs[-1][0] - first + 1)
+            for ni, v in pairs:
+                values[ni - first] = v
+            write_json(os.path.join(d, f),
+                       {'code': doc['code'], 'first': first, 'values': values})
+            done += 1
+        except Exception:                                     # noqa: BLE001
+            continue
+    return done
+
+
+def existing_dates(outdir):
+    u"""既有日曆的日期。第一次執行時是空的。"""
+    try:
+        return json.load(io.open(os.path.join(outdir, '_tw.json'),
+                                 encoding='utf-8'))['dates']
+    except Exception:                                         # noqa: BLE001
+        return []
+
+
+def existing_coverage(outdir):
+    u"""{代號: 這檔目前資料到哪一天}。沒有檔案的就不在裡面。
+
+    不另外存狀態檔 —— 既有的 `_tw.json` 日曆加上每檔的 first/values 長度，
+    本來就足以回答「這檔的資料到哪一天」。
+    """
+    cal = existing_dates(outdir)
+    if not cal:
+        return {}
+    d = os.path.join(outdir, 'tw')
+    if not os.path.isdir(d):
+        return {}
+    out = {}
+    for f in os.listdir(d):
+        if not f.endswith('.json') or f.startswith('_'):
+            continue
+        try:
+            doc = json.load(io.open(os.path.join(d, f), encoding='utf-8'))
+            last = doc['first'] + len(doc['values']) - 1
+            if 0 <= last < len(cal):
+                out[doc['code']] = cal[last]
+        except Exception:                                     # noqa: BLE001
+            continue
+    return out
+
+
 def fetch_prices(code, tries=3):
     u"""回傳 [(日期, 收盤價)]，由舊到新；失敗回 None。"""
     params = {'dataset': 'TaiwanStockPrice', 'data_id': code,
               'start_date': START, 'end_date': date.today().isoformat()}
+    if TOKEN:
+        params['token'] = TOKEN
     url = API + '?' + urllib.parse.urlencode(params)
     for attempt in range(1, tries + 1):
         try:
             req = urllib.request.Request(url, headers={'User-Agent': UA})
             raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
             doc = json.loads(raw.decode('utf-8'))
+            _check_limit(doc)
             if doc.get('msg') != 'success':
                 return None
             rows = []
@@ -121,7 +227,10 @@ def fetch_prices(code, tries=3):
                     rows.append((d, float(c)))
             rows.sort()
             return rows
+        except RateLimited:
+            raise
         except Exception as e:                                # noqa: BLE001
+            _check_limit(e)
             if attempt == tries:
                 note(u'%s 價格抓取失敗：%s' % (code, str(e)[:60]))
                 return None
@@ -133,12 +242,15 @@ def fetch_splits(code, tries=2):
     u"""{分割日: 比例}。比例 = 分割前價 / 分割後價（1 拆 4 就是 4）。"""
     params = {'dataset': 'TaiwanStockSplitPrice', 'data_id': code,
               'start_date': START, 'end_date': date.today().isoformat()}
+    if TOKEN:
+        params['token'] = TOKEN
     url = API + '?' + urllib.parse.urlencode(params)
     for attempt in range(1, tries + 1):
         try:
             req = urllib.request.Request(url, headers={'User-Agent': UA})
             doc = json.loads(urllib.request.urlopen(req, timeout=TIMEOUT).read()
                              .decode('utf-8'))
+            _check_limit(doc)
             if doc.get('msg') != 'success':
                 return {}
             out = {}
@@ -149,7 +261,10 @@ def fetch_splits(code, tries=2):
                 if day and before and after and after > 0:
                     out[day] = float(before) / float(after)
             return out
-        except Exception:                                     # noqa: BLE001
+        except RateLimited:
+            raise
+        except Exception as e:                                # noqa: BLE001
+            _check_limit(e)
             if attempt == tries:
                 return {}
             time.sleep(DELAY)
@@ -193,11 +308,31 @@ def total_return(rows, divs, splits=None):
 
 def main():
     log(u'台股曲線：FinMind 價格 + 交易所公告配息（不使用 FinLab）')
+    log(u'額度：%s' % (u'有 FINMIND_TOKEN，每小時 600 次'
+                       if TOKEN else u'沒有 FINMIND_TOKEN，每小時 300 次'))
 
     etfs = json.load(io.open(os.path.join(DATA, 'etfs.json'), encoding='utf-8'))
     codes = [e['code'] for e in etfs['etfs']]
+
+    # **順序是有意義的。** FinMind 的免費額度是以小時計的，一次執行不一定跑得完
+    # 三百多檔 —— 第一次上線就在第 293 檔被擋下來，尾巴剛好是槓桿／反向／期貨與
+    # 幾檔新債券 ETF（它們排在 etfs.json 最後面），結果那 60 檔整批沒有曲線。
+    # 所以每次都從「資料最舊的」開始抓：沒有檔案的排最前，其餘按最後一天排序。
+    # 被擋下來時已經抓到的照常寫出，下一次執行接著補完。
+    coverage = existing_coverage(OUTDIR)
+    codes.sort(key=lambda c: (coverage.get(c, ''), c))
     if LIMIT:
         codes = codes[:LIMIT]
+    stale = [c for c in codes if not coverage.get(c)]
+    if ONLY_MISSING:
+        if not stale:
+            log(u'%d 檔都有曲線了，這次不用抓' % len(codes))
+            return 0
+        log(u'只補沒有曲線的 %d 檔（其餘 %d 檔維持現狀）'
+            % (len(stale), len(codes) - len(stale)))
+        codes = stale
+    elif stale:
+        log(u'%d 檔還沒有曲線，這次優先抓' % len(stale))
 
     try:
         divdoc = json.load(io.open(os.path.join(DATA, 'dividends.json'),
@@ -208,8 +343,15 @@ def main():
 
     log(u'%d 檔，開始抓價格…' % len(codes))
     series = {}
+    limited = False
     for n, code in enumerate(codes, 1):
-        rows = fetch_prices(code)
+        try:
+            rows = fetch_prices(code)
+        except RateLimited as e:
+            note(u'FinMind 額度用完（%s），這次抓到 %d 檔就停；下一次會從沒抓到的開始'
+                 % (e, len(series)))
+            limited = True
+            break
         time.sleep(DELAY)
         if not rows or len(rows) < MIN_POINTS:
             continue
@@ -218,7 +360,10 @@ def main():
         odd = suspicious_days(rows, divs)
         splits = {}
         if odd:
-            splits = fetch_splits(code)
+            try:
+                splits = fetch_splits(code)
+            except RateLimited:
+                splits = {}                 # 沒查到就不調整，跟查不到分割一樣處理
             time.sleep(DELAY)
             unexplained = [d for d in odd if d not in splits]
             if unexplained:
@@ -235,14 +380,28 @@ def main():
             log(u'  %d/%d（已取得 %d 檔）' % (n, len(codes), len(series)))
 
     if not series:
+        # --only-missing 時這不是錯誤：還沒有曲線的往往是剛上市、
+        # 交易日還不到 MIN_POINTS 的新 ETF（實測六檔，13～21 天）。
         log(u'一檔都沒拿到，不寫出任何檔案')
-        return 1
+        return 0 if ONLY_MISSING else 1
 
-    # 共用的交易日曆：所有標的的日期取聯集
-    dates = sorted({d for rows, _, _ in series.values() for d, _ in rows})
+    # 共用的交易日曆：所有標的的日期取聯集。
+    #
+    # **要跟既有的那份合併，不能直接覆蓋**，因為不是每次執行都會重抓所有標的
+    # （被 FinMind 擋下來時只抓到一部分）。沒重抓的檔案，它們的 first 是對著
+    # 舊日曆的索引，日曆一變它們就整條位移。
+    old_dates = existing_dates(OUTDIR)
+    fresh = {d for rows, _, _ in series.values() for d, _ in rows}
+    dates = sorted(fresh | set(old_dates))
     index = dict((d, i) for i, d in enumerate(dates))
     log(u'交易日曆 %d 天（%s ~ %s）' % (len(dates), dates[0], dates[-1]))
     write_json(os.path.join(OUTDIR, '_tw.json'), {'market': 'tw', 'dates': dates})
+
+    # 補抓一檔歷史更長的，日曆會往**前面**長，不是只在後面接 —— 所以不能只算位移，
+    # 要拿日期重新對位。沒重抓的檔案才需要處理，這次寫出的下面本來就會覆蓋。
+    if old_dates and old_dates != dates:
+        n = remap_existing(OUTDIR, old_dates, index, set(series))
+        log(u'日曆有變動，重新對位既有的 %d 檔' % n)
 
     written = 0
     total_bytes = 0
@@ -271,9 +430,13 @@ def main():
     idx['twSource'] = 'finmind'
     write_json(idx_path, idx)
 
-    log(u'完成：%d 檔（%d 檔有配息紀錄可還原），共 %.1f MB，平均每檔 %.1f KB'
+    have = len(existing_coverage(OUTDIR))
+    log(u'完成：這次寫出 %d 檔（%d 檔有配息紀錄可還原），共 %.1f MB，平均每檔 %.1f KB'
         % (written, with_div, total_bytes / 1e6,
            total_bytes / max(1, written) / 1024.0))
+    log(u'目前總共有曲線的：%d 檔' % have)
+    if limited:
+        note(u'被 FinMind 擋下來，還有標的沒有曲線；下一次執行會優先補')
     if ERRORS:
         log(u'有 %d 檔抓取失敗' % len(ERRORS))
     return 0
