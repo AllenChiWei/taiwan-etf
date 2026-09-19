@@ -3,13 +3,14 @@
  * 每檔 ETF 一個檔案（約 7-13 KB），只抓使用者勾選的那幾檔 —— 全部加起來有 11 MB，
  * 為了畫三條線去下載那些是不合理的。交易日曆每個市場一份，所有標的共用。
  *
- * **兩個市場的來源與保護方式不同**，這是這個模組唯一需要記住的事：
+ * **兩個市場現在都是 FinMind 的公開資料，都以明文上線。**
  *
- *   台股　FinMind（公開資料）　-> 明文，任何人都看得到
- *   美股　FinLab（付費訂閱）　 -> 加密，要先解鎖
+ * 原本兩邊都走 FinLab 的付費訂閱，所以整份都要加密；而加密需要 SITE_PASSWORD，
+ * 沒設定的部署會把曲線整個丟掉 —— 收藏頁就一片空白，那正是使用者回報的那個問題。
+ * 先換台股、再換美股之後，這條鍊子整個不見了。
  *
- * 台股原本也走 FinLab，所以整份都要加密；沒設定 SITE_PASSWORD 的部署會把曲線丟掉，
- * 收藏頁就一片空白。換成 FinMind 之後那條鍊子在台股這半整個不見了。
+ * 解密的路徑（getEncrypted）與 needsUnlock 刻意留著：哪天又有付費資料要上線時，
+ * 只要讓 needsUnlock 對那個市場回 true 就接得回去。
  *
  * 這些檔案是部署時產生的，沒有進版控。
  */
@@ -24,9 +25,9 @@ export type Market = 'tw' | 'us';
 const calendarCache = new Map<Market, Promise<string[]>>();
 const seriesCache = new Map<string, Promise<RawSeries>>();
 
-/** 這個市場的曲線需不需要解鎖。台股是公開資料，不需要。 */
-export function needsUnlock(market: Market): boolean {
-  return market === 'us';
+/** 這個市場的曲線需不需要解鎖。目前兩個市場都是公開資料，所以都不用。 */
+export function needsUnlock(_market: Market): boolean {
+  return false;
 }
 
 async function getResponse(url: string): Promise<Response> {
@@ -41,7 +42,7 @@ async function getResponse(url: string): Promise<Response> {
   return res;
 }
 
-/** 美股：FinLab 的付費資料，加密上線。 */
+/** 加密上線的資料要走這條。目前沒有市場走這裡（見 needsUnlock）。 */
 async function getEncrypted(url: string): Promise<unknown> {
   if (!isUnlocked()) throw new DataError('尚未解鎖');
   const res = await getResponse(url);
@@ -52,7 +53,7 @@ async function getEncrypted(url: string): Promise<unknown> {
   }
 }
 
-/** 台股：FinMind 的公開資料，明文。 */
+/** 公開資料，明文。目前兩個市場都走這條。 */
 async function getPlain(url: string): Promise<unknown> {
   const res = await getResponse(url);
   try {

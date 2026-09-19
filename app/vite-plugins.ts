@@ -1,12 +1,10 @@
-/* 建置時才生效的兩個小外掛。
+/* 建置時才生效的小外掛。
  *
  * 放在獨立檔案而不是塞進 vite.config.ts，是為了讓 buildCsp() 能被 tests/ 直接
- * 匯入測試 —— 它是這兩件事裡唯一有邏輯的部分。
+ * 匯入測試 —— 它是這裡唯一有邏輯的部分。
  */
 
 import { createHash } from 'node:crypto';
-import { readdirSync, rmSync, existsSync, statSync } from 'node:fs';
-import { join } from 'node:path';
 import type { Plugin } from 'vite';
 
 /* ── CSP ─────────────────────────────────────────────────── */
@@ -75,44 +73,14 @@ export function cspMeta(): Plugin {
   };
 }
 
-/* ── 不要讓未加密的價格序列進到產物 ───────────────────────── */
-
-/**
- * 把 dist 裡未加密的**美股** series 刪掉，只留 .enc。
+/* ── 曾經在這裡：dropPlaintextSeries ──────────────────────────
  *
- * 台股那半改用 FinMind（公開資料）之後不再加密，所以不掃 —— 掃了會把正常的
- * 台股曲線整個刪光。
+ * 那個外掛會把 dist/data/series 底下未加密的 .json 刪光，用來保證本機 build
+ * 不會把 FinLab 的付費序列打包出去。兩個市場的曲線都改用 FinMind（公開資料）
+ * 之後，它要刪的東西正好變成**唯一該留下的東西** —— 留著等於每次 build 都把
+ * 曲線刪光，所以整個拿掉。
  *
- * public/ 底下的東西 Vite 會原樣複製，所以在本機（開發機上有明文序列）執行
- * npm run build，那份付費資料就會躺在 dist 裡。CI 有一道檢查會擋下來，但本機
- * 沒有 —— 手動部署一次就洩出去了。與其靠流程記得，不如讓產物根本不可能含它。
+ * 要接回來的話：它的實作在 git 歷史裡（搜 twetf-drop-plaintext-series），
+ * 記得只掃真正加密的那個市場，不要整個 series 一起掃。
  */
-export function dropPlaintextSeries(): Plugin {
-  return {
-    name: 'twetf-drop-plaintext-series',
-    apply: 'build',
-    closeBundle() {
-      // 只掃美股：台股曲線改用 FinMind 之後是公開資料，本來就該以明文上線
-      const root = join(process.cwd(), 'dist', 'data', 'series', 'us');
-      if (!existsSync(root)) return;
-      // 一定要遞迴：明文序列大部分在 series/tw/ 與 series/us/ 底下（各數百個檔），
-      // 只掃最上層會漏掉那些 —— 也就是漏掉絕大部分的資料。
-      // 這裡的判斷與 scripts/encrypt_data.py 一致：.json 是明文，.enc 才是成品。
-      let removed = 0;
-      const sweep = (dir: string) => {
-        for (const name of readdirSync(dir)) {
-          const full = join(dir, name);
-          if (statSync(full).isDirectory()) sweep(full);
-          else if (name.endsWith('.json')) {
-            rmSync(full);
-            removed += 1;
-          }
-        }
-      };
-      sweep(root);
-      if (removed > 0) {
-        this.warn(`已從產物移除 ${removed} 個未加密的價格序列（data/series 底下的 .json）`);
-      }
-    },
-  };
-}
+

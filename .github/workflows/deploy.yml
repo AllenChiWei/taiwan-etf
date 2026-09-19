@@ -46,12 +46,13 @@ jobs:
       # 所以只有每日更新流程（與手動勾選）會重抓；一般的程式碼推送沿用上一次
       # 產生好的資料。inputs 在 push 事件下是空的，所以預設就是「沿用」。
       REFRESH_FINLAB: ${{ inputs.refresh_finlab && 'true' || 'false' }}
-      # SITE_PASSWORD 不放在 job 層級：放這裡的話，每一個步驟（包括 pip install
-      # 與它拉進來的第三方套件）都讀得到它。只有加密那一步需要，就只給那一步。
-      # FINLAB_API_TOKEN 留在這裡是因為步驟的 if: 條件要判斷它在不在。
-      # salt 隨 manifest 公開給瀏覽器，不是機密；固定它是為了讓部署不會
-      # 讓所有人的工作階段失效。用 repository variable 就夠了。
-      SITE_SALT: ${{ vars.SITE_SALT }}
+      # 每個市場單輪最多抓幾檔。FinMind 免費層每小時 300 次、有 token 是 600，
+      # 兩個市場平分。抓不完不是問題：輪替會讓下一輪接著補（見 finmind_series.py）。
+      FINMIND_BUDGET: ${{ secrets.FINMIND_TOKEN != '' && '280' || '140' }}
+      # FINLAB_API_TOKEN 放在這裡是因為步驟的 if: 條件要判斷它在不在。
+      # 加密相關的 SITE_PASSWORD／SITE_SALT 已經沒有步驟需要 —— 兩個市場的曲線
+      # 都改用 FinMind 之後，上線的資料裡沒有付費內容了。要接回去時，秘密只給
+      # 需要的那一步，不要放在 job 層級（那樣連 pip 裝進來的套件都讀得到）。
     steps:
       - uses: actions/checkout@v4
         with:
@@ -92,24 +93,22 @@ jobs:
           restore-keys: |
             finlab-db-
 
-      # 上一次產生的 FinLab 資料（已加密的序列、試算資料、創新高、解鎖 manifest）。
+      # 上一次產生的 FinLab 資料（試算資料、創新高）。
       #
-      # 鍵上的 v2 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用
+      # 鍵上的 v3 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用
       # 舊格式的快取，而新版前端讀不懂它。創新高從單一窗口改成三個窗口時踩過一次。
-      # 這三樣是一組：序列是用 manifest 裡的參數加密的，所以要嘛一起沿用、
-      # 要嘛一起重新產生，不能只換一邊。
+      # v2 -> v3 是因為績效曲線整個搬離 FinLab，這份快取不再包含 series 與
+      # 解鎖 manifest（曲線有自己的快取，見下面「取回績效曲線快取」）。
       - name: 取回上次的 FinLab 資料
         id: datacache
         uses: actions/cache/restore@v4
         with:
           path: |
-            app/public/data/series
             app/public/data/calc
             app/public/data/highs.json
-            app/public/data/secure.json
-          key: finlab-data-v2-${{ github.run_id }}
+          key: finlab-data-v3-${{ github.run_id }}
           restore-keys: |
-            finlab-data-v2-
+            finlab-data-v3-
 
       - name: 決定要不要重抓 FinLab
         id: plan
@@ -135,22 +134,8 @@ jobs:
         run: |
           mkdir -p .cache/prev
           cp -r app/public/data/calc .cache/prev/
-          [ -d app/public/data/series ] && cp -r app/public/data/series .cache/prev/ || true
           [ -f app/public/data/highs.json ] && cp app/public/data/highs.json .cache/prev/ || true
-          [ -f app/public/data/secure.json ] && cp app/public/data/secure.json .cache/prev/ || true
           echo "已備份可沿用的資料"
-
-      # 美股清單已在版控中（每日更新流程會提交它）。這裡只產生價格序列：
-      # 那是 11 MB、每天全部重算，進版控會讓 repo 每年膨脹數百 MB。
-      # 沒有 FinLab 憑證時網站照常運作，只是沒有績效圖。
-      - name: 產生績效曲線
-        id: finlab
-        if: ${{ env.FINLAB_API_TOKEN != '' && steps.plan.outputs.reuse != 'true' }}
-        # 失敗不直接中止：下面的「退回上一份資料」會接手，沒有舊資料時才真的失敗
-        continue-on-error: true
-        run: |
-          python scripts/fetch_series.py
-          echo "generated=true" >> $GITHUB_OUTPUT
 
       # 試算用的月頻價格與配息。這份**不加密**：月頻收盤價與除息金額本來就是
       # 交易所與投信公開的資訊，這裡只是整理成月度摘要，不是那份按日的付費資料集。
@@ -184,26 +169,38 @@ jobs:
           path: .cache/stock_chips.json
           key: stock-chips-${{ github.run_id }}
 
-      # 台股曲線：FinMind 的公開資料，不動用 FinLab，也不必加密。
-      # 三百多檔逐檔請求約十分鐘，所以跟其他重抓綁在一起，一天一次。
-      #
-      # 台股曲線的快取，跟 FinLab 那組分開。
+      # 績效曲線的快取，跟 FinLab 那組分開。
       #
       # 為什麼要分開：FinLab 那份只在「重抓」的執行才存回去（見底下那一步），
-      # 而台股曲線是每次部署都可能補幾檔的。共用的話，沿用快取的推送補到的東西
+      # 而曲線是每次部署都可能補幾檔的。共用的話，沿用快取的推送補到的東西
       # 全部留不住 —— 實際發生過：線上檔數在 293 與 273 之間跳，因為每次部署都
       # 從零重抓，每次都在 FinMind 的每小時上限那裡被擋在同一個地方，尾巴那
       # 八十幾檔永遠輪不到。
-      - name: 取回台股曲線快取
+      #
+      # 兩段還原：舊鍵 tw-series- 是美股還在 FinLab 時的台股專用快取，裡面有
+      # 已經補好的三百多檔。cache/restore 是把封存檔解到路徑上、不會先清空，
+      # 所以先還原舊的、再讓新的蓋上去是安全的，而且省掉一整輪重抓。
+      # 新鍵普及之後（幾天內）這一步可以刪掉。
+      - name: 取回舊的台股曲線快取（過渡用）
         uses: actions/cache/restore@v4
         with:
           path: |
             app/public/data/series/tw
             app/public/data/series/_tw.json
-          key: tw-series-${{ github.run_id }}
+          key: tw-series-nonexistent
           restore-keys: |
             tw-series-
 
+      - name: 取回績效曲線快取
+        uses: actions/cache/restore@v4
+        with:
+          path: app/public/data/series
+          key: series-${{ github.run_id }}
+          restore-keys: |
+            series-
+
+      # 台股曲線：FinMind 的公開資料，不動用 FinLab，也不必加密。
+      #
       # **每次部署都跑，但兩種模式。** 重抓的那種（每日更新）跑完整的一輪；
       # 沿用快取的推送只跑 --only-missing —— 通常一檔都不缺，一個請求都不發就結束。
       # 會缺是因為 FinMind 免費層每小時 300 次，一次執行不一定跑得完三百多檔
@@ -220,21 +217,45 @@ jobs:
           if [ "${{ steps.plan.outputs.reuse }}" = "true" ]; then
             python scripts/fetch_series_tw.py --only-missing
           else
-            python scripts/fetch_series_tw.py
+            # 單輪上限：台股 359 檔加美股 712 檔，遠多於一小時的額度。先跑的那個
+            # 不設限就會把額度吃光，後面那個永遠輪不到 —— 所以兩邊各分一半。
+            # 輪替會讓每一輪都先服務「沒有曲線的」與「資料最舊的」，所以分批不會
+            # 有標的被餓死，只是尾巴的曲線可能晚一兩天更新。
+            python scripts/fetch_series_tw.py --limit=$FINMIND_BUDGET
           fi
           # 快取裡殘留的舊加密檔：現在是公開資料，不該再有加密版本佔空間
           rm -f app/public/data/series/tw/*.json.enc app/public/data/series/_tw.json.enc
 
+      # 美股曲線：同樣是 FinMind，同一個額度池，同樣兩種模式。
+      #
+      # 它的 Adj_Close 是**含息還原**的，所以這一步同時修掉了另一個問題：
+      # FinLab 的 us_fund_price 只還原分割，QYLD 那種高配息標的的曲線因此長期
+      # 在誤導人（近七年含息 +117%、純價格 -13%）。
+      #
+      # 712 檔（只畫有流動性的）比台股多一倍，所以沒有 token 時要分幾輪補。
+      - name: 產生美股績效曲線（FinMind）
+        id: usseries
+        continue-on-error: true
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: |
+          if [ "${{ steps.plan.outputs.reuse }}" = "true" ]; then
+            python scripts/fetch_series_us.py --only-missing
+          else
+            python scripts/fetch_series_us.py --limit=$FINMIND_BUDGET
+          fi
+          # 加密時代留下來的檔案：美股曲線現在也是公開資料
+          rm -f app/public/data/series/us/*.json.enc app/public/data/series/_us.json.enc
+
       # 補到的就要留住。條件只看「有沒有東西」，不看這次是重抓還是沿用 ——
       # 沿用的那種正是會一點一點把缺口補起來的。
-      - name: 存下台股曲線快取
-        if: ${{ hashFiles('app/public/data/series/_tw.json') != '' }}
+      - name: 存下績效曲線快取
+        if: ${{ hashFiles('app/public/data/series/_tw.json') != ''
+                || hashFiles('app/public/data/series/_us.json') != '' }}
         uses: actions/cache/save@v4
         with:
-          path: |
-            app/public/data/series/tw
-            app/public/data/series/_tw.json
-          key: tw-series-${{ github.run_id }}
+          path: app/public/data/series
+          key: series-${{ github.run_id }}
 
       # 創 200 日新高。放在試算資料之後：它用的 etl:adj_close 與 price:收盤價 就是
       # 上一步抓過的那兩份，同一次執行共用 .cache/finlab_db，所以不會再下載一次。
@@ -259,26 +280,22 @@ jobs:
 
       # FinLab 失敗（額度用完、服務中斷、或改版）時退回備份。半途失敗的產出不能
       # 只補一半 —— 那會混出一份新舊相間的資料，所以整組換回去。
+      #
+      # **績效曲線不在這組裡了**：兩個市場都改用 FinMind，跟 FinLab 的成敗無關，
+      # 而且它們有自己的快取與補抓機制。FinLab 現在只剩試算資料與創新高。
       - name: 重抓失敗時退回上一份資料
-        # 只看績效曲線與試算資料：創新高失敗只是少一頁的資料，把整組退回反而
-        # 讓試算與圖表一起變舊，代價大於好處。
-        if: ${{ steps.finlab.outcome == 'failure' || steps.calc.outcome == 'failure' }}
+        # 只看試算資料：創新高失敗只是少一頁的資料，把整組退回反而讓試算一起變舊，
+        # 代價大於好處。
+        if: ${{ steps.calc.outcome == 'failure' }}
         run: |
-          # 只退美股那半：台股曲線是這次用 FinMind 現抓的，跟 FinLab 無關，
-          # 把它一起刪掉只會讓免密碼的那條曲線白白變舊（或直接消失）。
-          rm -rf app/public/data/calc app/public/data/series/us app/public/data/series/_us.json \
-                 app/public/data/secure.json app/public/data/highs.json
+          rm -rf app/public/data/calc app/public/data/highs.json
           if [ -d .cache/prev/calc ]; then
             cp -r .cache/prev/calc app/public/data/
-            [ -d .cache/prev/series/us ] && cp -r .cache/prev/series/us app/public/data/series/ || true
-            [ -f .cache/prev/series/_us.json ] && cp .cache/prev/series/_us.json app/public/data/series/ || true
             [ -f .cache/prev/highs.json ] && cp .cache/prev/highs.json app/public/data/ || true
-            [ -f .cache/prev/secure.json ] && cp .cache/prev/secure.json app/public/data/ || true
             echo "::warning title=FinLab 抓取失敗::已退回快取裡的上一份資料，日期會比今天舊。常見原因是每日流量用完。"
           elif python scripts/reuse_calc.py; then
             # 快取被淘汰、或這個機制剛啟用還沒有快取。直接抓線上那份試算資料。
-            # 績效曲線沒有一起抓（1000 多個加密檔），所以圖表這次會缺。
-            echo "::warning title=FinLab 抓取失敗::已改用線上那份試算資料；這次的部署不含績效曲線。"
+            echo "::warning title=FinLab 抓取失敗::已改用線上那份試算資料。"
           else
             echo "::error title=FinLab 抓取失敗::而且沒有任何可退回的資料，這次不部署（線上維持前一版）。"
             exit 1
@@ -299,70 +316,42 @@ jobs:
               echo "::warning title=$f.json 沒有產生::這次部署不含這一頁的資料，頁面會顯示「還沒有資料」。"
             fi
           done
-          n_tw=$(ls app/public/data/series/tw/*.json 2>/dev/null | wc -l)
-          if [ "$n_tw" -gt 0 ]; then
-            echo "台股績效曲線 $n_tw 檔（FinMind，免密碼）"
-          else
-            echo "::warning title=台股績效曲線沒有產生::收藏頁的績效比較會是空的。"
-          fi
+          for m in tw us; do
+            n=$(ls app/public/data/series/$m/*.json 2>/dev/null | wc -l)
+            if [ "$n" -gt 0 ]; then
+              echo "${m} 績效曲線 $n 檔（FinMind，免密碼）"
+            else
+              echo "::warning title=${m} 績效曲線沒有產生::收藏頁的績效比較會缺這個市場。"
+            fi
+          done
           if [ -f app/public/data/stocks/index.json ]; then
             echo "個股 $(python -c "import io,json;print(json.load(io.open('app/public/data/stocks/index.json',encoding='utf-8'))['meta']['stocks'])") 檔"
           else
             echo "::warning title=個股資料沒有產生::個股頁會顯示「還沒有資料」。"
           fi
 
-      - name: 加密受保護的資料
-        if: ${{ steps.finlab.outputs.generated == 'true' }}
-        env:
-          SITE_PASSWORD: ${{ secrets.SITE_PASSWORD }}
-        run: |
-          if [ -z "$SITE_PASSWORD" ]; then
-            # 沒有密碼就不能加密，而未加密的付費資料絕不能上線。但也不該因此
-            # 讓整個部署掛掉 —— 台股與美股表格是公開資料，不該被圖表的設定缺失連累。
-            # 丟掉曲線、照常部署，圖表會顯示「這個部署版本沒有包含績效曲線」。
-            echo "::warning title=缺少 SITE_PASSWORD::績效曲線已產生但無法加密，本次部署將不包含它。"
-            echo "::warning::到 Settings → Secrets 建立 SITE_PASSWORD 即可啟用圖表。"
-            # 只丟**美股**曲線。台股那半來自 FinMind 的公開資料，本來就不加密，
-            # 跟著一起刪正是先前「收藏頁跑不出績效曲線」的原因。
-            # 試算資料也是明文的，同樣不受密碼有無影響。
-            rm -rf app/public/data/series/us app/public/data/series/_us.json
-            exit 0
-          fi
-          python scripts/encrypt_data.py
-
+      # 這裡本來有「加密受保護的資料」與「確認價格序列沒有以明文上線」兩步。
+      # 兩個市場的曲線都改用 FinMind 之後，上線的資料裡已經沒有 FinLab 的付費
+      # 內容了（試算資料一直是公開資訊整理成的月度摘要），所以沒有東西要加密，
+      # 也沒有東西要檢查。`scripts/encrypt_data.py` 與前端的解鎖畫面都還留著，
+      # 哪天又有付費資料要上線時照 CLAUDE.md 的清單接回去。
       - name: 沒有 FinLab 憑證時的提醒
         if: ${{ env.FINLAB_API_TOKEN == '' && steps.plan.outputs.reuse != 'true' }}
         run: |
           echo "::warning::沒有 FINLAB_API_TOKEN secret，這次部署不含績效曲線與試算資料。"
           echo "::warning::台股與美股清單不受影響（兩份都在版控中）。"
 
-      - name: 確認價格序列沒有以明文上線
-        run: |
-          # 最後一道防線。真正要保護的是 FinLab 的付費資料 —— 現在只剩美股曲線
-          # （台股改用 FinMind，公開資料）。us_etfs.json 是公開的衍生統計。
-          leaked=$(find app/public/data/series/us app/public/data/series/_us.json \
-                   -name '*.json' 2>/dev/null | head -5)
-          if [ -n "$leaked" ]; then
-            echo "::error::建置產物含未加密的價格序列："
-            echo "$leaked"
-            exit 1
-          fi
-          echo "檢查通過：價格序列都已加密"
-
-      # 存進快取給後續的程式碼推送用。一定要在上面那道明文檢查之後 ——
-      # 不然可能把未加密的價格序列寫進快取。
+      # 存進快取給後續的程式碼推送用。
       - name: 存下這次的 FinLab 資料
         if: ${{ steps.plan.outputs.reuse != 'true'
-                && steps.finlab.outcome != 'failure' && steps.calc.outcome != 'failure'
+                && steps.calc.outcome != 'failure'
                 && hashFiles('app/public/data/calc/index.json') != '' }}
         uses: actions/cache/save@v4
         with:
           path: |
-            app/public/data/series
             app/public/data/calc
             app/public/data/highs.json
-            app/public/data/secure.json
-          key: finlab-data-v2-${{ github.run_id }}
+          key: finlab-data-v3-${{ github.run_id }}
 
       - name: 驗證資料
         run: |

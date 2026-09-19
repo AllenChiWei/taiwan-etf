@@ -141,10 +141,15 @@ def try_existing_salt(password):
         return None                               # 密碼換了或檔案壞了 -> 重新產生
 
 
-# 台股曲線改由 FinMind 產生（scripts/fetch_series_tw.py），那是公開資料，不加密 ——
-# 加密的目的是保護 FinLab 的付費訂閱，不是把所有數字都鎖起來。
-# 美股曲線仍來自 FinLab，所以只有它要加密。
-PLAINTEXT_SERIES = ('tw',)
+# **目前這支腳本沒有東西可以加密，這是刻意的。**
+#
+# 兩個市場的曲線都改用 FinMind 產生了（fetch_series_tw.py / fetch_series_us.py），
+# 那是公開資料。加密的目的是保護 FinLab 的付費訂閱，不是把所有數字都鎖起來，
+# 所以沒有付費資料上線時，就不該有任何東西被鎖住 —— 部署流程也已經不呼叫它。
+#
+# 機制整套留著（連同前端的解鎖畫面）：哪天又有付費資料要上線，把那個市場從
+# 這個清單拿掉就接得回去。CLAUDE.md 有該一起改的清單。
+PLAINTEXT_SERIES = ('tw', 'us')
 
 
 def walk_targets():
@@ -217,7 +222,10 @@ def main():
           % ('重新產生（密碼已變更，既有工作階段全部失效）' if rotated else '沿用（既有工作階段仍有效）',
              TTL_HOURS, format(ITERATIONS, ',')))
     if n == 0:
-        sys.exit('沒有任何檔案被加密 —— 先跑 fetch_series.py')
+        # 目前的正常狀態就是這樣（見檔頭 PLAINTEXT_SERIES 的說明），所以
+        # 不當成錯誤 —— 真的需要加密卻一個都沒加到時，是上面的清單被改壞了。
+        print(u'沒有任何檔案需要加密（目前上線的資料都是公開來源）')
+        return 0
 
 
 if __name__ == '__main__':

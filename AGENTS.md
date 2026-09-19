@@ -86,11 +86,12 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   contract. Two contracts are stored per day per series so that excluding the
   expiry-day row falls through to the rolled contract instead of emptying the cell.
 
-- Performance curves are split by market: **tw = FinMind, plaintext**;
-  **us = FinLab, encrypted**. Four places must agree — `fetch_series_tw.py`,
-  `encrypt_data.py` (`PLAINTEXT_SERIES`), the deploy plaintext guard, and
-  `vite-plugins.ts` (`dropPlaintextSeries`). Missing one either leaks paid data or
-  deletes the free curves.
+- Performance curves for **both** markets come from FinMind and ship as plaintext
+  (`fetch_series_tw.py`, `fetch_series_us.py`, shared machinery in
+  `finmind_series.py`). Nothing on the site is encrypted any more; the encryption
+  path is dormant, not deleted — see CLAUDE.md for the checklist to switch it back on.
+- US curves are **total return** (FinMind `Adj_Close`); the US returns *table* is
+  still FinLab and is **price return only**. They will not agree. That is expected.
 - Every `scripts/*.py` ends with `if __name__ == '__main__':`. Importing one to test a
   pure function must not fire a paid FinLab request.
 - Every scraper identifies itself: `Mozilla/5.0 (compatible; TaiwanETF/1.0; +<site>) <purpose>`.

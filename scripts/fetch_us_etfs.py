@@ -102,9 +102,6 @@ def period_return(close_series, days):
     卻少抓一個 133 MB 的資料集（那是所有資料集裡最大的一個，佔每日 FinLab
     下載量約四分之一）。
 
-    而且 adj_close 是部署流程的 fetch_series.py 本來就要抓的那一份，兩個流程共用
-    .cache/finlab_db，所以改抓它等於當天完全不必為報酬率多下載任何東西。
-
     days 是「幾個交易日的報酬」，所以需要 days+1 個價格點。
     """
     s = close_series.dropna()

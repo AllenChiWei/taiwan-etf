@@ -150,9 +150,9 @@ export function FavoritesPage() {
         勾選要比較的 ETF（最多 {MAX_COMPARE} 檔）。
         起點會自動取<strong className="text-ink">最晚上市那一檔的上市日</strong>，
         所有曲線在該點都歸零成 100，之後的差距才是真正的績效差。
-        台股曲線用的是<strong className="text-ink">還原股價，已含配息再投入</strong>；
-        美股則因資料來源沒有配息資訊，畫的是<strong className="text-up">價格走勢、不含配息</strong> ——
-        比較 QYLD、JEPI 這類高配息的美股標的時要記得這點。
+兩個市場的曲線用的都是
+        <strong className="text-ink">還原股價，已含配息再投入</strong>。
+        （表格裡的美股報酬率仍是不含配息的價格報酬，兩者對不上是正常的。）
       </p>
 
       <div className="mb-3 flex flex-wrap gap-1.5">

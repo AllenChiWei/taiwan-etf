@@ -28,7 +28,7 @@ Where each field comes from, because it is not one source:
 | 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
-| 美股績效曲線 | FinLab `us_fund_price:adj_close`（付費資料，加密上線） |
+| 美股績效曲線 | **FinMind** `USStockPrice` 的 `Adj_Close`，已含息還原（公開資料，不加密） |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -49,7 +49,9 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
+  finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）
+  fetch_series_us.py         美股績效曲線（FinMind）→ series/us/（明文）
   fetch_dividends_finmind.py 一次性：用 FinMind 回補交易所補不到的配息歷史
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
@@ -273,28 +275,44 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 「週三的價平和」有兩種問法，畫面用 `basis` 切換：`preopen`（當天早上看到的，
 ＝前一交易日收盤，預設）與 `data`（當天收盤本身）。
 
-## 績效曲線：兩個市場、兩種保護方式
+## 績效曲線：兩個市場都是 FinMind，都不加密
 
-    台股　FinMind（公開資料）   -> series/tw/*.json      明文，任何人都看得到
-    美股　FinLab（付費訂閱）    -> series/us/*.json.enc  加密，要先解鎖
+    台股  FinMind TaiwanStockPrice ＋ 公告配息（自己接）-> series/tw/*.json
+    美股  FinMind USStockPrice 的 Adj_Close（已含息）   -> series/us/*.json
 
-台股原本也走 FinLab，所以整份都要加密，而加密需要 `SITE_PASSWORD` secret ——
-**沒設定時部署會把曲線整個丟掉**，收藏頁的績效比較就一片空白。那正是使用者回報
-「跑不出績效曲線」的原因，不是程式壞了。改用 FinMind 之後，台股這半不再有這條鍊子。
+**兩邊原本都走 FinLab**，那是付費訂閱資料，所以整份要加密，而加密需要
+`SITE_PASSWORD` secret —— 沒設定時部署會把曲線整個丟掉，收藏頁的績效比較就一片
+空白。那正是使用者回報「跑不出績效曲線」的原因，不是程式壞了。兩個市場都換掉
+之後，這條鍊子整個消失，上線的資料裡也不再有任何付費內容。
 
-改動牽涉四個地方，少改一個就會壞：
+美股那邊還順手修掉一個更嚴重的問題：**FinLab 的 `us_fund_price` 只還原分割、
+不還原配息**，所以高配息標的的曲線長期在誤導人。2019-01 至 2026-09 實測：
 
-1. `scripts/fetch_series_tw.py` 產生台股（FinMind），`fetch_series.py` 只剩美股。
-2. `encrypt_data.py` 的 `PLAINTEXT_SERIES` 把 `tw` 排除在加密之外。
-3. deploy 的「確認價格序列沒有以明文上線」只掃 `series/us`，否則台股的明文會讓
-   部署失敗。
-4. `app/vite-plugins.ts` 的 `dropPlaintextSeries` 也只掃 `series/us`，否則它會在
-   建置時把正常的台股曲線整個刪光。
+           含息      純價格    差
+    SPY    240.3%    204.5%    36 個百分點
+    QYLD   117.2%    -13.0%   130 個百分點
+    SCHD   179.7%    115.1%    65 個百分點
 
-前端 `api/series.ts` 用 `needsUnlock(market)` 決定副檔名與要不要解密；收藏頁只有在
-勾選到美股標的時才顯示密碼提示。
+FinMind 的 `Adj_Close` 是含息還原的，所以美股曲線不必像台股那樣自己接，也不需要
+配息紀錄與分割偵測。**但表格裡的美股報酬率仍然來自 FinLab**（三千七百檔逐檔請求
+不可行），那一欄還是價格報酬 —— 曲線與表格對不上是預期內的，UI 兩邊都有標。
 
-**FinMind 免費層是每小時 300 次請求，一輪跑不完三百多檔。** 第一次上線就在第 293
+換掉之後跟著拿掉的東西（都在同一次改動裡）：
+
+1. `scripts/fetch_series.py`（FinLab 曲線）整支刪掉。
+2. deploy 的「加密受保護的資料」與「確認價格序列沒有以明文上線」兩步 —— 沒有
+   東西要加密，也沒有東西要檢查。
+3. `app/vite-plugins.ts` 的 `dropPlaintextSeries` —— 它會刪掉 `dist` 裡所有明文
+   序列，留著等於每次 build 都把曲線刪光。
+
+**留著但目前不動作的**：`scripts/encrypt_data.py`（`PLAINTEXT_SERIES` 現在含兩個
+市場）、`app/src/lib/secure.ts`、`app/src/components/PasswordGate.tsx`、
+`api/series.ts` 的 `needsUnlock` 與 `getEncrypted`。哪天又有付費資料要上線，
+把那個市場從 `PLAINTEXT_SERIES` 拿掉、讓 `needsUnlock` 對它回 true，並把 deploy
+的加密步驟與明文檢查接回去（git 歷史裡有原本的寫法）。
+
+**FinMind 免費層是每小時 300 次請求，一輪跑不完。**（台股 359 檔、美股 712 檔，
+兩個市場共用同一個額度池；`finmind_series.py` 是它們共用的機制。） 第一次上線就在第 293
 檔被擋下來，尾巴剛好是槓桿／反向／期貨與幾檔新債券 ETF（它們排在 `etfs.json` 最後），
 那 60 檔整批沒有曲線 —— 而且靜靜地沒有。現在的做法：
 
@@ -401,8 +419,9 @@ ClaudeBot 等代理）是同一條線：不繞過、不換 host、不假裝成�
 數百 MB。** 這個限制曾經把一整天的部署全部打掉，所以流程是照它設計的：
 
 - **一般的程式碼推送不重抓 FinLab。** `deploy.yml` 先用 `actions/cache` 取回上次
-  產生的 `series/`、`calc/`、`secure.json`（三者是一組，序列是照 manifest 的參數
-  加密的，只能一起沿用或一起重做），有就直接用。
+  產生的 `calc/` 與 `highs.json`，有就直接用。績效曲線有自己的快取（`series-`），
+  因為它跟 FinLab 無關、而且每次部署都可能補幾檔 —— 共用的話那些補到的會留不住
+  （踩過：線上檔數在 293 與 273 之間跳）。
 - **一天只重抓一次**：`update-data.yml` 呼叫部署時帶 `refresh_finlab: true`。
   要手動重抓就在 Actions 頁面用 workflow_dispatch 勾那個選項。
 - **抓失敗時退回舊資料**，分兩層：快取裡的上一份，或 `reuse_calc.py` 直接抓線上
@@ -415,8 +434,7 @@ ClaudeBot 等代理）是同一條線：不繞過、不換 host、不假裝成�
 - **能推導的就不要抓**。少抓一個資料集比任何快取都有效：
   - `us_fund_price:adj_pct_change`（133 MB，最大的一個）已經不抓了 —— 每日報酬
     連乘會 telescoping 成頭尾價格的比值，所以直接用 `adj_close` 相除就好
-    （`fetch_us_etfs.py` 的 `period_return`）。而 `adj_close` 正是 `fetch_series.py`
-    本來就要抓的那一份，等於報酬率這一項的下載量歸零。
+    （`fetch_us_etfs.py` 的 `period_return`）。少抓的那一份比改抓的那一份大。
   - 殖利率由配息÷股價自己算（`fetch_yields.py`），不碰 FinLab 也不碰 MoneyDJ。
 
 **腳本結尾一律是 `if __name__ == '__main__':`。** 少了它，光是 `import` 進來想測一個
