@@ -418,6 +418,8 @@ def main():
         written += 1
         with_div += 1 if ndiv else 0
 
+    have = len(existing_coverage(OUTDIR))
+
     # index.json 與 fetch_series.py 共用：美股那一半由它填，這裡只更新 tw
     idx_path = os.path.join(OUTDIR, 'index.json')
     idx = {'start': START, 'markets': {}}
@@ -426,11 +428,12 @@ def main():
             idx = json.load(io.open(idx_path, encoding='utf-8'))
         except Exception:                                     # noqa: BLE001
             pass
-    idx.setdefault('markets', {})['tw'] = written
+    # 這裡要記**總共有幾檔曲線**，不是這次寫了幾檔 —— 只補缺的那種執行只會寫
+    # 少少幾檔，寫成 written 的話線上看起來像是曲線變少了（實際上檔案都還在）。
+    idx.setdefault('markets', {})['tw'] = have
     idx['twSource'] = 'finmind'
     write_json(idx_path, idx)
 
-    have = len(existing_coverage(OUTDIR))
     log(u'完成：這次寫出 %d 檔（%d 檔有配息紀錄可還原），共 %.1f MB，平均每檔 %.1f KB'
         % (written, with_div, total_bytes / 1e6,
            total_bytes / max(1, written) / 1024.0))
