@@ -104,4 +104,5 @@ def main():
           % '  '.join('%s=%d' % (k, counts[k]) for k, _ in PERIODS), flush=True)
 
 
-main()
+if __name__ == '__main__':
+    main()

@@ -450,4 +450,5 @@ def check_against_moneydj(rows, index):
             % (median, MAX_MEDIAN_ERROR_PP))
 
 
-main()
+if __name__ == '__main__':
+    main()

@@ -178,4 +178,5 @@ def main():
              sum(1 for r in rows if r['yield'] == 'N/A')))
 
 
-main()
+if __name__ == '__main__':
+    main()

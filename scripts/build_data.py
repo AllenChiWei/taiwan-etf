@@ -115,4 +115,5 @@ def main():
              sum(1 for e in etfs if e['yield'] == 'N/A')))
 
 
-main()
+if __name__ == '__main__':
+    main()

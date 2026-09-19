@@ -83,15 +83,37 @@ def load_registry():
 
 
 def compound(pct_series, days):
-    u"""把每日還原報酬複利成期間累積報酬（%）。資料不足回傳 None。"""
+    u"""每日報酬連乘成期間累積報酬（%）。只有 adj_close 取不到時才用。"""
     s = pct_series.dropna()
     if len(s) < days:
         return None
-    window = s.iloc[-days:]
-    total = (1.0 + window).prod() - 1.0
-    if total != total:               # NaN
+    total = (1.0 + s.iloc[-days:]).prod() - 1.0
+    if total != total:
         return None
     return round(total * 100, 2)
+
+
+def period_return(close_series, days):
+    u"""還原收盤價 -> 期間累積報酬（%）。資料不足回傳 None。
+
+    原本是抓 `us_fund_price:adj_pct_change`（每日報酬）再連乘。但每日報酬連乘會
+    telescoping 成頭尾價格的比值，所以從 `adj_close` 直接除就好 —— 結果一樣，
+    卻少抓一個 133 MB 的資料集（那是所有資料集裡最大的一個，佔每日 FinLab
+    下載量約四分之一）。
+
+    而且 adj_close 是部署流程的 fetch_series.py 本來就要抓的那一份，兩個流程共用
+    .cache/finlab_db，所以改抓它等於當天完全不必為報酬率多下載任何東西。
+
+    days 是「幾個交易日的報酬」，所以需要 days+1 個價格點。
+    """
+    s = close_series.dropna()
+    if len(s) < days + 1:
+        return None
+    first = float(s.iloc[-(days + 1)])
+    last = float(s.iloc[-1])
+    if first <= 0 or last != last or first != first:
+        return None
+    return round((last / first - 1.0) * 100, 2)
 
 
 def main():
@@ -104,15 +126,26 @@ def main():
     log('  官方標記為 ETF：%d 檔' % len(registry))
 
     log('讀取 FinLab 價格資料…')
-    pct = data.get('us_fund_price:adj_pct_change')
+    # 只抓三個資料集：報酬率從 adj_close 自己算（見 period_return），
+    # 不再抓 adj_pct_change —— 那是最大的一個（133 MB），而且是可以推導的。
+    #
+    # 退路：舊版 finlab（本機那套 0.4.3）解析 us_fund_price:adj_close 會找錯 bucket，
+    # 取不到就退回原本的每日報酬資料集。結果一樣，只是那天多下載 133 MB。
+    adj = pct = None
+    try:
+        adj = data.get('us_fund_price:adj_close')
+    except Exception as e:                           # noqa: BLE001
+        log('  取不到 adj_close（%s），退回 adj_pct_change' % str(e)[:60])
+        pct = data.get('us_fund_price:adj_pct_change')
     close = data.get('us_fund_price:close')
     volume = data.get('us_fund_price:volume')
-    log('  價格矩陣：%d 個交易日 x %d 檔' % pct.shape)
+    frame = adj if adj is not None else pct
+    log('  價格矩陣：%d 個交易日 x %d 檔' % frame.shape)
 
-    asof = pct.index.max()
+    asof = frame.index.max()
     latest_close = close.iloc[-1]
 
-    universe = sorted(set(registry) & set(pct.columns))
+    universe = sorted(set(registry) & set(frame.columns))
     log('  與官方清單交集：%d 檔' % len(universe))
 
     # 最新交易日沒有報價的視為已下市／停止交易
@@ -127,7 +160,8 @@ def main():
         name, exch = registry[t]
         row = {'code': t, 'name': name, 'exch': exch}
         for key, days in PERIODS:
-            v = compound(pct[t], days)
+            v = (period_return(adj[t], days) if adj is not None
+                 else compound(pct[t], days))
             row[key] = 'N/A' if v is None else ('%.2f' % v)
         adv = dollar_vol.get(t)
         adv = 0.0 if adv != adv else float(adv)      # NaN -> 0
@@ -176,4 +210,7 @@ def main():
             % (r['code'], r['name'][:44], format(r['adv'], ','), r['r12']))
 
 
-main()
+if __name__ == '__main__':
+    # 這支腳本原本在模組層級直接呼叫 main()，import 進來就會整支跑起來
+    # （測試 period_return 時真的打了一次 FinLab）。加上保護。
+    main()

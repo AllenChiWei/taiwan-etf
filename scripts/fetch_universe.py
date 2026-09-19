@@ -129,4 +129,5 @@ def main():
           % (len(uni), sum(1 for c in uni if c.endswith('B'))))
 
 
-main()
+if __name__ == '__main__':
+    main()
