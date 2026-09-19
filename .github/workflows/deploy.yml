@@ -184,6 +184,14 @@ jobs:
           path: .cache/stock_chips.json
           key: stock-chips-${{ github.run_id }}
 
+      # 台股曲線：FinMind 的公開資料，不動用 FinLab，也不必加密。
+      # 三百多檔逐檔請求約十分鐘，所以跟其他重抓綁在一起，一天一次。
+      - name: 產生台股績效曲線（FinMind）
+        id: twseries
+        if: ${{ steps.plan.outputs.reuse != 'true' }}
+        continue-on-error: true
+        run: python scripts/fetch_series_tw.py
+
       # 創 200 日新高。放在試算資料之後：它用的 etl:adj_close 與 price:收盤價 就是
       # 上一步抓過的那兩份，同一次執行共用 .cache/finlab_db，所以不會再下載一次。
       - name: 產生創新高資料
@@ -212,10 +220,14 @@ jobs:
         # 讓試算與圖表一起變舊，代價大於好處。
         if: ${{ steps.finlab.outcome == 'failure' || steps.calc.outcome == 'failure' }}
         run: |
-          rm -rf app/public/data/calc app/public/data/series app/public/data/secure.json                 app/public/data/highs.json
+          # 只退美股那半：台股曲線是這次用 FinMind 現抓的，跟 FinLab 無關，
+          # 把它一起刪掉只會讓免密碼的那條曲線白白變舊（或直接消失）。
+          rm -rf app/public/data/calc app/public/data/series/us app/public/data/series/_us.json \
+                 app/public/data/secure.json app/public/data/highs.json
           if [ -d .cache/prev/calc ]; then
             cp -r .cache/prev/calc app/public/data/
-            [ -d .cache/prev/series ] && cp -r .cache/prev/series app/public/data/ || true
+            [ -d .cache/prev/series/us ] && cp -r .cache/prev/series/us app/public/data/series/ || true
+            [ -f .cache/prev/series/_us.json ] && cp .cache/prev/series/_us.json app/public/data/series/ || true
             [ -f .cache/prev/highs.json ] && cp .cache/prev/highs.json app/public/data/ || true
             [ -f .cache/prev/secure.json ] && cp .cache/prev/secure.json app/public/data/ || true
             echo "::warning title=FinLab 抓取失敗::已退回快取裡的上一份資料，日期會比今天舊。常見原因是每日流量用完。"
@@ -243,6 +255,12 @@ jobs:
               echo "::warning title=$f.json 沒有產生::這次部署不含這一頁的資料，頁面會顯示「還沒有資料」。"
             fi
           done
+          n_tw=$(ls app/public/data/series/tw/*.json 2>/dev/null | wc -l)
+          if [ "$n_tw" -gt 0 ]; then
+            echo "台股績效曲線 $n_tw 檔（FinMind，免密碼）"
+          else
+            echo "::warning title=台股績效曲線沒有產生::收藏頁的績效比較會是空的。"
+          fi
           if [ -f app/public/data/stocks/index.json ]; then
             echo "個股 $(python -c "import io,json;print(json.load(io.open('app/public/data/stocks/index.json',encoding='utf-8'))['meta']['stocks'])") 檔"
           else
@@ -260,8 +278,10 @@ jobs:
             # 丟掉曲線、照常部署，圖表會顯示「這個部署版本沒有包含績效曲線」。
             echo "::warning title=缺少 SITE_PASSWORD::績效曲線已產生但無法加密，本次部署將不包含它。"
             echo "::warning::到 Settings → Secrets 建立 SITE_PASSWORD 即可啟用圖表。"
-            # 只丟曲線。試算資料本來就是明文的，不受密碼有無影響。
-            rm -rf app/public/data/series
+            # 只丟**美股**曲線。台股那半來自 FinMind 的公開資料，本來就不加密，
+            # 跟著一起刪正是先前「收藏頁跑不出績效曲線」的原因。
+            # 試算資料也是明文的，同樣不受密碼有無影響。
+            rm -rf app/public/data/series/us app/public/data/series/_us.json
             exit 0
           fi
           python scripts/encrypt_data.py
@@ -274,10 +294,10 @@ jobs:
 
       - name: 確認價格序列沒有以明文上線
         run: |
-          # 最後一道防線。us_etfs.json 是公開的（代號名稱來自 Nasdaq 公開檔案，
-          # 報酬率是我們自己算的衍生統計），但 series/ 底下是價格歷史本身，
-          # 那才是付費資料集，絕不能以明文出現在產物裡。
-          leaked=$(find app/public/data/series -name '*.json' 2>/dev/null | head -5)
+          # 最後一道防線。真正要保護的是 FinLab 的付費資料 —— 現在只剩美股曲線
+          # （台股改用 FinMind，公開資料）。us_etfs.json 是公開的衍生統計。
+          leaked=$(find app/public/data/series/us app/public/data/series/_us.json \
+                   -name '*.json' 2>/dev/null | head -5)
           if [ -n "$leaked" ]; then
             echo "::error::建置產物含未加密的價格序列："
             echo "$leaked"

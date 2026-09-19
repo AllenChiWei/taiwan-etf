@@ -141,8 +141,16 @@ def try_existing_salt(password):
         return None                               # 密碼換了或檔案壞了 -> 重新產生
 
 
+# 台股曲線改由 FinMind 產生（scripts/fetch_series_tw.py），那是公開資料，不加密 ——
+# 加密的目的是保護 FinLab 的付費訂閱，不是把所有數字都鎖起來。
+# 美股曲線仍來自 FinLab，所以只有它要加密。
+PLAINTEXT_SERIES = ('tw',)
+
+
 def walk_targets():
-    u"""只加密價格序列。us_etfs.json 與 etfs.json 是公開的 —— 見檔頭的表格。
+    u"""只加密**美股**的價格序列。
+
+    us_etfs.json 與 etfs.json 是公開的（見檔頭的表格），台股曲線現在也是。
 
     先把清單收集成 list 再回傳：加密迴圈會刪掉明文，而一邊 os.walk 一邊刪檔案
     會讓走訪漏掉大部分檔案（第一次寫成 generator，1055 個只處理了 87 個）。
@@ -150,9 +158,19 @@ def walk_targets():
     targets = []
     series = os.path.join(DATA, 'series')
     for dirpath, _dirs, files in os.walk(series):
+        rel = os.path.relpath(dirpath, series).replace('\\', '/')
+        if rel.split('/')[0] in PLAINTEXT_SERIES:
+            continue
         for f in files:
-            if f.endswith('.json'):
-                targets.append(os.path.join(dirpath, f))
+            if not f.endswith('.json'):
+                continue
+            # 市場層級的日曆：_tw.json 留明文、_us.json 要加密
+            base = os.path.splitext(f)[0]
+            if base.lstrip('_') in PLAINTEXT_SERIES:
+                continue
+            if base == 'index':
+                continue                      # 只是各市場的檔數統計，不是價格
+            targets.append(os.path.join(dirpath, f))
     return targets
 
 

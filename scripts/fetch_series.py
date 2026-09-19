@@ -5,10 +5,11 @@ u"""Generate per-ETF price series for the comparison chart.
 
 Writes, by default, into app/public/data/series/:
 
-    _tw.json          {"market":"tw","dates":["2019-01-02", …]}   交易日曆，一個市場一份
-    _us.json
-    tw/0050.json      {"code":"0050","first":12,"values":[…]}     對齊該日曆的還原收盤價
-    us/SPY.json
+    _us.json          {"market":"us","dates":["2019-01-02", …]}   交易日曆
+    us/SPY.json       {"code":"SPY","first":12,"values":[…]}
+
+**台股那一半已經搬到 `fetch_series_tw.py`**（改用 FinMind，公開資料、不必加密）。
+這支現在只產生美股 —— 三千七百檔逐檔請求不可行，所以那一半仍然是 FinLab。
 
 Why a shared calendar: storing "2019-01-02" next to every number costs more than the number
 itself. All ETFs in one market trade on the same days, so the dates live in one file and each
@@ -82,6 +83,14 @@ def dump_market(df, codes, market, outdir):
     return written
 
 
+def existing_tw_count(outdir):
+    u"""台股曲線是另一支腳本產的；這裡只是把檔數讀回來填 index.json。"""
+    d = os.path.join(outdir, 'tw')
+    if not os.path.isdir(d):
+        return 0
+    return len([f for f in os.listdir(d) if f.endswith('.json')])
+
+
 def read_codes(path, key='etfs', only_liquid=False):
     doc = json.load(io.open(path, encoding='utf-8'))
     rows = doc[key]
@@ -97,14 +106,14 @@ def main():
 
     log('輸出目錄：%s' % OUTDIR)
 
-    tw_codes = read_codes(os.path.join(ROOT, 'app', 'public', 'data', 'etfs.json'))
     us_codes = read_codes(os.path.join(ROOT, 'app', 'public', 'data', 'us_etfs.json'),
                           only_liquid=True)
-    log('台股 %d 檔、美股（有流動性）%d 檔' % (len(tw_codes), len(us_codes)))
+    log('美股（有流動性）%d 檔' % len(us_codes))
 
-    log('讀取台股還原收盤價…')
-    tw = data.get('etl:adj_close')
-    n_tw = dump_market(tw, tw_codes, 'tw', OUTDIR)
+    # 台股曲線已經改由 scripts/fetch_series_tw.py 用 FinMind 產生：那是公開資料，
+    # 不必加密，收藏頁不輸密碼也看得到。這裡只剩美股 —— 三千七百檔逐檔請求不可行，
+    # 所以那一半還是 FinLab，也還是要加密。
+    n_tw = existing_tw_count(OUTDIR)
 
     log('讀取美股還原收盤價…')
     us = data.get('us_fund_price:adj_close')
@@ -119,4 +128,5 @@ def main():
     log('完成：台股 %d 檔、美股 %d 檔' % (n_tw, n_us))
 
 
-main()
+if __name__ == '__main__':
+    main()

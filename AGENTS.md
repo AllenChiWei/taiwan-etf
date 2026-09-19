@@ -86,6 +86,13 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   contract. Two contracts are stored per day per series so that excluding the
   expiry-day row falls through to the rolled contract instead of emptying the cell.
 
+- Performance curves are split by market: **tw = FinMind, plaintext**;
+  **us = FinLab, encrypted**. Four places must agree — `fetch_series_tw.py`,
+  `encrypt_data.py` (`PLAINTEXT_SERIES`), the deploy plaintext guard, and
+  `vite-plugins.ts` (`dropPlaintextSeries`). Missing one either leaks paid data or
+  deletes the free curves.
+- Every `scripts/*.py` ends with `if __name__ == '__main__':`. Importing one to test a
+  pure function must not fire a paid FinLab request.
 - **yfinance / Stooq are off-limits**: `query1.finance.yahoo.com` and `stooq.com`
   both answer `Disallow: /` for everyone. FinMind (`Allow: /`, already used here) is
   the free Taiwan source we do use. Don't swap a source without reading its robots.

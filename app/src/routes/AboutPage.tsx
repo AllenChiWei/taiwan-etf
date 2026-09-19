@@ -19,6 +19,11 @@ export function AboutPage() {
       <ul className={ul}>
         <li>ETF 清單：證交所 TWSE 與櫃買中心 TPEx 公開資料</li>
         <li>
+          績效曲線：台股由 <strong className="text-ink">FinMind</strong> 的公開日收盤價
+          加上交易所公告配息自行還原（含息總報酬，免密碼）；美股仍來自 FinLab 的
+          付費資料，所以加密上線、需要密碼。
+        </li>
+        <li>
           報酬率：由 FinLab 的還原股價計算，是<strong className="text-ink">含息的總報酬</strong>、
           累積非年化
         </li>

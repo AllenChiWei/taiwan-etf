@@ -78,7 +78,10 @@ export function cspMeta(): Plugin {
 /* ── 不要讓未加密的價格序列進到產物 ───────────────────────── */
 
 /**
- * 把 dist 裡未加密的 series/*.json 刪掉，只留 .enc。
+ * 把 dist 裡未加密的**美股** series 刪掉，只留 .enc。
+ *
+ * 台股那半改用 FinMind（公開資料）之後不再加密，所以不掃 —— 掃了會把正常的
+ * 台股曲線整個刪光。
  *
  * public/ 底下的東西 Vite 會原樣複製，所以在本機（開發機上有明文序列）執行
  * npm run build，那份付費資料就會躺在 dist 裡。CI 有一道檢查會擋下來，但本機
@@ -89,7 +92,8 @@ export function dropPlaintextSeries(): Plugin {
     name: 'twetf-drop-plaintext-series',
     apply: 'build',
     closeBundle() {
-      const root = join(process.cwd(), 'dist', 'data', 'series');
+      // 只掃美股：台股曲線改用 FinMind 之後是公開資料，本來就該以明文上線
+      const root = join(process.cwd(), 'dist', 'data', 'series', 'us');
       if (!existsSync(root)) return;
       // 一定要遞迴：明文序列大部分在 series/tw/ 與 series/us/ 底下（各數百個檔），
       // 只掃最上層會漏掉那些 —— 也就是漏掉絕大部分的資料。

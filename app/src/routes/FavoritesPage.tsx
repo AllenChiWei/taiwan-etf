@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { useUsDataset } from '../hooks/useUsDataset';
-import { fetchCalendar, fetchSeries, type Market } from '../api/series';
+import { fetchCalendar, fetchSeries, needsUnlock, type Market } from '../api/series';
 import { alignSeries, periodStart, type AlignedResult, type SeriesInput } from '../lib/series';
 import { returnTone, TONE_CLASS, yieldClass } from '../lib/format';
 import { toNumber } from '../lib/filters';
@@ -138,6 +138,11 @@ export function FavoritesPage() {
     return i >= 0 ? lineColor(i) : undefined;
   };
 
+  // 勾選的標的裡有沒有美股 —— 只有那時才需要密碼（美股曲線仍是 FinLab 的付費資料，
+  // 台股那半改用 FinMind 之後是公開資料，不必解鎖）
+  const selectedNeedsUnlock = items.some(
+    it => selected.includes(it.code) && needsUnlock(it.market));
+
   return (
     <div className="pt-4">
       <h2 className="mb-1 text-base font-bold text-ink">績效比較</h2>
@@ -163,9 +168,15 @@ export function FavoritesPage() {
         ))}
       </div>
 
-      <PasswordGate what="績效曲線">
+      {/* 台股曲線改用 FinMind（公開資料）之後不必解鎖；只有選到美股標的時才需要，
+          因為美股那半仍是 FinLab 的付費資料。 */}
+      {selectedNeedsUnlock ? (
+        <PasswordGate what="美股績效曲線">
+          <ChartPanel items={items} selected={selected} period={period} />
+        </PasswordGate>
+      ) : (
         <ChartPanel items={items} selected={selected} period={period} />
-      </PasswordGate>
+      )}
 
       <h2 className="mt-6 mb-2 text-base font-bold text-ink">
         我的收藏 <span className="tabular font-mono text-[13px] font-semibold text-muted">{items.length} 檔</span>
