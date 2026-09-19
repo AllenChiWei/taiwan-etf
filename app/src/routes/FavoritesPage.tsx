@@ -303,12 +303,16 @@ function ChartPanel({ items, selected, period }:
   }
   if (!chart.result) return null;
 
+  // 兩種缺法要一起講：檔案根本抓不到（missing），以及對齊後共同期間不足而被
+  // 拿掉的（dropped）。使用者的疑問是同一個 ——「我勾了為什麼沒有這條線」。
+  const absent = [...chart.missing, ...chart.result.dropped];
+
   return (
     <>
       <PerformanceChart result={chart.result} />
       <p className="mt-1.5 text-[12px] text-faint">
         起點 {chart.result.startDate}　·　共同期間 {chart.result.dates.length} 個交易日
-        {chart.result.dropped.length > 0 && `　·　${chart.result.dropped.join('、')} 缺曲線資料`}
+        {absent.length > 0 && `　·　${absent.join('、')} 缺曲線資料`}
       </p>
     </>
   );
@@ -324,11 +328,14 @@ interface ChartState {
   loading: boolean;
   error: string | null;
   result: AlignedResult | null;
+  /** 勾了但抓不到曲線的代號。剛上市、或曲線還沒產生的會落在這裡。 */
+  missing: string[];
 }
 
 /** 抓取被勾選標的的曲線，對齊後回傳。 */
 function useChartData(items: Item[], selected: string[], period: string): ChartState {
-  const [state, setState] = useState<ChartState>({ loading: false, error: null, result: null });
+  const [state, setState] = useState<ChartState>(
+    { loading: false, error: null, result: null, missing: [] });
 
   const picked = useMemo(
     () => items.filter(i => selected.includes(i.code)),
@@ -338,7 +345,7 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
 
   useEffect(() => {
     if (picked.length === 0) {
-      setState({ loading: false, error: '勾選至少一檔 ETF 來比較績效。', result: null });
+      setState({ loading: false, error: '勾選至少一檔 ETF 來比較績效。', result: null, missing: [] });
       return;
     }
     let cancelled = false;
@@ -354,13 +361,20 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
       if (cancelled) return;
       const calMap = new Map(cals);
       const inputs: SeriesInput[] = [];
+      const missing: string[] = [];
       for (const { p, raw } of loaded) {
         const calendar = calMap.get(p.market);
-        if (!raw || !calendar) continue;
+        // 抓不到就記下來。默默少一條線最難懂 —— 使用者勾了卻什麼都沒發生。
+        if (!raw || !calendar) { missing.push(p.code); continue; }
         inputs.push({ code: p.code, label: p.name, market: p.market, raw, calendar });
       }
       if (inputs.length === 0) {
-        setState({ loading: false, error: '選取的 ETF 都沒有曲線資料。', result: null });
+        setState({
+          loading: false,
+          error: `${missing.join('、')} 還沒有曲線資料（剛上市、或曲線尚未產生）。`,
+          result: null,
+          missing,
+        });
         return;
       }
       const latest = inputs
@@ -368,10 +382,10 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
         .sort()
         .pop()!;
       const minStart = periodStart(period, latest) ?? undefined;
-      setState({ loading: false, error: null, result: alignSeries(inputs, minStart) });
+      setState({ loading: false, error: null, result: alignSeries(inputs, minStart), missing });
     }).catch((err: unknown) => {
       if (cancelled) return;
-      setState({ loading: false, error: (err as Error).message, result: null });
+      setState({ loading: false, error: (err as Error).message, result: null, missing: [] });
     });
 
     return () => { cancelled = true; };
