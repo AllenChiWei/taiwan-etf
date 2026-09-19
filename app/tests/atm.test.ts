@@ -7,7 +7,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import {
   weekdayOf, nextTradingDay, weekdayAverages, latestOf, recentOf, pickRow,
-  expectedRange, straddleOutcomes, summarise,
+  expectedRange, straddleOutcomes, summarise, volComparison, weekdayNow,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmRow, type AtmData, type AtmFilter,
 } from '../src/lib/atm.ts';
@@ -325,11 +325,13 @@ test('對真實資料的預估區間', { skip: !existsSync(PATH) && '沒有 atm.
   const data = JSON.parse(readFileSync(PATH, 'utf8')) as AtmData;
   const taiex = data.taiex ?? {};
 
-  await t.test('指數收盤覆蓋大部分交易日', () => {
-    const days = new Set(data.rows.map(r => r.d));
-    const have = [...days].filter(d => taiex[d]).length;
-    assert.ok(have / days.size > 0.8,
-      `只有 ${have}/${days.size} 個交易日有指數收盤`);
+  await t.test('近 40 個交易日的指數收盤要齊全', () => {
+    // 只盯近期：當月那一份是一個請求就拿得到整月的，所以近期沒有藉口。
+    // 更早的歷史是一天一個請求、還會被證交所擋速，分好幾輪才補得完。
+    const days = [...new Set(data.rows.map(r => r.d))].sort().slice(-40);
+    const have = days.filter(d => taiex[d]).length;
+    assert.ok(have / days.length > 0.9,
+      `近 ${days.length} 個交易日只有 ${have} 天有指數收盤`);
   });
 
   await t.test('預估走幅占指數的比例落在合理範圍（0.5%～8%）', () => {
@@ -351,5 +353,99 @@ test('對真實資料的預估區間', { skip: !existsSync(PATH) && '沒有 atm.
         assert.equal(earlier.length, 0, `${o.contract} 還有更早的 ${earlier[0]?.d}`);
       }
     }
+  });
+});
+
+test('波動定價比較', async (t) => {
+  /* 連續五週的週一，價平和 800/900/1000/1100/1500。最後一筆是現值。 */
+  const mondays = ['2026-08-17', '2026-08-24', '2026-08-31', '2026-09-07', '2026-09-14'];
+  const sums = [800, 900, 1000, 1100, 1500];
+  const rows = mondays.map((d, i) => row({ d, sum: sums[i], dte: 2 }));
+  const idx = Object.fromEntries(mondays.map(d => [d, 45000]));
+
+  await t.test('只拿同一個星期幾比，中位數與百分位都對', () => {
+    const v = volComparison(rows, idx, f({ basis: 'data' }), [60])!;
+    assert.equal(v.wd, 0);                 // 週一
+    assert.equal(v.straddle, 1500);
+    assert.equal(v.windows[0].n, 4);       // 不含現值本身
+    assert.equal(v.windows[0].medianStraddle, 950);
+    assert.equal(v.windows[0].percentile, 100);
+    assert.ok(Math.abs(v.windows[0].ratio - 1500 / 950) < 1e-9);
+  });
+
+  await t.test('星期幾不同的不算進來', () => {
+    const mixed = [...rows, row({ d: '2026-09-15', sum: 9999, dte: 1 })];  // 週二
+    const v = volComparison(mixed, { ...idx, '2026-09-15': 45000 },
+                            f({ basis: 'data' }), [60])!;
+    assert.equal(v.day, '2026-09-15');     // 現值換成週二那筆
+    assert.equal(v.wd, 1);
+    assert.equal(v.windows[0].n, 0);       // 沒有別的週二可比
+  });
+
+  await t.test('窗口短到裝不下就只用窗口內的樣本', () => {
+    const v = volComparison(rows, idx, f({ basis: 'data' }), [3])!;
+    assert.equal(v.windows[0].n, 2);       // 最近三筆裡，扣掉現值剩兩筆
+    assert.equal(v.windows[0].medianStraddle, 1050);
+  });
+
+  await t.test('指數水位會讓點數說謊 —— 百分比才是可比的', () => {
+    // 同樣 1,000 點，指數從 40,000 漲到 47,000：點數沒變，佔比從 2.5% 變 2.13%
+    const days = ['2026-09-07', '2026-09-14'];
+    const flat = days.map(d => row({ d, sum: 1000, dte: 2 }));
+    const v = volComparison(flat, { '2026-09-07': 40000, '2026-09-14': 47000 },
+                            f({ basis: 'data' }), [60])!;
+    assert.equal(v.windows[0].ratio, 1);                    // 點數看起來一樣
+    assert.ok(Math.abs(v.pct! - (1000 / 47000) * 100) < 1e-9);
+    assert.ok(Math.abs(v.windows[0].medianPct! - 2.5) < 1e-9);
+    assert.ok(v.pct! < v.windows[0].medianPct!);            // 佔比其實降了
+  });
+
+  await t.test('沒有指數收盤時百分比是 null，不要用 0 頂替', () => {
+    const v = volComparison(rows, {}, f({ basis: 'data' }), [60])!;
+    assert.equal(v.pct, null);
+    assert.equal(v.windows[0].medianPct, null);
+    assert.equal(v.windows[0].medianStraddle, 950);         // 點數照樣算得出來
+  });
+});
+
+test('每個星期幾的現值與中位數', async (t) => {
+  /* 三個週一（800/1000/1500）與兩個週三（400/600）。 */
+  const days: Array<[string, number]> = [
+    ['2026-08-31', 800], ['2026-09-02', 400],
+    ['2026-09-07', 1000], ['2026-09-09', 600],
+    ['2026-09-14', 1500],
+  ];
+  const rows = days.map(([d, sum]) => row({ d, sum, dte: 2 }));
+  const idx = Object.fromEntries(days.map(([d]) => [d, 45000]));
+
+  await t.test('現值是最近一次那個星期幾，中位數不含現值', () => {
+    const t0 = weekdayNow(rows, idx, f({ basis: 'data' }));
+    const mon = t0[0];
+    assert.equal(mon.latest, 1500);
+    assert.equal(mon.latestDay, '2026-09-14');
+    assert.equal(mon.median, 900);          // 800 與 1000 的中位數
+    assert.equal(mon.n, 2);
+    assert.ok(Math.abs(mon.ratio! - 1500 / 900) < 1e-9);
+  });
+
+  await t.test('只有一筆樣本時中位數是 null，不要拿現值自己比自己', () => {
+    const one = weekdayNow([row({ d: '2026-09-14', sum: 1500 })], idx, f({ basis: 'data' }));
+    assert.equal(one[0].latest, 1500);
+    assert.equal(one[0].median, null);
+    assert.equal(one[0].ratio, null);
+    assert.equal(one[0].n, 0);
+  });
+
+  await t.test('沒有樣本的星期幾整格是 null', () => {
+    const t0 = weekdayNow(rows, idx, f({ basis: 'data' }));
+    assert.equal(t0[4].latest, null);       // 週五
+    assert.equal(t0[4].n, 0);
+  });
+
+  await t.test('窗口只看最近 N 個交易日', () => {
+    const t0 = weekdayNow(rows, idx, f({ basis: 'data' }), 3);
+    assert.equal(t0[0].latest, 1500);
+    assert.equal(t0[0].n, 1);               // 窗口內只剩 09-07 那個週一
+    assert.equal(t0[0].median, 1000);
   });
 });

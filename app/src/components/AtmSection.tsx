@@ -14,10 +14,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchAtm } from '../api/atm';
 import {
   weekdayAverages, latestOf, recentOf, weekdayOf,
-  expectedRange, straddleOutcomes, summarise,
+  expectedRange, straddleOutcomes, summarise, weekdayNow,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmData, type AtmRow, type Basis, type Series,
   type ExpectedRange, type StraddleOutcome, type OutcomeSummary,
+  type WeekdayNow,
 } from '../lib/atm';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -90,6 +91,42 @@ function RangeCard({ r }: { r: ExpectedRange }) {
   );
 }
 
+/** 一格：這個星期幾的現值，以及它跟過去中位數的落差。 */
+function NowCell({ c }: { c: WeekdayNow }) {
+  if (c.latest === null) {
+    return <span className="block text-[13px] text-faint">—</span>;
+  }
+  return (
+    <>
+      <span className="block font-mono text-[13px] font-bold tabular-nums text-ink">
+        {nf0.format(c.latest)}
+      </span>
+      {c.latestPct !== null && (
+        <span className="block font-mono text-[10px] tabular-nums text-muted">
+          {nf1.format(c.latestPct)}%
+        </span>
+      )}
+      {c.median === null ? (
+        <span className="block font-mono text-[10px] tabular-nums text-faint">
+          n=0
+        </span>
+      ) : (
+        <>
+          {/* 「中」不加空白、字再小一號：390px 下五欄加起來只差幾 px，
+              週五那欄就會被切掉 */}
+          <span className="block whitespace-nowrap font-mono text-[9.5px] tabular-nums text-faint">
+            中{nf0.format(c.median)}
+          </span>
+          <span className={`block font-mono text-[10.5px] font-semibold tabular-nums ${
+            c.ratio! >= 1 ? 'text-up' : 'text-down'}`}>
+            {c.ratio! >= 1 ? '+' : '−'}{nf0.format(Math.abs(c.ratio! - 1) * 100)}%
+          </span>
+        </>
+      )}
+    </>
+  );
+}
+
 /** 事後驗收：定價 vs 實際走幅。 */
 function OutcomeTable({ rows, sum }: { rows: StraddleOutcome[]; sum: OutcomeSummary }) {
   return (
@@ -149,6 +186,9 @@ export function AtmSection() {
   const [excludeExpiry, setExcludeExpiry] = useState(true);
   const [excludeThin, setExcludeThin] = useState(false);
   const [detail, setDetail] = useState<Series>('wed');
+  // 拿來比的窗口。60 是「最近三個月的同一個星期幾」，180 是「最近九個月」——
+  // 窗口越長越該看佔指數的百分比，因為指數水位會漂移。
+  const [lookback, setLookback] = useState(60);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -183,6 +223,10 @@ export function AtmSection() {
     .filter((r): r is ExpectedRange => r !== null);
   const outcomes = straddleOutcomes(data.rows, taiex, detail, 8);
   const outcomeSum = summarise(outcomes);
+  const nowRows = {
+    wed: weekdayNow(data.rows, taiex, filters.wed, lookback),
+    fri: weekdayNow(data.rows, taiex, filters.fri, lookback),
+  };
 
   return (
     <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
@@ -229,13 +273,27 @@ export function AtmSection() {
         {BASIS_OPTIONS.find(o => o.id === basis)?.hint}
       </p>
 
-      {/* 週一到週五 × 兩個系列。手機上六欄會太窄，所以標籤列單獨一行、
-          數字用等寬字，兩列對齊比較好讀 */}
+      {/* 每個星期幾一格：現在的數字、佔指數的百分比、過去同一個星期幾的中位數，
+          以及兩者的落差。星期幾要分開看是因為剩餘天數差很多 —— 週一看週三合約
+          剩兩天、週四看剩六天，權利金本來就差好幾倍。 */}
+      <div className="mt-2 flex flex-wrap items-baseline gap-1.5">
+        <span className="text-[12px] font-semibold text-ink">現在 vs 過去</span>
+        {[60, 180].map(n => (
+          <Chip key={n} active={lookback === n} onClick={() => setLookback(n)}>
+            近 {n} 日
+          </Chip>
+        ))}
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-faint">
+        每格上面是最近一次那個星期幾的價平和（與佔指數的百分比），下面是過去同一個
+        星期幾的中位數與落差。比中位數高代表市場現在替波動定了比較貴的價。
+        窗口拉長時看百分比 —— 指數水位會漂移，同樣 1,000 點在四萬和四萬七不是同一件事。
+      </p>
       <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[320px] border-collapse text-[12px]">
+        <table className="w-full min-w-[300px] border-collapse text-[12px]">
           <thead>
             <tr className="text-muted">
-              <th className="py-1 text-left font-semibold">系列</th>
+              <th className="py-1 pr-1 text-left font-semibold">到期</th>
               {WEEKDAY_LABEL.map(w => (
                 <th key={w} className="py-1 text-right font-semibold">{w}</th>
               ))}
@@ -243,16 +301,14 @@ export function AtmSection() {
           </thead>
           <tbody>
             {SERIES.map(s => (
-              <tr key={s} className="border-t border-line/60">
-                <td className="py-1.5 text-[12px] text-ink">{SERIES_LABEL[s]}</td>
-                {stats[s].map(st => (
-                  <td key={st.wd} className="py-1.5 text-right">
-                    <span className="block font-mono text-[13px] font-bold tabular-nums text-ink">
-                      {st.avg === null ? '—' : nf0.format(st.avg)}
-                    </span>
-                    <span className="block font-mono text-[10.5px] tabular-nums text-faint">
-                      {st.n ? `n=${st.n}` : ''}
-                    </span>
+              <tr key={s} className="border-t border-line/60 align-top">
+                {/* 短標籤：整串「週三選擇權」會換行，把週五那欄擠出手機畫面 */}
+                <td className="whitespace-nowrap py-1.5 pr-1 text-[12px] text-ink">
+                  {s === 'wed' ? '週三' : '週五'}
+                </td>
+                {nowRows[s].map(c => (
+                  <td key={c.wd} className="py-1.5 pl-0.5 text-right">
+                    <NowCell c={c} />
                   </td>
                 ))}
               </tr>

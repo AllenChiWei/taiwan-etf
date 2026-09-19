@@ -76,16 +76,15 @@ COL_CLOSE, COL_SETTLE, COL_SESSION, COL_EXPIRY = 8, 10, 17, 20
 # 加權指數收盤。價平和是「市場對接下來會走多少的定價」，要判斷這個定價準不準，
 # 就得有事後實際走了多少 —— 那需要每個交易日的指數收盤價。
 #
-# 兩個來源各有用途：OpenAPI 那個一次給整個月（當月），每天跑就順便把當月補齊；
-# 舊月份只能一天一個請求（MI_INDEX），所以只在缺的時候補，而且一次最多補 60 天。
+# **一個請求拿完整歷史**：FinMind 的 TaiwanStockPrice 用 data_id=TAIEX 就是加權指數
+# 的日線（收盤與證交所完全一致，對過）。第一版走證交所，當月那份沒問題（OpenAPI
+# 一次給整月），但更早的月份只能一天一個請求，回補一百多天時被擋得很慘 ——
+# 證交所擋太快的請求時回 **307**（不是 429，也沒有 Retry-After），而且擋住之後
+# 連本來查得到的日期也一起擋，等了十幾分鐘還在擋。所以那條路整個不走了。
+FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
+FINMIND_TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
+# 證交所的 OpenAPI 當備援：一個請求給當月，FinMind 掛掉時至少近期不會斷。
 TWSE_MONTH = 'https://openapi.twse.com.tw/v1/indicesReport/MI_5MINS_HIST'
-TWSE_DAY = ('https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX'
-            '?date=%s&type=IND&response=json')
-TAIEX_NAME = u'發行量加權股價指數'
-# 證交所擋太快的請求時回 307（不是 429，也沒有 Retry-After），而且擋住之後連
-# 原本查得到的日期也一起擋。實測一次跑 50 個請求就會踩到，所以一次只補 20 天 ——
-# 反正每天都會跑，缺的幾天過兩天就補齊了。
-TAIEX_BACKFILL_LIMIT = 20
 
 # 配對履約價少於這個數量時，|C−P| 最小的判定可能嚴重偏離（夜盤常見）。
 # 標記起來讓前端可以排除，而不是直接丟掉 —— 丟掉就看不出那天資料有問題。
@@ -273,8 +272,31 @@ def _get_json(url):
     return json.loads(urllib.request.urlopen(req, timeout=60).read().decode('utf-8'))
 
 
-def taiex_this_month():
-    u"""{日期: 收盤指數}，當月。一個請求就給整個月。"""
+def taiex_finmind(start):
+    u"""{日期: 收盤指數}，從 start 到今天。一個請求。"""
+    params = {'dataset': 'TaiwanStockPrice', 'data_id': 'TAIEX',
+              'start_date': start,
+              'end_date': datetime.now(TPE).date().isoformat()}
+    if FINMIND_TOKEN:
+        params['token'] = FINMIND_TOKEN
+    out = {}
+    try:
+        doc = _get_json(FINMIND_API + '?' + urllib.parse.urlencode(params))
+        if doc.get('msg') != 'success':
+            note(u'FinMind 指數回應不是 success：%s' % str(doc.get('msg'))[:60])
+            return out
+        for r in doc.get('data') or []:
+            day = str(r.get('date') or '')
+            close = r.get('close')
+            if day and close and float(close) > 0:
+                out[day] = float(close)
+    except Exception as e:                                    # noqa: BLE001
+        note(u'FinMind 指數抓取失敗：%s' % str(e)[:60])
+    return out
+
+
+def taiex_twse_month():
+    u"""備援：證交所 OpenAPI 的當月指數。一個請求給整個月。"""
     out = {}
     try:
         for r in _get_json(TWSE_MONTH):
@@ -284,32 +306,8 @@ def taiex_this_month():
                 day = '%d-%s-%s' % (int(roc[:3]) + 1911, roc[3:5], roc[5:7])
                 out[day] = float(close)
     except Exception as e:                                    # noqa: BLE001
-        note(u'當月加權指數抓取失敗：%s' % str(e)[:60])
+        note(u'證交所當月指數抓取失敗：%s' % str(e)[:60])
     return out
-
-
-def taiex_one_day(day, tries=3):
-    u"""某一天的收盤指數；查無資料（假日）回 None。
-
-    證交所擋太快的請求時回 307 而不是 429，所以重試要拉長間隔 —— 一秒一發會
-    連續吃到 307（回補時實測）。
-    """
-    for attempt in range(1, tries + 1):
-        try:
-            doc = _get_json(TWSE_DAY % day.replace('-', ''))
-            if doc.get('stat') != 'OK':
-                return None
-            for t in doc.get('tables') or []:
-                for row in t.get('data') or []:
-                    if row and row[0].strip() == TAIEX_NAME:
-                        return float(str(row[1]).replace(',', ''))
-            return None
-        except Exception as e:                                # noqa: BLE001
-            if attempt == tries:
-                note(u'%s 加權指數抓取失敗：%s' % (day, str(e)[:50]))
-                return None
-            time.sleep(DELAY * attempt)
-    return None
 
 
 def fill_taiex(taiex, days):
@@ -317,22 +315,22 @@ def fill_taiex(taiex, days):
 
     days 是 atm.json 裡出現過的交易日 —— 只補這些，因為對照只需要這些。
     """
-    added = 0
-    month = taiex_this_month()
-    for day, close in month.items():
-        if day not in taiex:
-            taiex[day] = close
-            added += 1
     missing = sorted(d for d in days if d not in taiex)
-    if missing:
-        log(u'還有 %d 個交易日沒有指數收盤，這次補 %d 天'
-            % (len(missing), min(len(missing), TAIEX_BACKFILL_LIMIT)))
-    for day in missing[:TAIEX_BACKFILL_LIMIT]:
-        v = taiex_one_day(day)
-        if v is not None:
-            taiex[day] = v
+    if not missing:
+        return 0
+    log(u'%d 個交易日還沒有指數收盤，從 %s 起抓' % (len(missing), missing[0]))
+    fresh = taiex_finmind(missing[0])
+    if not fresh:
+        log(u'改用證交所的當月資料（只補得到當月）')
+        fresh = taiex_twse_month()
+    added = 0
+    for day in missing:
+        if day in fresh:
+            taiex[day] = fresh[day]
             added += 1
-        time.sleep(DELAY)
+    still = len(missing) - added
+    if still:
+        note(u'還有 %d 個交易日沒有指數收盤（%s 起）' % (still, missing[0]))
     return added
 
 
@@ -350,6 +348,9 @@ def main():
     args = sys.argv[1:]
     backfill = None
     only_date = None
+    # 只補指數（不碰期交所）。歷史的指數只能一天一個請求、而且會被擋速，
+    # 所以回補長一點的歷史時要分好幾輪 —— 每輪不必重下載選擇權行情。
+    taiex_only = '--taiex-only' in args
     for i, a in enumerate(args):
         if a.startswith('--backfill'):
             backfill = int(a.split('=')[1]) if '=' in a else DEFAULT_BACKFILL
@@ -367,7 +368,9 @@ def main():
     have = set((r['d'], r['s'], r.get('r', 0)) for r in rows)
     today = datetime.now(TPE).date()
 
-    if only_date:
+    if taiex_only:
+        spans = []
+    elif only_date:
         spans = [(only_date, only_date)]
     else:
         days = backfill if backfill is not None else (

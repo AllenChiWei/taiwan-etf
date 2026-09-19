@@ -322,3 +322,183 @@ export function summarise(rows: StraddleOutcome[]): OutcomeSummary | null {
     avgMoved: sum(r => r.moved) / n,
   };
 }
+
+/* ── 波動定價：現在比過去貴還是便宜 ──────────────────────────
+ *
+ * 「今天的價平和比過去同一個星期幾高」＝市場現在替接下來的波動定了比較貴的價。
+ * 兩個地方要小心，不然比出來的東西沒有意義：
+ *
+ * 1. **要比同一個星期幾**，因為剩餘天數差很多。週一看週三合約剩兩天、週四看
+ *    剩六天，權利金本來就差好幾倍。同一個星期幾才是同一件事。
+ * 2. **點數會被指數水位扭曲。** 指數從四萬走到四萬七，同樣 1,000 點的價平和，
+ *    佔比從 2.5% 掉到 2.1% —— 看點數會以為波動定價沒變。所以點數與佔指數的
+ *    百分比兩個都算，長一點的窗口要看百分比。
+ */
+
+export interface VolWindow {
+  /** 回看幾個交易日 */
+  days: number;
+  /** 同一個星期幾的樣本數 */
+  n: number;
+  medianStraddle: number;
+  medianPct: number | null;
+  /** 現值排在樣本的第幾百分位（100 = 比所有樣本都高） */
+  percentile: number;
+  /** 現值 ÷ 中位數 */
+  ratio: number;
+}
+
+export interface VolComparison {
+  series: Series;
+  /** 0 = 週一 */
+  wd: number;
+  /** 現值那一筆的歸屬日（basis 決定是收盤日還是下一個交易日） */
+  day: string;
+  contract: string;
+  straddle: number;
+  /** 佔指數的百分比；沒有指數收盤時是 null */
+  pct: number | null;
+  windows: VolWindow[];
+}
+
+/** 一天一口，依歸屬日由舊到新。歸屬日在盤前基準下是**下一個**交易日。 */
+export interface Picked {
+  /** 歸屬日：使用者會在這一天早上看到這個數字 */
+  day: string;
+  /** 資料日（收盤日），查指數要用這個 */
+  src: string;
+  row: AtmRow;
+}
+
+export function pickedDays(rows: AtmRow[], f: AtmFilter): Picked[] {
+  const next = f.basis === 'preopen' ? nextTradingDay(rows) : null;
+  const out: Picked[] = [];
+  for (const [day, dayRows] of byDay(rows)) {
+    const pick = pickRow(dayRows, f);
+    if (!pick) continue;
+    const useDay = next ? next.get(day) : day;
+    if (!useDay) continue;                    // 盤前基準下，最後一筆還沒派上用場
+    out.push({ day: useDay, src: day, row: pick });
+  }
+  out.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
+  return out;
+}
+
+function median(xs: number[]): number {
+  const a = [...xs].sort((x, y) => x - y);
+  const m = a.length >> 1;
+  return a.length % 2 ? a[m] : (a[m - 1] + a[m]) / 2;
+}
+
+/**
+ * 最新一筆的價平和，跟過去同一個星期幾比。
+ *
+ * 回傳 null 的情況：資料不足以挑出最新那一筆。樣本數會一起回傳，因為
+ * 「近 180 個交易日」在資料還沒累積夠時可能只有十幾筆，畫面必須照實說。
+ */
+export function volComparison(
+  rows: AtmRow[], taiex: Record<string, number>, f: AtmFilter,
+  windows: number[] = [60, 180],
+): VolComparison | null {
+  const picks = pickedDays(rows, f);
+  if (picks.length === 0) return null;
+
+  const cur = picks[picks.length - 1];
+  const wd = weekdayOf(cur.day);
+  if (wd === null) return null;
+  const curIdx = taiex[cur.src];
+  const pctOf = (p: typeof cur) => {
+    const idx = taiex[p.src];
+    return idx ? (p.row.sum / idx) * 100 : null;
+  };
+
+  const out: VolWindow[] = [];
+  for (const days of windows) {
+    // 只看最近 N 筆（每個交易日一筆），再從中挑出同一個星期幾的 —— 不含現值本身
+    const recent = picks.slice(Math.max(0, picks.length - days), picks.length - 1);
+    const same = recent.filter(p => weekdayOf(p.day) === wd);
+    if (same.length === 0) {
+      out.push({ days, n: 0, medianStraddle: 0, medianPct: null, percentile: 0, ratio: 0 });
+      continue;
+    }
+    const sums = same.map(p => p.row.sum);
+    const pcts = same.map(pctOf).filter((v): v is number => v !== null);
+    const below = sums.filter(v => v < cur.row.sum).length;
+    const med = median(sums);
+    out.push({
+      days,
+      n: same.length,
+      medianStraddle: med,
+      medianPct: pcts.length ? median(pcts) : null,
+      percentile: (below / same.length) * 100,
+      ratio: med > 0 ? cur.row.sum / med : 0,
+    });
+  }
+
+  return {
+    series: f.series, wd, day: cur.day, contract: cur.row.c,
+    straddle: cur.row.sum,
+    pct: curIdx ? (cur.row.sum / curIdx) * 100 : null,
+    windows: out,
+  };
+}
+
+/**
+ * 每個星期幾一格：**現在的數字**與**過去的中位數**。
+ *
+ * 這是這一頁真正要回答的問題 ——「這個星期幾的價平和，現在比平常高還是低」。
+ * 星期幾要分開看，因為剩餘天數差很多：週一看週三合約剩兩天、週四看剩六天，
+ * 權利金本來就差好幾倍，跨星期幾比較沒有意義。
+ *
+ * lookback 是回看幾個交易日（不是日曆天）。中位數**不含現值本身**，
+ * 否則樣本少的時候現值會把自己往中位數拉。
+ */
+export interface WeekdayNow {
+  wd: number;
+  /** 最近一次這個星期幾的數字；還沒有就是 null */
+  latest: number | null;
+  latestDay: string | null;
+  latestPct: number | null;
+  /** 窗口內同一個星期幾的中位數（不含現值） */
+  median: number | null;
+  medianPct: number | null;
+  /** 現值 ÷ 中位數 */
+  ratio: number | null;
+  /** 中位數用了幾個樣本 */
+  n: number;
+}
+
+export function weekdayNow(
+  rows: AtmRow[], taiex: Record<string, number>, f: AtmFilter, lookback = 60,
+): WeekdayNow[] {
+  const picks = pickedDays(rows, f);
+  const window = picks.slice(Math.max(0, picks.length - lookback));
+  const pct = (p: Picked) => {
+    const idx = taiex[p.src];
+    return idx ? (p.row.sum / idx) * 100 : null;
+  };
+
+  return WEEKDAY_LABEL.map((_, wd) => {
+    const same = window.filter(p => weekdayOf(p.day) === wd);
+    if (same.length === 0) {
+      return {
+        wd, latest: null, latestDay: null, latestPct: null,
+        median: null, medianPct: null, ratio: null, n: 0,
+      };
+    }
+    const cur = same[same.length - 1];
+    const past = same.slice(0, -1);
+    const med = past.length ? median(past.map(p => p.row.sum)) : null;
+    const pastPcts = past.map(pct).filter((v): v is number => v !== null);
+    return {
+      wd,
+      latest: cur.row.sum,
+      latestDay: cur.day,
+      latestPct: pct(cur),
+      median: med,
+      medianPct: pastPcts.length ? median(pastPcts) : null,
+      ratio: med && med > 0 ? cur.row.sum / med : null,
+      n: past.length,
+    };
+  });
+}
