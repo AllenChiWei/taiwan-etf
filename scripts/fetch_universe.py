@@ -18,7 +18,10 @@ every ETF code the exchanges did not confirm and re-adds the ones still trading.
 import json, io, os, re, sys, time, datetime
 from urllib.request import Request, urlopen
 
-UA = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+# 表明身分而不是給一個空殼 UA：交易所要擋或要聯絡都找得到人。
+UA = {'User-Agent': ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
+                     '+https://allenchiwei.github.io/taiwan-etf/) ETF universe'),
+      'Accept': 'application/json'}
 WORK = sys.argv[1] if len(sys.argv) > 1 else '.'
 
 TWSE_ETF_INFO = 'https://openapi.twse.com.tw/v1/opendata/t187ap47_L'

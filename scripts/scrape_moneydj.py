@@ -13,8 +13,10 @@ checked here that carries BOTH 保管機構 and 配息頻率. Be polite: ~1 req/
 import io, os, sys, time, random
 from urllib.request import Request, urlopen
 
-UA = ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-      '(KHTML, like Gecko) Chrome/122.0 Safari/537.36')
+# 表明身分而不是假裝成瀏覽器 —— 對方要擋或要聯絡都找得到人。
+# 實測 MoneyDJ 對這個 UA 與瀏覽器 UA 回應完全一樣（同一頁、同樣的欄位）。
+UA = ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
+      '+https://allenchiwei.github.io/taiwan-etf/) ETF custodian and payout frequency')
 URL = 'https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=%s.tw'
 MIN_BYTES = 20000          # a real page is ~55-65 KB; anything smaller is an error page
 

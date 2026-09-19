@@ -58,7 +58,8 @@ def load_registry():
     u"""Nasdaq Trader 的官方清單 -> {symbol: (name, exchange)}，只取 ETF。"""
     import urllib.request
     req = urllib.request.Request(NASDAQ_URL, headers={
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0 Safari/537.36'})
+        'User-Agent': ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
+                       '+https://allenchiwei.github.io/taiwan-etf/) US ETF registry')})
     raw = urllib.request.urlopen(req, timeout=60).read().decode('utf-8', 'ignore')
 
     lines = [l for l in raw.splitlines() if l.strip()]

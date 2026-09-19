@@ -302,6 +302,37 @@ ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/
 驗算過：0050 近三年自算 275% vs FinLab 263%、006208 275% vs 263%、0056 121% vs 115%，
 形狀一致，差距來自基準日與再投入時點。
 
+## 爬蟲規則：每個來源目前的狀態
+
+2026-09-19 逐站重抓過一次 robots.txt。結論是**都在規則內**，但有兩個要盯著的灰區。
+
+| 來源 | robots.txt | 我們打的路徑 |
+| --- | --- | --- |
+| FinMind | `Allow: /`（API 子網域沒有 robots） | `/api/v4/data` ✅ |
+| 期交所 | 沒有 robots.txt（回 404 頁） | CSV 下載端點 ✅ |
+| 證交所 www | `*` 只擋 `/epaper/`、`/FTSE/`，其餘 `Allow: /` | `/rwd/…` ✅ |
+| 證交所 openapi／mops API | 沒有 robots.txt | OpenAPI ✅ |
+| 櫃買 | 沒有 robots.txt | OpenAPI 與 rwd ✅ |
+| 集保 TDCC | 沒有 robots.txt | 股權分散表 ✅ |
+| 鉅亨網 API | 沒有 robots.txt | `/media/api/v1/newslist` ✅ |
+| Nasdaq Trader | 沒有 robots.txt | 官方代號檔 ✅ |
+| **中央社** | `*` 是 `ai-input=yes, ai-train=no`，但**點名 ClaudeBot 等代理 `Disallow: /`** | 走官方 FeedBurner RSS，只存標題與外連 ⚠ |
+| **MoneyDJ** | `*` 沒擋 `/ETF/X/Basic/`（只擋 `/ETF/X/xdjbcd/`、`/etf/bcd/`），但**點名 ClaudeBot／anthropic-ai／Claude-Web `Disallow: /`** | `Basic0004.xdjhtm` ⚠ |
+
+兩個灰區的判斷，寫下來是為了下次不必重想：
+
+- 那些 `Disallow` 針對的是**具名的爬蟲代理**（ClaudeBot 是 Anthropic 的網路爬蟲）。
+  這裡跑的是站主自己的資料流程，UA 是 `TaiwanETF/1.0` 並附上網站網址，不是那些代理，
+  也不拿去訓練任何模型。按 robots 的比對規則，適用的是 `*` 那一組。
+- 但這是**擦邊**，不是理直氣壯。所以 MoneyDJ 那邊持續減量（718 → 359 頁 → 改成每週
+  一次，每日請求量少 85%），新聞只存標題與連結、內文一律導回原站。真要再加東西，
+  先問能不能不從他們那裡拿。
+
+**UA 一律表明身分**（`Mozilla/5.0 (compatible; TaiwanETF/1.0; +網址) 用途`）。
+2026-09-19 補掉最後三支還在假裝瀏覽器的（`scrape_moneydj`、`scrape_returns`、
+`fetch_universe`、`fetch_us_etfs`）—— 實測 MoneyDJ 與 Nasdaq Trader 對誠實的 UA
+回應完全一樣（同一頁、同樣的欄位、同樣的位元組數），所以裝瀏覽器從來沒有換到什麼。
+
 ## 哪些資料不需要 FinLab／MoneyDJ
 
 這份判斷是實測過的，不要憑印象重新選來源。

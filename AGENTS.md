@@ -93,6 +93,9 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   deletes the free curves.
 - Every `scripts/*.py` ends with `if __name__ == '__main__':`. Importing one to test a
   pure function must not fire a paid FinLab request.
+- Every scraper identifies itself: `Mozilla/5.0 (compatible; TaiwanETF/1.0; +<site>) <purpose>`.
+  Never send a plain browser UA — it buys nothing (verified against MoneyDJ and Nasdaq
+  Trader: byte-identical responses) and it is the one thing robots.txt cannot argue with.
 - **yfinance / Stooq are off-limits**: `query1.finance.yahoo.com` and `stooq.com`
   both answer `Disallow: /` for everyone. FinMind (`Allow: /`, already used here) is
   the free Taiwan source we do use. Don't swap a source without reading its robots.
