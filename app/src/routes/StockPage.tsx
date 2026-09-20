@@ -15,14 +15,16 @@ import {
 import {
   periodLabel, singleQuarter, ratios, sumInst, instTotals, toLots,
   moneyFromThousands, moneyFromYuan, isoDate, rankRevenue, filterHighs, rankReturns,
-  NEAR_PCT, RETURN_LABELS, instDaily, periodReturns, position,
+  NEAR_PCT, RETURN_LABELS, instDaily, periodReturns, position, percentiles,
   type StockData, type StockIndex, type Quarter, type Ranking, type Highs,
   type RankKey, type HighView, type ReturnKey, type HighRow, type InstDay,
+  type RankRow, type Percentile,
 } from '../lib/stock';
 import { bars, zeroY, netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
+import { Radar, Donut, type RadarAxis } from '../components/Radar';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
@@ -284,6 +286,140 @@ function PositionSection({ row }: { row: HighRow | null }) {
         高低點與漲跌幅都以還原股價計算（除權息與分割不會造成假性創低），
         顯示的收盤價則是原始股價。期間以交易日計：一週 5 日、一月 20 日、
         一季 60 日、半年 120 日；上市未滿該期間的顯示「—」而不是 0%。
+      </p>
+    </Section>
+  );
+}
+
+/* ── 相對位置：這檔在全市場與同業站在哪裡 ─────────────── */
+
+function PercentileBar({ p, scope }: { p: Percentile; scope: 'market' | 'peer' }) {
+  const v = scope === 'market' ? p.market : p.peer;
+  const n = scope === 'market' ? p.nMarket : p.nPeer;
+  if (p.value === null) return null;
+  return (
+    <div className="border-b border-line/60 py-2 last:border-0">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[12px] text-ink">{p.label}</span>
+        <span className={`font-mono text-[12.5px] font-semibold tabular-nums ${
+          TONE_CLASS[p.value >= 0 ? 'up' : 'down']}`}>
+          {p.value >= 0 ? '+' : ''}{nf2.format(p.value)}{p.unit}
+        </span>
+      </div>
+      <div className="mt-1 flex items-center gap-2">
+        {/* block 不能省：span 預設是 inline，寬度會縮成內容大小，長條就撐不開 */}
+        <span className="block h-1.5 flex-1 rounded-full bg-sunken">
+          <span className="block h-full rounded-full bg-accent"
+                style={{ width: `${v ?? 0}%` }} />
+        </span>
+        <span className="w-24 shrink-0 text-right font-mono text-[11px] tabular-nums text-faint">
+          {v === null ? '—' : `贏過 ${nf0.format(v)}%`}
+        </span>
+      </div>
+      <span className="mt-0.5 block text-[10.5px] text-faint">
+        {scope === 'market' ? `全市場 ${n} 檔` : `同業 ${n} 檔`}
+      </span>
+    </div>
+  );
+}
+
+function PercentileSection(
+  { row, allHighs, rank, allRanks }: {
+    row: HighRow | null; allHighs: HighRow[];
+    rank: RankRow | null; allRanks: RankRow[];
+  },
+) {
+  const rows = useMemo(
+    () => percentiles({ high: row, allHighs, rank, allRanks, window: 250 })
+      .filter(p => p.value !== null),
+    [row, allHighs, rank, allRanks]);
+
+  const [scope, setScope] = useState<'market' | 'peer'>('market');
+  const axes: RadarAxis[] = rows.map(p => ({
+    label: p.label.replace('近一', '').replace('月營收', '營收').replace('累計營收', '累計'),
+    value: scope === 'market' ? p.market : p.peer,
+  }));
+
+  if (rows.length === 0) return null;
+
+  return (
+    <Section title="相對位置" hint={rank?.i || undefined}>
+      <p className="mt-1 text-[11px] leading-snug text-faint">
+        每一條是「這檔贏過多少比例的標的」。<strong className="text-muted">
+        沒有加權、沒有總分、沒有評級</strong> —— 那種分數的權重是憑空定的，
+        換一組權重就換一個結論，而看的人看不到那組權重。百分位不需要權重，
+        而且可以自己查證。
+      </p>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <Chip active={scope === 'market'} onClick={() => setScope('market')}>全市場</Chip>
+        <Chip active={scope === 'peer'} onClick={() => setScope('peer')}>
+          同業{rows[0]?.nPeer ? ` ${rows[0].nPeer} 檔` : ''}
+        </Chip>
+      </div>
+
+      {/* 雷達圖的每一軸都是 0–100 的百分位，刻度一致 —— 這是雷達圖唯一
+          說得過去的用法，形狀才真的代表什麼 */}
+      {/* 不要在 flex-col 上加 items-center：那會讓子元素縮成內容寬度，
+          底下那些百分位長條就撐不開（flex-1 在直向容器管的是高度不是寬度）。
+          雷達圖自己用 self-center 置中就好。 */}
+      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start">
+        <div className="w-full max-w-[260px] shrink-0 self-center">
+          <Radar axes={axes} />
+        </div>
+        <div className="min-w-0 flex-1">
+          {rows.map(p => <PercentileBar key={p.key} p={p} scope={scope} />)}
+        </div>
+      </div>
+    </Section>
+  );
+}
+
+/* ── 籌碼結構與多空能量 ─────────────────────────────────── */
+
+function ChipsVisual({ data }: { data: StockData }) {
+  const c = data.chips;
+  const rows = useMemo(() => (c ? instDaily(c) : []), [c]);
+  if (!c) return null;
+
+  // 近 20 日：買超的量與賣超的量各佔多少 —— 只看淨額會把「大買大賣」
+  // 跟「都沒在動」畫成同一個樣子
+  const buy = rows.reduce((a, r) => a + Math.max(0, r.total ?? 0), 0);
+  const sell = rows.reduce((a, r) => a + Math.min(0, r.total ?? 0), 0);
+  const span = buy - sell;
+  const bullPct = span > 0 ? (buy / span) * 100 : 50;
+
+  const donuts: Array<{ label: string; value: number | null; text?: string }> = [
+    { label: '外資持股', value: c.qfii ?? null },
+    { label: '400 張以上', value: c.tdcc?.big ?? null },
+    { label: '千張以上', value: c.tdcc?.huge ?? null },
+  ];
+
+  return (
+    <Section title="籌碼結構" hint={c.tdccDate ? `集保 ${c.tdccDate}` : undefined}>
+      <div className="mt-2 grid grid-cols-3 gap-2">
+        {donuts.map(d => (
+          d.value === null
+            ? <div key={d.label} className="text-center text-[12px] text-faint">—</div>
+            : <Donut key={d.label} label={d.label} value={d.value} />
+        ))}
+      </div>
+
+      <h3 className="mt-3 text-[12.5px] font-bold text-ink">
+        多空能量（近 {rows.length} 個交易日）
+      </h3>
+      <div className="mt-1 flex h-6 overflow-hidden rounded-lg bg-sunken">
+        <div className="flex items-center justify-start bg-up/85 pl-2 text-[11px] font-semibold text-white"
+             style={{ width: `${bullPct}%` }}>
+          {bullPct >= 22 ? `買 ${nf0.format(buy)} 張` : ''}
+        </div>
+        <div className="flex flex-1 items-center justify-end bg-down/85 pr-2 text-[11px] font-semibold text-white">
+          {bullPct <= 78 ? `賣 ${nf0.format(Math.abs(sell))} 張` : ''}
+        </div>
+      </div>
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        把每天的三大法人合計拆成買超與賣超兩堆再比大小。只看淨額的話，
+        「大買大賣抵銷掉」跟「整段都沒人動」會長得一模一樣，但那是兩回事。
+        圓環是持股結構：外資持股與集保的大戶比例越高，籌碼越集中。
       </p>
     </Section>
   );
@@ -828,6 +964,8 @@ export function StockPage() {
   // 位階面板要用 highs.json 裡的那一列。fetchHighs 有模組層級快取，
   // 所以這裡再叫一次不會重抓 —— 排行榜分頁可能已經抓過了。
   const [highs, setHighs] = useState<Highs | null>(null);
+  // 相對位置要用營收排行裡的產業別與全市場的年增率
+  const [ranking, setRanking] = useState<Ranking | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -851,12 +989,18 @@ export function StockPage() {
     fetchHighs(ac.signal)
       .then(d => { if (!ac.signal.aborted) setHighs(d); })
       .catch(() => { if (!ac.signal.aborted) setHighs(null); });
+    fetchRanking(ac.signal)
+      .then(d => { if (!ac.signal.aborted) setRanking(d); })
+      .catch(() => { if (!ac.signal.aborted) setRanking(null); });
     return () => ac.abort();
   }, [code]);
 
   const highRow = useMemo(
     () => (highs && code ? highs.rows.find(r => r.c === code) ?? null : null),
     [highs, code]);
+  const rankRow = useMemo(
+    () => (ranking && code ? ranking.rows.find(r => r.c === code) ?? null : null),
+    [ranking, code]);
 
   useEffect(() => {
     if (!code) { setData(null); return; }
@@ -974,6 +1118,9 @@ export function StockPage() {
         <>
           <InfoSection data={data} />
           <PositionSection row={highRow} />
+          <PercentileSection row={highRow} allHighs={highs?.rows ?? []}
+                             rank={rankRow} allRanks={ranking?.rows ?? []} />
+          <ChipsVisual data={data} />
           <InstDailySection data={data} />
           <RevenueSection data={data} />
           <FinancialSection data={data} />

@@ -9,7 +9,7 @@ import {
   sumInst, instTotals, moneyFromThousands, moneyFromYuan, isoDate,
   rankRevenue, filterHighs, impliedBase, rankReturns,
   type Quarter, type StockChips, type StockIndex, type StockData, type HighRow, type HighWindow,
-  instDaily, periodReturns, position,
+  instDaily, periodReturns, position, percentiles,
 } from '../src/lib/stock.ts';
 
 /* ── 期別 ───────────────────────────────────────────────── */
@@ -410,5 +410,62 @@ test('個股看板', async (t) => {
     const p = position(hi as never, 250)!;
     assert.ok(p.pos > 99.5);
     assert.equal(p.isHigh, true);
+  });
+});
+
+test('相對位置（百分位）', async (t) => {
+  const mk = (c: string, r20: number, r60: number, fh: number) => ({
+    c, n: c, k: '上市', p: 100, days: 250,
+    w: { '250': { h: 120, l: 80, fh, fl: 25, nh: 0, nl: 0, days: 250 } },
+    r20, r60, r5: null, r120: null,
+  } as never);
+  const allHighs = [
+    mk('A', 10, 20, -1), mk('B', 5, 10, -5), mk('C', -3, 2, -20), mk('D', 1, 5, -10),
+  ];
+  const rk = (c: string, i: string, yoy: number) => ({
+    c, n: c, m: '上市', i, rev: 1000, yoy, mom: 0, cum: 1000, cumYoy: yoy,
+  } as never);
+  const allRanks = [
+    rk('A', '半導體業', 50), rk('B', '半導體業', 10),
+    rk('C', '水泥工業', -5), rk('D', '半導體業', 30),
+  ];
+
+  await t.test('全市場百分位＝贏過幾 % 的標的', () => {
+    const p = percentiles({
+      high: allHighs[0], allHighs, rank: allRanks[0], allRanks, window: 250,
+    });
+    const r20 = p.find(x => x.key === 'r20')!;
+    assert.equal(r20.value, 10);
+    assert.equal(r20.market, 75);        // 贏過 B、C、D 三個中的 3/4
+    assert.equal(r20.nMarket, 4);
+  });
+
+  await t.test('同業只跟同產業比，樣本數要一起回傳', () => {
+    const p = percentiles({
+      high: allHighs[0], allHighs, rank: allRanks[0], allRanks, window: 250,
+    });
+    const r20 = p.find(x => x.key === 'r20')!;
+    // 半導體業只有 A、B、D 三家
+    assert.equal(r20.nPeer, 3);
+    assert.ok(Math.abs(r20.peer! - (2 / 3) * 100) < 1e-9);
+  });
+
+  await t.test('找不到產業別就沒有同業比較，而不是拿全市場頂替', () => {
+    const p = percentiles({
+      high: allHighs[0], allHighs, rank: null, allRanks, window: 250,
+    });
+    assert.equal(p.find(x => x.key === 'r20')!.peer, null);
+    assert.equal(p.find(x => x.key === 'yoy')!.value, null);
+  });
+
+  await t.test('沒有數值的項目整列是 null，不要當成 0 去排名', () => {
+    const noR20 = { ...(allHighs[0] as Record<string, unknown>), r20: null };
+    const p = percentiles({
+      high: noR20 as never, allHighs, rank: allRanks[0], allRanks, window: 250,
+    });
+    const r20 = p.find(x => x.key === 'r20')!;
+    assert.equal(r20.value, null);
+    assert.equal(r20.market, null);
+    assert.equal(r20.peer, null);
   });
 });

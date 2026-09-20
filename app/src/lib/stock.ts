@@ -534,3 +534,117 @@ export function position(row: HighRow | null, window: number): Position | null {
     isHigh: w.nh === 1, isLow: w.nl === 1,
   };
 }
+
+/* ── 相對位置：這檔在全市場與同業站在哪裡 ─────────────── */
+
+/**
+ * 百分位，0–100。**不做加權、不給總分、不給評級。**
+ *
+ * 那張儀表板用「AI 綜合評分 60/100、B 級」這種數字，但權重是憑空定的 ——
+ * 憑什麼籌碼佔 30%、動能佔 20%？換一組權重就換一個結論，而使用者看不到那組權重。
+ * 百分位不需要任何權重：它就是「這檔在這群標的裡排第幾」，可以被查證。
+ *
+ * 同業樣本太少時要照實說，所以 n 一起回傳 —— 同業只有三家的「贏過 67%」
+ * 跟全市場的「贏過 67%」不是同一回事。
+ */
+export interface Percentile {
+  key: string;
+  label: string;
+  /** 這檔的原始數值；沒有資料是 null */
+  value: number | null;
+  /** 單位，顯示用 */
+  unit: string;
+  /** 在全市場的百分位 */
+  market: number | null;
+  /** 在同業的百分位 */
+  peer: number | null;
+  /** 全市場與同業的樣本數 */
+  nMarket: number;
+  nPeer: number;
+}
+
+/** value 在 pool 裡贏過幾 % —— pool 已經排除 null。 */
+function rankPct(value: number, pool: number[]): number | null {
+  if (pool.length === 0) return null;
+  const below = pool.filter(v => v < value).length;
+  return (below / pool.length) * 100;
+}
+
+export interface PercentileInput {
+  /** 這檔在 highs.json 裡的列 */
+  high: HighRow | null;
+  /** 全市場的 highs 列 */
+  allHighs: HighRow[];
+  /** 這檔在營收排行裡的列 */
+  rank: RankRow | null;
+  /** 全市場的營收排行列 */
+  allRanks: RankRow[];
+  /** 比較用的窗口（距高點要指定） */
+  window: number;
+}
+
+/**
+ * 算出這檔在全市場與同業的相對位置。
+ *
+ * 同業是用營收排行裡的產業別（`i`）界定的 —— highs.json 沒有產業別，所以
+ * 只有在營收排行裡找得到這檔時才有同業比較。
+ */
+export function percentiles(input: PercentileInput): Percentile[] {
+  const { high, allHighs, rank, allRanks, window } = input;
+  const industry = rank?.i ?? '';
+  const peerCodes = new Set(
+    industry ? allRanks.filter(r => r.i === industry).map(r => r.c) : []);
+
+  const highPool = (pick: (r: HighRow) => number | null | undefined, peers: boolean) =>
+    allHighs
+      .filter(r => (peers ? peerCodes.has(r.c) : true))
+      .map(pick)
+      .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+
+  const rankPool = (pick: (r: RankRow) => number | null | undefined, peers: boolean) =>
+    allRanks
+      .filter(r => (peers ? r.i === industry : true))
+      .map(pick)
+      .filter((v): v is number => v !== null && v !== undefined && Number.isFinite(v));
+
+  const w = String(window);
+  const defs: Array<{
+    key: string; label: string; unit: string;
+    value: number | null;
+    market: number[]; peer: number[];
+  }> = [
+    {
+      key: 'r20', label: '近一月漲跌幅', unit: '%',
+      value: high?.r20 ?? null,
+      market: highPool(r => r.r20, false), peer: highPool(r => r.r20, true),
+    },
+    {
+      key: 'r60', label: '近一季漲跌幅', unit: '%',
+      value: high?.r60 ?? null,
+      market: highPool(r => r.r60, false), peer: highPool(r => r.r60, true),
+    },
+    {
+      key: 'fh', label: `距 ${window} 日高點`, unit: '%',
+      value: high?.w?.[w]?.fh ?? null,
+      market: highPool(r => r.w?.[w]?.fh, false),
+      peer: highPool(r => r.w?.[w]?.fh, true),
+    },
+    {
+      key: 'yoy', label: '月營收年增', unit: '%',
+      value: rank?.yoy ?? null,
+      market: rankPool(r => r.yoy, false), peer: rankPool(r => r.yoy, true),
+    },
+    {
+      key: 'cumYoy', label: '累計營收年增', unit: '%',
+      value: rank?.cumYoy ?? null,
+      market: rankPool(r => r.cumYoy, false), peer: rankPool(r => r.cumYoy, true),
+    },
+  ];
+
+  return defs.map(d => ({
+    key: d.key, label: d.label, unit: d.unit, value: d.value,
+    market: d.value === null ? null : rankPct(d.value, d.market),
+    peer: d.value === null || d.peer.length === 0 ? null : rankPct(d.value, d.peer),
+    nMarket: d.market.length, nPeer: d.peer.length,
+  }));
+}
