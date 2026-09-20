@@ -9,6 +9,7 @@ import {
   sumInst, instTotals, moneyFromThousands, moneyFromYuan, isoDate,
   rankRevenue, filterHighs, impliedBase, rankReturns,
   type Quarter, type StockChips, type StockIndex, type StockData, type HighRow, type HighWindow,
+  instDaily, periodReturns, position,
 } from '../src/lib/stock.ts';
 
 /* ── 期別 ───────────────────────────────────────────────── */
@@ -333,5 +334,81 @@ test('漲跌幅排行', async (t) => {
   await t.test('類別篩選與 limit', () => {
     assert.deepEqual(rankReturns(rows, { key: 'r5', kind: '上櫃' }).map(r => r.c), ['B']);
     assert.equal(rankReturns(rows, { key: 'r5', limit: 2 }).length, 2);
+  });
+});
+
+test('個股看板', async (t) => {
+  const chips = {
+    date: '2026-09-17',
+    days: ['2026-09-16', '2026-09-17', '2026-09-18'],
+    // 股數；1 張 = 1000 股
+    inst: [[1_000_000, -200_000, 50_000], null, [-3_000_000, 0, 1_000]],
+    margin: { mb: 100, sb: 5 },
+    qfii: 69.21,
+    tdcc: { big: 87.57, huge: 84.82, holders: 3_019_610 },
+    tdccDate: '2026-09-11',
+  } as never;
+
+  await t.test('每日三家分開，單位換成張', () => {
+    const d = instDaily(chips);
+    assert.equal(d.length, 3);
+    assert.deepEqual(
+      { ...d[0] },
+      { date: '2026-09-16', foreign: 1000, trust: -200, dealer: 50, total: 850 });
+  });
+
+  await t.test('沒資料的日子是 null，不是 0', () => {
+    const d = instDaily(chips);
+    assert.equal(d[1].foreign, null);
+    assert.equal(d[1].total, null);
+  });
+
+  const row = {
+    c: '2330', n: '台積電', k: '上市', p: 2460, days: 250,
+    w: {
+      '250': { h: 2504.74, l: 1182.9, fh: -1.79, fl: 107.96, nh: 0, nl: 0, days: 250 },
+      '150': { h: 2504.74, l: 1752.42, fh: -1.79, fl: 40.38, nh: 0, nl: 0, days: 150 },
+    },
+    r5: 2.29, r20: 2.29, r60: 3.15, r120: 35.75,
+  } as never;
+
+  await t.test('四段漲跌幅照順序攤開', () => {
+    const rs = periodReturns(row);
+    assert.deepEqual(rs.map(r => r.label), ['一週', '一月', '一季', '半年']);
+    assert.deepEqual(rs.map(r => r.value), [2.29, 2.29, 3.15, 35.75]);
+  });
+
+  await t.test('期間不足是 null，不要當成 0%', () => {
+    const rs = periodReturns({ ...row, r120: null } as never);
+    assert.equal(rs[3].value, null);
+  });
+
+  await t.test('位階用 fh/fl 反推，不能拿原始收盤去比還原高低點', () => {
+    const p = position(row, 250)!;
+    // 台積電實際數字：距高 −1.79%、距低 +107.96%，落在區間的 96.6%
+    assert.ok(Math.abs(p.pos - 96.61) < 0.05, `pos = ${p.pos}`);
+    assert.equal(p.fromHigh, -1.79);
+    assert.equal(p.price, 2460);          // 顯示用的仍是原始收盤
+    assert.equal(p.isHigh, false);
+  });
+
+  await t.test('由高點反推與由低點反推要一致 —— 不一致代表 fh/fl 對不上高低點', () => {
+    const w = row.w['250'];
+    const fromLow = w.l * (1 + w.fl / 100);
+    const fromHigh = w.h * (1 + w.fh / 100);
+    assert.ok(Math.abs(fromLow - fromHigh) / fromLow < 0.001,
+      `${fromLow.toFixed(2)} vs ${fromHigh.toFixed(2)}`);
+  });
+
+  await t.test('沒有那個窗口就回 null', () => {
+    assert.equal(position(row, 200), null);
+    assert.equal(position(null, 250), null);
+  });
+
+  await t.test('創新高那天位置是 100', () => {
+    const hi = { ...row, w: { '250': { h: 2504.74, l: 1182.9, fh: 0, fl: 111.74, nh: 1, nl: 0, days: 250 } } };
+    const p = position(hi as never, 250)!;
+    assert.ok(p.pos > 99.5);
+    assert.equal(p.isHigh, true);
   });
 });

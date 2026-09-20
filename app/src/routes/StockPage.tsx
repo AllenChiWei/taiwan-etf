@@ -15,9 +15,9 @@ import {
 import {
   periodLabel, singleQuarter, ratios, sumInst, instTotals, toLots,
   moneyFromThousands, moneyFromYuan, isoDate, rankRevenue, filterHighs, rankReturns,
-  NEAR_PCT, RETURN_LABELS,
+  NEAR_PCT, RETURN_LABELS, instDaily, periodReturns, position,
   type StockData, type StockIndex, type Quarter, type Ranking, type Highs,
-  type RankKey, type HighView, type ReturnKey,
+  type RankKey, type HighView, type ReturnKey, type HighRow, type InstDay,
 } from '../lib/stock';
 import { bars, zeroY, netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -219,6 +219,138 @@ function FinancialSection({ data }: { data: StockData }) {
 }
 
 /* ── 籌碼 ───────────────────────────────────────────────── */
+
+/* ── 位階：這檔站在自己的高低區間哪裡 ─────────────────── */
+
+const POS_WINDOWS = [150, 200, 250];
+
+function PositionSection({ row }: { row: HighRow | null }) {
+  const [win, setWin] = useState(250);
+  const pos = position(row, win);
+  const rets = periodReturns(row);
+
+  if (!row) return null;
+
+  return (
+    <Section title="位階與漲跌幅" hint={`近 ${win} 個交易日`}>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {POS_WINDOWS.map(w => (
+          <Chip key={w} active={win === w} onClick={() => setWin(w)}>{w} 日</Chip>
+        ))}
+      </div>
+
+      {pos ? (
+        <div className="mt-2.5">
+          {/* 一條軸把「距高點」「距低點」放在同一個畫面上 —— 分開講兩個百分比
+              很難在腦中拼回位置，一條線就看得出是在高檔還是低檔 */}
+          <div className="relative h-7">
+            <div className="absolute inset-x-0 top-3 h-1.5 rounded-full bg-sunken" />
+            <div className="absolute top-3 h-1.5 rounded-full bg-accent"
+                 style={{ width: `${pos.pos}%` }} />
+            <div className="absolute top-1.5 h-4.5 w-1 -translate-x-1/2 rounded-full bg-ink"
+                 style={{ left: `${pos.pos}%` }} />
+          </div>
+          <div className="flex justify-between font-mono text-[11px] tabular-nums text-faint">
+            <span>低 {nf2.format(pos.low)}</span>
+            <span className="text-ink">收 {nf2.format(pos.price)}</span>
+            <span>高 {nf2.format(pos.high)}</span>
+          </div>
+          <div className="mt-1.5 grid grid-cols-2 gap-2">
+            <Cell label="距高點" value={`${nf2.format(pos.fromHigh)}%`}
+                  tone={pos.fromHigh >= 0 ? 'up' : 'down'}
+                  sub={pos.isHigh ? '今天創新高' : undefined} />
+            <Cell label="距低點" value={`+${nf2.format(pos.fromLow)}%`} tone="up"
+                  sub={pos.isLow ? '今天創新低' : undefined} />
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 py-3 text-center text-[12.5px] text-muted">
+          這檔沒有近 {win} 個交易日的資料（可能是上市未滿這個期間）。
+        </p>
+      )}
+
+      <div className="mt-3 grid grid-cols-4 gap-2">
+        {rets.map(r => (
+          <div key={r.key} className="rounded-lg border border-line bg-bg px-2 py-1.5 text-center">
+            <div className="text-[11px] text-muted">{r.label}</div>
+            <div className={`mt-0.5 font-mono text-[13px] font-bold tabular-nums ${
+              r.value === null ? 'text-faint' : TONE_CLASS[r.value >= 0 ? 'up' : 'down']}`}>
+              {r.value === null ? '—' : `${r.value >= 0 ? '+' : ''}${nf2.format(r.value)}%`}
+            </div>
+          </div>
+        ))}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        高低點與漲跌幅都以還原股價計算（除權息與分割不會造成假性創低），
+        顯示的收盤價則是原始股價。期間以交易日計：一週 5 日、一月 20 日、
+        一季 60 日、半年 120 日；上市未滿該期間的顯示「—」而不是 0%。
+      </p>
+    </Section>
+  );
+}
+
+/* ── 三大法人每日買賣超 ─────────────────────────────────── */
+
+const INST_KEYS = [
+  { key: 'foreign' as const, label: '外資' },
+  { key: 'trust' as const, label: '投信' },
+  { key: 'dealer' as const, label: '自營商' },
+];
+
+function InstDailySection({ data }: { data: StockData }) {
+  const rows = useMemo(() => (data.chips ? instDaily(data.chips) : []), [data.chips]);
+  if (rows.length === 0) return null;
+
+  // 三家共用同一個刻度，否則「投信買 50 張」的柱子會跟「外資買 5000 張」一樣高
+  const peak = Math.max(1, ...rows.flatMap(r =>
+    INST_KEYS.map(k => Math.abs(r[k.key] ?? 0))));
+
+  return (
+    <Section title="三大法人每日買賣超"
+             hint={`近 ${rows.length} 個交易日 · 張`}>
+      <div className="mt-2 space-y-2.5">
+        {INST_KEYS.map(k => {
+          const sum = rows.reduce((a: number, r: InstDay) => a + (r[k.key] ?? 0), 0);
+          return (
+            <div key={k.key}>
+              <div className="flex items-baseline justify-between">
+                <span className="text-[12px] text-ink">{k.label}</span>
+                <span className={`font-mono text-[12px] font-semibold tabular-nums ${
+                  TONE_CLASS[sum >= 0 ? 'up' : 'down']}`}>
+                  {sum >= 0 ? '+' : ''}{nf0.format(sum)} 張
+                </span>
+              </div>
+              {/* 零軸在中間，紅柱往上、綠柱往下 —— 跟籌碼頁的法人圖同一個畫法 */}
+              <div className="mt-1 flex h-10 items-center gap-px">
+                {rows.map((r: InstDay) => {
+                  const v = r[k.key];
+                  // 最小高度 10（約 2px）。共用刻度時，投信的 +107 張跟外資的
+                  // −3,950 張比起來不到 3%，用 1 就細到看不見 —— 而「看不見」
+                  // 跟「那天沒資料」在畫面上會變成同一件事。
+                  const h = v === null ? 0 : Math.max(10, (Math.abs(v) / peak) * 100);
+                  return (
+                    <div key={r.date} className="relative h-full flex-1" title={`${r.date} ${v ?? '—'} 張`}>
+                      <div className="absolute inset-x-0 top-1/2 h-px bg-line" />
+                      {v !== null && (
+                        <div className={`absolute inset-x-0 ${v >= 0 ? 'bottom-1/2' : 'top-1/2'} ${
+                          v >= 0 ? 'bg-up' : 'bg-down'}`}
+                             style={{ height: `${h / 2}%` }} />
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        每根是一個交易日，紅柱買超、綠柱賣超，三家共用同一個刻度所以高度可以互相比。
+        沒有柱子代表那天還沒有資料，不是買賣超為零。
+      </p>
+    </Section>
+  );
+}
 
 function ChipsSection({ data }: { data: StockData }) {
   const c = data.chips;
@@ -693,6 +825,9 @@ export function StockPage() {
   const [message, setMessage] = useState('');
   const [data, setData] = useState<StockData | null>(null);
   const [loadingStock, setLoadingStock] = useState(false);
+  // 位階面板要用 highs.json 裡的那一列。fetchHighs 有模組層級快取，
+  // 所以這裡再叫一次不會重抓 —— 排行榜分頁可能已經抓過了。
+  const [highs, setHighs] = useState<Highs | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -709,6 +844,19 @@ export function StockPage() {
       });
     return () => ac.abort();
   }, []);
+
+  useEffect(() => {
+    if (!code) return;                       // 沒選標的就不必為了位階抓 776 KB
+    const ac = new AbortController();
+    fetchHighs(ac.signal)
+      .then(d => { if (!ac.signal.aborted) setHighs(d); })
+      .catch(() => { if (!ac.signal.aborted) setHighs(null); });
+    return () => ac.abort();
+  }, [code]);
+
+  const highRow = useMemo(
+    () => (highs && code ? highs.rows.find(r => r.c === code) ?? null : null),
+    [highs, code]);
 
   useEffect(() => {
     if (!code) { setData(null); return; }
@@ -825,6 +973,8 @@ export function StockPage() {
       {data && (
         <>
           <InfoSection data={data} />
+          <PositionSection row={highRow} />
+          <InstDailySection data={data} />
           <RevenueSection data={data} />
           <FinancialSection data={data} />
           <ChipsSection data={data} />

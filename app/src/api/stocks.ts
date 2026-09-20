@@ -69,6 +69,21 @@ export async function fetchRanking(signal?: AbortSignal): Promise<Ranking | null
   return json as Ranking;
 }
 
+/* highs.json 是 776 KB。排行榜與個股詳情都要用它，每次都抓一份在手機上太重，
+   所以把 Promise 快取起來 —— 一次載入頁面只會抓一次。資料一天才換一次，
+   在同一次瀏覽裡重抓沒有意義。 */
+let highsPromise: Promise<Highs | null> | null = null;
+
+export function fetchHighs(signal?: AbortSignal): Promise<Highs | null> {
+  if (!highsPromise) {
+    highsPromise = loadHighs(signal).catch(e => {
+      highsPromise = null;                 // 失敗不要卡住，下次可以重試
+      throw e;
+    });
+  }
+  return highsPromise;
+}
+
 /**
  * 創新高／新低與漲跌幅。這份由 FinLab 那條路徑產生，所以可能因為額度而缺席。
  *
@@ -76,7 +91,7 @@ export async function fetchRanking(signal?: AbortSignal): Promise<Ranking | null
  * 改版之後、下一次重抓之前，線上那份可能還是舊的。頁面顯示「還沒有資料」，
  * 比整頁壞掉好 —— 這個情況實際發生過一次。
  */
-export async function fetchHighs(signal?: AbortSignal): Promise<Highs | null> {
+async function loadHighs(signal?: AbortSignal): Promise<Highs | null> {
   const json = await getJson(`${BASE}data/highs.json`, signal);
   if (json === null) return null;
   const d = json as Partial<Highs>;

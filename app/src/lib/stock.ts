@@ -444,3 +444,93 @@ export function rankReturns(rows: HighRow[], opts: ReturnOptions): HighRow[] {
   });
   return limit ? out.slice(0, limit) : out;
 }
+
+/* ── 個股看板 ───────────────────────────────────────────── */
+
+/**
+ * 每日三家分開的買賣超（張），給柱狀圖用。
+ *
+ * `instTotals` 只回三家相加的合計，看不出是誰在買 —— 而「外資買、投信賣」跟
+ * 「三家都買」是完全不同的故事，那正是這種圖要回答的。沒資料的日子留 null，
+ * 不要當成 0（那天可能只是還沒公佈）。
+ */
+export interface InstDay {
+  date: string;
+  foreign: number | null;
+  trust: number | null;
+  dealer: number | null;
+  /** 三家相加 */
+  total: number | null;
+}
+
+export function instDaily(chips: StockChips): InstDay[] {
+  return chips.days.map((date, i) => {
+    const r = chips.inst[i];
+    if (!r) return { date, foreign: null, trust: null, dealer: null, total: null };
+    const f = toLots(r[0]);
+    const t = toLots(r[1]);
+    const d = toLots(r[2]);
+    return {
+      date, foreign: f, trust: t, dealer: d,
+      total: (f ?? 0) + (t ?? 0) + (d ?? 0),
+    };
+  });
+}
+
+export interface PeriodReturn {
+  key: 'r5' | 'r20' | 'r60' | 'r120';
+  label: string;
+  value: number | null;
+}
+
+export const PERIOD_LABELS: PeriodReturn[] = [
+  { key: 'r5', label: '一週', value: null },
+  { key: 'r20', label: '一月', value: null },
+  { key: 'r60', label: '一季', value: null },
+  { key: 'r120', label: '半年', value: null },
+];
+
+/** 把 highs 的那一列攤成畫面要的四段漲跌幅。期間不足的維持 null。 */
+export function periodReturns(row: HighRow | null): PeriodReturn[] {
+  return PERIOD_LABELS.map(p => ({
+    ...p,
+    value: row ? (row[p.key] ?? null) : null,
+  }));
+}
+
+export interface Position {
+  window: number;
+  /** 最新收盤 */
+  price: number;
+  high: number;
+  low: number;
+  /** 距高點（負數代表還在高點下方） */
+  fromHigh: number;
+  /** 距低點 */
+  fromLow: number;
+  /** 收盤價在區間裡的位置，0 = 在低點、100 = 在高點 */
+  pos: number;
+  isHigh: boolean;
+  isLow: boolean;
+}
+
+/**
+ * 價格在這個窗口的高低區間裡站在哪裡。
+ *
+ * 注意 `p` 是原始收盤價、`h`／`l` 是**還原股價**的高低點（見 highs.json 的 note），
+ * 所以位置要用 fh／fl 反推，不能直接拿 p 去跟 h、l 比 —— 除過權息的標的會算歪。
+ */
+export function position(row: HighRow | null, window: number): Position | null {
+  const w = row?.w?.[String(window)];
+  if (!row || !w) return null;
+  // fh = (收盤 − 高點) / 高點 × 100（負或 0）、fl = (收盤 − 低點) / 低點 × 100
+  const span = w.h - w.l;
+  const price = w.l * (1 + w.fl / 100);
+  const pos = span > 0 ? ((price - w.l) / span) * 100 : 100;
+  return {
+    window, price: row.p, high: w.h, low: w.l,
+    fromHigh: w.fh, fromLow: w.fl,
+    pos: Math.max(0, Math.min(100, pos)),
+    isHigh: w.nh === 1, isLow: w.nl === 1,
+  };
+}
