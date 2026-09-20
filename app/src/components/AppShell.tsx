@@ -17,6 +17,7 @@ const TABS = [
   { to: '/favorites', label: '收藏' },
   { to: '/calc', label: '試算' },
   { to: '/dividend', label: '配息' },
+  { to: '/futures', label: '對帳單' },
   { to: '/chips', label: '籌碼' },
   { to: '/news', label: '新聞' },
   { to: '/stock', label: '個股' },

@@ -35,6 +35,9 @@ const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
 const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
 const DividendPage = lazyRoute(
   () => import('./routes/DividendPage'), m => m.DividendPage);
+// 對帳單頁還會在使用者選檔時動態載入 SheetJS（約 400 KB），所以更不該
+// 跟主程式綁在一起 —— 沒點進來的人一個位元組都不用下載。
+const FuturesPage = lazyRoute(() => import('./routes/FuturesPage'), m => m.FuturesPage);
 
 export interface ListSearch {
   q: string;
@@ -89,6 +92,12 @@ const calcRoute = createRoute({
   component: CalculatorPage,
 });
 
+const futuresRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/futures',
+  component: FuturesPage,
+});
+
 const dividendRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dividend',
@@ -128,8 +137,8 @@ const aboutRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, chipsRoute,
-   newsRoute, stockRoute, pokerRoute, aboutRoute]);
+  [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
+   chipsRoute, newsRoute, stockRoute, pokerRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,
