@@ -176,6 +176,21 @@ function BacktestTab({ index }: { index: CalcIndex }) {
   }, [series, index.months, from, to, lump, monthlyAmt, timing,
       reinvest, feeRate, feeMin, wholeShares, divTaxRate, nhi]);
 
+  // 對照組：**同樣的總投入金額**，全部在起始月一次投進去。
+  //
+  // 這是定期定額最常被問的那個問題（「早知道當初一次買」），而資料就在手上，
+  // 只是沒擺在一起。只有在真的有定期定額時才算 —— 純單筆投入跟自己比沒有意義。
+  const lumpAlt = useMemo(() => {
+    if (!result || monthlyAmt <= 0 || result.months === 0) return null;
+    return runBacktest({
+      series: series!, months: index.months,
+      from: from || undefined, to: to || undefined,
+      lump: result.totalInvested, monthly: 0, timing, reinvest,
+      feeRate, feeMin, wholeShares, divTaxRate, nhiSupplement: nhi,
+    });
+  }, [result, series, index.months, from, to, monthlyAmt, timing,
+      reinvest, feeRate, feeMin, wholeShares, divTaxRate, nhi]);
+
   const chartPoints: GrowthPoint[] = useMemo(() => {
     if (!result) return [];
     return result.rows.map(r => ({
@@ -379,6 +394,58 @@ function BacktestTab({ index }: { index: CalcIndex }) {
                     </dd>
                   </div>
                 </dl>
+
+                {lumpAlt && (
+                  <div className="mt-3 rounded-lg border border-line bg-sunken/40 p-2.5">
+                    <h3 className="text-[12.5px] font-bold text-ink">
+                      如果同樣的錢一開始就全部投入
+                    </h3>
+                    <p className="mt-0.5 text-[11px] leading-snug text-faint">
+                      拿 {money(result.totalInvested)} 在 {result.rows[0]?.month} 一次買進，
+                      其餘條件（配息處理、手續費、整股）都一樣。
+                      這是事後才知道的比較 —— 當時你不一定拿得出這筆錢，
+                      而且它承擔的是一次進場的風險。
+                    </p>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <div className="rounded-lg border border-line bg-bg px-3 py-2">
+                        <div className="text-[11.5px] text-muted">定期定額</div>
+                        <div className={`mt-0.5 font-mono text-[17px] font-bold tabular-nums ${
+                          result.finalValue >= result.totalInvested ? 'text-up' : 'text-down'}`}>
+                          {money(result.finalValue)}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[11px] tabular-nums text-faint">
+                          總報酬 {pct(result.totalReturnPct)}
+                          {' · '}年化 {pct(result.annualizedPct)}
+                        </div>
+                      </div>
+                      <div className="rounded-lg border border-line bg-bg px-3 py-2">
+                        <div className="text-[11.5px] text-muted">一次投入</div>
+                        <div className={`mt-0.5 font-mono text-[17px] font-bold tabular-nums ${
+                          lumpAlt.finalValue >= lumpAlt.totalInvested ? 'text-up' : 'text-down'}`}>
+                          {money(lumpAlt.finalValue)}
+                        </div>
+                        <div className="mt-0.5 font-mono text-[11px] tabular-nums text-faint">
+                          總報酬 {pct(lumpAlt.totalReturnPct)}
+                          {' · '}年化 {pct(lumpAlt.annualizedPct)}
+                        </div>
+                      </div>
+                    </div>
+                    <p className="mt-1.5 text-[11.5px] text-muted">
+                      {lumpAlt.finalValue > result.finalValue ? (
+                        <>一次投入多了 <strong className="text-ink">
+                          {money(lumpAlt.finalValue - result.finalValue)}
+                        </strong>（{pct((lumpAlt.finalValue / result.finalValue - 1) * 100)}）。
+                        這段期間是上漲的，錢越早進場越有利。</>
+                      ) : (
+                        <>定期定額多了 <strong className="text-ink">
+                          {money(result.finalValue - lumpAlt.finalValue)}
+                        </strong>（{pct((result.finalValue / lumpAlt.finalValue - 1) * 100)}）。
+                        這段期間一次投入的進場點比較差，分批反而攤掉了。</>
+                      )}
+                      {' '}年化報酬的差距通常比總值更小 —— 定期定額的錢平均只待了一半的時間。
+                    </p>
+                  </div>
+                )}
 
                 {series.splits.length > 0 && (
                   <p className="mt-2.5 rounded-lg bg-sunken px-2.5 py-2 text-[11.5px] leading-relaxed text-muted">
