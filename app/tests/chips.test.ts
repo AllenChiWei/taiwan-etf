@@ -10,8 +10,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge, bars,
-  contractAmount,
-  type ChipsData,
+  contractAmount, joinDca,
+  type ChipsData, type DcaRow,
 } from '../src/lib/chips.ts';
 
 test('單位換算', async (t) => {
@@ -310,5 +310,42 @@ test('契約金額的顯示', async (t) => {
   await t.test('缺值回破折號', () => {
     assert.equal(contractAmount(null), '—');
     assert.equal(contractAmount(undefined), '—');
+  });
+});
+
+test('定期定額人氣榜', async (t) => {
+  const rows: DcaRow[] = [
+    { code: '0050', name: '元大台灣50', n: 1_280_028 },
+    { code: '0056', name: '元大高股息', n: 338_456 },
+    { code: '9999', name: '不在清單裡', n: 100_000 },
+  ];
+  const lookup = new Map([
+    ['0050', { r12: '98.17', yield: '1.48' }],
+    ['0056', { r12: 'N/A', yield: '7.25' }],
+  ]);
+
+  await t.test('比重加起來是 100%', () => {
+    const out = joinDca(rows, lookup);
+    const total = out.reduce((a, r) => a + r.share, 0);
+    assert.ok(Math.abs(total - 100) < 1e-9);
+    assert.ok(Math.abs(out[0].share - (1_280_028 / 1_718_484) * 100) < 1e-9);
+  });
+
+  await t.test('接得到的帶上報酬率與殖利率', () => {
+    const out = joinDca(rows, lookup);
+    assert.equal(out[0].r12, 98.17);
+    assert.equal(out[0].yield, 1.48);
+  });
+
+  await t.test('N/A 與查不到都是 null，不要變成 0', () => {
+    const out = joinDca(rows, lookup);
+    assert.equal(out[1].r12, null);        // 'N/A'
+    assert.equal(out[1].yield, 7.25);
+    assert.equal(out[2].r12, null);        // 清單裡沒這一檔
+    assert.equal(out[2].yield, null);
+  });
+
+  await t.test('空清單不會除以零', () => {
+    assert.deepEqual(joinDca([], lookup), []);
   });
 });

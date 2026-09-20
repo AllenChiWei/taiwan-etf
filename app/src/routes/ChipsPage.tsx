@@ -11,11 +11,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
-  contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount,
-  type ChipsData, type LargeRow, type TopByWho, type TopRow,
+  contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
+  type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { EmptyState } from '../components/EmptyState';
+import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -487,6 +488,99 @@ function TopSection({ data }: { data: ChipsData }) {
 
 /* ── 頁面 ───────────────────────────────────────────────── */
 
+/** 定期定額人氣榜：這一頁唯一一份「散戶在買什麼」的官方數字。 */
+function DcaSection({ data }: { data: ChipsData }) {
+  const [tab, setTab] = useState<'etfs' | 'stocks'>('etfs');
+  const etfData = useEtfData();
+  const dca = data.dca;
+
+  // 清單只有 ETF，所以個股榜接不到報酬率 —— 那一欄會是「—」，這是預期內的
+  const lookup = useMemo(() => {
+    const m = new Map<string, { r12: string | null; yield: string | null }>();
+    for (const e of etfData.etfs) m.set(e.code, { r12: e.r12 ?? null, yield: e.yield ?? null });
+    return m;
+  }, [etfData]);
+
+  const rows = useMemo(
+    () => (dca ? joinDca(tab === 'etfs' ? dca.etfs : dca.stocks, lookup) : []),
+    [dca, tab, lookup]);
+
+  if (!dca || rows.length === 0) return null;
+  const top = rows[0];
+
+  return (
+    <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="text-sm font-bold text-ink">定期定額人氣榜</h2>
+        <span className="text-[11.5px] text-faint">證交所月報 · 前 {rows.length} 名</span>
+      </div>
+      <p className="mt-1 text-[11.5px] leading-snug text-muted">
+        有多少人設定了每月扣款買這一檔。這一頁其他數字講的是機構部位，
+        這一份講的是真的有人在定期買進 —— 比較接近人氣，不是籌碼。
+        {top && (
+          <>
+            {' '}目前 {top.name} 以 {nf0.format(top.n)} 戶居首，
+            佔榜上合計的 {nf1.format(top.share)}%。
+          </>
+        )}
+      </p>
+
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {([['etfs', 'ETF'], ['stocks', '個股']] as const).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            aria-pressed={tab === id}
+            onClick={() => setTab(id)}
+            className={`h-8 shrink-0 rounded-lg px-3 text-[12.5px] font-semibold transition-colors ${
+              tab === id ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <ol className="mt-2">
+        {rows.map((r: DcaJoined, i: number) => (
+          <li key={r.code}
+              className="grid grid-cols-[1.4rem_1fr_auto] items-baseline gap-x-2
+                         border-b border-line/60 py-1.5 last:border-0">
+            <span className="font-mono text-[11.5px] tabular-nums text-faint">{i + 1}</span>
+            <span className="min-w-0">
+              <span className="font-mono text-[12.5px] text-muted">{r.code}</span>
+              <span className="ml-1.5 text-[12.5px] text-ink">{r.name}</span>
+              {/* 比重條：同一份榜內的相對大小，0050 一檔就吃掉四成 */}
+              <span className="mt-1 block h-1 w-full max-w-[220px] rounded-full bg-sunken">
+                <span className="block h-full rounded-full bg-accent"
+                      style={{ width: `${Math.max(2, (r.n / rows[0].n) * 100)}%` }} />
+              </span>
+            </span>
+            <span className="text-right">
+              <span className="block font-mono text-[13px] font-bold tabular-nums text-ink">
+                {nf0.format(r.n)}
+              </span>
+              <span className="block font-mono text-[10.5px] tabular-nums text-faint">
+                {nf1.format(r.share)}%
+                {r.r12 !== null && (
+                  <span className={`ml-1 ${TONE_CLASS[r.r12 >= 0 ? 'up' : 'down']}`}>
+                    1年 {r.r12 >= 0 ? '+' : ''}{nf1.format(r.r12)}%
+                  </span>
+                )}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
+
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        戶數是「有設定定期定額的帳戶數」，不是投入金額，所以一檔便宜的 ETF
+        會比一檔貴的容易衝高。近一年報酬取自台股 ETF 清單，個股榜沒有這一欄。
+        {dca.modified && `　資料更新：${dca.modified}`}
+      </p>
+    </section>
+  );
+}
+
 export function ChipsPage() {
   const [data, setData] = useState<ChipsData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
@@ -550,6 +644,7 @@ export function ChipsPage() {
       <LargeSection data={data} />
       <SectorSection data={data} />
       <TopSection data={data} />
+      <DcaSection data={data} />
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
         籌碼資料為交易所與期交所的公開統計，僅供參考，不構成投資建議。

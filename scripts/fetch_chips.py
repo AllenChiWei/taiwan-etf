@@ -465,6 +465,47 @@ def sectors(day):
     return rows
 
 
+def dca_rank():
+    u"""定期定額交易戶數排行（證交所月報）。
+
+    這是**每月**的統計，不是每天 —— 端點回的是最新一期，沒有期別欄位，所以這裡
+    記下 HTTP 的 Last-Modified 當作資料時間。一份回應同時包含個股與 ETF 兩份
+    排行（各二十名），欄位是並排的，所以要拆成兩份。
+
+    它是少數看得到「散戶在買什麼」的官方數字：三大法人那幾張表是機構，這張是
+    真的有人每個月扣款買進。
+    """
+    url = 'https://openapi.twse.com.tw/v1/ETFReport/ETFRank'
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': UA})
+        resp = urllib.request.urlopen(req, timeout=TIMEOUT)
+        modified = resp.headers.get('Last-Modified') or ''
+        rows = json.loads(resp.read().decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'定期定額排行：%s' % str(e)[:60])
+        return None
+
+    def pick(code_key, name_key, n_key):
+        out = []
+        for r in rows:
+            code = str(r.get(code_key) or '').strip()
+            n = num(r.get(n_key))
+            if not code or n is None:
+                continue
+            out.append({'code': code,
+                        'name': str(r.get(name_key) or '').strip(),
+                        'n': int(n)})
+        out.sort(key=lambda x: -x['n'])
+        return out
+
+    etfs = pick('ETFsSecurityCode', 'ETFsName', 'ETFsNumberofTradingAccounts')
+    stocks = pick('STOCKsSecurityCode', 'STOCKsName', 'STOCKsNumberofTradingAccounts')
+    if not etfs and not stocks:
+        note(u'定期定額排行：回應裡沒有可用的列')
+        return None
+    return {'etfs': etfs, 'stocks': stocks, 'modified': modified}
+
+
 def twse_top(day):
     u"""上市：外資／投信／自營商各自的買賣超前十大。"""
     try:
@@ -595,6 +636,14 @@ def main():
     log(u'櫃買：上櫃三大法人買賣超…')
     tpex = tpex_top(day_compact)
 
+    log(u'證交所：定期定額交易戶數排行（月報）…')
+    dca = dca_rank()
+    if dca:
+        log(u'  ETF %d 檔、個股 %d 檔，最多的是 %s %s 戶'
+            % (len(dca['etfs']), len(dca['stocks']),
+               dca['etfs'][0]['name'] if dca['etfs'] else u'—',
+               format(dca['etfs'][0]['n'], ',') if dca['etfs'] else u'—'))
+
     payload = {
         'meta': {
             'date': fut_day,
@@ -614,10 +663,12 @@ def main():
         'large': {'fut': large_fut, 'opt': large_opt},
         'top': {'twse': twse, 'tpex': tpex},
         'sectors': sector_rows,
+        # 每月更新的散戶行為統計，跟這一頁其他每日更新的東西不同步，刻意分開放
+        'dca': dca,
     }
     have = (bool(fut_latest) or bool(opt_latest) or bool(pc['dates'])
             or bool(large_fut) or bool(sector_rows)
-            or twse is not None or tpex is not None)
+            or twse is not None or tpex is not None or dca is not None)
     if not have:
         log(u'每一個來源都失敗了，不寫出半空的檔案 —— 籌碼頁會顯示「今天還沒有資料」')
         for e in ERRORS:

@@ -89,6 +89,23 @@ export interface ChipsData {
   top: { twse: TopByWho | null; tpex: TopByWho | null };
   /** 各類股成交比重（上市）。舊版的 chips.json 沒有這個欄位。 */
   sectors?: SectorRow[];
+  /** 定期定額交易戶數排行（證交所月報）。舊版的 chips.json 沒有這個欄位。 */
+  dca?: DcaRank | null;
+}
+
+/** 定期定額交易戶數。這是這一頁唯一一份「散戶在買什麼」的官方數字。 */
+export interface DcaRow {
+  code: string;
+  name: string;
+  /** 交易戶數 */
+  n: number;
+}
+
+export interface DcaRank {
+  etfs: DcaRow[];
+  stocks: DcaRow[];
+  /** HTTP Last-Modified —— 這份端點沒有期別欄位，只能用它當資料時間 */
+  modified: string;
 }
 
 /** 畫面上三大法人固定這個順序：外資部位最大、最常被看。 */
@@ -302,4 +319,47 @@ export function bars(
     out.push({ x: pad + i * slot + (slot - w) / 2, y: top, w, h, up: v > 0 });
   });
   return out;
+}
+
+/* ── 定期定額人氣榜 ─────────────────────────────────────────
+ *
+ * 證交所每月公佈定期定額交易戶數的前二十名。這份數字的特別之處是它**不是部位**，
+ * 是「有多少人每個月扣款買這一檔」—— 三大法人那幾張表講的是機構，這張講的是
+ * 真的有人設定了扣款。所以它比較接近「人氣」而不是「籌碼」。
+ */
+
+export interface DcaJoined extends DcaRow {
+  /** 佔榜上合計戶數的百分比 */
+  share: number;
+  /** 近一年報酬（%）。個股榜與清單裡沒有的標的是 null */
+  r12: number | null;
+  /** 殖利率（%） */
+  yield: number | null;
+}
+
+/**
+ * 把人氣榜跟 ETF 清單接起來，順便算出每一檔佔榜上的比重。
+ *
+ * 接不到就留 null —— **不要把接不到當成 0**，那會讓「還沒配息」和「查不到」
+ * 看起來一樣，與台股頁對 N/A 的處理一致。
+ */
+export function joinDca(
+  rows: DcaRow[],
+  lookup: Map<string, { r12: string | null; yield: string | null }>,
+): DcaJoined[] {
+  const total = rows.reduce((a, r) => a + r.n, 0);
+  const numOrNull = (v: string | null | undefined) => {
+    if (v === null || v === undefined || v === '' || v === 'N/A') return null;
+    const n = Number(v);
+    return Number.isFinite(n) ? n : null;
+  };
+  return rows.map(r => {
+    const hit = lookup.get(r.code);
+    return {
+      ...r,
+      share: total > 0 ? (r.n / total) * 100 : 0,
+      r12: numOrNull(hit?.r12),
+      yield: numOrNull(hit?.yield),
+    };
+  });
 }
