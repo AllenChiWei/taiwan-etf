@@ -18,6 +18,7 @@ import { TONE_CLASS } from '../lib/format';
 import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
+import { StockSheet } from '../components/StockSheet';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
@@ -418,7 +419,9 @@ function SectorSection({ data }: { data: ChipsData }) {
 
 /* ── 法人買賣超前十大 ───────────────────────────────────── */
 
-function TopList({ rows, side }: { rows: TopRow[]; side: 'buy' | 'sell' }) {
+function TopList({ rows, side, onPick }: {
+  rows: TopRow[]; side: 'buy' | 'sell'; onPick: (code: string) => void;
+}) {
   if (rows.length === 0) {
     return <p className="py-3 text-center text-[12.5px] text-muted">沒有資料。</p>;
   }
@@ -427,8 +430,12 @@ function TopList({ rows, side }: { rows: TopRow[]; side: 'buy' | 'sell' }) {
     <ol className="mt-1.5 space-y-1">
       {rows.map((r, i) => (
         <li key={r.code}
-            className="grid grid-cols-[1.4em_1fr_auto] items-baseline gap-2 border-b
-                       border-line/60 py-1 last:border-0">
+            onClick={() => onPick(r.code)}
+            role="button" tabIndex={0}
+            onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault(); onPick(r.code); } }}
+            className="grid cursor-pointer grid-cols-[1.4em_1fr_auto] items-baseline gap-2
+                       border-b border-line/60 py-1 last:border-0 hover:bg-sunken/50">
           <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
           <span className="min-w-0">
             <span className="font-mono text-[13px] font-bold text-ink">{r.code}</span>
@@ -450,7 +457,9 @@ function TopList({ rows, side }: { rows: TopRow[]; side: 'buy' | 'sell' }) {
 
 const MARKETS = ['上市', '上櫃'] as const;
 
-function TopSection({ data }: { data: ChipsData }) {
+function TopSection({ data, onPick }: {
+  data: ChipsData; onPick: (code: string) => void;
+}) {
   const [market, setMarket] = useState<(typeof MARKETS)[number]>('上市');
   const [who, setWho] = useState<string>(WHO_ORDER[0]);
   const table: TopByWho | null = market === '上市' ? data.top.twse : data.top.tpex;
@@ -469,11 +478,11 @@ function TopSection({ data }: { data: ChipsData }) {
         <div className="mt-2 grid gap-3 sm:grid-cols-2">
           <div className="rounded-lg border border-line bg-bg p-2.5">
             <div className="text-[12.5px] font-semibold text-up">買超前十</div>
-            <TopList rows={side.buy} side="buy" />
+            <TopList onPick={onPick} rows={side.buy} side="buy" />
           </div>
           <div className="rounded-lg border border-line bg-bg p-2.5">
             <div className="text-[12.5px] font-semibold text-down">賣超前十</div>
-            <TopList rows={side.sell} side="sell" />
+            <TopList onPick={onPick} rows={side.sell} side="sell" />
           </div>
         </div>
       )}
@@ -489,7 +498,9 @@ function TopSection({ data }: { data: ChipsData }) {
 /* ── 頁面 ───────────────────────────────────────────────── */
 
 /** 定期定額人氣榜：這一頁唯一一份「散戶在買什麼」的官方數字。 */
-function DcaSection({ data }: { data: ChipsData }) {
+function DcaSection({ data, onPick }: {
+  data: ChipsData; onPick: (code: string) => void;
+}) {
   const [tab, setTab] = useState<'etfs' | 'stocks'>('etfs');
   const etfData = useEtfData();
   const dca = data.dca;
@@ -543,8 +554,12 @@ function DcaSection({ data }: { data: ChipsData }) {
       <ol className="mt-2">
         {rows.map((r: DcaJoined, i: number) => (
           <li key={r.code}
-              className="grid grid-cols-[1.4rem_1fr_auto] items-baseline gap-x-2
-                         border-b border-line/60 py-1.5 last:border-0">
+              onClick={() => onPick(r.code)}
+              role="button" tabIndex={0}
+              onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault(); onPick(r.code); } }}
+              className="grid cursor-pointer grid-cols-[1.4rem_1fr_auto] items-baseline gap-x-2
+                         border-b border-line/60 py-1.5 last:border-0 hover:bg-sunken/50">
             <span className="font-mono text-[11.5px] tabular-nums text-faint">{i + 1}</span>
             <span className="min-w-0">
               <span className="font-mono text-[12.5px] text-muted">{r.code}</span>
@@ -582,6 +597,8 @@ function DcaSection({ data }: { data: ChipsData }) {
 }
 
 export function ChipsPage() {
+  // 買賣超與人氣榜的每一列都可以點開個股儀表板，關掉之後停在原來的位置
+  const [sheet, setSheet] = useState<string | null>(null);
   const [data, setData] = useState<ChipsData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const [message, setMessage] = useState('');
@@ -629,6 +646,7 @@ export function ChipsPage() {
   return (
     <>
       <h1 className="sr-only">籌碼</h1>
+      <StockSheet code={sheet} onClose={() => setSheet(null)} />
       <div className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 className="text-sm font-bold text-ink">{data.meta.date} 收盤籌碼</h2>
@@ -643,8 +661,8 @@ export function ChipsPage() {
       <AtmSection />
       <LargeSection data={data} />
       <SectorSection data={data} />
-      <TopSection data={data} />
-      <DcaSection data={data} />
+      <TopSection data={data} onPick={setSheet} />
+      <DcaSection data={data} onPick={setSheet} />
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
         籌碼資料為交易所與期交所的公開統計，僅供參考，不構成投資建議。
