@@ -106,13 +106,23 @@ test('真實 chips.json', { skip: !existsSync(PATH) && '沒有 chips.json（部�
       assert.ok(data.meta.source.length > 0);
     });
 
+    await t.test('至少有一段當日籌碼', () => {
+      // fetch_chips.py 在每一段都失敗時不會寫檔，所以檔案存在就該有東西。
+      const any = data.futures.length > 0 || data.options.length > 0
+        || data.pc.dates.length > 0 || (data.sectors?.length ?? 0) > 0
+        || data.top.twse !== null || data.top.tpex !== null;
+      assert.ok(any, 'chips.json 存在卻沒有任何當日籌碼');
+    });
+
     await t.test('三大法人期貨每個契約都齊三家', () => {
+      // 期交所偶爾整段回 403（CI 的 IP 被擋過）。那天這一段會是空的，
+      // 而這不該讓部署失敗 —— 頁面本來就是缺哪段就不顯示哪段。
+      // 但只要有資料，形狀就必須是對的：那才是這個檢查要抓的東西。
       const byContract = new Map<string, Set<string>>();
       for (const r of data.futures) {
         if (!byContract.has(r.c)) byContract.set(r.c, new Set());
         byContract.get(r.c)!.add(r.w);
       }
-      assert.ok(byContract.size > 0, '沒有任何期貨契約');
       for (const [c, whos] of byContract) {
         for (const who of WHO_ORDER) {
           assert.ok(whos.has(who), `${c} 缺少 ${who}`);
@@ -127,8 +137,8 @@ test('真實 chips.json', { skip: !existsSync(PATH) && '沒有 chips.json（部�
     });
 
     await t.test('歷史數列長度與日期一致', () => {
+      // 空的代表期交所那段沒拿到（403 過），不是資料壞掉 —— 見上面的說明
       const n = data.futHistory.dates.length;
-      assert.ok(n > 0);
       for (const [c, whos] of Object.entries(data.futHistory.contracts)) {
         for (const [who, values] of Object.entries(whos)) {
           assert.equal(values.length, n, `${c} ${who} 的長度不是 ${n}`);
@@ -249,6 +259,7 @@ test('真實 chips.json 的選擇權明細',
     const data = JSON.parse(readFileSync(PATH, 'utf8')) as ChipsData;
 
     await t.test('買權與賣權、三個身份別都齊', () => {
+      if (data.options.length === 0) return;      // 期交所那段沒拿到
       for (const cp of ['CALL', 'PUT']) {
         for (const who of WHO_ORDER) {
           assert.ok(data.options.some(o => o.cp === cp && o.w === who),

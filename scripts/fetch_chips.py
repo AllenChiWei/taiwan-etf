@@ -666,9 +666,13 @@ def main():
         # 每月更新的散戶行為統計，跟這一頁其他每日更新的東西不同步，刻意分開放
         'dca': dca,
     }
+    # **dca 不算在這裡**。它是每月更新的附加資料，期交所整段 403 的那天它照樣
+    # 抓得到 —— 把它算進來就會讓一份沒有任何當日籌碼的 chips.json 被寫出去，
+    # 而前端測試對真實檔案的檢查會直接失敗（實際發生過，擋掉了一次部署）。
+    # 這道保險要看的是「當天的籌碼有沒有拿到」。
     have = (bool(fut_latest) or bool(opt_latest) or bool(pc['dates'])
             or bool(large_fut) or bool(sector_rows)
-            or twse is not None or tpex is not None or dca is not None)
+            or twse is not None or tpex is not None)
     if not have:
         log(u'每一個來源都失敗了，不寫出半空的檔案 —— 籌碼頁會顯示「今天還沒有資料」')
         for e in ERRORS:
