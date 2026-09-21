@@ -24,8 +24,11 @@ PREV = sys.argv[2] if len(sys.argv) > 2 else None
 # A legitimate delisting or two is normal; losing 5% of the table in one run is a broken scrape.
 DROP_TOLERANCE = 0.05
 
+# act 是後來才加的欄位，而 build_data.py 是逐欄組出 JSON 的 —— 它漏了一行，
+# 重建出來的整份資料就沒有這個欄位，而這裡當時沒有檢查，所以驗證器放它過去，
+# 一路到 filters.test.ts 才擋下來（每日更新因此連續失敗）。新欄位要補進這裡。
 REQUIRED_FIELDS = ['code', 'name', 'cust', 'freq', 'yield', 'sec',
-                   'r3', 'r6', 'r12', 'r36', 'r60']
+                   'r3', 'r6', 'r12', 'r36', 'r60', 'act']
 
 # 0050 / 00679B / 00400A -- four to six digits, optionally one trailing letter.
 CODE_RE = re.compile(r'^[0-9]{4,6}[A-Z]?$')

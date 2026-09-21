@@ -80,6 +80,10 @@ def main():
         }
         for key in RETURN_KEYS:
             e[key] = r['ret'].get(key) or 'N/A'
+        # 這個 dict 是逐欄組出來的，所以 etfdata 新增的欄位一定要在這裡補一行。
+        # 漏掉 act 的那四天，重建出來的 etfs.json 整份沒有這個欄位，主動篩選會
+        # 靜靜失效 —— 擋下來的是 filters.test.ts，代價是每日更新整批不提交。
+        e['act'] = r['act']
         etfs.append(e)
 
     doc = {
