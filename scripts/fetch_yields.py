@@ -158,7 +158,11 @@ def main():
     rows = {}
     no_price = no_div = 0
     for code, records in div.items():
-        recent = [r for r in records if r[0] > cutoff]
+        # 上界是收盤日：交易所會提前公告除息，這份資料因此含有還沒除息的日期。
+        # 把它算進「近一年實際配過的息」有兩個問題 —— 那筆錢還沒發，而且股價
+        # 也還沒除息、分母是含權的。2026-09-22 實測六檔中鏢，00930 因此從
+        # 3.95% 變成 7.23%（隔天 09-23 才要除息的 0.815 元被算了進來）。
+        recent = [r for r in records if cutoff < r[0] <= asof]
         total = sum(float(r[1]) for r in recent)
         price = prices.get(code)
         if price is None:
