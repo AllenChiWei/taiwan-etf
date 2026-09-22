@@ -49,6 +49,15 @@ PERIODS = [('r3', 63), ('r6', 126), ('r12', 252), ('r36', 756), ('r60', 1260)]
 LIQUID_MIN_ADV = 15_000_000
 ADV_WINDOW = 60                      # 用最近 60 個交易日算日均
 
+# 通過金額門檻還不夠，還要有夠長的歷史才算 liquid。兩個理由：只有幾天資料的標的，
+# 它的「日均」其實是那幾天的平均；而且算不出近 3 月報酬，進了預設畫面就是一整排 N/A。
+#
+# 2026-09-22 踩過：FinLab 一夜之間把 us_fund_price 從 10,097 檔擴到 11,981 檔
+# （連 AAAU 這種 2018 年就上市、先前沒收的都補進來了），多出的 1,924 檔大多只有
+# 幾天價格。其中 165 檔通過金額門檻卻沒有近 3 月報酬，verify_us_data.py 的
+# 「liquid 缺 r3 超過一成」因此擋下整次更新 —— 那條規則本來是要抓價格矩陣壞掉。
+LIQUID_MIN_DAYS = 64                 # 算得出近 3 月報酬所需的價格點數（63 個交易日 + 1）
+
 
 def log(msg):
     print(msg, flush=True)
@@ -152,6 +161,9 @@ def main():
 
     log('計算報酬率與日均成交金額…')
     dollar_vol = (volume[alive].iloc[-ADV_WINDOW:] * close[alive].iloc[-ADV_WINDOW:]).mean()
+    # 歷史長度算在報價上（close），與報酬率用的 adj 分開 —— 這樣「close 有、adj 沒有」
+    # 那種矩陣壞法仍然會被驗證器的 liquid 缺 r3 規則抓到。
+    history = close[alive].notna().sum()
 
     rows = []
     for t in alive:
@@ -164,7 +176,8 @@ def main():
         adv = dollar_vol.get(t)
         adv = 0.0 if adv != adv else float(adv)      # NaN -> 0
         row['adv'] = int(adv)
-        row['liquid'] = adv >= LIQUID_MIN_ADV
+        row['liquid'] = (adv >= LIQUID_MIN_ADV
+                         and int(history.get(t, 0)) >= LIQUID_MIN_DAYS)
         rows.append(row)
 
     rows.sort(key=lambda r: -r['adv'])
@@ -177,6 +190,7 @@ def main():
             'total': len(rows),
             'liquid': liquid,
             'liquidMinAdv': LIQUID_MIN_ADV,
+            'liquidMinDays': LIQUID_MIN_DAYS,
             'source': 'FinLab / Nasdaq Trader',
             'generated_by': 'fetch_us_etfs.py',
             # 前端據此標示欄位意義。改成含息的總報酬時，這裡也要一起改。
@@ -193,8 +207,11 @@ def main():
         fh.write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')))
 
     log('')
-    log('%s：%d 檔（有流動性 %d 檔，門檻日均成交金額 $%s）'
-        % (OUT, len(rows), liquid, format(LIQUID_MIN_ADV, ',')))
+    log('%s：%d 檔（有流動性 %d 檔，門檻日均成交金額 $%s、歷史至少 %d 個交易日）'
+        % (OUT, len(rows), liquid, format(LIQUID_MIN_ADV, ','), LIQUID_MIN_DAYS))
+    short = sum(1 for t in alive if int(history.get(t, 0)) < LIQUID_MIN_DAYS)
+    if short:
+        log('  其中 %d 檔資料不足 %d 個交易日，不列為有流動性' % (short, LIQUID_MIN_DAYS))
     log('資料截至 %s' % doc['meta']['asof'])
     log('')
     log('成交金額分布（檔數）：')

@@ -93,7 +93,7 @@ export interface UsEtf {
   r60: string;
   /** 近 60 個交易日的日均成交金額（美元） */
   adv: number;
-  /** adv 是否達到 meta.liquidMinAdv */
+  /** adv 達到 meta.liquidMinAdv，且歷史長度夠算近 3 月報酬（meta.liquidMinDays） */
   liquid: boolean;
 }
 
@@ -104,6 +104,8 @@ export interface UsEtfMeta {
   total: number;
   liquid: number;
   liquidMinAdv: number;
+  /** liquid 另外要求的最少價格點數；舊資料沒有這個欄位 */
+  liquidMinDays?: number;
   source: string;
   note?: string;
   generated_by?: string;

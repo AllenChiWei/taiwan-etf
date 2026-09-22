@@ -60,14 +60,17 @@ if dupes:
 if meta.get('total') != len(etfs):
     fails.append('meta.total=%s but there are %d rows' % (meta.get('total'), len(etfs)))
 
-# liquid 旗標必須與宣告的門檻一致，否則前端的預設篩選會和說明文字對不上
+# liquid 旗標必須與宣告的門檻一致，否則前端的預設篩選會和說明文字對不上。
+# 只驗一個方向：liquid 的一定過得了金額門檻。反向不成立 —— 歷史不足
+# LIQUID_MIN_DAYS 的標的就算金額夠也不標 liquid（見 fetch_us_etfs.py），
+# 而歷史長度不在 JSON 裡，這裡驗不了。
 threshold = meta.get('liquidMinAdv')
 if not isinstance(threshold, int) or threshold <= 0:
     fails.append('meta.liquidMinAdv is missing or not a positive int: %r' % threshold)
 else:
-    bad = [e['code'] for e in etfs if e['liquid'] != (e['adv'] >= threshold)]
+    bad = [e['code'] for e in etfs if e['liquid'] and e['adv'] < threshold]
     if bad:
-        fails.append('%d row(s) whose liquid flag disagrees with adv vs liquidMinAdv: %s'
+        fails.append('%d row(s) flagged liquid below meta.liquidMinAdv: %s'
                      % (len(bad), bad[:5]))
     declared = meta.get('liquid')
     actual = sum(1 for e in etfs if e['liquid'])

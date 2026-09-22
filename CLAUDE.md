@@ -125,6 +125,28 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
+**流程分成五個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+
+| 區塊 | step id | 產出 | 需要 |
+| --- | --- | --- | --- |
+| 配息與殖利率 | `div` | `dividends.json`、`yields.json` | 只有交易所端點 |
+| 台股清單 | `tw` | `etfs.json`、`taiwan_etf_list.html` | MoneyDJ + FinLab |
+| 美股清單 | `us` | `us_etfs.json` | FinLab |
+| 週選價平和 | `atm` | `atm.json` | 期交所 |
+| 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
+
+每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
+跑完由「整理未完成的區塊」依 `steps.<id>.outcome` 把失敗的那組 `git checkout` 還原成
+前一版，所以提交步驟只會看到成功的那幾塊。擱置的區塊會寫進 commit 訊息、job summary
+與 `::error`，而且最後一步會讓 job 紅燈 —— 但 `deploy` 的條件是 `always()`，成功的那
+幾塊照樣上線。前置檢查（FinLab 憑證、MoneyDJ 連線）也不再中止整次更新，只決定 `tw`／
+`us` 這兩塊跑不跑。
+
+會這樣改是因為 2026-09-22：FinLab 把 `us_fund_price` 從 10,097 檔擴到 11,981 檔，多出的
+新標的大多只有幾天歷史，其中 165 檔通過流動性門檻卻算不出近 3 月報酬，`verify_us_data.py`
+因此擋下 —— 然後台股、配息、價平和、個股財報那四塊明明都通過了驗證，卻一起沒進版，
+網站停在五天前。（那個門檻本身也修了，見 `fetch_us_etfs.py` 的 `LIQUID_MIN_DAYS`。）
+
 A commit pushed with `GITHUB_TOKEN` does **not** trigger `push` workflows, which is why
 `update-data.yml` calls `deploy.yml` via `workflow_call` instead of relying on the push.
 

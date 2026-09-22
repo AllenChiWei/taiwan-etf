@@ -20,14 +20,36 @@ concurrency:
   group: update-data
   cancel-in-progress: false
 
+# 這個流程分成五個互相獨立的區塊，各自產出自己那幾個檔案：
+#
+#   配息   dividends.json, yields.json          交易所公告，不碰 FinLab／MoneyDJ
+#   台股   etfs.json, taiwan_etf_list.html      名單 + MoneyDJ + FinLab 報酬率
+#   美股   us_etfs.json                         Nasdaq 名單 + FinLab 價格
+#   價平和 atm.json                             期交所選擇權行情（累積式）
+#   個股   fin_history.json                     公開資訊觀測站（累積式）
+#
+# **一個區塊失敗不會擋住其他區塊。** 失敗的那一組會被 git checkout 還原成前一版
+# （擱置到下次），其餘照常提交並部署。理由是 2026-09-22 那次：美股那步因為 FinLab
+# 擴編了資料集而被驗證器擋下，整天的台股資料、配息、價平和、個股財報跟著全部沒進版，
+# 網站停在五天前 —— 但那四塊其實全都跑完而且通過驗證了。
+#
+# 有東西被擱置時這個 job 仍然算失敗（紅色，才看得到），但 deploy 照樣跑，
+# 所以網站拿得到當天更新的那幾塊。
 jobs:
   update:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
       FINLAB_API_TOKEN: ${{ secrets.FINLAB_API_TOKEN }}
+      # 每個區塊負責的檔案。還原與提交都照這份清單，不要各寫一份。
+      DIV_FILES: app/public/data/dividends.json app/public/data/yields.json
+      TW_FILES: app/public/data/etfs.json taiwan_etf_list.html
+      US_FILES: app/public/data/us_etfs.json
+      ATM_FILES: app/public/data/atm.json
+      STOCK_FILES: app/public/data/fin_history.json
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
+      pending: ${{ steps.tidy.outputs.pending }}
     steps:
       - uses: actions/checkout@v4
 
@@ -47,28 +69,30 @@ jobs:
           pip install --quiet certifi==2026.7.22 finlab==2.0.19
           cd app && npm ci
 
-      # 報酬率自 2026-09 起只由 FinLab 計算，沒有憑證就算不出來。
-      # 早點失敗：先前沒擋的時候，流程會先爬完 359 頁 MoneyDJ、產生一份報酬率
-      # 全是 N/A 的資料，最後才被驗證器擋下 —— 白跑十分鐘，也白打擾了資料來源。
-      - name: 檢查必要憑證
+      # 前置檢查只決定「哪幾個區塊有條件跑」，不再中止整次更新。
+      # 早點知道還是有價值的：沒有 FinLab 憑證就別爬完 359 頁 MoneyDJ 才發現
+      # 報酬率全是 N/A；MoneyDJ 連不上就別讓爬蟲跑 20 分鐘收集錯誤頁。
+      - name: 前置檢查（憑證與來源連線）
+        id: pre
         run: |
           if [ -z "$FINLAB_API_TOKEN" ]; then
-            echo "::error title=缺少 FINLAB_API_TOKEN::報酬率由 FinLab 計算，沒有這個 secret 就無法更新。"
-            echo "::error::到 Settings → Secrets and variables → Actions 建立名為 FINLAB_API_TOKEN 的 secret。"
-            echo "::error::注意：本機的 .env 不會上傳（被 gitignore 擋住），CI 看不到它。"
-            exit 1
+            echo "::warning title=缺少 FINLAB_API_TOKEN::報酬率由 FinLab 計算，台股與美股這兩塊會擱置。到 Settings → Secrets and variables → Actions 建立這個 secret（本機的 .env 不會上傳，CI 看不到）。"
+            echo "finlab=false" >> $GITHUB_OUTPUT
+          else
+            echo "FinLab 憑證已設定（長度 ${#FINLAB_API_TOKEN}）"
+            echo "finlab=true" >> $GITHUB_OUTPUT
           fi
-          echo "FinLab 憑證已設定（長度 ${#FINLAB_API_TOKEN}）"
 
-      - name: 連線檢查
-        # 先確認資料來源從 GitHub 的機器連得到。連不到就直接失敗，
-        # 不要讓爬蟲跑 20 分鐘才發現拿到一堆錯誤頁。
-        run: |
           code=$(curl -sS -o /dev/null -w '%{http_code}' -m 30 \
             -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/122.0 Safari/537.36' \
             'https://www.moneydj.com/ETF/X/Basic/Basic0004.xdjhtm?etfid=0050.tw' || echo 000)
           echo "MoneyDJ: HTTP $code"
-          [ "$code" = "200" ] || { echo "::error::MoneyDJ 無法連線，中止更新（既有資料保持不變）"; exit 1; }
+          if [ "$code" = "200" ]; then
+            echo "moneydj=true" >> $GITHUB_OUTPUT
+          else
+            echo "::warning title=MoneyDJ 無法連線::保管銀行與配息頻率來自 MoneyDJ，台股那塊會擱置（既有資料保持不變）。"
+            echo "moneydj=false" >> $GITHUB_OUTPUT
+          fi
 
       - name: 建立工作目錄並保留前一版
         run: |
@@ -87,49 +111,35 @@ jobs:
         id: day
         run: echo "key=$(date -u +%Y-%m-%d)" >> $GITHUB_OUTPUT
 
-      - name: 抓取 ETF 名單（TWSE / TPEx / FinMind）
-        run: python scripts/fetch_universe.py "$WORK"
-
-      # MoneyDJ 的 Basic0004 每週抓一次就夠：保管銀行與配息頻率幾乎不會變，
-      # 而每天都在變的殖利率已經改成自己算（見下面那一步）。
+      # ── 區塊一：配息與殖利率 ────────────────────────────────────────────
+      # 全部是交易所的免費端點，不依賴 FinLab 也不依賴 MoneyDJ，所以放最前面：
+      # 後面幾塊掛掉時，這塊仍然會進版。
       #
-      # 減量是靠快取的鑰匙做的，腳本本身不用改 —— 它本來就會跳過已經存在的頁面。
-      # 鑰匙帶週數：新的一週抓不到快取，就重新抓完整的 359 頁；同一週內只會抓
-      # 快取裡沒有的（也就是新上市的那幾檔）。每日請求量因此少了大約 85%。
+      # 交易所公告的除息金額：證交所可以回補歷史（一年一次請求），櫃買只給當前清單
+      # —— 所以這一步每天跑，櫃買那半的歷史是靠日積月累補起來的。產出是累積式合併。
+      # 殖利率＝近 12 個月配息 ÷ 當日收盤價，兩邊都是免費端點。
+      - name: 配息與殖利率
+        id: div
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/fetch_dividends.py
+          python scripts/fetch_yields.py
+
+      # ── 區塊二：台股清單 ───────────────────────────────────────────────
       - name: 取回本週的 MoneyDJ 快照
         id: mdjcache
+        if: ${{ steps.pre.outputs.moneydj == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: ${{ runner.temp }}/etf/pages
           key: moneydj-pages-${{ steps.week.outputs.key }}
 
-      - name: 抓取基本資料（保管銀行、配息頻率）
-        run: python scripts/scrape_moneydj.py "$WORK"
-
-      - name: 存下本週的 MoneyDJ 快照
-        if: ${{ steps.mdjcache.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ runner.temp }}/etf/pages
-          key: moneydj-pages-${{ steps.week.outputs.key }}
-
-      # 交易所公告的除息金額。證交所可以回補歷史（一年一次請求），櫃買只給
-      # 當前清單 —— 所以這一步每天跑，櫃買那半的歷史是靠日積月累補起來的。
-      # 產出進版控，是累積式的合併而不是重寫。
-      - name: 抓取交易所公告的配息金額
-        run: python scripts/fetch_dividends.py
-
-      # 殖利率自己算：近 12 個月配息（上一步的產出）÷ 當日收盤價（證交所／櫃買）。
-      # 兩邊都是免費端點，不碰 FinLab 也不必多敲 MoneyDJ 一次。
-      - name: 計算殖利率
-        run: python scripts/fetch_yields.py
-
-      # 報酬率改由 FinLab 計算。MoneyDJ 那邊只剩 Basic0004（保管銀行／配息頻率），
-      # 對他們的請求量因此少了一半，再加上改成每週一次，又少了 85%。
       # FinLab 的資料集存放處。兩個流程都要 etl:adj_close，各自下載就是雙倍流量；
       # 快取起來之後，當天第二個 job 讀的是本機檔案。finlab 自己有 expiry，
       # 資料更新了它會重抓，所以不會拿到過期的東西。
       - name: 取回 FinLab 資料集快取
+        if: ${{ steps.pre.outputs.finlab == 'true' }}
         uses: actions/cache/restore@v4
         with:
           path: .cache/finlab_db
@@ -137,38 +147,80 @@ jobs:
           restore-keys: |
             finlab-db-
 
-      - name: 計算報酬率（FinLab）
-        if: ${{ github.event.inputs.skip_returns != 'true' }}
-        run: python scripts/fetch_tw_returns.py "$WORK"
-
-      - name: 產生 React 版資料
-        run: python scripts/build_data.py "$WORK" app/public/data/etfs.json
-
-      - name: 重建舊版單頁
-        run: python scripts/build_page.py "$WORK" taiwan_etf_list.html
-
-      - name: 驗證資料（與前一版比對，異常就不提交）
-        run: python scripts/verify_data.py app/public/data/etfs.json "${WORK}/previous.json"
-
-      - name: 驗證舊版單頁
-        run: python scripts/verify_page.py taiwan_etf_list.html "${WORK}/previous.html"
-
-      # 美股清單跟著台股一起更新。它是公開的衍生統計（代號名稱來自 Nasdaq
-      # 公開檔案，報酬率由我們計算），所以可以進版控；價格序列則否。
-      - name: 更新美股清單
+      # MoneyDJ 的 Basic0004 每週抓一次就夠：保管銀行與配息頻率幾乎不會變，
+      # 而每天都在變的殖利率已經改成自己算（區塊一）。
+      #
+      # 減量是靠快取的鑰匙做的，腳本本身不用改 —— 它本來就會跳過已經存在的頁面。
+      # 鑰匙帶週數：新的一週抓不到快取，就重新抓完整的 359 頁；同一週內只會抓
+      # 快取裡沒有的（也就是新上市的那幾檔）。每日請求量因此少了大約 85%。
+      - name: 台股清單（名單、基本資料、報酬率、兩個前端）
+        id: tw
+        if: ${{ steps.pre.outputs.moneydj == 'true' && (steps.pre.outputs.finlab == 'true' || github.event.inputs.skip_returns == 'true') }}
+        continue-on-error: true
         run: |
+          set -e
+          echo "::group::抓取 ETF 名單（TWSE / TPEx / FinMind）"
+          python scripts/fetch_universe.py "$WORK"
+          echo "::endgroup::"
+
+          echo "::group::抓取基本資料（保管銀行、配息頻率）"
+          python scripts/scrape_moneydj.py "$WORK"
+          echo "::endgroup::"
+
+          if [ "${{ github.event.inputs.skip_returns }}" != "true" ]; then
+            echo "::group::計算報酬率（FinLab）"
+            python scripts/fetch_tw_returns.py "$WORK"
+            echo "::endgroup::"
+          fi
+
+          echo "::group::產生兩個前端"
+          python scripts/build_data.py "$WORK" app/public/data/etfs.json
+          python scripts/build_page.py "$WORK" taiwan_etf_list.html
+          echo "::endgroup::"
+
+          # 驗證與測試留在這一組裡面：不通過就只還原這一組，不影響其他四塊。
+          python scripts/verify_data.py app/public/data/etfs.json "${WORK}/previous.json"
+          python scripts/verify_page.py taiwan_etf_list.html "${WORK}/previous.html"
+          node scripts/test_sort.js taiwan_etf_list.html
+          cd app && node --test tests/filters.test.ts
+
+      - name: 存下本週的 MoneyDJ 快照
+        if: ${{ steps.mdjcache.outcome == 'success' && steps.mdjcache.outputs.cache-hit != 'true' && hashFiles(format('{0}/etf/pages/*', runner.temp)) != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/etf/pages
+          key: moneydj-pages-${{ steps.week.outputs.key }}
+
+      # ── 區塊三：美股清單 ───────────────────────────────────────────────
+      # 它是公開的衍生統計（代號名稱來自 Nasdaq 公開檔案，報酬率由我們計算），
+      # 所以可以進版控；價格序列則否。
+      - name: 美股清單
+        id: us
+        if: ${{ steps.pre.outputs.finlab == 'true' }}
+        continue-on-error: true
+        run: |
+          set -e
           python scripts/fetch_us_etfs.py
           python scripts/verify_us_data.py app/public/data/us_etfs.json "${WORK}/previous_us.json"
 
-      # 週選價平和。期交所的每日行情收盤後就發布，所以這裡記的是「今天收盤」，
-      # 也就是明天開盤前會看到的那個數字。同樣是累積式，同樣要進版控。
-      - name: 記錄週選價平和
-        run: python scripts/fetch_atm.py
+      # ── 區塊四：週選價平和 ─────────────────────────────────────────────
+      # 期交所的每日行情收盤後就發布，所以這裡記的是「今天收盤」，也就是明天開盤前
+      # 會看到的那個數字。累積式，要進版控。
+      - name: 週選價平和
+        id: atm
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/fetch_atm.py
+          cd app && node --test tests/atm.test.ts
 
-      # 個股財報。那些端點只回當期，所以 fin_history.json 是逐期累積的，而且要
-      # 進版控 —— 累積發生在這個會 commit 的流程裡，部署流程只負責讀它產出畫面用的檔。
+      # ── 區塊五：個股財報 ───────────────────────────────────────────────
+      # 那些端點只回當期，所以 fin_history.json 是逐期累積的，而且要進版控 ——
+      # 累積發生在這個會 commit 的流程裡，部署流程只負責讀它產出畫面用的檔。
       # --no-chips：籌碼是每天變的，交給部署流程與它的快取。
-      - name: 累積個股財報
+      - name: 個股財報
+        id: stocks
+        continue-on-error: true
         run: python scripts/fetch_stocks.py --no-chips
 
       - name: 存下 FinLab 資料集快取
@@ -178,21 +230,58 @@ jobs:
           path: .cache/finlab_db
           key: finlab-db-${{ steps.day.outputs.key }}-${{ github.run_id }}
 
-      - name: 測試
+      # 沒跑成功的區塊在這裡還原成前一版，於是下一步的 git diff 只會看到成功的那幾塊。
+      - name: 整理未完成的區塊
+        id: tidy
         run: |
-          cd app && npm test
-          cd .. && node scripts/test_sort.js taiwan_etf_list.html
+          pending=""
+          note() {
+            name="$1"; outcome="$2"; shift 2
+            if [ "$outcome" = "success" ]; then
+              return 0
+            fi
+            if [ "$outcome" = "skipped" ]; then
+              echo "::warning title=${name} 未執行::前置條件不足，這一區塊擱置到下次，保留前一版資料。"
+            else
+              echo "::error title=${name} 更新失敗::這一區塊擱置到下次，保留前一版資料（其他區塊照常更新）。"
+            fi
+            git checkout -- "$@" 2>/dev/null || true
+            pending="${pending:+${pending}、}${name}"
+          }
+          note 配息與殖利率 '${{ steps.div.outcome }}'    $DIV_FILES
+          note 台股清單     '${{ steps.tw.outcome }}'     $TW_FILES
+          note 美股清單     '${{ steps.us.outcome }}'     $US_FILES
+          note 週選價平和   '${{ steps.atm.outcome }}'    $ATM_FILES
+          note 個股財報     '${{ steps.stocks.outcome }}' $STOCK_FILES
+
+          echo "pending=${pending}" >> $GITHUB_OUTPUT
+          {
+            echo "### 這次更新的區塊"
+            echo ""
+            echo "| 區塊 | 結果 |"
+            echo "| --- | --- |"
+            echo "| 配息與殖利率 | ${{ steps.div.outcome }} |"
+            echo "| 台股清單 | ${{ steps.tw.outcome }} |"
+            echo "| 美股清單 | ${{ steps.us.outcome }} |"
+            echo "| 週選價平和 | ${{ steps.atm.outcome }} |"
+            echo "| 個股財報 | ${{ steps.stocks.outcome }} |"
+          } >> $GITHUB_STEP_SUMMARY
 
       - name: 提交變更
         id: commit
         run: |
-          if git diff --quiet -- app/public/data/etfs.json app/public/data/us_etfs.json                app/public/data/dividends.json app/public/data/fin_history.json                app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html; then
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES"
+          if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
             exit 0
           fi
+
+          # 標題用台股的檔數與報酬率日期；台股那塊擱置時它就是前一版的數字，
+          # 所以訊息裡另外寫明這次更新了哪幾個檔案、擱置了哪幾塊。
           TOTAL=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['total'])")
           SNAP=$(python -c "import json;print(json.load(open('app/public/data/etfs.json',encoding='utf-8'))['meta']['snapshot'])")
+          UPDATED=$(git diff --name-only -- $FILES | tr '\n' ' ')
 
           # 新上市的 ETF 寫進 commit 訊息，從 git log 就看得到哪天多了哪幾檔。
           # fetch_universe.py 每次都重新向交易所要完整名單，所以新掛牌的會自動出現。
@@ -200,18 +289,30 @@ jobs:
 
           git config user.name  'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/public/data/etfs.json app/public/data/us_etfs.json                   app/public/data/dividends.json app/public/data/fin_history.json                   app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html
-          if [ -n "$NEW" ]; then
-            git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "新上市：${NEW}"
-            echo "::notice title=新上市 ETF::${NEW}"
-          else
-            git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）"
+          git add $FILES
+
+          BODY="更新：${UPDATED}"
+          PENDING='${{ steps.tidy.outputs.pending }}'
+          if [ -n "$PENDING" ]; then
+            BODY="${BODY}"$'\n'"擱置：${PENDING}（保留前一版）"
           fi
+          if [ -n "$NEW" ]; then
+            BODY="${BODY}"$'\n'"新上市：${NEW}"
+            echo "::notice title=新上市 ETF::${NEW}"
+          fi
+          git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "${BODY}"
           git push
           echo "changed=true" >> $GITHUB_OUTPUT
 
+      # 其餘測試。放在提交之後：它們吃的是不會被這個流程改到的資料與純邏輯，
+      # 失敗是程式的問題，不該讓當天的資料退回去。
+      - name: 測試
+        id: tests
+        continue-on-error: true
+        run: cd app && npm test
+
       - name: 失敗時保留爬蟲錯誤紀錄
-        if: failure()
+        if: ${{ steps.tw.outcome != 'success' }}
         uses: actions/upload-artifact@v4
         with:
           name: scrape-errors
@@ -221,15 +322,26 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
-      - name: 還原未通過驗證的資料
-        if: failure()
+      # 有區塊擱置就讓這個 job 紅燈 —— 已經提交的那幾塊不會因此退回，
+      # 下面的 deploy 也照樣跑（它的條件是 always()）。
+      - name: 回報擱置的區塊
+        if: ${{ steps.tidy.outputs.pending != '' || steps.tests.outcome != 'success' }}
         run: |
-          git checkout -- app/public/data/etfs.json app/public/data/us_etfs.json                           app/public/data/dividends.json app/public/data/fin_history.json                           app/public/data/atm.json app/public/data/yields.json taiwan_etf_list.html || true
+          PENDING='${{ steps.tidy.outputs.pending }}'
+          if [ -n "$PENDING" ]; then
+            echo "::error::以下區塊這次沒有更新：${PENDING}"
+          fi
+          if [ "${{ steps.tests.outcome }}" != "success" ]; then
+            echo "::error::測試未通過（資料已提交，這是程式的問題）"
+          fi
+          exit 1
 
-  # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程
+  # GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以這裡主動呼叫部署流程。
+  # always()：上面那個 job 可能因為有區塊擱置而紅燈，但成功的那幾塊已經進版了，
+  # 網站該拿到它們。changed 是提交步驟給的，job 失敗也讀得到。
   deploy:
     needs: update
-    if: needs.update.outputs.changed == 'true'
+    if: ${{ always() && needs.update.outputs.changed == 'true' }}
     uses: ./.github/workflows/deploy.yml
     # 一天一次的重抓就在這裡。其他時候（程式碼推送）部署會沿用快取，
     # 不動用 FinLab 流量。

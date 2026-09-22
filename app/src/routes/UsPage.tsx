@@ -79,7 +79,8 @@ export function UsPage() {
           <p>
             共 <strong className="tabular font-mono text-ink">{meta!.total}</strong> 檔美股 ETF，
             其中 <strong className="tabular font-mono text-ink">{meta!.liquid}</strong> 檔日均成交額達
-            <span className="tabular font-mono"> {formatAdv(meta!.liquidMinAdv)}</span> 以上。
+            <span className="tabular font-mono"> {formatAdv(meta!.liquidMinAdv)}</span> 以上
+            {meta!.liquidMinDays ? '，且有滿 3 個月的價格資料' : ''}。
             價格資料截至 {meta!.asof}。
           </p>
           <p className="mt-1">
