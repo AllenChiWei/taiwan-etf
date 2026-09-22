@@ -31,11 +31,9 @@ export function AboutPage() {
         </li>
         <li>保管銀行、配息頻率：MoneyDJ（每週更新一次，這兩個欄位幾乎不變）</li>
         <li>
-          殖利率：<strong className="text-ink">自行計算</strong> ——
-          近 12 個月交易所公告的配息合計 ÷ 當日收盤價，每個交易日更新。
-          配息史不滿一年的改以<strong className="text-ink">年化推估</strong>
-          （最近一次配息 × 每年次數），並在數字旁標
-          <sup className="text-faint">*</sup>。
+          殖利率：<strong className="text-ink">自行計算的年化殖利率</strong> ——
+          交易所公告的<strong className="text-ink">最近一次除息金額 × 每年配息次數
+          ÷ 當日收盤價</strong>，每個交易日更新。
           沒有配息紀錄的標的才沿用 MoneyDJ 的數字。
         </li>
         <li>
@@ -61,12 +59,11 @@ export function AboutPage() {
         </li>
         <li><strong className="text-ink">報酬率是累積報酬</strong>，不是年化，且已含配息再投資。</li>
         <li>
-          <strong className="text-ink">殖利率帶 <sup className="text-faint">*</sup> 是年化推估</strong>。
-          今年才掛牌的基金只配過一兩次，用「近 12 個月實際配發」會低到失真
-          —— 一檔月配、只配過兩次的，數字只有實際水準的六分之一。所以配息史
-          不滿一年的改用最近一次配息乘上一年的次數，並標上記號；
-          <strong className="text-ink">滿一年的一律用實際已配發的金額</strong>，
-          不會被某一次加發灌水。
+          <strong className="text-ink">殖利率是年化推估，不是已配發總額</strong>。
+          它假設接下來一年都配得跟最近一次一樣多，所以某一次加發會被乘上次數
+          而顯得偏高，減配也會立刻反映。今年才掛牌、只配過一兩次的基金因此也有
+          可比的數字 —— 用「近 12 個月實際配發」的話，一檔月配只配過兩次的會只剩
+          實際水準的六分之一。
         </li>
       </ul>
 

@@ -258,15 +258,11 @@ def section(code, name, target, area):
 
 
 def load_yields(root):
-    u"""自己算的殖利率 {代號: (值, 是否為年化推估)}，外加基準日。沒有那個檔就回空的。
+    u"""自己算的殖利率 {代號: (值, 基準日)}。沒有那個檔就回空的。
 
     來源是 fetch_yields.py：交易所公告的配息 ÷ 當日收盤價，全部免費端點。
     MoneyDJ 的值只在這裡算不出來時當退路 —— 那份現在改成每週抓一次，
     拿它的殖利率會是最多一週前的數字。
-
-    est=True 是配息史不滿一年、用「最近一次 × 每年次數」年化出來的。它必須一路
-    傳到畫面上標記 —— 推估值跟真實發生過的金額混在同一欄而看不出來，正是原本
-    那份「近 12 個月」對新標的偏低時最難察覺的地方。
     """
     import io, json                                   # 與 load_tw_returns 同樣就地匯入
     path = os.path.join(root, 'app', 'public', 'data', 'yields.json')
@@ -279,7 +275,7 @@ def load_yields(root):
     for code, v in (doc.get('yields') or {}).items():
         y = v.get('y')
         if y is not None:
-            out[code] = ('%.2f' % float(y), bool(v.get('est')))
+            out[code] = '%.2f' % float(y)
     return out, asof
 
 
@@ -331,10 +327,9 @@ def load_rows(work, universe, current_sections):
         if not d:
             missing.append(code)
         yld, ya = parse_yield(d.get(u'殖利率(%)', ''))
-        yest = False
         if code in calc_yields:
             # 自己算的優先：它是當日收盤價換算的，MoneyDJ 那份可能是一週前的快照
-            yld, yest = calc_yields[code]
+            yld = calc_yields[code]
             used_calc += 1
         elif ya:
             yld_asof[ya] += 1
@@ -359,7 +354,6 @@ def load_rows(work, universe, current_sections):
             'cust': norm_cust(d.get(u'保管機構', '')),
             'freq': norm_freq(d.get(u'配息頻率', '')),
             'yield': yld,
-            'yest': yest,
             'ret': ret,
             'sec': pick_section(code, name, d, current_sections),
             'act': is_active(name),

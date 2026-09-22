@@ -3,7 +3,7 @@
    後者要靠 nth-child 定位，欄位順序一改就靜悄悄地錯位。 */
 
 import type { Etf } from '../types';
-import { moneydjUrl, returnTone, TONE_CLASS, yieldClass, YIELD_EST_HINT } from '../lib/format';
+import { moneydjUrl, returnTone, TONE_CLASS, yieldClass } from '../lib/format';
 import { NUMERIC_COLUMNS } from './columns';
 import { FreqPill } from './FreqPill';
 import { FavButton } from './FavButton';
@@ -43,12 +43,7 @@ export function EtfCards({ rows, isFav, onToggleFav }: Props) {
               return (
                 <div key={c.key}>
                   <dt className="text-[10px] font-semibold whitespace-nowrap text-faint">{c.label}</dt>
-                  <dd className={`tabular font-mono text-sm ${cls}`}>
-                    {value}
-                    {c.key === 'yield' && e.yest && (
-                      <sup className="ml-px text-faint" title={YIELD_EST_HINT}>*</sup>
-                    )}
-                  </dd>
+                  <dd className={`tabular font-mono text-sm ${cls}`}>{value}</dd>
                 </div>
               );
             })}

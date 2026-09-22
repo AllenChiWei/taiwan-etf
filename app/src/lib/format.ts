@@ -21,11 +21,6 @@ export const TONE_CLASS: Record<Tone, string> = {
   na: 'text-na',
 };
 
-/** 年化推估的殖利率，滑鼠停留與長按時的說明。 */
-export const YIELD_EST_HINT =
-  '年化推估：這檔配息史不滿一年，用「最近一次配息 × 每年次數」估算，'
-  + '不是實際已配發的金額。';
-
 /** 殖利率沒有漲跌的概念，有值就用自己的顏色，N/A 比照灰色。 */
 export function yieldClass(v: string): string {
   return v === NA ? TONE_CLASS.na : 'text-yield font-semibold';
