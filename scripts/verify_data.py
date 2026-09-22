@@ -167,6 +167,16 @@ have_yield = sum(1 for e in etfs if e['yield'] not in ('N/A', ''))
 have_ret = sum(1 for e in etfs if e['r12'] not in ('N/A', ''))
 if have_yield == 0:
     fail('every yield is N/A - the Basic0004 scrape produced nothing usable')
+
+# yest = 年化推估（配息史不滿一年）。沒有數字卻標推估，或整份都標推估，
+# 兩種都是接錯了 —— 推估只該落在少數新標的身上。
+est = [e['code'] for e in etfs if e.get('yest')]
+bad_est = [e['code'] for e in etfs if e.get('yest') and e['yield'] in ('N/A', '')]
+if bad_est:
+    fail('%d row(s) flagged yest with no yield: %s' % (len(bad_est), bad_est[:5]))
+if est and len(est) > have_yield * 0.5:
+    fail('%d of %d yields are annualised estimates - that is far too many'
+         % (len(est), have_yield))
 if have_ret == 0:
     fail('every 近1年 return is N/A - the Basic0008 scrape produced nothing usable')
 
@@ -214,6 +224,7 @@ print('%s: %d ETFs  updated=%s snapshot=%s'
 print('sections: %s' % '  '.join('%s=%d' % (s['id'], s['count']) for s in doc['sections']))
 print('custodians=%d  frequencies=%d  with-yield=%d  with-1y-return=%d'
       % (len(doc['custodians']), len(doc['frequencies']), have_yield, have_ret))
+print('yield: %d annualised estimate(s) (配息史不滿一年)' % len(est))
 
 for w in warns:
     print('NOTE: %s' % w)

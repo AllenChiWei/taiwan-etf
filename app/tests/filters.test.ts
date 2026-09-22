@@ -208,6 +208,17 @@ describe('真實資料（public/data/etfs.json）', () => {
       `主動 ETF 只出現在 ${[...secs]}，主動應該是跨分區的屬性`);
   });
 
+  test('年化推估的殖利率一定有數字，而且只佔少數', () => {
+    const est = data.etfs.filter(e => e.yest);
+    const withYield = data.etfs.filter(e => e.yield !== 'N/A');
+    for (const e of est) {
+      assert.notEqual(e.yield, 'N/A', `${e.code} 標了 yest 卻沒有殖利率`);
+    }
+    // 推估只該落在配息史不滿一年的新標的上。整片都是推估代表接錯了資料源。
+    assert.ok(est.length <= withYield.length * 0.5,
+      `${est.length} / ${withYield.length} 檔是年化推估，太多了`);
+  });
+
   test('筆數與 meta 相符且不為空', () => {
     assert.equal(data.etfs.length, data.meta.total);
     assert.ok(data.etfs.length > 300, `只有 ${data.etfs.length} 筆`);

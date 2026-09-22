@@ -53,6 +53,10 @@ export function ListPage() {
             <p className="mb-3.5 text-[13px] text-muted">
               顯示 <strong className="tabular font-mono text-ink">{rows.length}</strong> / {data.meta.total} 檔
               {sort && `　·　依 ${NUMERIC_LABEL[sort.key]} ${sort.dir === 'asc' ? '低→高' : '高→低'} 排序`}
+              {/* 手機沒有 hover，所以標記的意思要直接寫出來，不能只靠 title */}
+              {rows.some(r => r.yest) && (
+                <>　·　殖利率帶 <sup className="text-faint">*</sup> 是年化推估（配息史不滿一年）</>
+              )}
             </p>
 
             {/* 排序中就不分區 —— 否則使用者會以為只在單一分類內排序 */}

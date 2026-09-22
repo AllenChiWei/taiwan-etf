@@ -2,7 +2,7 @@
 
 import type { Etf, NumericKey } from '../types';
 import type { SortSpec } from '../lib/filters';
-import { moneydjUrl, returnTone, TONE_CLASS, yieldClass } from '../lib/format';
+import { moneydjUrl, returnTone, TONE_CLASS, yieldClass, YIELD_EST_HINT } from '../lib/format';
 import { NUMERIC_COLUMNS } from './columns';
 import { FreqPill } from './FreqPill';
 import { FavButton } from './FavButton';
@@ -81,6 +81,9 @@ export function EtfTable({ rows, sort, onSort, isFav, onToggleFav }: Props) {
                     c.key === 'yield' ? yieldClass(e[c.key]) : TONE_CLASS[returnTone(e[c.key])]}`}
                 >
                   {e[c.key]}
+                  {c.key === 'yield' && e.yest && (
+                    <sup className="ml-px text-faint" title={YIELD_EST_HINT}>*</sup>
+                  )}
                 </td>
               ))}
 

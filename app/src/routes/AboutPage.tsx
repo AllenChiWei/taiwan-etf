@@ -33,6 +33,9 @@ export function AboutPage() {
         <li>
           殖利率：<strong className="text-ink">自行計算</strong> ——
           近 12 個月交易所公告的配息合計 ÷ 當日收盤價，每個交易日更新。
+          配息史不滿一年的改以<strong className="text-ink">年化推估</strong>
+          （最近一次配息 × 每年次數），並在數字旁標
+          <sup className="text-faint">*</sup>。
           沒有配息紀錄的標的才沿用 MoneyDJ 的數字。
         </li>
         <li>
@@ -58,9 +61,12 @@ export function AboutPage() {
         </li>
         <li><strong className="text-ink">報酬率是累積報酬</strong>，不是年化，且已含配息再投資。</li>
         <li>
-          <strong className="text-ink">殖利率不年化</strong>。今年才掛牌的基金只配過一兩次，
-          這裡顯示的是<strong className="text-ink">實際已配發</strong>的金額除以股價；
-          有些網站會把單次配息乘上一年的次數，數字會高出好幾倍，那是推估不是已發生。
+          <strong className="text-ink">殖利率帶 <sup className="text-faint">*</sup> 是年化推估</strong>。
+          今年才掛牌的基金只配過一兩次，用「近 12 個月實際配發」會低到失真
+          —— 一檔月配、只配過兩次的，數字只有實際水準的六分之一。所以配息史
+          不滿一年的改用最近一次配息乘上一年的次數，並標上記號；
+          <strong className="text-ink">滿一年的一律用實際已配發的金額</strong>，
+          不會被某一次加發灌水。
         </li>
       </ul>
 

@@ -84,6 +84,10 @@ def main():
         # 漏掉 act 的那四天，重建出來的 etfs.json 整份沒有這個欄位，主動篩選會
         # 靜靜失效 —— 擋下來的是 filters.test.ts，代價是每日更新整批不提交。
         e['act'] = r['act']
+        # 年化推估的殖利率要標出來（配息史不滿一年）。只在 True 時寫，省掉三百多個
+        # false —— 前端用 Boolean(e.yest) 判讀，沒有這個欄位就是實際近 12 個月。
+        if r.get('yest'):
+            e['yest'] = True
         etfs.append(e)
 
     doc = {

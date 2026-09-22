@@ -8,6 +8,12 @@ export interface Etf {
   freq: FreqLabel;
   /** 殖利率，數字字串或 'N/A' */
   yield: string;
+  /**
+   * yield 是年化推估而不是實際近 12 個月：配息史不滿一年的標的，用「最近一次配息
+   * × 每年次數」估算（fetch_yields.py 的 est）。畫面上一定要標出來，否則推估值
+   * 跟真實發生過的金額混在同一欄裡看不出差別。滿一年的沒有這個欄位。
+   */
+  yest?: boolean;
   /** 近 3 個月市價報酬率 */
   r3: string;
   /** 近 6 個月市價報酬率 */
