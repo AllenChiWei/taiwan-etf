@@ -837,9 +837,16 @@ def main():
 
     log(u'融資：上市融資餘額（FinMind）與維持率（證交所）…')
     margin = margin_history(last_date or datetime.now(TPE).date())
-    margin['maint'] = maintenance(day_compact)
-    if margin['maint']:
-        margin['maint']['date'] = fut_day
+    # 證交所的融資表比收盤行情晚發布（實測 16:10 收盤行情已有、融資表還沒有），
+    # 當天的還沒出來就退回 FinMind 餘額的最後一天 —— 晚一天的維持率比沒有好，
+    # 畫面上會照實標出日期
+    maint_days = [fut_day] + [d for d in reversed(margin['dates'][-3:]) if d != fut_day]
+    margin['maint'] = None
+    for d in maint_days:
+        margin['maint'] = maintenance(d.replace('-', ''))
+        if margin['maint']:
+            margin['maint']['date'] = d
+            break
     log(u'  餘額 %d 天，維持率 %s%%' % (
         len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
 
