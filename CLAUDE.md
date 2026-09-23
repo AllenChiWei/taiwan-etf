@@ -30,7 +30,7 @@ Where each field comes from, because it is not one source:
 | 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
 | VIX、恐懼貪婪（自算） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD）——**不是 CNN 的數字** |
 | 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
-| 即將上市 ETF | 證交所 e添富「新上市ETF 相關簡介」（部署時產生） |
+| 還沒上市的 ETF | 鉅亨網新聞推代號與日期 ＋ 證交所 e添富新上市簡介（部署時產生） |
 | 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
@@ -56,7 +56,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
-  fetch_upcoming.py          即將上市 ETF → upcoming.json（部署時產生）
+  fetch_upcoming.py          還沒上市的 ETF（新聞＋證交所簡介）→ upcoming.json（部署時產生）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
   finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）
@@ -695,16 +695,26 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 偏離它超過 0.5% 才算加碼／減碼。**實測 f 一直是 0**（這幾檔多數日子股數完全不動，資金先放現金），
 所以它是保險：哪天有經理人改成同比例攤入，清單也不會整排變成加碼。
 
-## 即將上市
+## 即將上市（其實是「還沒上市」）
 
 台股頁的「即將上市」分頁，`scripts/fetch_upcoming.py` → `upcoming.json`（部署時產生）。
-來源是 e添富 `newsList` 的「新上市ETF」分類（`newsCategory=ff8080818b7e232e018b8336a1b90021`）
-與各則簡介的兩欄表格；欄位照原樣保留，因為被動式、主動式的欄名不一樣。
+**已上市的一律不列**（站主指定）；前端 `stillUpcoming()` 再依上市日濾一次，因為資料一天
+才更新一次。
 
-**限制**：簡介通常在上市前一天才發布，只有上市、不含上櫃。「金管會已核准、還在募集」
-那一段**沒有官方結構化清單**（查過證交所 OpenAPI `company/applylistingLocal`／`newlisting`
-只有公司股票、集保 `api/etf/product` 只有已上市、投信投顧公會是 ASP.NET postback），
-所以畫面用新聞標題（含 ETF 與募集／核准等字）補，只放標題與連結。
+**官方沒有「募集中」的結構化清單**（查過證交所 OpenAPI `company/applylistingLocal`／
+`newlisting` 只有公司股票、集保 `api/etf/product` 只有已上市、集保 `api/onshore/announce/
+info-new` 只有沒代號的「基金成立」事件、投信投顧公會是 ASP.NET postback）。所以：
+
+1. 代號從鉅亨網 ETF／台股分類近 75 天的新聞標題抓（`00\d{3,4}[A-Z]?`），標題有「募集／
+   開募／新秀／掛牌」的連內文一起掃，扣掉 etfs.json 裡已上市的。
+2. 每個代號用鉅亨網關鍵字搜尋（`ess.api.cnyes.com/ess/api/v1/news/keyword`），讀標題、摘要與
+   內文推名稱、投信、開募日、上市日 —— **只看代號附近到下一個代號為止的那一段**，免得多檔
+   合寫的文章把別檔的日期算進來；投信只看代號前 40 字。**內文與摘要只在執行時用，不存。**
+3. 上市前一天證交所 e添富發布「新上市ETF 相關簡介」（`newsCategory=ff8080818b7e232e018b8336a1b90021`）
+   後，改用簡介的官方規格。
+
+推不出來的欄位就留空，畫面標明「從新聞推得，以投信公告為準」。鉅亨網新聞頁將近 200 KB、
+常常讀到一半斷線（`IncompleteRead`），所以 `article_text()` 會重試三次。
 
 ## 更新日誌
 

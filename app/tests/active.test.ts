@@ -8,7 +8,7 @@ import {
   kindOf, netChange, groupChanges, consensus, sharesLabel,
   type ActiveData, type ChangeDay,
 } from '../src/lib/active.ts';
-import { listingStatus, taipeiToday, pick, newsRadar } from '../src/lib/upcoming.ts';
+import { stillUpcoming, daysUntil, taipeiToday, pick, type UpcomingItem } from '../src/lib/upcoming.ts';
 
 test('換股分類要扣掉資金進出', async (t) => {
   await t.test('新增與剔除', () => {
@@ -67,12 +67,21 @@ test('股數顯示：台股用張、期貨用口、海外股票用股', () => {
   assert.equal(sharesLabel('PLTR', 12_000, 'PALANTIR TECHNOLOGIES INC-A'), '12,000 股');
 });
 
-test('即將上市', async (t) => {
-  await t.test('上市日跟今天比', () => {
-    assert.equal(listingStatus('2026-09-25', '2026-09-23'), 'upcoming');
-    assert.equal(listingStatus('2026-09-23', '2026-09-23'), 'today');
-    assert.equal(listingStatus('2026-08-21', '2026-09-23'), 'listed');
-    assert.equal(listingStatus(null, '2026-09-23'), 'upcoming');
+test('還沒上市的 ETF', async (t) => {
+  const item = (code: string, listing: string | null): UpcomingItem => ({
+    code, name: null, issuer: null, raise: null, listing, stage: 'raising',
+    source: 'news', url: null, fields: [], news: [],
+  });
+
+  await t.test('已上市的不列（上市日是今天或更早的濾掉），沒有上市日的留著', () => {
+    const got = stillUpcoming([item('A', '2026-10-13'), item('B', '2026-09-23'),
+                               item('C', '2026-08-21'), item('D', null)], '2026-09-23');
+    assert.deepEqual(got.map(x => x.code), ['A', 'D']);
+  });
+
+  await t.test('距離上市幾天', () => {
+    assert.equal(daysUntil('2026-10-13', '2026-09-23'), 20);
+    assert.equal(daysUntil(null, '2026-09-23'), null);
   });
 
   await t.test('台北的今天不受瀏覽器時區影響', () => {
@@ -85,12 +94,21 @@ test('即將上市', async (t) => {
     assert.equal(pick(f, '投信公司', '經理公司'), '大華銀');
     assert.equal(pick(f, '追蹤指數'), null);
   });
+});
 
-  await t.test('新聞雷達要同時有 ETF 與募集之類的字', () => {
-    const n = (t: string) => ({ t, u: t, s: '', at: null, codes: [], all: [], cat: '' });
-    const got = newsRadar([n('新 ETF 今起開募'), n('台積電法說會'), n('ETF 規模創高'), n('主動式ETF獲金管會核准')]);
-    assert.deepEqual(got.map(x => x.t), ['新 ETF 今起開募', '主動式ETF獲金管會核准']);
-  });
+const UPCOMING = new URL('../public/data/upcoming.json', import.meta.url);
+
+test('真實 upcoming.json：不含已上市的，而且只存標題與連結', { skip: !existsSync(UPCOMING) && '沒有 upcoming.json' }, () => {
+  const d = JSON.parse(readFileSync(UPCOMING, 'utf8'));
+  const etfs = new URL('../public/data/etfs.json', import.meta.url);
+  const listed = new Set((JSON.parse(readFileSync(etfs, 'utf8')).etfs as { code: string }[]).map(e => e.code));
+  for (const it of d.items as UpcomingItem[]) {
+    assert.ok(!listed.has(it.code), `${it.code} 已經在台股清單裡，不該出現在還沒上市的清單`);
+    for (const n of it.news) {
+      assert.equal(n.length, 3, `${it.code} 的新聞多存了東西（只能有標題、連結、日期）`);
+      assert.ok(n[0].length < 120, `${it.code} 的新聞標題長得像內文`);
+    }
+  }
 });
 
 const ACTIVE = new URL('../public/data/active_holdings.json', import.meta.url);
