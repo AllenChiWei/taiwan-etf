@@ -1,11 +1,12 @@
 /* 根路由元件：載入資料、畫頁首／頁尾，把 <Outlet /> 交給各分頁。
    資料在這一層載入，分頁切換才不會重抓。 */
 
-import { Suspense } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useDataset } from '../hooks/useDataset';
 import { useFavorites } from '../hooks/useFavorites';
 import { useTheme } from '../hooks/useTheme';
+import { useChangelogSeen } from '../hooks/useChangelogSeen';
 import { AppProvider } from '../context/AppContext';
 import { metaLine } from '../lib/format';
 import { EmptyState } from './EmptyState';
@@ -22,6 +23,7 @@ const TABS = [
   { to: '/news', label: '新聞' },
   { to: '/stock', label: '個股' },
   { to: '/poker', label: '撲克' },
+  { to: '/changelog', label: '更新' },
   { to: '/about', label: '說明' },
 ] as const;
 
@@ -30,6 +32,12 @@ export function AppShell() {
   const favorites = useFavorites();
   const theme = useTheme();
   const pathname = useRouterState({ select: s => s.location.pathname });
+  const changelog = useChangelogSeen();
+  const { markSeen } = changelog;
+  // 打開更新日誌就算看過了。放在這裡而不是頁面裡，導覽列的小紅點才會同步熄掉
+  useEffect(() => {
+    if (pathname === '/changelog') markSeen();
+  }, [pathname, markSeen]);
 
   const meta = state.status === 'ready' ? state.data.meta : null;
 
@@ -72,6 +80,9 @@ export function AppShell() {
                 aria-current={active ? 'page' : undefined}
               >
                 {t.label}
+                {t.to === '/changelog' && changelog.unseen && (
+                  <span className="h-2 w-2 rounded-full bg-up" aria-label="有新的更新" />
+                )}
                 {t.to === '/favorites' && favorites.count > 0 && (
                   <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent
                                    px-1.5 font-mono text-[11px] font-bold text-accent-ink">

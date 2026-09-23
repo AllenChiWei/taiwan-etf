@@ -653,6 +653,15 @@ keeps working. `.filter-bar` drops `position: sticky` on phones, and its labels 
 Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` counts tags with
 `<tr[ >]` and will report the page as unbalanced.
 
+## 更新日誌
+
+`/changelog`（導覽列的「更新」），內容在 `app/src/lib/changelog.ts`。**新增或改動使用者
+看得到的功能時，在最上面加一條**（同一天併在同一個日期底下）；每天的資料更新不列，
+純內部的重構與流程調整也不列，除非瀏覽者感受得到（例如「網站不會整個停在舊的一天」）。
+文字寫給瀏覽者：講能做什麼、看到什麼，不講檔名。`to` 是站內路徑的聯集型別，打錯會被
+`tsc` 擋下。導覽列的小紅點比的是 localStorage 裡上次看過的日期；第一次來的人直接記成
+已看過，不亮 —— 對他每一條都是新的。
+
 ## 安全相關的既定作法
 
 - **CSP 是建置時產生的**（`app/vite-plugins.ts` 的 `cspMeta`），內嵌的主題腳本用

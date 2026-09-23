@@ -28,6 +28,7 @@ import { RouteError } from './components/RouteError';
 const UsPage = lazyRoute(() => import('./routes/UsPage'), m => m.UsPage);
 const FavoritesPage = lazyRoute(() => import('./routes/FavoritesPage'), m => m.FavoritesPage);
 const AboutPage = lazyRoute(() => import('./routes/AboutPage'), m => m.AboutPage);
+const ChangelogPage = lazyRoute(() => import('./routes/ChangelogPage'), m => m.ChangelogPage);
 const CalculatorPage = lazyRoute(() => import('./routes/CalculatorPage'), m => m.CalculatorPage);
 const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage);
 const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
@@ -136,9 +137,15 @@ const aboutRoute = createRoute({
   component: AboutPage,
 });
 
+const changelogRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/changelog',
+  component: ChangelogPage,
+});
+
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
-   chipsRoute, newsRoute, stockRoute, pokerRoute, aboutRoute]);
+   chipsRoute, newsRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,

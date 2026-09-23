@@ -4,6 +4,7 @@
 
 const KEY_FAVORITES = 'twetf.favorites';
 const KEY_THEME = 'twetf.theme';
+const KEY_CHANGELOG = 'twetf.changelogSeen';
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -29,6 +30,16 @@ export function loadFavorites(): string[] {
 
 export function saveFavorites(codes: readonly string[]): void {
   write(KEY_FAVORITES, [...codes]);
+}
+
+/** 上次看過的更新日誌最新日期（YYYY-MM-DD）。沒有紀錄時回 null。 */
+export function loadChangelogSeen(): string | null {
+  const v = read<unknown>(KEY_CHANGELOG, null);
+  return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+}
+
+export function saveChangelogSeen(date: string): void {
+  write(KEY_CHANGELOG, date);
 }
 
 export type ThemeChoice = 'light' | 'dark' | 'system';
