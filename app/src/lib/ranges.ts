@@ -242,3 +242,24 @@ export const VS_OPEN: VsOpen[] = [
     ],
   },
 ];
+
+/* ── 座位與行動順序 ─────────────────────────────────────────
+ *
+ * 六人桌順時針依序坐 BTN → SB → BB → UTG → HJ → CO，行動也是順時針。
+ * 差別只在從誰開始：
+ *   翻牌前  UTG 先講話（大小盲已經被迫下注了），BB 最後
+ *   翻牌後  SB 先講話（按鈕左手邊第一個還在的人），BTN 最後
+ * 所以 BTN 翻牌後永遠最後行動，這就是它能開最寬範圍的原因。
+ */
+
+/** 順時針的座位順序（從按鈕開始）。 */
+export const SEAT_ORDER = ['btn', 'sb', 'bb', 'utg', 'hj', 'co'] as const;
+
+export const PREFLOP_ORDER = ['utg', 'hj', 'co', 'btn', 'sb', 'bb'] as const;
+export const POSTFLOP_ORDER = ['sb', 'bb', 'utg', 'hj', 'co', 'btn'] as const;
+
+/** 某個位置在這條街第幾個行動（1 起算）。 */
+export function actionRank(pos: string, street: 'preflop' | 'postflop'): number {
+  const order: readonly string[] = street === 'preflop' ? PREFLOP_ORDER : POSTFLOP_ORDER;
+  return order.indexOf(pos) + 1;
+}

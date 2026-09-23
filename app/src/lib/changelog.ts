@@ -37,6 +37,8 @@ export const CHANGELOG: ChangeDay[] = [
     date: '2026-09-23',
     items: [
       { kind: 'new', to: '/poker',
+        text: '撲克頁新增六人桌位置圖：座位、按鈕與盲注，翻牌前／翻牌後誰先行動，點座位切換開牌範圍。' },
+      { kind: 'new', to: '/poker',
         text: '撲克頁：勝率試算可以選「對手範圍」（直接用站上的開牌、3-bet、跟注範圍），'
           + '並加上「跟注值不值」（需要勝率與 EV）和「聽牌出路」（出路、中牌率、2／4 法則對照）。' },
       { kind: 'new', to: '/poker',

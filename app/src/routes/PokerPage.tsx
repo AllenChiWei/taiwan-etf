@@ -10,6 +10,7 @@ import { useMemo, useState } from 'react';
 import { HandMatrix, type MatrixAction } from '../components/HandMatrix';
 import { EquityCalculator } from '../components/EquityCalculator';
 import { PokerQuiz } from '../components/PokerQuiz';
+import { PokerTable } from '../components/PokerTable';
 import {
   POSITIONS, VS_OPEN, HERO_SPOT_LABEL, resolve, resolveDefense,
 } from '../lib/ranges';
@@ -63,6 +64,8 @@ export function PokerPage() {
       {mode === 'equity' && <EquityCalculator />}
       {mode === 'quiz' && <PokerQuiz />}
       {mode === 'rfi' && <>
+
+      <PokerTable selected={posId} onSelect={setPosId} />
 
       {/* 位置選擇。用按鈕列而不是下拉 —— 六個選項，而且使用者會想來回比較 */}
       <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">

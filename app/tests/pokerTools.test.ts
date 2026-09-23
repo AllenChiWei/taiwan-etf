@@ -9,6 +9,7 @@ import {
   expandHand, rangeEquity, allHandKeys, rfiAnswer, defenseAnswer, makeQuestion,
 } from '../src/lib/pokerTools.ts';
 import { parseCard } from '../src/lib/equity.ts';
+import { actionRank, SEAT_ORDER, PREFLOP_ORDER, POSTFLOP_ORDER } from '../src/lib/ranges.ts';
 
 const cards = (s: string) => s.split(' ').map(parseCard);
 
@@ -107,4 +108,19 @@ test('出題：答案平均分布，而且都在選項裡', () => {
   // 蓋牌不該壓倒性多（依組合數隨便抽的話會超過七成）
   assert.ok((counts.fold ?? 0) / 600 < 0.5, `蓋牌佔 ${counts.fold}/600`);
   for (const a of ['open', '3bet', 'call']) assert.ok((counts[a] ?? 0) > 50, `${a} 太少：${counts[a]}`);
+});
+
+test('六人桌的行動順序', () => {
+  // 翻牌前 UTG 先、BB 最後；翻牌後 SB 先、BTN 最後
+  assert.equal(actionRank('utg', 'preflop'), 1);
+  assert.equal(actionRank('bb', 'preflop'), 6);
+  assert.equal(actionRank('sb', 'postflop'), 1);
+  assert.equal(actionRank('btn', 'postflop'), 6);
+  // 兩條街都是從座位順序（順時針）的某一點開始繞一圈
+  const rotate = (from: string) => {
+    const i = SEAT_ORDER.indexOf(from as typeof SEAT_ORDER[number]);
+    return [...SEAT_ORDER.slice(i), ...SEAT_ORDER.slice(0, i)];
+  };
+  assert.deepEqual([...PREFLOP_ORDER], rotate('utg'));
+  assert.deepEqual([...POSTFLOP_ORDER], rotate('sb'));
 });
