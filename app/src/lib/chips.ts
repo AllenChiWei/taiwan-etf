@@ -11,6 +11,7 @@
  */
 
 import type { Tone } from './format.ts';
+import type { UsSeries } from './sentiment.ts';
 
 export interface ChipsMeta {
   /** 資料日期（交易日） */
@@ -93,6 +94,22 @@ export interface ChipsData {
   sectors?: SectorRow[];
   /** 定期定額交易戶數排行（證交所月報）。舊版的 chips.json 沒有這個欄位。 */
   dca?: DcaRank | null;
+  /** 上市融資融券餘額與維持率。舊版沒有 */
+  margin?: MarginData;
+  /** VIX 與自算恐懼貪婪的原料（美股日期）。舊版沒有 */
+  us?: UsSeries;
+}
+
+export interface MarginData {
+  dates: string[];
+  /** 融資金額（元） */
+  money: number[];
+  /** 融資餘額（張） */
+  lots: number[];
+  /** 融券餘額（張） */
+  short: number[];
+  /** 最新一天的大盤融資維持率（自算，只有上市） */
+  maint: { date: string; ratio: number; value: number; money: number; n: number } | null;
 }
 
 /** 定期定額交易戶數。這是這一頁唯一一份「散戶在買什麼」的官方數字。 */
@@ -227,6 +244,119 @@ export function retailRatioSeries(
     }
     return (-inst / total) * 100;
   });
+}
+
+/* ── 台指期約當部位 ─────────────────────────────────────────
+ *
+ * 大台、小台、微台是同一個標的、不同大小：小台一口是大台的 1/4、微台是 1/20
+ * （期交所大額交易人表也是這樣換算：TX + MTX/4 + TMF/20）。分成三張卡片看，
+ * 外資大台空 2 萬口、小台多 3 千口到底合起來是多少得自己心算 —— 這裡合成一個數字。
+ */
+
+export const TX_EQUIV: Record<string, number> = {
+  臺股期貨: 1,
+  小型臺指期貨: 1 / 4,
+  微型臺指期貨: 1 / 20,
+};
+
+/**
+ * 某個身份別每天的大台約當淨口數。三個契約都要有那天的數字才算 ——
+ * 少一個就回 null，而不是只加有的那幾個（那會畫出一根假的跳動）。
+ */
+export function txEquivalent(hist: ChipsData['futHistory'], who: string): (number | null)[] {
+  return hist.dates.map((_, i) => {
+    let sum = 0;
+    for (const [contract, w] of Object.entries(TX_EQUIV)) {
+      const v = hist.contracts[contract]?.[who]?.[i];
+      if (v === null || v === undefined) return null;
+      sum += v * w;
+    }
+    return sum;
+  });
+}
+
+/** 最新一日的大台約當淨口數與多空方口數（同樣換算）。缺任何一個契約回 null。 */
+export function txEquivalentLatest(rows: FutRow[], who: string):
+  { n: number; bn: number; sn: number } | null {
+  let n = 0, bn = 0, sn = 0;
+  for (const [contract, w] of Object.entries(TX_EQUIV)) {
+    const r = rows.find(x => x.c === contract && x.w === who);
+    if (!r) return null;
+    n += r.n * w; bn += r.bn * w; sn += r.sn * w;
+  }
+  return { n, bn, sn };
+}
+
+/* ── 每日摘要 ─────────────────────────────────────────────── */
+
+export interface SummaryTile {
+  key: string;
+  label: string;
+  value: number;
+  /** 與前一個交易日的差；沒有前一天時 null */
+  change: number | null;
+  /** 顯示格式 */
+  unit: 'lots' | 'pct' | 'yi' | 'pt';
+  /** 顏色依什麼：值本身的正負（淨多空）、變化的正負，或不上色 */
+  tone: 'value' | 'change' | 'none';
+  hint: string;
+}
+
+/** 數列最後兩個有值的元素。 */
+export function lastTwo(values: (number | null)[]): [number | null, number | null] {
+  let last: number | null = null;
+  for (let i = values.length - 1; i >= 0; i--) {
+    const v = values[i];
+    if (v === null || !Number.isFinite(v)) continue;
+    if (last === null) last = v;
+    else return [last, v];
+  }
+  return [last, null];
+}
+
+/**
+ * 籌碼頁頂端那一排：每項一個數字，加上跟前一天比。
+ *
+ * 只收 chips.json 裡有的東西，所以缺哪段就少哪格 —— 不會出現一格「—」佔位置。
+ * 每一格的算法跟它在下面那個區塊裡的算法是同一個函式，數字才對得上。
+ */
+export function summaryTiles(data: ChipsData): SummaryTile[] {
+  const out: SummaryTile[] = [];
+  const hist = data.futHistory;
+
+  const [fx, fxPrev] = lastTwo(txEquivalent(hist, '外資'));
+  if (fx !== null) {
+    out.push({ key: 'foreign', label: '外資台指期', value: fx,
+      change: fxPrev === null ? null : fx - fxPrev, unit: 'lots', tone: 'value',
+      hint: '大台約當淨口數' });
+  }
+
+  const [rr, rrPrev] = lastTwo(retailRatioSeries(hist, '小型臺指期貨'));
+  if (rr !== null) {
+    out.push({ key: 'retail', label: '小台散戶多空比', value: rr,
+      change: rrPrev === null ? null : rr - rrPrev, unit: 'pct', tone: 'value',
+      hint: '推算，偏多為正' });
+  }
+
+  const [pc, pcPrev] = lastTwo(data.pc.oi);
+  if (pc !== null) {
+    out.push({ key: 'pc', label: 'P/C 未平倉比', value: pc,
+      change: pcPrev === null ? null : pc - pcPrev, unit: 'pct', tone: 'none',
+      hint: '賣權 ÷ 買權' });
+  }
+
+  const m = data.margin;
+  if (m && m.money.length) {
+    const [mv, mvPrev] = lastTwo(m.money);
+    out.push({ key: 'margin', label: '融資餘額', value: yuanToYi(mv!),
+      change: mvPrev === null ? null : yuanToYi(mv! - mvPrev), unit: 'yi', tone: 'change',
+      hint: '上市' });
+  }
+  if (m?.maint) {
+    out.push({ key: 'maint', label: '融資維持率', value: m.maint.ratio,
+      change: null, unit: 'pct', tone: 'none', hint: '上市，自算' });
+  }
+  return out;
 }
 
 export interface LinePoint { x: number; y: number }

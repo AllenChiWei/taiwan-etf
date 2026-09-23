@@ -27,6 +27,8 @@ Where each field comes from, because it is not one source:
 | 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
 | 定期定額人氣榜 | TWSE OpenAPI `ETFReport/ETFRank`（**月報**，ETF 與個股各前 20 名） |
 | 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
+| 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
+| VIX、恐懼貪婪（自算） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD）——**不是 CNN 的數字** |
 | 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
@@ -246,6 +248,14 @@ unstyled pill.
 - **中央社 RSS** — 官方提供的 RSS，content-signal 是 `ai-train=no, search=yes`；
   我們不訓練任何東西，只放標題與外連。
 - **公開資訊觀測站** — 上市與上櫃的重大訊息 OpenAPI，官方原始公告。
+
+**CNN 恐懼貪婪指數不抓**（2026-09-23 查過）：`production.dataviz.cnn.io` 對表明身分的
+UA 回 **HTTP 418「I'm a teapot. You're a bot.」**，cnn.com 的 robots.txt 點名 ClaudeBot、
+anthropic-ai 等代理 `Disallow: /`、對所有人擋 `/api/`；FinMind 的 `CnnFearGreedIndex` 要付費。
+所以籌碼頁的是**照 CNN 公開方法自算的近似值**（`lib/sentiment.ts`）：S&P 500 相對 125 日
+均線、VIX 相對 50 日均線、20 日股債報酬差、20 日高收益債與投資級債報酬差，各自換成一年
+百分位後平均。CNN 另外三項（新高新低、漲跌量能、Put/Call）沒有合法免費來源。畫面上必須
+寫明「自算，非 CNN」。原料一律用含息還原價 —— 債券 ETF 月配息，純價格會每月誤判一次。
 
 **查過但不採用：奇摩股市**的 robots.txt 有一組點名 AI 代理的清單（anthropic-ai、
 ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/caas`、

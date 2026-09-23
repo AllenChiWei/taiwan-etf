@@ -11,6 +11,7 @@ import {
   toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge, bars,
   contractAmount, joinDca, retailLatest, retailRatioSeries,
+  txEquivalent, txEquivalentLatest, lastTwo, summaryTiles,
   type ChipsData, type DcaRow,
 } from '../src/lib/chips.ts';
 
@@ -126,6 +127,38 @@ test('散戶未平倉推算', async (t) => {
   });
 });
 
+test('台指期大台約當：大台 + 小台÷4 + 微台÷20', async (t) => {
+  const hist = {
+    dates: ['a', 'b'],
+    contracts: {
+      臺股期貨: { 外資: [-20000, -20000] },
+      小型臺指期貨: { 外資: [4000, null] },
+      微型臺指期貨: { 外資: [2000, 2000] },
+    },
+  };
+
+  await t.test('三個契約都有的那天才算', () => {
+    assert.deepEqual(txEquivalent(hist, '外資'), [-20000 + 1000 + 100, null]);
+  });
+
+  await t.test('最新一日的淨額、多方與空方同樣換算', () => {
+    const r = (c: string, bn: number, sn: number) =>
+      ({ c, w: '外資', n: bn - sn, a: 0, tn: 0, ta: 0, bn, sn });
+    const got = txEquivalentLatest(
+      [r('臺股期貨', 10000, 30000), r('小型臺指期貨', 4000, 0), r('微型臺指期貨', 0, 2000)], '外資')!;
+    assert.equal(got.n, -20000 + 1000 - 100);
+    assert.equal(got.bn, 11000);
+    assert.equal(got.sn, 30100);
+    assert.equal(txEquivalentLatest([r('臺股期貨', 1, 0)], '外資'), null);
+  });
+});
+
+test('lastTwo 跳過尾端的 null', () => {
+  assert.deepEqual(lastTwo([1, 2, null, 3, null]), [3, 2]);
+  assert.deepEqual(lastTwo([5]), [5, null]);
+  assert.deepEqual(lastTwo([]), [null, null]);
+});
+
 /* ── 對真實資料的檢查 ───────────────────────────────────── */
 
 const PATH = new URL('../public/data/chips.json', import.meta.url);
@@ -192,6 +225,24 @@ test('真實 chips.json', { skip: !existsSync(PATH) && '沒有 chips.json（部�
         const bn = rows.reduce((a, r) => a + r.bn, 0);
         const sn = rows.reduce((a, r) => a + r.sn, 0);
         assert.ok(total >= bn && total >= sn, `${c}：全市場 ${total} 小於法人 ${bn}/${sn}`);
+      }
+    });
+
+    await t.test('融資：數列等長、維持率在合理範圍', () => {
+      const m = data.margin;
+      if (!m) return;
+      assert.equal(m.money.length, m.dates.length);
+      assert.equal(m.lots.length, m.dates.length);
+      assert.equal(m.short.length, m.dates.length);
+      // 上市融資金額是數千億元；差一千倍代表單位（仟元／元）搞錯
+      for (const v of m.money) assert.ok(v > 1e11 && v < 1e13, `融資金額 ${v} 的單位不對`);
+      // 維持率低於 100% 代表整個市場的融資都已經斷頭，高於 400% 則是分子分母單位不一致
+      if (m.maint) assert.ok(m.maint.ratio > 100 && m.maint.ratio < 400, `維持率 ${m.maint.ratio}`);
+    });
+
+    await t.test('摘要列每一格都有數字', () => {
+      for (const tile of summaryTiles(data)) {
+        assert.ok(Number.isFinite(tile.value), `${tile.label} 不是數字`);
       }
     });
 

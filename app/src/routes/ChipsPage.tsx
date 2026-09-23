@@ -12,10 +12,13 @@ import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
-  retailLatest, retailRatioSeries,
+  retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles,
+  linePath,
+  type SummaryTile,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
+import { fearGreed, vixView, COMPONENT_LABEL, type Mood } from '../lib/sentiment';
 import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
@@ -101,6 +104,43 @@ function Bars({ values, height = 56 }: {
   );
 }
 
+/**
+ * 折線。跟 Bars 不同，它畫的是「水位」而不是每天獨立的量（VIX、恐懼貪婪、融資餘額）。
+ * guides 是要畫的參考線（例如恐懼貪婪的 25／75），用資料的值指定。
+ */
+function Line({ values, guides = [], height = 56, min, max }: {
+  values: (number | null)[]; guides?: number[]; height?: number; min?: number; max?: number;
+}) {
+  const W = 320;
+  const pad = 2;
+  const nums = values.filter((v): v is number => v !== null && Number.isFinite(v));
+  if (nums.length < 2) return null;
+  // 固定值域時（0–100 的指數）用固定的；否則用資料範圍，不強制含 0 ——
+  // 這些是水位，含 0 會把 VIX 14 到 18 的起伏壓成一條直線
+  const lo = min ?? Math.min(...nums);
+  const hi = max ?? Math.max(...nums);
+  const span = hi - lo || 1;
+  const stepX = (W - pad * 2) / (values.length - 1);
+  const y = (v: number) => pad + (1 - (v - lo) / span) * (height - pad * 2);
+  const pts: { x: number; y: number }[] = [];
+  values.forEach((v, i) => {
+    if (v !== null && Number.isFinite(v)) pts.push({ x: pad + i * stepX, y: y(v) });
+  });
+  // 參考線只畫落在值域裡的：VIX 整年都在 20 以下時，畫在框外的 30 沒有意義
+  const shown = guides.filter(g => g >= lo && g <= hi);
+  return (
+    <svg viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" role="presentation"
+         className="h-14 w-full">
+      {shown.map(g => (
+        <line key={g} x1="0" x2={W} y1={y(g)} y2={y(g)} stroke="currentColor"
+              className="text-line" strokeWidth="1" strokeDasharray="3 3" />
+      ))}
+      <path d={linePath(pts)} fill="none" stroke="currentColor" strokeWidth="1.5"
+            className="text-accent" vectorEffect="non-scaling-stroke" />
+    </svg>
+  );
+}
+
 function Stat({ label, value, sub, tone }: {
   label: string; value: string; sub?: string; tone?: string;
 }) {
@@ -136,9 +176,34 @@ function FuturesSection({ data }: { data: ChipsData }) {
   const retail = retailLatest(rows, oiLine?.[oiLine.length - 1] ?? null);
   const retailLine = retailRatioSeries(data.futHistory, contract);
 
+  const equiv = WHO_ORDER.map(who => ({ who, row: txEquivalentLatest(data.futures, who) }));
+  const foreignLine = txEquivalent(data.futHistory, '外資');
+
   return (
     <Section title="三大法人期貨未平倉"
              hint={`未平倉淨額 · 近 ${dates.length} 個交易日`}>
+      {equiv.some(e => e.row) && (
+        <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <span className="text-[13px] font-semibold text-ink">台指期合計（大台約當）</span>
+            <span className="text-[11px] text-faint">大台 ＋ 小台÷4 ＋ 微台÷20</span>
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-2">
+            {equiv.map(({ who, row }) => (
+              <div key={who} className="min-w-0">
+                <div className="text-[11.5px] text-muted">{who}</div>
+                <div className={`font-mono text-[15px] font-bold tabular-nums ${
+                  row ? TONE_CLASS[netTone(row.n)] : 'text-faint'}`}>
+                  {row ? `${signed(Math.round(row.n))} 口` : '—'}
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="mt-1 text-[10.5px] text-faint">外資走勢</div>
+          <Bars values={foreignLine} />
+        </div>
+      )}
+
       <Switch options={contracts} value={contract} onChange={setContract} label="期貨契約" />
 
       <div className="mt-2.5 space-y-2.5">
@@ -204,6 +269,206 @@ function FuturesSection({ data }: { data: ChipsData }) {
         </p>
       )}
     </Section>
+  );
+}
+
+/* ── 融資 ───────────────────────────────────────────────── */
+
+function MarginSection({ data }: { data: ChipsData }) {
+  const m = data.margin;
+  if (!m || m.dates.length < 2) return null;
+  const yi = m.money.map(v => yuanToYi(v));
+  const last = yi.length - 1;
+  const daily = yi.map((v, i) => (i === 0 ? null : v - yi[i - 1]));
+  const shortChange = m.short[last] - m.short[last - 1];
+  return (
+    <Section title="融資融券（上市）" hint={`近 ${m.dates.length} 個交易日 · 最新 ${m.dates[last]}`}>
+      <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        <Stat label="融資餘額" value={`${nf0.format(yi[last])} 億`}
+              sub={`較前日 ${signedYi(daily[last]!)} 億`}
+              tone={TONE_CLASS[netTone(daily[last]!)]} />
+        <Stat label="融券餘額" value={`${nf0.format(m.short[last])} 張`}
+              sub={`較前日 ${signed(shortChange)} 張`} />
+        {m.maint && (
+          <Stat label="大盤融資維持率" value={`${nf1.format(m.maint.ratio)}%`}
+                sub={`${m.maint.date} · 自算，${nf0.format(m.maint.n)} 檔`} />
+        )}
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">融資餘額（億元）</div>
+          <Line values={yi} />
+        </div>
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">每日增減（億元，紅增綠減）</div>
+          <Bars values={daily} />
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        融資是散戶借錢買股，餘額增加代表槓桿在加大。維持率＝融資買進的股票現值 ÷ 借的錢：
+        剛買進時約 166%（自備四成），個股跌破 130% 會被追繳，大盤維持率掉到 140% 以下
+        常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
+        只有上市；FinMind 的現成數字要付費。
+      </p>
+    </Section>
+  );
+}
+
+/* ── 市場情緒：VIX 與自算恐懼貪婪 ─────────────────────────── */
+
+const MOOD_TONE: Record<Mood, string> = {
+  極度恐懼: 'text-down', 恐懼: 'text-down', 中性: 'text-ink', 貪婪: 'text-up', 極度貪婪: 'text-up',
+};
+
+function SentimentSection({ data }: { data: ChipsData }) {
+  const us = data.us;
+  const fg = useMemo(() => (us ? fearGreed(us) : null), [us]);
+  if (!us || !fg?.latest) return null;
+  const vix = vixView(us);
+  const recent = 120;
+  const { latest } = fg;
+  return (
+    <Section title="市場情緒（美股）" hint={`${latest.date} 美股收盤`}>
+      <div className="mt-2 grid gap-2.5 sm:grid-cols-2">
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="flex items-baseline justify-between gap-2">
+            <span className="text-[12px] text-muted">恐懼貪婪指數（自算）</span>
+            <span className={`text-[13px] font-bold ${MOOD_TONE[latest.mood]}`}>{latest.mood}</span>
+          </div>
+          <div className="mt-0.5 font-mono text-[26px] font-bold tabular-nums text-ink">
+            {nf0.format(latest.score)}
+          </div>
+          {/* 0–100 的刻度條：25／45／55／75 是 CNN 的分界 */}
+          <div className="relative mt-1 h-2 rounded-full bg-gradient-to-r from-[var(--c-down)] via-sunken to-[var(--c-up)]">
+            <span className="absolute -top-1 h-4 w-1 -translate-x-1/2 rounded bg-ink"
+                  style={{ left: `${latest.score}%` }} />
+          </div>
+          <div className="mt-0.5 flex justify-between text-[10px] text-faint">
+            <span>極度恐懼</span><span>中性</span><span>極度貪婪</span>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {latest.parts.map(p => (
+              <li key={p.key} className="grid grid-cols-[5.5em_1fr_2.5em] items-center gap-2 text-[11.5px]">
+                <span className="text-muted">{COMPONENT_LABEL[p.key]}</span>
+                <span className="h-1.5 rounded-full bg-sunken">
+                  <span className="block h-1.5 rounded-full bg-accent"
+                        style={{ width: `${p.score ?? 0}%` }} />
+                </span>
+                <span className="text-right font-mono tabular-nums text-ink">
+                  {p.score === null ? '—' : nf0.format(p.score)}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <div className="mt-2 text-[10.5px] text-faint">近 {recent} 個交易日（虛線 25／75）</div>
+          <Line values={fg.index.slice(-recent)} guides={[25, 75]} min={0} max={100} />
+        </div>
+
+        {vix && (
+          <div className="rounded-lg border border-line bg-bg p-2.5">
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="text-[12px] text-muted">VIX 恐慌指數</span>
+              <span className="text-[11px] text-faint">{vix.date}</span>
+            </div>
+            <div className="mt-0.5 font-mono text-[26px] font-bold tabular-nums text-ink">
+              {nf2.format(vix.close)}
+            </div>
+            <div className="text-[11.5px] text-muted">
+              {/* VIX 的變化不上色：紅漲綠跌套在 VIX 上會變成「VIX 漲是紅色」，
+                  可是 VIX 漲對股市是壞事 —— 兩種讀法都通，所以乾脆不給顏色 */}
+              {vix.change !== null && (
+                <span>較前日 {vix.change > 0 ? '+' : ''}{nf2.format(vix.change)}</span>
+              )}
+              {vix.pct !== null && <> · 比過去一年 {nf0.format(vix.pct)}% 的日子高</>}
+            </div>
+            <div className="mt-2 text-[10.5px] text-faint">近一年（虛線 20／30）</div>
+            <Line values={us.vix.slice(-252)} guides={[20, 30]} />
+            <p className="mt-1 text-[11px] leading-relaxed text-faint">
+              S&amp;P 500 選擇權隱含的未來 30 天波動。20 以下偏平靜、30 以上多半是恐慌。
+            </p>
+          </div>
+        )}
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        <strong className="text-muted">這不是 CNN 的恐懼貪婪指數。</strong>
+        CNN 的資料不開放給程式抓，這裡照它公開的方法、用拿得到的四項自己算：
+        S&amp;P 500 相對 125 日均線、VIX 相對 50 日均線、近 20 日股票 vs 公債報酬、
+        高收益債 vs 投資級債報酬。每項換成「在過去一年排第幾」（0–100）後平均。
+        CNN 另外三項（新高新低家數、漲跌量能、Put/Call）沒有合法的免費來源，
+        所以數字會跟 CNN 不同，看方向就好。資料：FinMind（含息還原價）。
+      </p>
+    </Section>
+  );
+}
+
+/* ── 每日摘要 ───────────────────────────────────────────── */
+
+function tileValue(t: SummaryTile): string {
+  switch (t.unit) {
+    case 'lots': return `${signed(Math.round(t.value))} 口`;
+    case 'yi': return `${nf0.format(t.value)} 億`;
+    case 'pt': return nf2.format(t.value);
+    case 'pct': return `${t.key === 'retail' && t.value > 0 ? '+' : ''}${nf2.format(t.value)}%`;
+  }
+}
+
+function tileChange(t: SummaryTile): string {
+  if (t.change === null) return '';
+  const c = t.change;
+  const sign = c > 0 ? '+' : '';
+  switch (t.unit) {
+    case 'lots': return `${sign}${nf0.format(Math.round(c))}`;
+    case 'yi': return `${sign}${nf2.format(c)} 億`;
+    case 'pt': return `${sign}${nf2.format(c)}`;
+    case 'pct': return `${sign}${nf2.format(c)} 個百分點`;
+  }
+}
+
+function SummaryStrip({ data }: { data: ChipsData }) {
+  const tiles = summaryTiles(data);
+  const fg = useMemo(() => (data.us ? fearGreed(data.us) : null), [data.us]);
+  const vix = data.us ? vixView(data.us) : null;
+  if (tiles.length === 0 && !fg?.latest && !vix) return null;
+  return (
+    <section aria-label="今日摘要"
+             className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+      {tiles.map(t => (
+        <div key={t.key} className="rounded-lg border border-line bg-surface px-2.5 py-2">
+          <div className="text-[11px] text-muted">{t.label}</div>
+          <div className={`font-mono text-[15px] font-bold tabular-nums ${
+            t.tone === 'value' ? TONE_CLASS[netTone(t.value)] : 'text-ink'}`}>
+            {tileValue(t)}
+          </div>
+          <div className="text-[10.5px] text-faint">
+            {t.change !== null && (
+              <span className={t.tone === 'change' ? TONE_CLASS[netTone(t.change)] : ''}>
+                {tileChange(t)}
+              </span>
+            )}
+            {t.change !== null ? ' · ' : ''}{t.hint}
+          </div>
+        </div>
+      ))}
+      {vix && (
+        <div className="rounded-lg border border-line bg-surface px-2.5 py-2">
+          <div className="text-[11px] text-muted">VIX</div>
+          <div className="font-mono text-[15px] font-bold tabular-nums text-ink">{nf2.format(vix.close)}</div>
+          <div className="text-[10.5px] text-faint">
+            {vix.change !== null && <>{vix.change > 0 ? '+' : ''}{nf2.format(vix.change)} · </>}美股
+          </div>
+        </div>
+      )}
+      {fg?.latest && (
+        <div className="rounded-lg border border-line bg-surface px-2.5 py-2">
+          <div className="text-[11px] text-muted">恐懼貪婪</div>
+          <div className="font-mono text-[15px] font-bold tabular-nums text-ink">
+            {nf0.format(fg.latest.score)}
+            <span className={`ml-1 font-sans text-[12px] ${MOOD_TONE[fg.latest.mood]}`}>{fg.latest.mood}</span>
+          </div>
+          <div className="text-[10.5px] text-faint">自算，非 CNN</div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -692,9 +957,12 @@ export function ChipsPage() {
         <p className="mt-1 text-[11.5px] text-muted">{data.meta.note}</p>
       </div>
 
+      <SummaryStrip data={data} />
       <FuturesSection data={data} />
       <RetailSection />
       <PcSection data={data} />
+      <MarginSection data={data} />
+      <SentimentSection data={data} />
       <OptionsSection data={data} />
       <AtmSection />
       <LargeSection data={data} />

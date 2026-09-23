@@ -291,6 +291,9 @@ jobs:
       # 那不該讓整個網站的部署失敗 —— 缺檔時籌碼頁自己會說「今天還沒有資料」。
       - name: 產生籌碼資料
         continue-on-error: true
+        env:
+          # 融資餘額、VIX 與自算恐懼貪婪用的美股序列來自 FinMind（七個請求）
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python scripts/fetch_chips.py
 
       # FinLab 失敗（額度用完、服務中斷、或改版）時退回備份。半途失敗的產出不能

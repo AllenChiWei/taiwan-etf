@@ -23,6 +23,12 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
     TWSE  afterTrading/MI_INDEX       當日每日收盤行情（拿成交均價用）
     TPEx  insti/dailyTrade            上櫃三大法人買賣超
     TPEx  afterTrading/otc            上櫃當日收盤行情
+    TWSE  marginTrading/MI_MARGN      融資融券彙總（算大盤融資維持率）
+
+FinMind（一個請求給一段完整歷史，免費層）：
+
+    TaiwanStockTotalMarginPurchaseShortSale   上市融資融券餘額
+    USStockPrice ^VIX ^GSPC SPY TLT HYG LQD   VIX 與自算恐懼貪婪指數的原料
 
 期交所沒有 robots.txt（回 404），證交所與櫃買的都沒有禁止這些路徑。即使如此還是
 照本專案一貫的做法：User-Agent 標明用途與網址、每次請求之間留間隔、只抓需要的。
@@ -62,6 +68,20 @@ CI 的日誌不是每個人都讀得到，但產出的 JSON 本身會說哪一�
 全市場未沖銷量取 futDataDown 的**一般時段**（盤後那列是 '-'），而且要排除價差
 委託的列（到期月份欄是「202610/202611」這種）—— 那是組合單的報價，不是另一份部位。
 週契約（202609W4）要算進去：三大法人那份統計涵蓋所有月份，全市場也要一樣。
+
+**大盤融資維持率是自己算的。** FinMind 有現成的但要付費。算法是市場通用的那一個：
+
+    維持率 = Σ（各股融資今日餘額張數 × 1000 × 收盤價）÷ 融資金額
+
+只有上市（證交所 MI_MARGN 一個請求就有 1,300 檔的餘額與融資金額合計）。
+MI_MARGN 那張表把「前日餘額」排在「今日餘額」前面，取錯一格會整份變昨天 ——
+fetch_stocks.py 踩過，所以這裡照欄位名稱找第一組「今日餘額」。
+
+**恐懼貪婪是自算的近似值，不是 CNN 的。** CNN 的資料端點對表明身分的程式回
+HTTP 418（「I'm a teapot. You're a bot.」），cnn.com 的 robots.txt 也點名擋掉 AI
+代理；要拿只能假裝成瀏覽器，這個專案不做。所以照 CNN 公開的方法、用拿得到的四項
+自己算（見 app/src/lib/sentiment.ts），原料是 FinMind 的含息還原價 ——
+債券 ETF 每月配息，用純價格算報酬會讓「避險需求」每個月被配息日誤判一次。
 
 **契約金額的單位是千元。** 期交所原始欄位就是千元，這裡原樣保留，換算交給前端，
 免得在 JSON 裡再乘一次、之後看到數字時搞不清楚是哪一種單位。
@@ -115,6 +135,15 @@ LARGE_FUT_IDS = {'TX': u'臺股期貨', 'TE': u'電子期貨', 'TF': u'金融期
 LARGE_OPT_IDS = {'TXO': u'臺指選擇權'}
 # 推算散戶未平倉要全市場未沖銷量。散戶多空比大家看的是小台與微台，大台以法人為主。
 RETAIL_IDS = {'MTX': u'小型臺指期貨', 'TMF': u'微型臺指期貨'}
+
+TWSE_MARGIN = ('https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN'
+               '?date=%s&selectType=ALL&response=json')
+FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
+FINMIND_TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
+# 自算恐懼貪婪：125 日均線 + 一年的百分位，再畫一段走勢，所以要兩年半的歷史
+US_SYMBOLS = {'^GSPC': 'spx', '^VIX': 'vix', 'SPY': 'spy',
+              'TLT': 'tlt', 'HYG': 'hyg', 'LQD': 'lqd'}
+US_HISTORY_DAYS = 920
 
 # 期交所寫「外資及陸資」，畫面上一律講「外資」—— 兩邊指的是同一件事
 WHO = {u'自營商': u'自營商', u'投信': u'投信', u'外資及陸資': u'外資', u'外資': u'外資'}
@@ -398,15 +427,42 @@ def large_traders(rows, ids, is_option):
 
 # ── 交易所：法人買賣超前十大 ─────────────────────────────────
 
+_PRICE_DOCS = {}
+
+
+def twse_price_doc(day):
+    u"""證交所每日收盤行情。買賣超估算與融資維持率都要它，同一天只抓一次。"""
+    if day not in _PRICE_DOCS:
+        try:
+            _PRICE_DOCS[day] = json.loads(fetch(TWSE_PRICE % day).decode('utf-8'))
+        except Exception as e:                                # noqa: BLE001
+            note(u'證交所收盤行情：%s' % str(e)[:80])
+            _PRICE_DOCS[day] = None
+    return _PRICE_DOCS[day]
+
+
+def twse_closes(day):
+    u"""上市個股的收盤價 {代號: 收盤價}。沒成交（'--'）的不在裡面。"""
+    out = {}
+    for t in (twse_price_doc(day) or {}).get('tables') or []:
+        fields = t.get('fields') or []
+        if u'收盤價' not in fields:
+            continue
+        ci = fields.index(u'收盤價')
+        for r in t.get('data') or []:
+            close = num(r[ci])
+            if close > 0:
+                out[r[0].strip()] = float(close)
+    return out
+
+
 def twse_prices(day):
     u"""上市個股的當日成交均價 {代號: 均價}。均價 = 成交金額 ÷ 成交股數。
 
     拿不到就回空的：買賣超的張數照樣有，只是金額變成 null（前端顯示破折號）。
     """
-    try:
-        doc = json.loads(fetch(TWSE_PRICE % day).decode('utf-8'))
-    except Exception as e:                                    # noqa: BLE001
-        note(u'證交所收盤行情（估算金額用）：%s' % str(e)[:80])
+    doc = twse_price_doc(day)
+    if doc is None:
         return {}
     out = {}
     for t in doc.get('tables') or []:
@@ -438,6 +494,103 @@ def tpex_prices(day):
             shares, value = num(r[vi]), num(r[ai])
             if shares > 0:
                 out[r[0].strip()] = value / float(shares)
+    return out
+
+
+# ── 融資：餘額走勢與維持率 ───────────────────────────────────
+
+def finmind(dataset, start, data_id=None):
+    u"""FinMind 的一個資料集。失敗記進 meta.errors、回空串列。"""
+    params = {'dataset': dataset, 'start_date': start}
+    if data_id:
+        params['data_id'] = data_id
+    if FINMIND_TOKEN:
+        params['token'] = FINMIND_TOKEN
+    doc = fetch_json(FINMIND_API + '?' + urllib.parse.urlencode(params),
+                     u'FinMind %s %s' % (dataset, data_id or ''))
+    if not doc:
+        return []
+    if doc.get('msg') != 'success':
+        note(u'FinMind %s %s：%s' % (dataset, data_id or '', str(doc.get('msg'))[:60]))
+        return []
+    return doc.get('data') or []
+
+
+def margin_history(end):
+    u"""上市融資融券餘額，近 HISTORY_DAYS 天。
+
+    money 是融資金額（元）、lots 是融資餘額（張）、short 是融券餘額（張）。
+    """
+    start = (end - timedelta(days=HISTORY_DAYS)).isoformat()
+    by_day = {}
+    names = {'MarginPurchaseMoney': 'money', 'MarginPurchase': 'lots',
+             'ShortSale': 'short'}
+    for r in finmind('TaiwanStockTotalMarginPurchaseShortSale', start):
+        key = names.get(r.get('name'))
+        if key and r.get('date'):
+            by_day.setdefault(r['date'], {})[key] = num(str(r.get('TodayBalance')))
+    dates = sorted(d for d, v in by_day.items() if len(v) == 3)
+    return {
+        'dates': dates,
+        'money': [by_day[d]['money'] for d in dates],
+        'lots': [by_day[d]['lots'] for d in dates],
+        'short': [by_day[d]['short'] for d in dates],
+    }
+
+
+def maintenance(day):
+    u"""上市大盤融資維持率（%）。算法見檔頭。拿不到就回 None。
+
+    回傳 {'ratio', 'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n'（算進去的檔數）}。
+    """
+    doc = fetch_json(TWSE_MARGIN % day, u'證交所融資融券彙總')
+    if not doc or doc.get('stat') != 'OK':
+        return None
+    money = None
+    value = 0.0
+    n = 0
+    closes = twse_closes(day)
+    for t in doc.get('tables') or []:
+        fields = t.get('fields') or []
+        rows = t.get('data') or []
+        if u'項目' in fields:
+            ti = fields.index(u'今日餘額')
+            for r in rows:
+                if r[0].startswith(u'融資金額'):
+                    money = num(r[ti]) * 1000            # 仟元 -> 元
+        elif u'代號' in fields and u'今日餘額' in fields:
+            # 第一組「今日餘額」是融資（第二組是融券）
+            bi = fields.index(u'今日餘額')
+            for r in rows:
+                close = closes.get(r[0].strip())
+                lots = num(r[bi])
+                if close and lots > 0:
+                    value += lots * 1000 * close
+                    n += 1
+    if not money or not n:
+        note(u'融資維持率：%s' % (u'沒有收盤價' if money else u'找不到融資金額'))
+        return None
+    return {'ratio': round(value / money * 100, 2), 'value': int(value),
+            'money': int(money), 'n': n}
+
+
+# ── 美股：VIX 與自算恐懼貪婪的原料 ───────────────────────────
+
+def us_series(end):
+    u"""{dates, spx, vix, spy, tlt, hyg, lqd}，含息還原收盤（Adj_Close）。
+
+    各檔日期對齊到聯集，缺的那天是 None（前端跳過，不當成 0）。
+    """
+    start = (end - timedelta(days=US_HISTORY_DAYS)).isoformat()
+    cols = {}
+    for sym, key in US_SYMBOLS.items():
+        rows = finmind('USStockPrice', start, sym)
+        cols[key] = dict((r['date'], float(r.get('Adj_Close') or r.get('Close') or 0))
+                         for r in rows if r.get('date'))
+    dates = sorted(set().union(*[set(v) for v in cols.values()]))
+    out = {'dates': dates}
+    for key, series in cols.items():
+        out[key] = [series.get(d) or None for d in dates]
     return out
 
 
@@ -682,6 +835,19 @@ def main():
     log(u'櫃買：上櫃三大法人買賣超…')
     tpex = tpex_top(day_compact)
 
+    log(u'融資：上市融資餘額（FinMind）與維持率（證交所）…')
+    margin = margin_history(last_date or datetime.now(TPE).date())
+    margin['maint'] = maintenance(day_compact)
+    if margin['maint']:
+        margin['maint']['date'] = fut_day
+    log(u'  餘額 %d 天，維持率 %s%%' % (
+        len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
+
+    log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
+    us = us_series(datetime.now(TPE).date())
+    log(u'  %d 天，VIX 最新 %s' % (
+        len(us['dates']), next((v for v in reversed(us['vix']) if v), u'—')))
+
     log(u'證交所：定期定額交易戶數排行（月報）…')
     dca = dca_rank()
     if dca:
@@ -711,6 +877,10 @@ def main():
         'sectors': sector_rows,
         # 每月更新的散戶行為統計，跟這一頁其他每日更新的東西不同步，刻意分開放
         'dca': dca,
+        # 上市融資餘額走勢與最新一天的維持率
+        'margin': margin,
+        # VIX 與自算恐懼貪婪的原料（美股日期，不跟台股同步）
+        'us': us,
     }
     # **dca 不算在這裡**。它是每月更新的附加資料，期交所整段 403 的那天它照樣
     # 抓得到 —— 把它算進來就會讓一份沒有任何當日籌碼的 chips.json 被寫出去，
