@@ -9,8 +9,10 @@ import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
-  type HoldingProjection,
+  seriesFromStock, activePayer,
+  type HoldingProjection, type StockDividendData,
 } from '../lib/dividend';
+import { fetchStockDividends } from '../api/extras';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
 
 const STORAGE_KEY = 'twetf.holdings';
@@ -90,12 +92,20 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   /** 正在改股數的那一檔；null 代表沒有在編輯 */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState(0);
+  // 全部上市櫃個股的配息（ETF 與幾檔金控另外走 calc/ 的試算序列）
+  const [stockDivs, setStockDivs] = useState<StockDividendData | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchStockDividends(ac.signal).then(d => { if (!ac.signal.aborted) setStockDivs(d); })
+      .catch(() => { /* 沒有這份就只能選 ETF，不影響其他功能 */ });
+    return () => ac.abort();
+  }, []);
 
   useEffect(() => { saveHoldings(entries); }, [entries]);
 
   // 只抓還沒抓過的，換張數不會重抓
   useEffect(() => {
-    const missing = entries.map(e => e.code).filter(c => !series.has(c));
+    const missing = entries.map(e => e.code).filter(c => !series.has(c) && c in index.codes);
     if (missing.length === 0) return;
     let cancelled = false;
     setLoading(true);
@@ -114,12 +124,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [entries, series]);
+  }, [entries, series, index.codes]);
 
   const rows: HoldingProjection[] = useMemo(() => {
     const out: HoldingProjection[] = [];
     for (const e of entries) {
-      const s = series.get(e.code);
+      const stock = stockDivs?.stocks[e.code];
+      const s = series.get(e.code)
+        ?? (stock && !(e.code in index.codes) ? seriesFromStock(e.code, stock, index.months) : undefined);
       if (!s) continue;
       out.push(projectHolding(s, index.months, e.shares));
     }
@@ -128,7 +140,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
     out.sort((a, b) => b.annual - a.annual);
     return out;
-  }, [entries, series, index.months]);
+  }, [entries, series, index.months, index.codes, stockDivs]);
 
   const portfolio = useMemo(() => buildPortfolio(rows), [rows]);
   const maxMonth = Math.max(1, ...portfolio.byMonth);
@@ -144,8 +156,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       .filter(c => !entries.some(e => e.code === c))
       .sort()
       .map(c => ({ value: c, label: c, hint: index.codes[c].name, group }));
-    return [...pick('stock', '個股'), ...pick('etf', 'ETF')];
-  }, [index.codes, entries]);
+    // 全部上市櫃個股：最近 15 個月內有除過息的才列（停配的加進來只會是一排 0）
+    const cutoff = new Date(Date.now() - 456 * 86_400_000).toISOString().slice(0, 10);
+    const all = stockDivs ? Object.entries(stockDivs.stocks)
+      .filter(([c, s]) => !(c in index.codes) && activePayer(s, cutoff))
+      .filter(([c]) => !entries.some(e => e.code === c))
+      .map(([c, s]) => ({ value: c, label: c, hint: s.n, group: '個股' })) : [];
+    return [...pick('stock', '個股'), ...all, ...pick('etf', 'ETF')];
+  }, [index.codes, entries, stockDivs]);
 
   const add = useCallback(() => {
     if (!pick || !(shares > 0)) return;
@@ -395,7 +413,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               櫃買中心查不到歷史除息，所以在櫃買掛牌的債券 ETF 目前多半是約略值。
             </p>
             <p>
-              配息金額每次都會變，ETF 也可能調整配息政策 —— 這是依現況的推估，不是保證。
+              <strong className="text-ink">個股</strong>涵蓋全部上市櫃普通股：上市的配息來自證交所除權除息結果表，
+              上櫃的來自櫃買每天的除息清單與 FinMind 回補的歷史。同時配股又配息的（「權息」）
+              如果拆不出現金部分，會標示約略值（數字偏高）；純配股不算，因為沒有現金入帳。
+            </p>
+            <p>
+              配息金額每次都會變，ETF 與公司也可能調整配息政策 —— 這是依現況的推估，不是保證。
               數字是稅前的，沒有扣二代健保補充保費與所得稅。
             </p>
           </div>

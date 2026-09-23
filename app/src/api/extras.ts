@@ -6,6 +6,7 @@
 import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
+import type { StockDividendData } from '../lib/dividend.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -35,3 +36,6 @@ export const fetchUpcoming = (signal?: AbortSignal) =>
 
 export const fetchTop10 = (signal?: AbortSignal) =>
   load<Top10Data>('top10.json', d => Boolean(d.etfs && d.meta), signal);
+
+export const fetchStockDividends = (signal?: AbortSignal) =>
+  load<StockDividendData>('stock_dividends.json', d => Boolean(d.stocks), signal);

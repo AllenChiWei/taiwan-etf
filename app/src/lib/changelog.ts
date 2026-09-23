@@ -36,6 +36,9 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-09-23',
     items: [
+      { kind: 'new', to: '/dividend',
+        text: '配息試算涵蓋全部上市櫃個股：搜尋代號或名稱就能加入，每月／每年可領多少、殖利率、'
+          + '配息月份照原本的方式算，季配的（例如台積電）會自動判斷。' },
       { kind: 'new', to: '/poker',
         text: '撲克頁新增六人桌位置圖：座位、按鈕與盲注，翻牌前／翻牌後誰先行動，點座位切換開牌範圍。' },
       { kind: 'new', to: '/poker',

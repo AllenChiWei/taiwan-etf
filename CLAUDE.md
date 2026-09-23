@@ -30,6 +30,7 @@ Where each field comes from, because it is not one source:
 | 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
 | VIX、恐懼貪婪（自算） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD）——**不是 CNN 的數字** |
 | 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
+| 個股配息（配息試算） | 上市：TWSE `TWT49U`；上櫃：櫃買當日除息＋FinMind `TaiwanStockDividend` 分批回補（累積式、進版控） |
 | ETF 前十大持股 | 投信投顧公會「基金投資明細－月前十大」IN2629.aspx（月報，進版控） |
 | 還沒上市的 ETF | 鉅亨網新聞推代號與日期 ＋ 證交所 e添富新上市簡介（部署時產生） |
 | 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
@@ -57,6 +58,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
+  fetch_stock_dividends.py   全部上市櫃個股配息 → stock_dividends.json（累積式）
   fetch_top10.py             ETF 前十大持股（公會月報）→ top10.json（進版控）
   fetch_upcoming.py          還沒上市的 ETF（新聞＋證交所簡介）→ upcoming.json（部署時產生）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
@@ -135,7 +137,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成八個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成九個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -147,6 +149,7 @@ deploy workflow.
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
 | 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信投信官網 |
 | 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
+| 個股配息 | `sdiv` | `stock_dividends.json` | 證交所／櫃買＋FinMind |
 
 每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
 跑完由「整理未完成的區塊」依 `steps.<id>.outcome` 把失敗的那組 `git checkout` 還原成
@@ -708,6 +711,20 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 經理人會把每一檔同比例加一點。先取兩天都有的持股「股數比值的中位數」當資金進出比例 `f`，
 偏離它超過 0.5% 才算加碼／減碼。**實測 f 一直是 0**（這幾檔多數日子股數完全不動，資金先放現金），
 所以它是保險：哪天有經理人改成同比例攤入，清單也不會整排變成加碼。
+
+## 配息試算的個股
+
+配息試算原本只有 ETF 與 `EXTRA_STOCKS`（有 FinLab 逐月序列 `calc/tw/*.json` 的）。其他上市櫃
+普通股（`^[1-9]\d{3}$`）走 `scripts/fetch_stock_dividends.py` → `stock_dividends.json`，
+前端 `seriesFromStock()` 把除息紀錄轉成同樣形狀的序列，`projectHolding` 以下完全共用。
+
+- **上市**：`TWT49U` 一年一個請求、全市場。「權息」的權值＋息值是合併計價，最近一次用
+  `t187ap45_L` 的宣告現金股利換掉，補不到的標 exact=0；純「權」不收。證交所的金額有計算
+  誤差（台積電 4.5 寫成 4.50002），存檔取到小數第四位。
+- **上櫃**：官方**只有當天**（`tpex_exright_daily`）與預告；`mopsfin_t187ap39_O` 停在 110 年，
+  不能用。歷史用 FinMind `TaiwanStockDividend`（每股現金＋除息交易日）一檔一個請求，每次
+  `FINMIND_BUDGET_STOCKS` 檔，做過的記在 `meta.backfilled`，碰到 402 就停、下次接著補。
+- 最近 15 個月沒除過息的不列進選單（停配的加進來只是一排 0）。
 
 ## 前十大持股
 

@@ -20,7 +20,7 @@ concurrency:
   group: update-data
   cancel-in-progress: false
 
-# 這個流程分成八個互相獨立的區塊，各自產出自己那幾個檔案：
+# 這個流程分成九個互相獨立的區塊，各自產出自己那幾個檔案：
 #
 #   配息   dividends.json, yields.json          交易所公告，不碰 FinLab／MoneyDJ
 #   台股   etfs.json, taiwan_etf_list.html      名單 + MoneyDJ + FinLab 報酬率
@@ -30,6 +30,7 @@ concurrency:
 #   散戶   retail.json                          期交所三大法人＋全市場未沖銷（累積式）
 #   換股   active_holdings.json                 各投信官網的主動式 ETF 持股（累積式）
 #   前十大 top10.json                           投信投顧公會月報（月份沒變就不重抓）
+#   個股息 stock_dividends.json                 全部上市櫃個股配息（上櫃歷史用 FinMind 分批回補）
 #
 # **一個區塊失敗不會擋住其他區塊。** 失敗的那一組會被 git checkout 還原成前一版
 # （擱置到下次），其餘照常提交並部署。理由是 2026-09-22 那次：美股那步因為 FinLab
@@ -53,6 +54,7 @@ jobs:
       RETAIL_FILES: app/public/data/retail.json
       HOLD_FILES: app/public/data/active_holdings.json
       TOP10_FILES: app/public/data/top10.json
+      SDIV_FILES: app/public/data/stock_dividends.json
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
       pending: ${{ steps.tidy.outputs.pending }}
@@ -261,6 +263,20 @@ jobs:
           python scripts/fetch_top10.py
           cd app && node --test tests/top10.test.ts
 
+      # ── 區塊九：全部上市櫃個股的配息（配息試算用）─────────────────────
+      # 上市用證交所整年的除權息結果表；上櫃官方只有當天，歷史用 FinMind 一檔一個請求
+      # 分批回補（每天最多 200 檔，補完就只剩當天的幾個請求）。
+      - name: 個股配息
+        id: sdiv
+        continue-on-error: true
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          FINMIND_BUDGET_STOCKS: '200'
+        run: |
+          set -e
+          python scripts/fetch_stock_dividends.py
+          cd app && node --test tests/stockDividend.test.ts
+
       - name: 存下 FinLab 資料集快取
         if: ${{ hashFiles('.cache/finlab_db/*') != '' }}
         uses: actions/cache/save@v4
@@ -294,6 +310,7 @@ jobs:
           note 散戶多空比   '${{ steps.retail.outcome }}' $RETAIL_FILES
           note 主動式換股   '${{ steps.hold.outcome }}'   $HOLD_FILES
           note 前十大持股   '${{ steps.top10.outcome }}'  $TOP10_FILES
+          note 個股配息     '${{ steps.sdiv.outcome }}'   $SDIV_FILES
 
           echo "pending=${pending}" >> $GITHUB_OUTPUT
           {
@@ -309,12 +326,13 @@ jobs:
             echo "| 散戶多空比 | ${{ steps.retail.outcome }} |"
             echo "| 主動式換股 | ${{ steps.hold.outcome }} |"
             echo "| 前十大持股 | ${{ steps.top10.outcome }} |"
+            echo "| 個股配息 | ${{ steps.sdiv.outcome }} |"
           } >> $GITHUB_STEP_SUMMARY
 
       - name: 提交變更
         id: commit
         run: |
-          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES"
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES $SDIV_FILES"
           if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT

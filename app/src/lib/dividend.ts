@@ -323,3 +323,48 @@ export function summarizeRest(
     annual: rest.reduce((a, s) => a + (rows[s.i]?.annual ?? 0), 0),
   };
 }
+
+/* ── 個股 ───────────────────────────────────────────────────
+ *
+ * 個股沒有 FinLab 的逐月試算序列（calc/tw/*.json 只有 ETF 與幾檔金控），配息來自
+ * stock_dividends.json（交易所公告＋FinMind 回補）。把它轉成跟 ETF 同樣形狀的序列，
+ * projectHolding 以下的邏輯（月份、頻率、殖利率）就完全共用，不必另寫一套。
+ */
+
+export interface StockDividendData {
+  meta: { updated: string; source: string; note: string; backfilled?: string[] };
+  /** 代號 -> 名稱、市場、收盤價、[除息日, 每股現金, 是否精確] */
+  stocks: Record<string, { n: string; m: 'twse' | 'tpex'; c: number | null;
+                           ev: [string, number, number][] }>;
+}
+
+/**
+ * 除息紀錄 -> 對齊 months（'YYYY-MM'）的序列。同一個月除息兩次就加總。
+ * 序列結束在 months 的最後一個月，projectHolding 取的「最近 12 個月」才會對。
+ */
+export function seriesFromStock(code: string, stock: StockDividendData['stocks'][string],
+                                months: string[]): CalcSeries {
+  const d = new Array<number>(months.length).fill(0);
+  const dSrc = new Array<number>(months.length).fill(1);
+  const pos = new Map(months.map((m, i) => [m, i]));
+  for (const [day, cash, exact] of stock.ev) {
+    const i = pos.get(day.slice(0, 7));
+    if (i === undefined) continue;
+    d[i] += cash;
+    if (!exact) dSrc[i] = 0;
+  }
+  return {
+    code, name: stock.n, freq: '',
+    first: 0, d, dSrc,
+    p: new Array(months.length).fill(null),
+    q: new Array(months.length).fill(null),
+    last: { date: '', close: stock.c ?? 0 },
+    splits: [],
+  };
+}
+
+/** 最近一次除息在 cutoff（'YYYY-MM-DD'）之後的才算「還在配息」—— 停配的公司不列進選單。 */
+export function activePayer(stock: StockDividendData['stocks'][string], cutoff: string): boolean {
+  const last = stock.ev[stock.ev.length - 1];
+  return Boolean(last && last[0] >= cutoff);
+}
