@@ -30,6 +30,7 @@ Where each field comes from, because it is not one source:
 | 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
 | VIX、恐懼貪婪（自算） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD）——**不是 CNN 的數字** |
 | 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
+| ETF 前十大持股 | 投信投顧公會「基金投資明細－月前十大」IN2629.aspx（月報，進版控） |
 | 還沒上市的 ETF | 鉅亨網新聞推代號與日期 ＋ 證交所 e添富新上市簡介（部署時產生） |
 | 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
@@ -56,6 +57,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
+  fetch_top10.py             ETF 前十大持股（公會月報）→ top10.json（進版控）
   fetch_upcoming.py          還沒上市的 ETF（新聞＋證交所簡介）→ upcoming.json（部署時產生）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
   finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
@@ -133,7 +135,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成七個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成八個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -144,6 +146,7 @@ deploy workflow.
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
 | 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信投信官網 |
+| 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
 
 每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
 跑完由「整理未完成的區塊」依 `steps.<id>.outcome` 把失敗的那組 `git checkout` 還原成
@@ -694,6 +697,22 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 經理人會把每一檔同比例加一點。先取兩天都有的持股「股數比值的中位數」當資金進出比例 `f`，
 偏離它超過 0.5% 才算加碼／減碼。**實測 f 一直是 0**（這幾檔多數日子股數完全不動，資金先放現金），
 所以它是保險：哪天有經理人改成同比例攤入，清單也不會整排變成加碼。
+
+## 前十大持股
+
+台股清單點 ETF 名稱跳出的視窗（`Top10Modal`、`lib/top10.ts`）。`scripts/fetch_top10.py` →
+`top10.json`（進版控）。來源是投信投顧公會「基金投資明細－月前十大」
+（`IN2629.aspx?pid=IN22601_04`，ASP.NET 表單：先 GET 拿 `__VIEWSTATE` 再 POST），依基金類型
+查（AH 開頭是指數股票型、AL 是主動式），**所有投信都有**，包括自己網站擋程式的國泰、富邦。
+代價是**月報**（上個月底，約每月 10 號後更新）；站上追蹤的六檔主動式 ETF 前端改用每日持股。
+
+前十大表格只有基金全名，代號對照用公會 `etf_info2.aspx?txtYM=`（上市上櫃都有），再用證交所
+`t187ap47_L` 補當月才成立的新基金。比對前要去掉名稱後面的法定警語（「(本基金之配息來源
+可能為收益平準金…)」「(本基金採匯率避險)」）—— 第一版沒去掉，340 檔有 162 檔對不到；
+傘型基金只比「之」後面的子基金名。雙幣別代號（00625K、00687C）前端退回本尊。
+
+**查不到的**：槓桿／反向、期貨、不動產、平衡型 —— 公會那幾個類型的查詢回空的（它們主要
+持有期貨、現金或受益憑證），畫面依分區說明原因（`missingReason()`）。
 
 ## 即將上市（其實是「還沒上市」）
 

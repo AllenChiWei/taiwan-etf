@@ -1,10 +1,11 @@
-/* 台股頁兩個附加分頁的資料：主動式 ETF 持股（進版控）與即將上市（部署時產生）。
+/* 台股頁的附加資料：主動式 ETF 持股與前十大持股（進版控）、即將上市（部署時產生）。
  *
- * 兩份都容許缺席：回 null，畫面顯示「還沒有資料」，不讓台股清單本身受影響。
+ * 每一份都容許缺席：回 null，畫面顯示「還沒有資料」，不讓台股清單本身受影響。
  */
 
 import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
+import type { Top10Data } from '../lib/top10.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -31,3 +32,6 @@ export const fetchActive = (signal?: AbortSignal) =>
 
 export const fetchUpcoming = (signal?: AbortSignal) =>
   load<UpcomingData>('upcoming.json', d => Array.isArray(d.items), signal);
+
+export const fetchTop10 = (signal?: AbortSignal) =>
+  load<Top10Data>('top10.json', d => Boolean(d.etfs && d.meta), signal);

@@ -12,9 +12,11 @@ interface Props {
   rows: Etf[];
   isFav: (code: string) => boolean;
   onToggleFav: (code: string) => void;
+  /** 點名稱：跳出前十大持股。沒給就是純文字 */
+  onPickName?: (etf: Etf) => void;
 }
 
-export function EtfCards({ rows, isFav, onToggleFav }: Props) {
+export function EtfCards({ rows, isFav, onToggleFav, onPickName }: Props) {
   return (
     <ul className="flex flex-col gap-2">
       {rows.map(e => (
@@ -30,7 +32,14 @@ export function EtfCards({ rows, isFav, onToggleFav }: Props) {
             </div>
           </div>
 
-          <p className="mt-0.5 text-[15px] font-semibold text-ink">{e.name}</p>
+          <p className="mt-0.5 text-[15px] font-semibold text-ink">
+            {onPickName
+              ? <button type="button" onClick={() => onPickName(e)}
+                        className="text-left hover:text-accent hover:underline">
+                  {e.name} <span className="text-[11px] font-normal text-accent">前十大 ›</span>
+                </button>
+              : e.name}
+          </p>
 
           <p className="mt-0.5 truncate text-xs text-muted">
             <span aria-hidden="true">🏦 </span>{e.cust}

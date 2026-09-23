@@ -19,6 +19,8 @@ interface Props {
   /** true 時不分區，整批當成一組顯示（排序中或收藏頁） */
   flat?: boolean;
   flatTitle?: string;
+  /** 點名稱：跳出前十大持股 */
+  onPickName?: (etf: Etf) => void;
 }
 
 /** 手機上沒有表頭可點，用一排按鈕代替。 */
@@ -51,7 +53,7 @@ function SortChips({ sort, onSort }: { sort: SortSpec | null; onSort: (k: Numeri
 }
 
 export function EtfListing(props: Props) {
-  const { rows, sections, sort, onSort, isFav, onToggleFav, flat, flatTitle } = props;
+  const { rows, sections, sort, onSort, isFav, onToggleFav, flat, flatTitle, onPickName } = props;
   const isMobile = useIsMobile();
 
   const groups = flat
@@ -72,8 +74,9 @@ export function EtfListing(props: Props) {
           </h2>
 
           {isMobile
-            ? <EtfCards rows={g.rows} isFav={isFav} onToggleFav={onToggleFav} />
-            : <EtfTable rows={g.rows} sort={sort} onSort={onSort} isFav={isFav} onToggleFav={onToggleFav} />}
+            ? <EtfCards rows={g.rows} isFav={isFav} onToggleFav={onToggleFav} onPickName={onPickName} />
+            : <EtfTable rows={g.rows} sort={sort} onSort={onSort} isFav={isFav} onToggleFav={onToggleFav}
+                        onPickName={onPickName} />}
         </section>
       ))}
     </>

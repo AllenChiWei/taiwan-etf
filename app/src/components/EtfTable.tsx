@@ -13,9 +13,11 @@ interface Props {
   onSort: (key: NumericKey) => void;
   isFav: (code: string) => boolean;
   onToggleFav: (code: string) => void;
+  /** 點名稱：跳出前十大持股。沒給就是純文字 */
+  onPickName?: (etf: Etf) => void;
 }
 
-export function EtfTable({ rows, sort, onSort, isFav, onToggleFav }: Props) {
+export function EtfTable({ rows, sort, onSort, isFav, onToggleFav, onPickName }: Props) {
   const th = 'sticky top-0 z-10 whitespace-nowrap border-b border-line bg-sunken '
            + 'px-2.5 py-2.5 text-left text-xs font-bold text-muted';
   const td = 'border-b border-line px-2.5 py-2.5 align-middle';
@@ -69,7 +71,13 @@ export function EtfTable({ rows, sort, onSort, isFav, onToggleFav }: Props) {
                   {e.code}
                 </a>
               </td>
-              <td className={`${td} font-medium`}>{e.name}</td>
+              <td className={`${td} font-medium`}>
+                {onPickName
+                  ? <button type="button" onClick={() => onPickName(e)}
+                        className="text-left hover:text-accent hover:underline"
+                        title="看前十大持股">{e.name}</button>
+                  : e.name}
+              </td>
               <td className={`${td} text-muted`}>{e.cust}</td>
               <td className={td}><FreqPill freq={e.freq} /></td>
 
