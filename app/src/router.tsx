@@ -49,6 +49,8 @@ export interface ListSearch {
   act: string;
   /** 'yield-desc' 之類；空字串代表預設的代號排序 */
   sort: string;
+  /** 台股頁的分頁：'' 清單 / 'active' 主動式換股 / 'upcoming' 即將上市 */
+  view: string;
 }
 
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
@@ -62,6 +64,7 @@ function validateListSearch(search: Record<string, unknown>): ListSearch {
     sec: str(search.sec),
     act: str(search.act),
     sort: str(search.sort),
+    view: str(search.view),
   };
 }
 

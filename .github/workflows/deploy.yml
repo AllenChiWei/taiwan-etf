@@ -286,6 +286,12 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_news.py
 
+      # 即將上市的 ETF（證交所 e添富的新上市簡介）。一個列表加十幾頁簡介；
+      # 缺檔時台股頁的「即將上市」分頁會說還沒有資料，不影響其他東西。
+      - name: 產生即將上市 ETF 資料
+        continue-on-error: true
+        run: python scripts/fetch_upcoming.py
+
       # 籌碼面（期交所三大法人／大額交易人、交易所法人買賣超）。不需要 FinLab，
       # 來源都是公開端點。continue-on-error 是刻意的：交易所偶爾維護或逾時，
       # 那不該讓整個網站的部署失敗 —— 缺檔時籌碼頁自己會說「今天還沒有資料」。

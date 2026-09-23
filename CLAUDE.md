@@ -29,6 +29,8 @@ Where each field comes from, because it is not one source:
 | 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
 | 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
 | VIX、恐懼貪婪（自算） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD）——**不是 CNN 的數字** |
+| 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
+| 即將上市 ETF | 證交所 e添富「新上市ETF 相關簡介」（部署時產生） |
 | 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
@@ -53,6 +55,8 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
+  fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
+  fetch_upcoming.py          即將上市 ETF → upcoming.json（部署時產生）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
   finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）
@@ -129,7 +133,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成六個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成七個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -139,6 +143,7 @@ deploy workflow.
 | 週選價平和 | `atm` | `atm.json` | 期交所 |
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
+| 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信投信官網 |
 
 每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
 跑完由「整理未完成的區塊」依 `steps.<id>.outcome` 把失敗的那組 `git checkout` 還原成
@@ -662,6 +667,44 @@ keeps working. `.filter-bar` drops `position: sticky` on phones, and its labels 
 
 Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` counts tags with
 `<tr[ >]` and will report the page as unbalanced.
+
+## 主動式 ETF 換股
+
+台股頁的「主動式換股」分頁（`?view=active`），`scripts/fetch_active_holdings.py` →
+`active_holdings.json`（進版控：最新持股＋近 60 次換股）。清單是站主指定的六檔：
+00981A、00988A、00411A（統一）、00409A、00991A（復華）、00406A（中信）。
+
+**持股只在各投信自己的網站**。證交所 `rwd/zh/ETF/productContent?id=` 會給每檔的 PCF 網址，
+但持股本身三家三種寫法：
+
+- **統一** ezmoney：沒有 robots.txt；第一個請求先發 cookie 再轉址回原網址（接受 cookie 是
+  一般瀏覽器行為，不是偽裝）。`POST /ETF/Transaction/GetPCF`，`date` 是**公告日**（民國），
+  公告的是前一個交易日的持股 —— 要某天的持股得查下一個交易日；公告日在未來時要用
+  `specificDate:false`（網頁預設的「最新」），指定日期模式查不到。
+- **復華** fhtrust：robots 只擋 GPTBot。`GET /api/assets?fundID=ETF23&qDate=YYYY/MM/DD`。
+  注意 `/api/ETFPcf` 是現金申購的 PCF，**沒有股票籃子**，別用它。
+- **中信**：robots `Allow: /`。先 `POST home/AuthToken`（token 用字串 `www.ctbcinvestments.com`，
+  網頁自己也是這樣領），拿到的工作階段 token 再打 `etf/Buyback`（`FID` 是 E0038 這種內部碼）。
+  持股日期看「每受益權單位淨資產價值DATE」，**不是公告日**。
+
+**國泰 00400A 做不到**：cathaysite.com.tw 對表明身分的 UA 連 robots.txt 都回 403。富邦也
+一樣（`Disallow: /`）。統一的 robots.txt 會轉址回自己，看起來像擋程式，實際上是 cookie 檢查。
+
+**換股要扣掉資金進出**（`diff()` 與 `lib/active.ts`）：主動式 ETF 是現金申購，資金流入那天
+經理人會把每一檔同比例加一點。先取兩天都有的持股「股數比值的中位數」當資金進出比例 `f`，
+偏離它超過 0.5% 才算加碼／減碼。**實測 f 一直是 0**（這幾檔多數日子股數完全不動，資金先放現金），
+所以它是保險：哪天有經理人改成同比例攤入，清單也不會整排變成加碼。
+
+## 即將上市
+
+台股頁的「即將上市」分頁，`scripts/fetch_upcoming.py` → `upcoming.json`（部署時產生）。
+來源是 e添富 `newsList` 的「新上市ETF」分類（`newsCategory=ff8080818b7e232e018b8336a1b90021`）
+與各則簡介的兩欄表格；欄位照原樣保留，因為被動式、主動式的欄名不一樣。
+
+**限制**：簡介通常在上市前一天才發布，只有上市、不含上櫃。「金管會已核准、還在募集」
+那一段**沒有官方結構化清單**（查過證交所 OpenAPI `company/applylistingLocal`／`newlisting`
+只有公司股票、集保 `api/etf/product` 只有已上市、投信投顧公會是 ASP.NET postback），
+所以畫面用新聞標題（含 ETF 與募集／核准等字）補，只放標題與連結。
 
 ## 更新日誌
 

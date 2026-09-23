@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { lazy, Suspense, useMemo } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { useFilterState } from '../hooks/useFilterState';
 import { filterEtfs, sortEtfs } from '../lib/filters';
@@ -8,7 +9,51 @@ import { FilterBar } from '../components/FilterBar';
 import { EtfListing } from '../components/EtfListing';
 import { EmptyState } from '../components/EmptyState';
 
+// 兩個附加分頁各自抓自己的資料，沒點進去的人不必下載那段程式
+const ActiveHoldings = lazy(() => import('../components/ActiveHoldings')
+  .then(m => ({ default: m.ActiveHoldings })));
+const UpcomingEtfs = lazy(() => import('../components/UpcomingEtfs')
+  .then(m => ({ default: m.UpcomingEtfs })));
+
+const VIEWS = [
+  { id: '', label: 'ETF 清單' },
+  { id: 'active', label: '主動式換股' },
+  { id: 'upcoming', label: '即將上市' },
+] as const;
+
+/** 台股頁的分頁切換。狀態放在網址（?view=），跟其他篩選一樣可以分享、上一頁回得去。 */
+function ViewTabs({ view }: { view: string }) {
+  const navigate = useNavigate({ from: '/' });
+  return (
+    <div role="tablist" aria-label="台股頁分頁" className="flex flex-wrap gap-1.5 pt-4">
+      {VIEWS.map(v => (
+        <button key={v.id} type="button" role="tab" aria-selected={view === v.id}
+                onClick={() => void navigate({ search: prev => ({ ...prev, view: v.id }), replace: true, resetScroll: false })}
+                className={`h-9 rounded-lg px-3.5 text-[13px] font-semibold transition-colors ${
+                  view === v.id ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+          {v.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function ListPage() {
+  const { view } = useSearch({ from: '/' });
+  if (view === 'active' || view === 'upcoming') {
+    return (
+      <>
+        <ViewTabs view={view} />
+        <Suspense fallback={<p className="py-10 text-center text-[13px] text-muted">載入中…</p>}>
+          {view === 'active' ? <ActiveHoldings /> : <UpcomingEtfs />}
+        </Suspense>
+      </>
+    );
+  }
+  return <EtfList />;
+}
+
+function EtfList() {
   const data = useEtfData();
   const favorites = useFavoritesApi();
   const { filters, sort, setFilters, setSort, cycleSort, reset } = useFilterState('/');
@@ -20,6 +65,7 @@ export function ListPage() {
 
   return (
     <>
+      <ViewTabs view="" />
       <div className="pt-4">
         <StatCards
           sections={data.sections}

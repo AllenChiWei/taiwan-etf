@@ -20,7 +20,7 @@ concurrency:
   group: update-data
   cancel-in-progress: false
 
-# 這個流程分成六個互相獨立的區塊，各自產出自己那幾個檔案：
+# 這個流程分成七個互相獨立的區塊，各自產出自己那幾個檔案：
 #
 #   配息   dividends.json, yields.json          交易所公告，不碰 FinLab／MoneyDJ
 #   台股   etfs.json, taiwan_etf_list.html      名單 + MoneyDJ + FinLab 報酬率
@@ -28,6 +28,7 @@ concurrency:
 #   價平和 atm.json                             期交所選擇權行情（累積式）
 #   個股   fin_history.json                     公開資訊觀測站（累積式）
 #   散戶   retail.json                          期交所三大法人＋全市場未沖銷（累積式）
+#   換股   active_holdings.json                 各投信官網的主動式 ETF 持股（累積式）
 #
 # **一個區塊失敗不會擋住其他區塊。** 失敗的那一組會被 git checkout 還原成前一版
 # （擱置到下次），其餘照常提交並部署。理由是 2026-09-22 那次：美股那步因為 FinLab
@@ -49,6 +50,7 @@ jobs:
       ATM_FILES: app/public/data/atm.json
       STOCK_FILES: app/public/data/fin_history.json
       RETAIL_FILES: app/public/data/retail.json
+      HOLD_FILES: app/public/data/active_holdings.json
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
       pending: ${{ steps.tidy.outputs.pending }}
@@ -236,6 +238,17 @@ jobs:
           python scripts/fetch_retail.py
           cd app && node --test tests/retail.test.ts
 
+      # ── 區塊七：主動式 ETF 換股 ─────────────────────────────────────────
+      # 各投信每個交易日收盤後公告持股（統一 16:30 前後），19:00 這一輪一定拿得到。
+      # 平常只問最近三個交易日，每檔三個請求。
+      - name: 主動式換股
+        id: hold
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/fetch_active_holdings.py
+          cd app && node --test tests/active.test.ts
+
       - name: 存下 FinLab 資料集快取
         if: ${{ hashFiles('.cache/finlab_db/*') != '' }}
         uses: actions/cache/save@v4
@@ -267,6 +280,7 @@ jobs:
           note 週選價平和   '${{ steps.atm.outcome }}'    $ATM_FILES
           note 個股財報     '${{ steps.stocks.outcome }}' $STOCK_FILES
           note 散戶多空比   '${{ steps.retail.outcome }}' $RETAIL_FILES
+          note 主動式換股   '${{ steps.hold.outcome }}'   $HOLD_FILES
 
           echo "pending=${pending}" >> $GITHUB_OUTPUT
           {
@@ -280,12 +294,13 @@ jobs:
             echo "| 週選價平和 | ${{ steps.atm.outcome }} |"
             echo "| 個股財報 | ${{ steps.stocks.outcome }} |"
             echo "| 散戶多空比 | ${{ steps.retail.outcome }} |"
+            echo "| 主動式換股 | ${{ steps.hold.outcome }} |"
           } >> $GITHUB_STEP_SUMMARY
 
       - name: 提交變更
         id: commit
         run: |
-          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES"
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES"
           if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
