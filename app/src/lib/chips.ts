@@ -81,6 +81,8 @@ export interface ChipsData {
     dates: string[];
     /** 契約名稱 -> 身份別 -> 每日未平倉淨口數（沒交易的日子是 null） */
     contracts: Record<string, Record<string, (number | null)[]>>;
+    /** 契約名稱 -> 每日全市場未沖銷口數（只有小台、微台）。舊版的 chips.json 沒有 */
+    oi?: Record<string, (number | null)[]>;
   };
   options: OptRow[];
   /** Put/Call Ratio：vol 是成交量比、oi 是未平倉量比，單位都是 % */
@@ -175,6 +177,56 @@ export function contractSeries(
   hist: ChipsData['futHistory'], contract: string,
 ): Record<string, (number | null)[]> {
   return hist.contracts[contract] ?? {};
+}
+
+/* ── 散戶未平倉（推算） ─────────────────────────────────────
+ *
+ * 期交所不公佈散戶部位。每一口未平倉同時有一個多方與一個空方，所以
+ *   散戶多單 = 全市場未沖銷 − 三大法人多方未平倉
+ *   散戶空單 = 全市場未沖銷 − 三大法人空方未平倉
+ *   散戶淨額 = −（三大法人淨額）
+ *   多空比   = 散戶淨額 ÷ 全市場未沖銷
+ * 「散戶」其實是三大法人以外的所有人，畫面上要講明是推算。
+ */
+
+export interface Retail {
+  long: number; short: number; net: number; oi: number;
+  /** 多空比（%） */
+  ratio: number;
+}
+
+/** 最新一日的散戶部位。要三家法人齊全且有全市場未沖銷量，少一樣就回 null。 */
+export function retailLatest(rows: FutRow[], oi: number | null): Retail | null {
+  if (!oi) return null;
+  const inst = WHO_ORDER.map(w => rows.find(r => r.w === w));
+  if (inst.some(r => !r)) return null;
+  const bn = inst.reduce((a, r) => a + r!.bn, 0);
+  const sn = inst.reduce((a, r) => a + r!.sn, 0);
+  const long = oi - bn;
+  const short = oi - sn;
+  return { long, short, net: long - short, oi, ratio: ((long - short) / oi) * 100 };
+}
+
+/**
+ * 每日散戶多空比（%）。那天缺全市場量或任何一家法人就是 null ——
+ * 少算一家法人的淨額會讓散戶淨額整個偏掉，而不是只偏一點點。
+ */
+export function retailRatioSeries(
+  hist: ChipsData['futHistory'], contract: string,
+): (number | null)[] {
+  const oi = hist.oi?.[contract];
+  if (!oi) return [];
+  const whos = contractSeries(hist, contract);
+  return oi.map((total, i) => {
+    if (!total) return null;
+    let inst = 0;
+    for (const w of WHO_ORDER) {
+      const v = whos[w]?.[i];
+      if (v === null || v === undefined) return null;
+      inst += v;
+    }
+    return (-inst / total) * 100;
+  });
 }
 
 export interface LinePoint { x: number; y: number }

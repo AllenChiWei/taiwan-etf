@@ -15,6 +15,7 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
     pcRatioDown            Put/Call Ratio（成交量與未平倉量）
     largeTraderFutDown     期貨大額交易人未沖銷部位（前五大／前十大）
     largeTraderOptDown     選擇權大額交易人未沖銷部位
+    futDataDown            期貨每日交易行情（拿小台／微台的全市場未沖銷量）
 
 交易所這邊：
 
@@ -48,6 +49,19 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
 （GitHub Actions 就是雲端），而這支腳本原本任何一個 urlopen 拋錯就整份不產生。
 現在每個來源各自 try/except，取到多少寫多少，取不到的寫進 meta.errors ——
 CI 的日誌不是每個人都讀得到，但產出的 JSON 本身會說哪一段缺了、為什麼。
+
+**散戶未平倉是推算的，不是期交所公佈的。** 期交所只公佈三大法人的部位與全市場
+未沖銷量，市場上講的「小台散戶多空比」都是這樣推：每一口未平倉同時有一個多方與
+一個空方，所以
+
+    散戶多單 = 全市場未沖銷 − 三大法人多方未平倉
+    散戶空單 = 全市場未沖銷 − 三大法人空方未平倉
+    散戶淨額 = 散戶多單 − 散戶空單 = −（三大法人淨額）
+
+「散戶」其實是「三大法人以外的所有人」，包含一般法人與期貨商的非自營部位。
+全市場未沖銷量取 futDataDown 的**一般時段**（盤後那列是 '-'），而且要排除價差
+委託的列（到期月份欄是「202610/202611」這種）—— 那是組合單的報價，不是另一份部位。
+週契約（202609W4）要算進去：三大法人那份統計涵蓋所有月份，全市場也要一樣。
 
 **契約金額的單位是千元。** 期交所原始欄位就是千元，這裡原樣保留，換算交給前端，
 免得在 JSON 裡再乘一次、之後看到數字時搞不清楚是哪一種單位。
@@ -99,6 +113,8 @@ FUT_CONTRACTS = [u'臺股期貨', u'電子期貨', u'金融期貨', u'小型臺�
 # 大額交易人表用代號，且名稱帶換算說明（TX = 臺股期貨(TX+MTX/4+TMF/20)）
 LARGE_FUT_IDS = {'TX': u'臺股期貨', 'TE': u'電子期貨', 'TF': u'金融期貨'}
 LARGE_OPT_IDS = {'TXO': u'臺指選擇權'}
+# 推算散戶未平倉要全市場未沖銷量。散戶多空比大家看的是小台與微台，大台以法人為主。
+RETAIL_IDS = {'MTX': u'小型臺指期貨', 'TMF': u'微型臺指期貨'}
 
 # 期交所寫「外資及陸資」，畫面上一律講「外資」—— 兩邊指的是同一件事
 WHO = {u'自營商': u'自營商', u'投信': u'投信', u'外資及陸資': u'外資', u'外資': u'外資'}
@@ -289,6 +305,21 @@ def futures(rows):
         series[contract] = dict(
             (who, [by_who[who].get(d) for d in dates]) for who in by_who)
     return latest, {'dates': dates, 'contracts': series}, iso(last_day)
+
+
+def market_oi(rows):
+    u"""futDataDown 的列 -> {交易日: 全市場未沖銷口數}。
+
+    欄位：0 交易日期、2 到期月份(週別)、11 未沖銷契約數、17 交易時段。
+    只取一般時段、排除價差列（月份欄帶 '/'），理由見檔頭。
+    """
+    out = {}
+    for c in rows:
+        if len(c) < 18 or c[17] != u'一般' or '/' in c[2]:
+            continue
+        day = iso(c[0])
+        out[day] = out.get(day, 0) + num(c[11])
+    return out
 
 
 def options(rows):
@@ -600,6 +631,21 @@ def main():
         fut_day = (last_date or datetime.now(TPE).date()).isoformat()
     log(u'  %d 筆，最新 %s，契約 %d 種'
         % (len(fut_rows), fut_day, len(fut_hist['contracts'])))
+
+    log(u'期交所：小台／微台全市場未沖銷量（推算散戶用）…')
+    # 與法人歷史用同一組日期對位；某天沒拿到就是 null，前端不會把它當成 0
+    fut_hist['oi'] = {}
+    for cid, contract in sorted(RETAIL_IDS.items()):
+        rows = []
+        for a, b in windows(HISTORY_DAYS, WINDOW_DAYS, last_date):
+            rows += fetch_csv('futDataDown', {
+                'down_type': '1', 'commodity_id': cid, 'commodity_id2': '',
+                'queryStartDate': a, 'queryEndDate': b})
+        oi = market_oi(rows)
+        if oi:
+            fut_hist['oi'][contract] = [oi.get(d) for d in fut_hist['dates']]
+        log(u'  %s %d 天，最新 %s 口'
+            % (contract, len(oi), oi.get(fut_day, u'—')))
 
     log(u'期交所：三大法人選擇權…')
     opt_rows = fetch_csv('callsAndPutsDateDown', {

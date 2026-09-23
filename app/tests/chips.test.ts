@@ -10,7 +10,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, linePoints, linePath, zeroY, lastValue, WHO_ORDER, prepareLarge, bars,
-  contractAmount, joinDca,
+  contractAmount, joinDca, retailLatest, retailRatioSeries,
   type ChipsData, type DcaRow,
 } from '../src/lib/chips.ts';
 
@@ -93,6 +93,39 @@ test('contractSeries 找不到契約時回空物件', () => {
   assert.deepEqual(contractSeries(hist, '臺股期貨'), { 外資: [1] });
 });
 
+test('散戶未平倉推算', async (t) => {
+  // 2026-09-22 小型臺指期貨的真實數字：三大法人列取自 futContractsDateDown，
+  // 全市場 32,581 口是 futDataDown 一般時段各月份（含週契約、不含價差）的合計
+  const row = (w: string, bn: number, sn: number) =>
+    ({ c: '小型臺指期貨', w, n: bn - sn, a: 0, tn: 0, ta: 0, bn, sn });
+  const rows = [row('自營商', 1304, 7356), row('投信', 88, 104), row('外資', 4162, 1006)];
+
+  await t.test('多單、空單、淨額與多空比', () => {
+    const r = retailLatest(rows, 32581)!;
+    assert.equal(r.long, 32581 - 5554);
+    assert.equal(r.short, 32581 - 8466);
+    assert.equal(r.net, 2912);                    // = −(−6052 − 16 + 3156)
+    assert.equal(r.ratio.toFixed(2), '8.94');
+  });
+
+  await t.test('少一家法人或沒有全市場量就不算', () => {
+    assert.equal(retailLatest(rows.slice(1), 32581), null);
+    assert.equal(retailLatest(rows, null), null);
+  });
+
+  await t.test('歷史多空比：缺任何一家的那天是 null', () => {
+    const hist = {
+      dates: ['a', 'b'],
+      contracts: { 小型臺指期貨: { 外資: [3156, 100], 投信: [-16, null], 自營商: [-6052, 0] } },
+      oi: { 小型臺指期貨: [32581, 30000] },
+    };
+    const s = retailRatioSeries(hist, '小型臺指期貨');
+    assert.equal(s[0]!.toFixed(2), '8.94');
+    assert.equal(s[1], null);
+    assert.deepEqual(retailRatioSeries(hist, '臺股期貨'), []);
+  });
+});
+
 /* ── 對真實資料的檢查 ───────────────────────────────────── */
 
 const PATH = new URL('../public/data/chips.json', import.meta.url);
@@ -143,6 +176,22 @@ test('真實 chips.json', { skip: !existsSync(PATH) && '沒有 chips.json（部�
         for (const [who, values] of Object.entries(whos)) {
           assert.equal(values.length, n, `${c} ${who} 的長度不是 ${n}`);
         }
+      }
+      for (const [c, values] of Object.entries(data.futHistory.oi ?? {})) {
+        assert.equal(values.length, n, `${c} 全市場未沖銷的長度不是 ${n}`);
+      }
+    });
+
+    await t.test('全市場未沖銷不小於三大法人任一邊的合計', () => {
+      // 小於的話是全市場量抓錯（例如漏了週契約），推算出的散戶會變成負的部位
+      const oi = data.futHistory.oi ?? {};
+      for (const [c, values] of Object.entries(oi)) {
+        const total = values[values.length - 1];
+        const rows = data.futures.filter(r => r.c === c);
+        if (!total || rows.length === 0) continue;
+        const bn = rows.reduce((a, r) => a + r.bn, 0);
+        const sn = rows.reduce((a, r) => a + r.sn, 0);
+        assert.ok(total >= bn && total >= sn, `${c}：全市場 ${total} 小於法人 ${bn}/${sn}`);
       }
     });
 

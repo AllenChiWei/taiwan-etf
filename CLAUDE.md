@@ -177,6 +177,12 @@ unstyled pill.
 | `callsAndPutsDateDown` | 三大法人臺指選擇權買賣權分計（未平倉與當日交易，買方／賣方／淨額） |
 | `pcRatioDown` | Put/Call Ratio（成交量比、未平倉量比） |
 | `largeTraderFutDown` / `largeTraderOptDown` | 大額交易人前五大／前十大 |
+| `futDataDown` | 期貨每日行情；只拿小台／微台的全市場未沖銷量，用來推算散戶未平倉 |
+
+**散戶未平倉是推算的**（期交所不公佈）：散戶多單＝全市場未沖銷 − 三大法人多方，
+空單同理，淨額恆等於 −（三大法人淨額）。全市場量取一般時段、含週契約、**排除價差列**
+（月份欄帶 `/`）—— 價差列加進去會把總量灌大。`retailLatest()`／`retailRatioSeries()`
+在 `lib/chips.ts`，畫面上標「推算」並說明「散戶」是三大法人以外的所有人。
 
 三個踩過的坑，改動前先讀 `fetch_chips.py` 的 docstring：
 

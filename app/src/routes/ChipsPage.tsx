@@ -12,6 +12,7 @@ import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
+  retailLatest, retailRatioSeries,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -129,6 +130,10 @@ function FuturesSection({ data }: { data: ChipsData }) {
   const rows = data.futures.filter(r => r.c === contract);
   const series = contractSeries(data.futHistory, contract);
   const dates = data.futHistory.dates;
+  const oiLine = data.futHistory.oi?.[contract];
+  // 取最後一天而不是 lastValue：法人列是最新一日的，全市場量也必須是同一天
+  const retail = retailLatest(rows, oiLine?.[oiLine.length - 1] ?? null);
+  const retailLine = retailRatioSeries(data.futHistory, contract);
 
   return (
     <Section title="三大法人期貨未平倉"
@@ -163,11 +168,40 @@ function FuturesSection({ data }: { data: ChipsData }) {
             </div>
           );
         })}
+
+        {retail && (
+          <div className="rounded-lg border border-dashed border-line bg-bg p-2.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="text-[13px] font-semibold text-ink">
+                散戶 <span className="text-[11px] font-normal text-faint">推算</span>
+              </span>
+              <span className={`font-mono text-[15px] font-bold tabular-nums
+                                ${TONE_CLASS[netTone(retail.net)]}`}>
+                {signed(retail.net)} 口
+              </span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px] text-muted">
+              <span className={TONE_CLASS[netTone(retail.ratio)]}>
+                多空比 {retail.ratio > 0 ? '+' : ''}{nf2.format(retail.ratio)}%
+              </span>
+              <span>多 {nf0.format(retail.long)} / 空 {nf0.format(retail.short)}</span>
+              <span>全市場未平倉 {nf0.format(retail.oi)} 口</span>
+            </div>
+            <div className="mt-1 text-[10.5px] text-faint">多空比走勢</div>
+            <Bars values={retailLine} />
+          </div>
+        )}
       </div>
 
       <p className="mt-2 text-[11px] text-faint">
         正數是淨多單、負數是淨空單（紅多綠空）。虛線是零軸，跨過它就是翻多或翻空。
       </p>
+      {retail && (
+        <p className="mt-1 text-[11px] text-faint">
+          散戶是推算的，期交所不公佈：散戶多單＝全市場未平倉 − 三大法人多單，空單同理；
+          多空比＝散戶淨額 ÷ 全市場未平倉。這裡的「散戶」是三大法人以外的所有人。
+        </p>
+      )}
     </Section>
   );
 }
