@@ -61,6 +61,21 @@ jobs:
           # 結果就是資料更新了、部署出去的卻是舊的。
           ref: main
 
+      # checkout 取的是「這個 job 啟動當下」的 main。兩個部署重疊時（程式碼推送撞上
+      # 每日更新），concurrency 不取消進行中的那個，所以**最後完成的那個決定站上是
+      # 什麼** —— 早啟動、晚完成的那個會把新資料蓋回舊版。
+      #
+      # 2026-09-23 實際發生：23:41 的推送部署帶著 3ac3ffe（舊資料），每日更新在
+      # 23:44 提交 d0a1929（新的殖利率）並部署完成，然後那個推送部署才完成，
+      # 站上的殖利率就退回去了。查了兩輪才發現 run 全綠但內容是舊的。
+      #
+      # 開始建置前再抓一次 main，晚完成的那個至少不會比先完成的還舊。
+      - name: 建置前對齊 main 的最新內容
+        run: |
+          git fetch --depth=1 origin main
+          git checkout -q FETCH_HEAD
+          git log -1 --format='建置的 commit：%h %s'
+
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
