@@ -7,6 +7,7 @@ import { useDataset } from '../hooks/useDataset';
 import { useFavorites } from '../hooks/useFavorites';
 import { useTheme } from '../hooks/useTheme';
 import { useChangelogSeen } from '../hooks/useChangelogSeen';
+import { useAutoUpdate } from '../hooks/useAutoUpdate';
 import { AppProvider } from '../context/AppContext';
 import { metaLine } from '../lib/format';
 import { EmptyState } from './EmptyState';
@@ -33,6 +34,7 @@ export function AppShell() {
   const theme = useTheme();
   const pathname = useRouterState({ select: s => s.location.pathname });
   const changelog = useChangelogSeen();
+  const update = useAutoUpdate(pathname);
   const { markSeen } = changelog;
   // 打開更新日誌就算看過了。放在這裡而不是頁面裡，導覽列的小紅點才會同步熄掉
   useEffect(() => {
@@ -135,6 +137,27 @@ export function AppShell() {
       </footer>
 
       <ScrollTopButton />
+
+      {update.notice !== null && (
+        <div role="status"
+             className="fixed inset-x-3 bottom-[calc(0.75rem+env(safe-area-inset-bottom))] z-50 mx-auto flex max-w-md
+                        items-center gap-2 rounded-xl border border-line bg-surface px-3.5 py-2.5 shadow-lg">
+          <span className="min-w-0 flex-1 text-[13px] text-ink">
+            網站已更新
+            {typeof update.notice === 'number'
+              ? <span className="text-muted">，{update.notice} 秒後自動重新整理</span>
+              : <span className="text-muted">，重新整理後才看得到新版（這一頁的分析結果會清掉）</span>}
+          </span>
+          <button type="button" onClick={update.snooze}
+                  className="h-8 shrink-0 rounded-lg px-2.5 text-[12.5px] font-semibold text-muted hover:text-ink">
+            稍後
+          </button>
+          <button type="button" onClick={update.reloadNow}
+                  className="h-8 shrink-0 rounded-lg bg-accent px-3 text-[12.5px] font-semibold text-accent-ink">
+            立即更新
+          </button>
+        </div>
+      )}
     </div>
   );
 }

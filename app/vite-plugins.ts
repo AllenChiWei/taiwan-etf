@@ -84,3 +84,21 @@ export function cspMeta(): Plugin {
  * 記得只掃真正加密的那個市場，不要整個 series 一起掃。
  */
 
+
+/**
+ * 建置時寫出 version.json（{"id": 這次建置的代號}）。
+ *
+ * 開著的分頁（尤其是手機加到主畫面、一直掛在背景的）會一直跑舊的程式，重新部署
+ * 之後要使用者自己按重新整理才看得到新東西。前端的 useAutoUpdate 會拿自己內建的
+ * __BUILD_ID__ 跟這個檔案比，不一樣就重新整理。每天的資料更新也會重新建置，所以
+ * 使用者一天大概會被自動重新整理一次 —— 資料本來就換新了，這正是想要的。
+ */
+export function buildVersion(id: string): Plugin {
+  return {
+    name: 'twetf-build-version',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ id }) });
+    },
+  };
+}
