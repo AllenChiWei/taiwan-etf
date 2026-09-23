@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchActive } from '../api/extras';
 import {
-  KIND_LABEL, groupChanges, latestChange, netChange, consensus, sharesLabel,
+  KIND_LABEL, groupChanges, latestChange, netChange, consensus, sharesLabel, aggregateTop,
   type ActiveData, type ChangeDay, type ChangeItem, type ChangeKind,
 } from '../lib/active';
 
@@ -94,12 +94,13 @@ export function ActiveHoldings() {
     fetchActive(ac.signal).then(d => {
       if (ac.signal.aborted) return;
       setData(d);
-      if (d) setCode(Object.keys(d.etfs)[0] ?? '');
+      if (d) setCode(Object.keys(d.etfs).sort()[0] ?? '');
     }).catch(() => { if (!ac.signal.aborted) setData(null); });
     return () => ac.abort();
   }, []);
 
   const cons = useMemo(() => (data ? consensus(data) : null), [data]);
+  const agg = useMemo(() => (data ? aggregateTop(data) : null), [data]);
 
   if (data === undefined) return <p className="py-10 text-center text-[13px] text-muted">載入持股資料中…</p>;
   if (data === null || !data.etfs[code]) {
@@ -113,6 +114,42 @@ export function ActiveHoldings() {
 
   return (
     <div className="pt-4">
+      {agg && agg.rows.length > 0 && (
+        <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <h2 className="text-sm font-bold text-ink">市值前十大主動式 ETF 合計持股</h2>
+            <span className="text-[11.5px] text-faint">權重 × ETF 市值加總，依金額排</span>
+          </div>
+          <ol className="mt-2">
+            {agg.rows.map((r, i) => (
+              <li key={r.code} className="grid grid-cols-[1.4em_1fr_auto] items-center gap-2 border-b border-line/60 py-1.5 last:border-0">
+                <span className="text-right font-mono text-[12px] text-faint">{i + 1}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[13.5px] text-ink">
+                    {r.name} <span className="font-mono text-[11.5px] text-muted">{r.code}</span>
+                  </span>
+                  <span className="block truncate text-[10.5px] text-faint">
+                    {r.etfs.length} 檔持有：{r.etfs.join('、')}
+                  </span>
+                </span>
+                <span className="text-right">
+                  <span className="block font-mono text-[13.5px] font-bold tabular-nums text-ink">{nf2.format(r.share)}%</span>
+                  <span className="block font-mono text-[10.5px] tabular-nums text-faint">{nf1.format(r.amount)} 億</span>
+                </span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+            納入 {agg.included.length} 檔（合計市值 {nf1.format(agg.included.reduce((a, x) => a + x.cap, 0))} 億）：
+            {agg.included.map(x => x.code).join('、')}。比例是佔這幾檔合計市值的百分比，期貨部位不算。
+            {agg.missing.length > 0 && (
+              <> 沒算進去：{agg.missing.map(m => `${m.code} ${m.name}${m.cap ? `（${nf1.format(m.cap)} 億）` : ''}`).join('、')}
+              —— 沒有每日持股（{agg.missing[0].reason}）。</>
+            )}
+          </p>
+        </section>
+      )}
+
       {cons && cons.rows.length > 0 && (
         <section className="rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -138,9 +175,10 @@ export function ActiveHoldings() {
 
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="主動式 ETF">
-          {Object.entries(data.etfs).map(([c, e]) => (
+          {Object.entries(data.etfs).sort(([a], [b]) => (a < b ? -1 : 1)).map(([c, e]) => (
             <Chip key={c} active={c === code} onClick={() => { setCode(c); setOpenDay(null); setShowAll(false); }}>
               {c} {e.name.replace(/^主動/, '')}
+              {e.top && <span className="ml-1 text-[10px] font-normal opacity-80">前十</span>}
             </Chip>
           ))}
         </div>
@@ -148,7 +186,7 @@ export function ActiveHoldings() {
         <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3">
           <h2 className="text-[15px] font-bold text-ink">{code} {etf.name}</h2>
           <span className="text-[11.5px] text-faint">
-            {etf.issuer} · 持股 {etf.holdings.length} 檔 · {etf.asof} 收盤後
+            {etf.issuer}{etf.cap ? ` · 市值 ${nf1.format(etf.cap)} 億` : ''} · 持股 {etf.holdings.length} 檔 · {etf.asof} 收盤後
           </span>
         </div>
 

@@ -24,6 +24,10 @@ export interface ChangeDay {
 export interface ActiveEtf {
   name: string;
   issuer: string;
+  /** 市值（億元）；舊資料沒有 */
+  cap?: number | null;
+  /** 是否在主動式股票型市值前十 */
+  top?: boolean;
   asof: string;
   holdings: Holding[];
   changes: ChangeDay[];
@@ -33,7 +37,10 @@ export interface ActiveData {
   meta: {
     updated: string;
     minChange: number;
-    blocked: { code: string; name: string; issuer: string; reason: string }[];
+    blocked: { code: string; name: string; issuer?: string; reason: string;
+               cap?: number | null; top?: boolean }[];
+    /** 今天的市值前十（代號） */
+    top?: string[];
     source: string;
     errors: string[];
   };
@@ -131,4 +138,63 @@ export function sharesLabel(code: string, shares: number, name = ''): string {
   if (/期貨|期指/.test(name)) return `${nf.format(shares)} 口`;
   if (/^\d{4,6}[A-Z]?$/.test(code)) return `${nf.format(shares / 1000)} 張`;
   return `${nf.format(shares)} 股`;
+}
+
+/* ── 市值前十大合計持股 ─────────────────────────────────────
+ *
+ * 站主要的是「這十檔主動式 ETF 合起來，錢最多放在哪十檔股票」。所以不是平均權重，
+ * 而是每檔 ETF 的「權重 × 市值」加總 —— 大檔的 ETF 份量本來就比較重。
+ * 國泰、富邦那幾檔沒有每日持股，算不進去，回傳裡另外列出它們佔多少市值。
+ */
+
+export interface AggRow {
+  code: string;
+  name: string;
+  /** 合計持有市值（億元） */
+  amount: number;
+  /** 佔納入計算的 ETF 合計市值（%） */
+  share: number;
+  /** 持有它的 ETF 代號 */
+  etfs: string[];
+}
+
+export interface Aggregate {
+  rows: AggRow[];
+  /** 納入計算的 ETF 與其市值（億元） */
+  included: { code: string; name: string; cap: number }[];
+  /** 在市值前十、但沒有每日持股的 */
+  missing: { code: string; name: string; cap: number | null; reason: string }[];
+}
+
+/** 期貨部位不算（台指期是避險或曝險調整，不是「持有哪檔股票」）。 */
+function isStock(name: string): boolean {
+  return !/期貨|期指/.test(name);
+}
+
+export function aggregateTop(data: ActiveData, limit = 10): Aggregate {
+  const included: Aggregate['included'] = [];
+  const map = new Map<string, AggRow>();
+  for (const [code, e] of Object.entries(data.etfs)) {
+    if (!e.top || !e.cap) continue;
+    included.push({ code, name: e.name, cap: e.cap });
+    for (const [c, n, , w] of e.holdings) {
+      if (!isStock(n) || !(w > 0)) continue;
+      const row = map.get(c) ?? { code: c, name: n, amount: 0, share: 0, etfs: [] };
+      // 各家寫法不同（台灣積體／台積電），留最短的那個
+      if (n.length < row.name.length) row.name = n;
+      row.amount += (w / 100) * e.cap;
+      row.etfs.push(code);
+      map.set(c, row);
+    }
+  }
+  const total = included.reduce((a, x) => a + x.cap, 0);
+  const rows = [...map.values()]
+    .map(r => ({ ...r, share: total ? (r.amount / total) * 100 : 0 }))
+    .sort((a, b) => b.amount - a.amount)
+    .slice(0, limit);
+  const missing = (data.meta.blocked ?? [])
+    .filter(b => b.top)
+    .map(b => ({ code: b.code, name: b.name, cap: b.cap ?? null, reason: b.reason }));
+  included.sort((a, b) => b.cap - a.cap);
+  return { rows, included, missing };
 }

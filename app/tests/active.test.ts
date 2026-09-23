@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
 import {
-  kindOf, netChange, groupChanges, consensus, sharesLabel,
+  kindOf, netChange, groupChanges, consensus, sharesLabel, aggregateTop,
   type ActiveData, type ChangeDay,
 } from '../src/lib/active.ts';
 import { stillUpcoming, daysUntil, taipeiToday, pick, type UpcomingItem } from '../src/lib/upcoming.ts';
@@ -58,6 +58,29 @@ test('幾檔一起動：只算全體最新那一天，至少兩檔', () => {
   assert.equal(c.rows.length, 1);
   assert.deepEqual(c.rows[0].buy, ['A', 'B']);
   assert.deepEqual(c.rows[0].sell, []);
+});
+
+test('市值前十合計持股：權重 × 市值加總，期貨不算', () => {
+  const e = (cap: number, top: boolean, holdings: [string, string, number, number][]) =>
+    ({ name: '', issuer: '', asof: '', cap, top, holdings, changes: [] });
+  const data: ActiveData = {
+    meta: { updated: '', minChange: 0.005, source: '', errors: [],
+            blocked: [{ code: 'Z', name: '擋掉的', reason: '403', cap: 50, top: true }] },
+    etfs: {
+      A: e(1000, true, [['2330', '台積電', 1, 10], ['TX 2026/10', '台指期貨', 1, 5]]),
+      B: e(100, true, [['2330', '台積電', 1, 50], ['2454', '聯發科', 1, 20]]),
+      C: e(9999, false, [['9999', '不在前十', 1, 90]]),
+    },
+  };
+  const agg = aggregateTop(data);
+  // 台積電 = 1000×10% + 100×50% = 150 億，佔 1100 億的 13.64%
+  assert.equal(agg.rows[0].code, '2330');
+  assert.equal(agg.rows[0].amount, 150);
+  assert.equal(agg.rows[0].share.toFixed(2), '13.64');
+  assert.deepEqual(agg.rows[0].etfs, ['A', 'B']);
+  assert.ok(!agg.rows.some(r => r.code.startsWith('TX')), '期貨不該算進去');
+  assert.ok(!agg.rows.some(r => r.code === '9999'), '不在前十的 ETF 不該算進去');
+  assert.deepEqual(agg.missing.map(m => m.code), ['Z']);
 });
 
 test('股數顯示：台股用張、期貨用口、海外股票用股', () => {

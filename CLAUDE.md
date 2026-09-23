@@ -674,11 +674,14 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 ## 主動式 ETF 換股
 
 台股頁的「主動式換股」分頁（`?view=active`），`scripts/fetch_active_holdings.py` →
-`active_holdings.json`（進版控：最新持股＋近 60 次換股）。清單是站主指定的六檔：
-00981A、00988A、00411A（統一）、00409A、00991A（復華）、00406A（中信）。
+`active_holdings.json`（進版控：最新持股＋近 60 次換股）。清單＝站主指定的幾檔（`PICKED`）
+＋**每天重算的市值前十大主動式股票型 ETF**（證交所 `t187ap47_L` 發行單位數 × `STOCK_DAY_ALL`
+收盤價；代號結尾 A、類型不含「債」），依代號排序。掉出前十的繼續更新。最上面的「合計持股」
+是前十大（有每日持股的那幾檔）的「權重 × 市值」加總，期貨不算（`aggregateTop()`）。
 
 **持股只在各投信自己的網站**。證交所 `rwd/zh/ETF/productContent?id=` 會給每檔的 PCF 網址，
-但持股本身三家三種寫法：
+但持股本身一家一種寫法。網站內部的基金代碼每次從各家基金清單查（`resolve_ids`），存進
+`meta.ids`，某家清單被擋時沿用上次的（還有 `KNOWN_IDS` 當最底層）：
 
 - **統一** ezmoney：沒有 robots.txt；第一個請求先發 cookie 再轉址回原網址（接受 cookie 是
   一般瀏覽器行為，不是偽裝）。`POST /ETF/Transaction/GetPCF`，`date` 是**公告日**（民國），
@@ -688,9 +691,17 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
   注意 `/api/ETFPcf` 是現金申購的 PCF，**沒有股票籃子**，別用它。
 - **中信**：robots `Allow: /`。先 `POST home/AuthToken`（token 用字串 `www.ctbcinvestments.com`，
   網頁自己也是這樣領），拿到的工作階段 token 再打 `etf/Buyback`（`FID` 是 E0038 這種內部碼）。
-  持股日期看「每受益權單位淨資產價值DATE」，**不是公告日**。
+  持股日期看「每受益權單位淨資產價值DATE」，**不是公告日**。前面有 Incapsula：urllib 要補
+  `Accept` 標頭、而且**不能帶它發的 cookie**；同一個 IP 請求太密（例如回補）之後會被擋一陣子，
+  這時保留舊資料、隔天再補，不要想辦法繞。
+- **群益**：robots `Allow: /`。API 在 `/CFWeb`（`assets/conf/app.json` 寫的）。`POST api/etf/items`
+  要送 `null` body（空 body 回 411），回應外面包一層 `data`；`api/etf/buyback {fundId, date}`，
+  date 是公告日、持股日期是 `pcf.date2`。
+- **元大**：robots `Allow: /`。`etfapi.yuantaetfs.com/ectranslation/api/bridge?FuncId=PCF/Daily&ticker=代號`。
+- **凱基**：robots 沒有限制。`POST /Fund/RedemptionVC fundID=J024` 回 HTML 片段，持股日期是
+  「(YYYY/MM/DD)每受益權單位淨資產價值」的括號；基金代碼從下拉選單用簡稱對。
 
-**國泰 00400A 做不到**：cathaysite.com.tw 對表明身分的 UA 連 robots.txt 都回 403。富邦也
+**國泰（00400A）、富邦（00405A）做不到**，兩檔都在市值前十：cathaysite.com.tw 對表明身分的 UA 連 robots.txt 都回 403。富邦也
 一樣（`Disallow: /`）。統一的 robots.txt 會轉址回自己，看起來像擋程式，實際上是 cookie 檢查。
 
 **換股要扣掉資金進出**（`diff()` 與 `lib/active.ts`）：主動式 ETF 是現金申購，資金流入那天

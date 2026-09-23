@@ -8,7 +8,10 @@ u"""主動式 ETF 的每日持股與換股紀錄，逐日累積。
 ## 為什麼只有主動式、為什麼是這幾檔
 
 主動式 ETF 依規定每個交易日都要公告完整持股，而且經理人真的會天天調整 —— 被動式
-一季才換一次成分股，每天比沒有意義。清單是站主指定的（2026-09-23）。
+一季才換一次成分股，每天比沒有意義。清單＝站主指定的幾檔（PICKED）＋**每天重算的
+市值前十大主動式 ETF（排除債券）**（站主要求，2026-09-23）。市值用證交所
+t187ap47_L 的發行單位數 × STOCK_DAY_ALL 的收盤價，兩個請求。排名變了清單就跟著變；
+掉出前十的已有資料照樣保留、繼續更新。
 
 ## 來源：各投信自己的網站
 
@@ -20,6 +23,16 @@ u"""主動式 ETF 的每日持股與換股紀錄，逐日累積。
     復華  fhtrust.com.tw      robots.txt 只擋 GPTBot；GET /api/assets?fundID=&qDate=
     中信  ctbcinvestments     robots.txt `Allow: /`；網頁載入時先向 home/AuthToken 領一個
                               工作階段 token（每個訪客都會拿到），再 POST etf/Buyback
+    群益  capitalfund.com.tw  robots.txt `Allow: /`；API 在 /CFWeb（assets/conf/app.json 寫的），
+                              POST api/etf/buyback {fundId, date}；空 body 的 POST 會回 411，要送 null
+    元大  yuantaetfs.com      robots.txt `Allow: /`；etfapi.yuantaetfs.com/ectranslation/api/bridge
+                              ?FuncId=PCF/Daily&ticker=（就是證券代號）
+    凱基  kgifund.com.tw      robots.txt 沒有限制；POST /Fund/RedemptionVC fundID=J024，回 HTML 片段
+
+各家網站內部的基金代碼（統一 49YTW、復華 ETF23、中信 E0038、群益 399、凱基 J024）
+不寫死，每次從各家的基金清單查（resolve_ids）—— 市值前十會換人，寫死就跟不上。查到的
+存進 meta.ids，某家清單那天被擋（中信的 Incapsula 會）就沿用上次的，不會把一檔明明
+接得上的 ETF 誤標成「還沒接上」（第一版就這樣漏更新了 00406A）。
 
 **做不到的：國泰 00400A。** cathaysite.com.tw 對表明身分的 User-Agent 連 robots.txt 都
 回 403。要拿只能假裝成瀏覽器，這個專案不做（與 CNN、奇摩、富邦同一條線）。產出裡
@@ -32,6 +45,7 @@ u"""主動式 ETF 的每日持股與換股紀錄，逐日累積。
     統一  TranDate（/Date(毫秒)/，要轉成台北時間）
     復華  回應裡的 dDate；查詢日沒有資料時它會回空的
     中信  「每受益權單位淨資產價值DATE」—— 公告日是隔天，不能拿公告日
+    群益  pcf.date2（date1 是公告日）；查詢參數 date 也是公告日
 
 兩天的 asof 相同代表那天沒有新資料（假日或還沒公告），不當成「沒有換股」記一筆。
 
@@ -55,6 +69,7 @@ import time
 import urllib.parse
 import urllib.request
 import http.cookiejar
+import html as htmllib
 from datetime import date, datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -70,20 +85,26 @@ KEEP_CHANGES = 60
 # 扣掉資金進出之後，股數偏離小於這個比例視為沒變（見 diff）
 MIN_CHANGE = 0.005
 
-# 站主指定的清單。id 是各家網站內部的基金代碼（從各家的基金清單 API 查來的）
-ETFS = [
-    {'code': '00981A', 'issuer': 'ezmoney', 'id': '49YTW'},
-    {'code': '00988A', 'issuer': 'ezmoney', 'id': '61YTW'},
-    {'code': '00411A', 'issuer': 'ezmoney', 'id': '64YTW'},
-    {'code': '00991A', 'issuer': 'fhtrust', 'id': 'ETF23'},
-    {'code': '00409A', 'issuer': 'fhtrust', 'id': 'ETF26'},
-    {'code': '00406A', 'issuer': 'ctbc', 'id': 'E0038'},
-]
-ISSUER_NAME = {'ezmoney': u'統一投信', 'fhtrust': u'復華投信', 'ctbc': u'中國信託投信'}
-BLOCKED = [
-    {'code': '00400A', 'name': u'主動國泰動能高息', 'issuer': u'國泰投信',
-     'reason': u'國泰投信網站對表明身分的程式回 403（連 robots.txt 也是），不假裝成瀏覽器去抓'},
-]
+# 站主指定的幾檔（2026-09-23）。市值前五另外每天算，兩者合起來、依代號排序。
+PICKED = ['00981A', '00988A', '00409A', '00411A', '00406A', '00991A', '00400A', '00992A']
+TOP_N = 10
+
+ISSUER_NAME = {'ezmoney': u'統一投信', 'fhtrust': u'復華投信', 'ctbc': u'中國信託投信',
+               'capital': u'群益投信', 'yuanta': u'元大投信', 'kgi': u'凱基投信'}
+# 已知的網站內部代碼，最底層的備援（各家清單都查不到、也沒有上次的紀錄時用）
+KNOWN_IDS = {
+    '00981A': ('ezmoney', '49YTW'), '00988A': ('ezmoney', '61YTW'), '00411A': ('ezmoney', '64YTW'),
+    '00403A': ('ezmoney', '63YTW'), '00991A': ('fhtrust', 'ETF23'), '00409A': ('fhtrust', 'ETF26'),
+    '00406A': ('ctbc', 'E0038'), '00982A': ('capital', '399'), '00407A': ('kgi', 'J024'),
+}
+# 從 ETF 簡稱（「主動統一台股增長」）認投信
+ISSUER_BY_NAME = [(u'統一', 'ezmoney'), (u'復華', 'fhtrust'), (u'中信', 'ctbc'), (u'群益', 'capital'),
+                  (u'元大', 'yuanta'), (u'凱基', 'kgi')]
+# 做不到的投信與原因。其他沒接的投信會標「還沒接」
+REFUSED = {
+    u'國泰': u'國泰投信網站對表明身分的程式回 403（連 robots.txt 也是），不假裝成瀏覽器去抓',
+    u'富邦': u'富邦投信持股頁所在的網站 robots.txt 是 Disallow: /',
+}
 
 ERRORS = []
 
@@ -126,6 +147,14 @@ class Http(object):
         time.sleep(DELAY)
         return raw
 
+    def post_form(self, url, form):
+        req = urllib.request.Request(url, data=urllib.parse.urlencode(form).encode('utf-8'),
+                                     headers=dict(HEADERS, **{
+                                         'Content-Type': 'application/x-www-form-urlencoded'}))
+        raw = self.op.open(req, timeout=TIMEOUT).read()
+        time.sleep(DELAY)
+        return raw.decode('utf-8', 'replace')
+
     def post_json(self, url, body):
         req = urllib.request.Request(url, data=json.dumps(body).encode('utf-8'), headers=dict(
             HEADERS, **{'Content-Type': 'application/json; charset=utf-8'}))
@@ -135,7 +164,9 @@ class Http(object):
 
 
 def row(code, name, shares, weight):
-    return [str(code).strip(), str(name).strip(), int(round(shares)), round(weight, 2)]
+    # 名稱後面的「*」是來源的註記符號（國巨*），不是名稱的一部分
+    return [str(code).strip(), str(name).strip().rstrip('*').strip(),
+            int(round(shares)), round(weight, 2)]
 
 
 # ── 統一 ─────────────────────────────────────────────────────
@@ -247,6 +278,163 @@ class Ctbc(object):
         return asof or None, rows
 
 
+# ── 群益 ─────────────────────────────────────────────────────
+
+class Capital(object):
+    BASE = 'https://www.capitalfund.com.tw/CFWeb/api/etf/'
+
+    def __init__(self, http):
+        self.http = http
+
+    def fetch(self, fid, day):
+        # date 是公告日（跟統一一樣），公告的是前一個交易日的持股；還在未來就送 null（最新）
+        post = day + timedelta(days=3 if day.weekday() == 4 else 1)
+        latest = post > datetime.now(TPE).date()
+        d = self.http.post_json(self.BASE + 'buyback',
+                                {'fundId': fid, 'date': None if latest else post.isoformat()})
+        d = d.get('data', d) if isinstance(d, dict) else d
+        if not d or not d.get('stocks'):
+            return None, []
+        asof = str((d.get('pcf') or {}).get('date2') or '')[:10] or None
+        rows = [row(x.get('stocNo'), x.get('stocName'), num(x.get('share')), num(x.get('weight')))
+                for x in d['stocks']]
+        return asof, rows
+
+
+# ── 元大 ─────────────────────────────────────────────────────
+
+class Yuanta(object):
+    URL = 'https://etfapi.yuantaetfs.com/ectranslation/api/bridge?'
+
+    def __init__(self, http):
+        self.http = http
+
+    def fetch(self, code, day):
+        q = urllib.parse.urlencode({
+            'APIType': 'ETFAPI', 'CompanyName': 'YUANTAFUNDS', 'PageName': '/tradeInfo/pcf/' + code,
+            'DeviceId': 'null', 'FuncId': 'PCF/Daily', 'AppName': 'ETF', 'Device': '3',
+            'Platform': 'ETF', 'ticker': code, 'date': day.strftime('%Y%m%d')})
+        d = json.loads(self.http.get(self.URL + q).decode('utf-8'))
+        d = d.get('Data', d) if isinstance(d, dict) else {}
+        pcf = (d or {}).get('PCF') or {}
+        stocks = ((d or {}).get('FundWeights') or {}).get('StockWeights') or []
+        if not pcf or not stocks:
+            return None, []
+        t = str(pcf.get('trandate') or '')
+        asof = '%s-%s-%s' % (t[:4], t[4:6], t[6:8]) if len(t) == 8 else None
+        return asof, [row(x.get('code'), x.get('name'), num(x.get('qty')), num(x.get('weights')))
+                      for x in stocks]
+
+
+# ── 凱基 ─────────────────────────────────────────────────────
+
+class Kgi(object):
+    URL = 'https://www.kgifund.com.tw/Fund/RedemptionVC'
+
+    def __init__(self, http):
+        self.http = http
+
+    def fetch(self, fid, day):
+        # queryDate 是公告日（跟統一一樣），還在未來就不給（最新）
+        post = day + timedelta(days=3 if day.weekday() == 4 else 1)
+        form = {'fundID': fid}
+        if post <= datetime.now(TPE).date():
+            form['queryDate'] = post.strftime('%Y/%m/%d')
+        page = self.http.post_form(self.URL, form)
+        # 持股日期是「(2026/09/23)每受益權單位淨資產價值」那個括號，不是公告日
+        m = re.search(r'\((\d{4})/(\d{2})/(\d{2})\)\s*每受益權單位淨資產價值', text_of(page))
+        rows = []
+        for tr in re.findall(r'<tr.*?</tr>', page, re.S):
+            c = [text_of(td) for td in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+            if len(c) == 4 and re.match(r'^[0-9A-Z]{4,6}$', c[0]):
+                rows.append(row(c[0], c[1], num(c[2]), num(c[3])))
+        if not m or not rows:
+            return None, []
+        return '%s-%s-%s' % m.groups(), rows
+
+    def ids(self):
+        u"""{基金簡稱: J024}，從申購買回清單頁的下拉選單。"""
+        page = self.http.get('https://www.kgifund.com.tw/Fund/RedemptionList').decode('utf-8', 'replace')
+        return dict((htmllib.unescape(n).strip(), v) for v, n in re.findall(
+            r'<option class="fundSelector" value="([^"]+)"[^>]*>([^<]+)</option>', page))
+
+
+def text_of(s):
+    return re.sub(r'\s+', ' ', htmllib.unescape(re.sub(r'<[^>]+>', ' ', s or ''))).strip()
+
+
+# ── 追蹤清單：指定的 + 市值前十 ──────────────────────────────
+
+def get_json(url):
+    req = urllib.request.Request(url, headers=HEADERS)
+    return json.loads(urllib.request.urlopen(req, timeout=60).read().decode('utf-8'))
+
+
+def active_universe():
+    u"""{代號: (簡稱, 市值億元)}，上市的主動式股票型 ETF（排除債券）。
+
+    市值 = t187ap47_L 的發行單位數 × STOCK_DAY_ALL 的收盤價。主動式股票型的代號結尾是 A，
+    債券型是 D（00986D、00987D），再用基金類型裡有沒有「債」多擋一層。
+    """
+    funds = get_json('https://openapi.twse.com.tw/v1/opendata/t187ap47_L')
+    closes = dict((r.get('Code'), r.get('ClosingPrice'))
+                  for r in get_json('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'))
+    out = {}
+    for r in funds:
+        code = r.get(u'基金代號') or ''
+        if not code.endswith('A') or u'債' in (r.get(u'基金類型') or ''):
+            continue
+        try:
+            cap = float(r.get(u'發行單位數/轉換數') or 0) * float(closes.get(code) or 0) / 1e8
+        except ValueError:
+            cap = 0.0
+        out[code] = (r.get(u'基金簡稱') or code, round(cap, 1))
+    return out
+
+
+def resolve_ids(http, ctbc_http, universe=None):
+    u"""{證券代號: (投信鍵, 網站內部代碼)}，從各家的基金清單查。一家失敗不影響其他家。"""
+    out = {}
+    try:                                                # 統一：PCF 頁裡的 DataFundList
+        html = http.get(Ezmoney.BASE + 'PCF').decode('utf-8', 'replace')
+        m = re.search(r'id="DataFundList" data-content="([^"]+)"', html)
+        for f in json.loads(htmllib.unescape(m.group(1))) if m else []:
+            out[(f.get('sStockNo') or '').strip()] = ('ezmoney', f.get('sFundCode'))
+    except Exception as e:                              # noqa: BLE001
+        note(u'統一基金清單：%s' % str(e)[:60])
+    try:                                                # 復華：fundList 的 etf002
+        for f in json.loads(http.get('https://www.fhtrust.com.tw/api/fundList?ec001=3')
+                            .decode('utf-8')).get('result') or []:
+            if f.get('etf002'):
+                out[f['etf002'].strip()] = ('fhtrust', f.get('fundID'))
+    except Exception as e:                              # noqa: BLE001
+        note(u'復華基金清單：%s' % str(e)[:60])
+    try:                                                # 中信：ETFCNOList
+        c = Ctbc(ctbc_http)
+        c.token = (c.post('home/AuthToken').get('Data') or {}).get('token')
+        for f in ((c.post('etf/ETFCNOList').get('Data') or {}).get('List') or []):
+            out[(f.get('ETF_ID') or '').strip()] = ('ctbc', f.get('FID'))
+    except Exception as e:                              # noqa: BLE001
+        note(u'中信基金清單：%s' % str(e)[:60])
+    try:                                                # 群益：api/etf/items，外面包一層 data
+        d = http.post_json(Capital.BASE + 'items', None)
+        for f in (d.get('data') if isinstance(d, dict) else d) or []:
+            out[(f.get('stockNo') or '').strip()] = ('capital', f.get('fundNo'))
+    except Exception as e:                              # noqa: BLE001
+        note(u'群益基金清單：%s' % str(e)[:60])
+    try:                                                # 凱基：下拉選單只有簡稱，用簡稱對代號
+        for short, fid in Kgi(http).ids().items():
+            code = next((c for c, (n, _) in (universe or {}).items() if n == short), None)
+            if code:
+                out[code] = ('kgi', fid)
+    except Exception as e:                              # noqa: BLE001
+        note(u'凱基基金清單：%s' % str(e)[:60])
+    for code, (n, _) in (universe or {}).items():       # 元大：API 直接用證券代號
+        if u'元大' in n and code not in out:
+            out[code] = ('yuanta', code)
+    return out
+
+
 # ── 換股 ─────────────────────────────────────────────────────
 
 def flow_ratio(prev, cur):
@@ -320,10 +508,38 @@ def main():
     etfs = doc.get('etfs') or {}
 
     http = Http()
-    clients = {'ezmoney': Ezmoney(http), 'fhtrust': Fhtrust(http), 'ctbc': Ctbc(Http(cookies=False))}
+    ctbc_http = Http(cookies=False)
+    clients = {'ezmoney': Ezmoney(http), 'fhtrust': Fhtrust(http), 'ctbc': Ctbc(ctbc_http),
+               'capital': Capital(http), 'yuanta': Yuanta(http), 'kgi': Kgi(http)}
     names = load_names()
 
-    for e in ETFS:
+    try:
+        universe = active_universe()
+    except Exception as e:                                    # noqa: BLE001
+        note(u'市值排名：%s' % str(e)[:60])
+        universe = {}
+    ranked = sorted(universe.items(), key=lambda kv: -kv[1][1])
+    top = [c for c, _ in ranked[:TOP_N]]
+    log(u'市值前 %d：%s' % (TOP_N, u'、'.join('%s %s（%s 億）' % (c, universe[c][0], universe[c][1])
+                                           for c in top)))
+    # 指定的、市值前五、以及之前追蹤過的（掉出前五也繼續更新，紀錄才不會斷）
+    targets = sorted(set(PICKED) | set(top) | set(etfs))
+    # 上次查到的代碼當底，這次查到的蓋上去：某家清單那天被擋也不會漏掉
+    ids = dict(KNOWN_IDS)
+    ids.update((k, tuple(v)) for k, v in ((doc.get('meta') or {}).get('ids') or {}).items())
+    ids.update(resolve_ids(http, ctbc_http, universe))
+    jobs, blocked = [], []
+    for code in targets:
+        name = names.get(code) or universe.get(code, (code,))[0]
+        if code in ids and ids[code][0] in clients:
+            jobs.append({'code': code, 'issuer': ids[code][0], 'id': ids[code][1]})
+            continue
+        refused = next((r for k, r in REFUSED.items() if k in name), None)
+        blocked.append({'code': code, 'name': name, 'cap': universe.get(code, (None, None))[1],
+                        'top': code in top,
+                        'reason': refused or u'這家投信的持股還沒接上'})
+
+    for e in jobs:
         code = e['code']
         cur = etfs.get(code) or {}
         # 沒有既有資料就回補；否則只問今天與前兩個交易日（補上晚公告的）
@@ -340,6 +556,10 @@ def main():
                 snaps.append((asof, sorted(rows, key=lambda r: -r[3])))
         if not snaps:
             note(u'%s 一天都沒拿到' % code)
+            if cur:
+                # 持股沿用上次的，但市值與前十標記要照今天的，合計持股才算得到它
+                cur['cap'] = universe.get(code, (None, None))[1]
+                cur['top'] = code in top
             continue
 
         changes = list(cur.get('changes') or [])
@@ -361,6 +581,9 @@ def main():
         etfs[code] = {
             'name': names.get(code) or cur.get('name') or code,
             'issuer': ISSUER_NAME[e['issuer']],
+            # 市值（億元）與是否在前五 —— 前端標「市值前五」用
+            'cap': universe.get(code, (None, None))[1],
+            'top': code in top,
             'asof': prev[0],
             'holdings': prev[1],
             'changes': changes[-KEEP_CHANGES:],
@@ -374,11 +597,14 @@ def main():
         'meta': {
             'updated': datetime.now(TPE).date().isoformat(),
             'minChange': MIN_CHANGE,
-            'blocked': BLOCKED,
-            'source': u'各投信官網每日公告之持股（統一、復華、中國信託）',
+            'blocked': blocked,
+            'top': top,
+            # 各家網站內部的基金代碼，下次某家清單被擋時沿用
+            'ids': dict((c, list(v)) for c, v in sorted(ids.items()) if c in set(targets)),
+            'source': u'各投信官網每日公告之持股（統一、復華、中國信託、群益、元大、凱基）',
             'errors': ERRORS,
         },
-        'etfs': etfs,
+        'etfs': dict(sorted(etfs.items())),               # 依代號排序（站主指定）
     }
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(payload, ensure_ascii=False, separators=(',', ':')))
