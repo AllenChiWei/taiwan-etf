@@ -71,7 +71,10 @@ DEFAULT_BACKFILL = 90
 
 # CSV 欄位索引（期交所每日選擇權行情）
 COL_DATE, COL_CONTRACT, COL_STRIKE, COL_CP = 0, 2, 3, 4
-COL_CLOSE, COL_SETTLE, COL_SESSION, COL_EXPIRY = 8, 10, 17, 20
+COL_CLOSE, COL_SETTLE, COL_OI, COL_SESSION, COL_EXPIRY = 8, 10, 11, 17, 20
+
+# 支撐／壓力：每口合約記價外未平倉量最大的前幾個履約價（Call 當壓力、Put 當支撐）
+WALLS = 3
 
 # 加權指數收盤。價平和是「市場對接下來會走多少的定價」，要判斷這個定價準不準，
 # 就得有事後實際走了多少 —— 那需要每個交易日的指數收盤價。
@@ -166,15 +169,42 @@ def parse(raw):
             strike = float(parts[COL_STRIKE])
         except ValueError:
             continue
-        p = price(parts)
-        if p is None:
-            continue
         day = parts[COL_DATE].strip().replace('/', '-')
         contract = parts[COL_CONTRACT].strip()
         entry = out.setdefault(day, {}).setdefault(
-            contract, {'expiry': parts[COL_EXPIRY].strip(), 'strikes': {}})
-        entry['strikes'].setdefault(strike, {})[
-            'call' if cp == u'買權' else 'put'] = p
+            contract, {'expiry': parts[COL_EXPIRY].strip(), 'strikes': {},
+                       'oi': {'call': {}, 'put': {}}})
+        side = 'call' if cp == u'買權' else 'put'
+        # 未平倉量跟價格分開記：深價外的履約價常常整天沒成交也沒有結算價，
+        # 卻可能正是未平倉最大的那一檔（賣方堆在那裡）
+        try:
+            oi = int(parts[COL_OI].strip())
+        except ValueError:
+            oi = 0
+        if oi > 0:
+            entry['oi'][side][int(strike)] = oi
+        p = price(parts)
+        if p is None:
+            continue
+        entry['strikes'].setdefault(strike, {})[side] = p
+    return out
+
+
+def walls(oi, atm_strike):
+    u"""{'call': {履約價: 口數}, 'put': …} -> 價外未平倉最大的前 WALLS 個，[[履約價, 口數], …]。
+
+    **只看價外**：Call 取價平以上、Put 取價平以下。價內的 Call 當不了壓力 ——
+    第一版沒有過濾，剛掛牌的 202609W5 在指數 48,157 時「壓力」是 46,700，
+    因為新合約很薄，幾百口的價內部位就能排第一。總未平倉（coi/poi）仍然算全部。
+    口數相同時依履約價排序，只是為了讓結果穩定。
+    """
+    out = {}
+    for side, key in (('call', 'cw'), ('put', 'pw')):
+        otm = [(k, n) for k, n in oi[side].items()
+               if (k >= atm_strike if side == 'call' else k <= atm_strike)]
+        top = sorted(otm, key=lambda kv: (-kv[1], kv[0]))[:WALLS]
+        out[key] = [[k, n] for k, n in top]
+        out[key[0] + 'oi'] = sum(oi[side].values())
     return out
 
 
@@ -263,6 +293,8 @@ def rows_for_day(day, contracts):
                         - datetime.strptime(day, '%Y-%m-%d').date()).days,
             }
             row.update(atm)
+            # cw/pw：Call／Put 未平倉最大的履約價；coi/poi：該口合約的買權／賣權總未平倉
+            row.update(walls(entry['oi'], atm['k']))
             out.append(row)
     return out
 
@@ -365,7 +397,7 @@ def main():
             note(u'既有的 atm.json 讀不起來（%s），這次重建' % str(e)[:60])
             doc = {}
     rows = doc.get('rows') or []
-    have = set((r['d'], r['s'], r.get('r', 0)) for r in rows)
+    have = dict(((r['d'], r['s'], r.get('r', 0)), r) for r in rows)
     today = datetime.now(TPE).date()
 
     if taiex_only:
@@ -388,6 +420,7 @@ def main():
         spans = windows(start, today, CHUNK_DAYS)
 
     added = 0
+    patched = 0
     for a, b in spans:
         log(u'下載 %s ~ %s…' % (a, b))
         data = parse(fetch(a, b))
@@ -396,10 +429,18 @@ def main():
         log(u'  %d 個交易日' % len(data))
         for day in sorted(data):
             for row in rows_for_day(day, data[day]):
-                if (row['d'], row['s'], row['r']) in have:
+                key = (row['d'], row['s'], row['r'])
+                old = have.get(key)
+                if old is not None:
+                    # 既有的列不覆蓋價平和，只補上後來才加的未平倉欄位
+                    # （--backfill 重跑一次就能把舊列補齊）
+                    if 'cw' not in old and old.get('c') == row['c']:
+                        for k in ('cw', 'pw', 'coi', 'poi'):
+                            old[k] = row[k]
+                        patched += 1
                     continue
                 rows.append(row)
-                have.add((row['d'], row['s'], row['r']))
+                have[key] = row
                 added += 1
 
     rows.sort(key=lambda r: (r['d'], r['s'], r.get('r', 0)))
@@ -434,6 +475,8 @@ def main():
         'taiex': dict(sorted(taiex.items())),
     }
     write_json(OUT, payload)
+    if patched:
+        log(u'補上未平倉欄位：%d 列' % patched)
     log(u'完成：%s（新增 %d 列，共 %d 列 / %d 個交易日；指數收盤 +%d 天、共 %d 天；%.0f KB）'
         % (OUT, added, len(rows), payload['meta']['days'],
            n_idx, len(taiex), os.path.getsize(OUT) / 1024.0))

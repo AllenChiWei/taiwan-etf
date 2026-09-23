@@ -8,6 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   weekdayOf, nextTradingDay, weekdayAverages, latestOf, recentOf, pickRow,
   expectedRange, straddleOutcomes, summarise, volComparison, weekdayNow,
+  latestWalls, wallOutcomes,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmRow, type AtmData, type AtmFilter,
 } from '../src/lib/atm.ts';
@@ -449,3 +450,66 @@ test('每個星期幾的現值與中位數', async (t) => {
     assert.equal(t0[0].median, 1000);
   });
 });
+
+/* ── 支撐與壓力 ─────────────────────────────────────────── */
+
+test('支撐壓力', async (t) => {
+  const base = { r: 0 as const, k: 0, call: 0, put: 0, diff: 0, sum: 100, pairs: 50, thin: 0 as const };
+  const row = (d: string, c: string, e: string, dte: number,
+               cw: [number, number][], pw: [number, number][]): AtmRow =>
+    ({ ...base, d, s: 'wed', c, e, dte, cw, pw, coi: 1000, poi: 800 });
+  const rows = [
+    row('2026-09-02', 'W1', '2026-09-09', 7, [[48000, 900]], [[46000, 700]]),
+    row('2026-09-03', 'W1', '2026-09-09', 6, [[48500, 900]], [[46500, 700]]),
+    row('2026-09-09', 'W2', '2026-09-16', 7, [[47000, 900]], [[45000, 700]]),
+    // 到期當日那口不能當「目前」的支撐壓力
+    row('2026-09-16', 'W2', '2026-09-16', 0, [[1, 1]], [[1, 1]]),
+  ];
+  const taiex = { '2026-09-02': 47000, '2026-09-09': 48200, '2026-09-16': 46900 };
+
+  await t.test('取合約第一次成為最近到期那天，跟到期收盤比', () => {
+    const out = wallOutcomes(rows, taiex, 'wed');
+    assert.equal(out.length, 2);
+    // W2：支撐 45000、壓力 47000，到期收 46900 → 之間
+    assert.equal(out[0].contract, 'W2');
+    assert.equal(out[0].where, 'inside');
+    // W1：用 09-02 那天的 48000，不是 09-03 的 48500 —— 到期收 48200 → 突破
+    assert.equal(out[1].resist, 48000);
+    assert.equal(out[1].where, 'above');
+  });
+
+  await t.test('目前的支撐壓力排除到期當日那口', () => {
+    const w = latestWalls(rows, taiex, 'wed')!;
+    assert.equal(w.contract, 'W2');
+    assert.equal(w.calls[0][0], 47000);
+    assert.equal(w.pcRatio, 80);
+  });
+
+  await t.test('支撐高於壓力時用兩者的高低當區間', () => {
+    const odd = [row('2026-09-02', 'X', '2026-09-09', 7, [[46000, 1]], [[48000, 1]])];
+    const out = wallOutcomes(odd, { '2026-09-02': 47000, '2026-09-09': 47500 }, 'wed');
+    assert.equal(out[0].where, 'inside');
+  });
+
+  await t.test('舊資料沒有未平倉欄位就沒有支撐壓力', () => {
+    const { cw: _c, pw: _p, ...old } = rows[2];
+    assert.equal(latestWalls([old as AtmRow], taiex, 'wed'), null);
+  });
+});
+
+test('真實 atm.json 的支撐壓力欄位', { skip: !existsSync(new URL('../public/data/atm.json', import.meta.url)) },
+  () => {
+    const data = JSON.parse(readFileSync(new URL('../public/data/atm.json', import.meta.url), 'utf8'));
+    for (const r of data.rows as AtmRow[]) {
+      if (!r.cw) continue;
+      // 口數由大到小、而且不超過該側總未平倉
+      for (const list of [r.cw, r.pw!]) {
+        for (let i = 1; i < list.length; i++) assert.ok(list[i - 1][1] >= list[i][1], `${r.d} ${r.c} 沒有排序`);
+      }
+      // 只看價外：價內的 Call 當不了壓力（第一版沒過濾，新合約的壓力落在指數底下）
+      for (const [k] of r.cw) assert.ok(k >= r.k, `${r.d} ${r.c} 壓力 ${k} 在價平 ${r.k} 以下`);
+      for (const [k] of r.pw!) assert.ok(k <= r.k, `${r.d} ${r.c} 支撐 ${k} 在價平 ${r.k} 以上`);
+      if (r.cw.length) assert.ok(r.cw[0][1] <= r.coi!, `${r.d} ${r.c} 單一履約價比總未平倉大`);
+      if (r.pw!.length) assert.ok(r.pw![0][1] <= r.poi!, `${r.d} ${r.c} 單一履約價比總未平倉大`);
+    }
+  });

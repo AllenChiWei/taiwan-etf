@@ -36,6 +36,12 @@ export interface AtmRow {
   pairs: number;
   /** 1 = 配對太少，價平可能偏離 */
   thin: 0 | 1;
+  /** Call／Put 未平倉最大的前三個履約價：[履約價, 口數]。舊資料沒有 */
+  cw?: [number, number][];
+  pw?: [number, number][];
+  /** 這口合約的買權／賣權總未平倉口數 */
+  coi?: number;
+  poi?: number;
 }
 
 export interface AtmData {
@@ -501,4 +507,100 @@ export function weekdayNow(
       n: past.length,
     };
   });
+}
+
+/* ── 支撐與壓力：未平倉最大的履約價 ─────────────────────────
+ *
+ * 賣方收權利金、賭指數到期時不會越過他賣的履約價，所以 Call 未平倉堆最多的
+ * 履約價常被當成壓力、Put 堆最多的當成支撐。這是一種**解讀**，不是機制 ——
+ * 指數照樣可以穿過去，只是穿過去時賣方會開始避險。所以跟價平和一樣，
+ * 附上事後驗收：到期時到底有沒有收在兩者之間。
+ */
+
+export interface Walls {
+  day: string;
+  series: Series;
+  contract: string;
+  expiry: string;
+  dte: number;
+  /** [履約價, 口數]，口數大到小 */
+  calls: [number, number][];
+  puts: [number, number][];
+  /** 這口合約的買權／賣權總未平倉口數。剛掛牌的合約很薄，前幾名沒什麼意義 */
+  callOi: number | null;
+  putOi: number | null;
+  /** 賣權總未平倉 ÷ 買權總未平倉（%）；缺資料時 null */
+  pcRatio: number | null;
+  /** 觀察日的收盤指數；還沒補到時 null */
+  index: number | null;
+}
+
+function wallsOf(row: AtmRow, taiex: Record<string, number>): Walls | null {
+  if (!row.cw?.length || !row.pw?.length) return null;
+  return {
+    day: row.d, series: row.s, contract: row.c, expiry: row.e, dte: row.dte,
+    calls: row.cw, puts: row.pw,
+    callOi: row.coi ?? null, putOi: row.poi ?? null,
+    pcRatio: row.coi && row.poi !== undefined ? (row.poi / row.coi) * 100 : null,
+    index: taiex[row.d] ?? null,
+  };
+}
+
+/**
+ * 某個系列目前的支撐壓力。取最新一天、排除到期當日的最近那口 ——
+ * 到期當日那口收盤就結算了，它的未平倉對接下來沒有意義。
+ */
+export function latestWalls(
+  rows: AtmRow[], taiex: Record<string, number>, series: Series,
+): Walls | null {
+  const row = latestOf(rows, { series, basis: 'data', excludeExpiry: true });
+  return row ? wallsOf(row, taiex) : null;
+}
+
+export interface WallOutcome {
+  day: string;
+  contract: string;
+  expiry: string;
+  support: number;
+  resist: number;
+  index: number;
+  settle: number;
+  /** inside = 收在支撐與壓力之間（含邊界） */
+  where: 'inside' | 'above' | 'below';
+}
+
+/**
+ * 每個合約一筆驗收，新到舊。與 straddleOutcomes 同一條規則：取合約
+ * **第一次成為最近到期那天**的支撐壓力，跟到期日收盤比。
+ *
+ * 支撐偶爾會高於壓力（Put 堆在較高的履約價），這時用兩者的高低當區間，
+ * 不然「之間」根本不存在。
+ */
+export function wallOutcomes(
+  rows: AtmRow[], taiex: Record<string, number>, series: Series, limit = 12,
+): WallOutcome[] {
+  const first = new Map<string, AtmRow>();
+  for (const r of rows) {
+    if (r.s !== series || r.r !== 0 || r.dte === 0) continue;
+    if (!r.cw?.length || !r.pw?.length) continue;
+    const seen = first.get(r.c);
+    if (!seen || r.d < seen.d) first.set(r.c, r);
+  }
+  const out: WallOutcome[] = [];
+  for (const row of first.values()) {
+    const index = taiex[row.d];
+    const settle = taiex[row.e];
+    if (!index || !settle) continue;
+    const a = row.pw![0][0];
+    const b = row.cw![0][0];
+    const lo = Math.min(a, b);
+    const hi = Math.max(a, b);
+    out.push({
+      day: row.d, contract: row.c, expiry: row.e,
+      support: a, resist: b, index, settle,
+      where: settle > hi ? 'above' : settle < lo ? 'below' : 'inside',
+    });
+  }
+  out.sort((x, y) => (x.expiry < y.expiry ? 1 : x.expiry > y.expiry ? -1 : 0));
+  return out.slice(0, limit);
 }

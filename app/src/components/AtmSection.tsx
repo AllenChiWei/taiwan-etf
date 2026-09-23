@@ -15,10 +15,11 @@ import { fetchAtm } from '../api/atm';
 import {
   weekdayAverages, latestOf, recentOf, weekdayOf,
   expectedRange, straddleOutcomes, summarise, weekdayNow,
+  latestWalls, wallOutcomes,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmData, type AtmRow, type Basis, type Series,
   type ExpectedRange, type StraddleOutcome, type OutcomeSummary,
-  type WeekdayNow,
+  type WeekdayNow, type Walls, type WallOutcome,
 } from '../lib/atm';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -179,6 +180,70 @@ function OutcomeTable({ rows, sum }: { rows: StraddleOutcome[]; sum: OutcomeSumm
   );
 }
 
+/**
+ * 支撐與壓力：Call 未平倉最大的履約價當壓力、Put 最大的當支撐，各列前三名。
+ * 下面接事後驗收：過去的合約到期時有沒有收在第一名支撐與第一名壓力之間。
+ */
+function WallsCard({ w, past }: { w: Walls; past: WallOutcome[] }) {
+  const inside = past.filter(o => o.where === 'inside').length;
+  const above = past.filter(o => o.where === 'above').length;
+  const below = past.length - inside - above;
+  // 區間多寬很重要：寬到上下各 8% 的區間，「收在裡面」本來就不稀奇
+  const width = past.length
+    ? past.reduce((a, o) => a + Math.abs(o.resist - o.support) / o.index, 0) / past.length * 100
+    : null;
+  const dist = (k: number) => (w.index ? ` ${k >= w.index ? '+' : '−'}${nf1.format(Math.abs(k / w.index - 1) * 100)}%` : '');
+  const side = (label: string, list: [number, number][], tone: string) => (
+    <div className="min-w-0">
+      <div className="text-[11px] text-faint">{label}</div>
+      {list.map(([k, n], i) => (
+        <div key={k}>
+          <div className="flex items-baseline justify-between gap-2 font-mono tabular-nums">
+            <span className={i === 0 ? `text-[15px] font-bold ${tone}` : 'text-[12px] text-muted'}>
+              {nf0.format(k)}
+            </span>
+            <span className="whitespace-nowrap text-[10.5px] text-faint">{nf0.format(n)} 口</span>
+          </div>
+          {/* 距離放在自己那一行：跟履約價擠同一行時，手機上會把口數擠到下一行 */}
+          {i === 0 && w.index !== null && (
+            <div className="font-mono text-[10.5px] tabular-nums text-faint">距收盤{dist(k)}</div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+  return (
+    <div className="rounded-lg border border-line bg-bg px-3 py-2">
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11.5px] text-muted">{SERIES_LABEL[w.series]}</span>
+        <span className="text-[11px] text-faint">{w.contract} · 剩 {w.dte} 天</span>
+      </div>
+      <div className="mt-1 grid grid-cols-2 gap-3">
+        {side('壓力（Call 未平倉）', w.calls, 'text-up')}
+        {side('支撐（Put 未平倉）', w.puts, 'text-down')}
+      </div>
+      <div className="mt-1 text-[11px] text-faint">
+        {w.day} 收盤
+        {w.index !== null && <> {nf0.format(w.index)}</>}
+      </div>
+      {w.callOi !== null && w.putOi !== null && (
+        <div className="text-[11px] text-faint">
+          總未平倉 Call {nf0.format(w.callOi)} / Put {nf0.format(w.putOi)} 口
+          {w.pcRatio !== null && <>（P/C {nf0.format(w.pcRatio)}%）</>}
+        </div>
+      )}
+      {past.length > 0 && (
+        <div className="mt-1 text-[11px] text-muted">
+          過去 {past.length} 次到期：收在支撐壓力之間
+          <strong className="mx-0.5 text-ink">{inside}</strong>次、
+          突破壓力 {above} 次、跌破支撐 {below} 次
+          {width !== null && <>（當時的區間平均寬 {nf1.format(width)}%，越寬越容易收在裡面）</>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AtmSection() {
   const [data, setData] = useState<AtmData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -222,6 +287,8 @@ export function AtmSection() {
   const ranges = SERIES.map(s => expectedRange(data.rows, taiex, s))
     .filter((r): r is ExpectedRange => r !== null);
   const outcomes = straddleOutcomes(data.rows, taiex, detail, 8);
+  const walls = SERIES.map(s => latestWalls(data.rows, taiex, s))
+    .filter((w): w is Walls => w !== null);
   const outcomeSum = summarise(outcomes);
   const nowRows = {
     wed: weekdayNow(data.rows, taiex, filters.wed, lookback),
@@ -252,6 +319,23 @@ export function AtmSection() {
           </p>
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {ranges.map(r => <RangeCard key={r.series} r={r} />)}
+          </div>
+        </div>
+      )}
+
+      {walls.length > 0 && (
+        <div className="mt-3 rounded-lg border border-line bg-sunken/40 p-2.5">
+          <h3 className="text-[12.5px] font-bold text-ink">支撐與壓力</h3>
+          <p className="mt-0.5 text-[11px] text-faint">
+            價外未平倉堆最多的履約價：價平以上 Call 最大的常被當成壓力、價平以下 Put 最大的當成支撐。
+            這是解讀，不是機制 —— 指數照樣可以穿過去，所以附上過去的到期結果。
+            剛換倉的新合約未平倉還很薄，前幾名的意義不大，要看總未平倉的厚薄。
+          </p>
+          <div className="mt-2 grid gap-2 sm:grid-cols-2">
+            {walls.map(w => (
+              <WallsCard key={w.series} w={w}
+                         past={wallOutcomes(data.rows, taiex, w.series, 50)} />
+            ))}
           </div>
         </div>
       )}

@@ -27,6 +27,7 @@ Where each field comes from, because it is not one source:
 | 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
 | 定期定額人氣榜 | TWSE OpenAPI `ETFReport/ETFRank`（**月報**，ETF 與個股各前 20 名） |
 | 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
+| 散戶多空比歷史 | 期交所三大法人（`futContractsDateDown`）＋ 期貨行情（`futDataDown`）——**累積式、進版控** |
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
 | 美股績效曲線 | **FinMind** `USStockPrice` 的 `Adj_Close`，已含息還原（公開資料，不加密） |
@@ -49,6 +50,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
   fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
+  fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
   finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）
@@ -125,7 +127,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成五個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成六個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -134,6 +136,7 @@ deploy workflow.
 | 美股清單 | `us` | `us_etfs.json` | FinLab |
 | 週選價平和 | `atm` | `atm.json` | 期交所 |
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
+| 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
 
 每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
 跑完由「整理未完成的區塊」依 `steps.<id>.outcome` 把失敗的那組 `git checkout` 還原成
@@ -178,6 +181,13 @@ unstyled pill.
 | `pcRatioDown` | Put/Call Ratio（成交量比、未平倉量比） |
 | `largeTraderFutDown` / `largeTraderOptDown` | 大額交易人前五大／前十大 |
 | `futDataDown` | 期貨每日行情；只拿小台／微台的全市場未沖銷量，用來推算散戶未平倉 |
+
+**散戶多空比準不準**（`retail.json`、`fetch_retail.py`、`lib/retail.ts`）：期交所的
+三大法人資料**只保留約三年**（2026-09 實測 2023-09-22 以前查不到，區間只要有一天超出
+整段就回 HTML），所以逐日累積進版控。三大法人端點用 `commodityId` 只查單一契約，
+小台要寫 **`MXF`**（不是行情檔的 `MTX`）。畫面依多空比切五等分、看之後 5／20 個交易日
+的指數漲跌 —— 一定要跟「全部日子」的基準比（這三年指數大漲，每一組平均都是正的），
+而且相鄰日子的前瞻報酬大部分重疊，實際獨立樣本比天數少很多。
 
 **散戶未平倉是推算的**（期交所不公佈）：散戶多單＝全市場未沖銷 − 三大法人多方，
 空單同理，淨額恆等於 −（三大法人淨額）。全市場量取一般時段、含週契約、**排除價差列**
@@ -338,6 +348,19 @@ Retry-After），而且擋住之後連本來查得到的日期也一起擋，等
 兩邊都用**收盤**比較。台指選擇權真正的最後結算價是結算日開盤十五分鐘的平均價，
 更貼近實際結算，但跟收盤不同時點，混用反而難解釋；而且期交所那頁的表格是
 JS 載入的，沒有可用的 CSV 端點（試過 `optIndxFSPDown`，404）。
+
+### 支撐與壓力（未平倉最大的履約價）
+
+`atm.json` 每一列另有 `cw`／`pw`（Call／Put **價外**未平倉最大的前三個履約價，`[履約價, 口數]`；
+Call 取價平以上、Put 取價平以下 —— 沒過濾時剛掛牌的薄合約，幾百口價內部位就能讓「壓力」
+落在指數底下）
+與 `coi`／`poi`（該口合約的買權／賣權總未平倉）。取自同一份 `dlOptDataDown` 的
+「未沖銷契約數」欄，**不多發任何請求**。未平倉量跟價格分開記：深價外的履約價常常整天
+沒成交也沒有結算價，卻正是賣方堆最多的地方 —— 沿用「沒價格就跳過」會漏掉它。
+
+`--backfill` 重跑會替既有的列補上這幾個欄位，但**不覆蓋價平和**。驗收同樣取合約第一次
+成為最近到期那天，看到期收盤有沒有落在第一名支撐與第一名壓力之間（`wallOutcomes()`）。
+剛換倉的新合約總未平倉只有幾千口，前幾名意義不大，所以畫面上一併顯示總量。
 
 **樣本只有十幾週，畫面上要照實說。** 目前的數字（週三 45% 沒走出區間、週五 50%）
 落在這段趨勢盤，不是長期勝率。

@@ -19,6 +19,7 @@ import { TONE_CLASS } from '../lib/format';
 import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
+import { RetailSection } from '../components/RetailSection';
 import { StockSheet } from '../components/StockSheet';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -660,6 +661,7 @@ export function ChipsPage() {
       <>
         <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>
         <AtmSection />
+        <RetailSection />
       </>
     );
   }
@@ -673,6 +675,7 @@ export function ChipsPage() {
           <EmptyState title="籌碼資料載入失敗" hint={message} />
         )}
         <AtmSection />
+        <RetailSection />
       </>
     );
   }
@@ -690,6 +693,7 @@ export function ChipsPage() {
       </div>
 
       <FuturesSection data={data} />
+      <RetailSection />
       <PcSection data={data} />
       <OptionsSection data={data} />
       <AtmSection />
