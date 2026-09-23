@@ -9,6 +9,7 @@
 import { useMemo, useState } from 'react';
 import { HandMatrix, type MatrixAction } from '../components/HandMatrix';
 import { EquityCalculator } from '../components/EquityCalculator';
+import { PokerQuiz } from '../components/PokerQuiz';
 import {
   POSITIONS, VS_OPEN, HERO_SPOT_LABEL, resolve, resolveDefense,
 } from '../lib/ranges';
@@ -22,7 +23,7 @@ const THREE_BET: MatrixAction = { id: '3bet', label: '3-bet（再加注）', col
 const CALL: MatrixAction = { id: 'call', label: '跟注', color: '#1f6feb' };
 const DEFEND_ACTIONS = [THREE_BET, CALL];
 
-type Mode = 'rfi' | 'vs' | 'equity';
+type Mode = 'rfi' | 'vs' | 'equity' | 'quiz';
 
 export function PokerPage() {
   const [mode, setMode] = useState<Mode>('rfi');
@@ -44,7 +45,7 @@ export function PokerPage() {
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted">100bb 現金局。</p>
 
       <div className="mt-3 flex gap-1.5 rounded-lg bg-sunken p-1">
-        {([['rfi', '開牌範圍'], ['vs', '面對開牌'], ['equity', '勝率計算']] as const).map(([id, label]) => (
+        {([['rfi', '開牌範圍'], ['vs', '面對開牌'], ['equity', '勝率試算'], ['quiz', '範圍測驗']] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"
@@ -60,6 +61,7 @@ export function PokerPage() {
 
       {mode === 'vs' && <VsOpenView />}
       {mode === 'equity' && <EquityCalculator />}
+      {mode === 'quiz' && <PokerQuiz />}
       {mode === 'rfi' && <>
 
       {/* 位置選擇。用按鈕列而不是下拉 —— 六個選項，而且使用者會想來回比較 */}
