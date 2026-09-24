@@ -47,6 +47,17 @@ test('停配的公司不列進選單', () => {
   assert.equal(activePayer({ n: 'X', m: 'twse', c: 1, ev: [['2023-07-01', 1, 1]] }, '2025-06-01'), false);
 });
 
+test('還沒配過息的持股：能加入、算出 0 而不是 NaN，市值照算', () => {
+  // 站主要求先記著、之後有除息紀錄再自動算進來。stock_dividends.json 因此保留 ev 為空的個股。
+  const none = { n: '新股', m: 'tpex' as const, c: 120, ev: [] as [string, number, number][] };
+  const r = projectHolding(seriesFromStock('9999', none, months), months, 1000);
+  assert.equal(r.latest, 0);
+  assert.equal(r.annual, 0);
+  assert.equal(r.yieldPct, 0);
+  assert.equal(r.value, 120_000);
+  assert.equal(activePayer(none, '2025-06-01'), false);
+});
+
 const PATH = new URL('../public/data/stock_dividends.json', import.meta.url);
 
 test('真實 stock_dividends.json', { skip: !existsSync(PATH) && '沒有 stock_dividends.json' }, () => {

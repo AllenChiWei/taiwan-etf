@@ -147,21 +147,23 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   const colors = useMemo(() => buildColorMap(rows.map(r => r.code)), [rows]);
   const colorOf = (code: string) => colors.get(code) ?? SERIES_COLORS[0];
 
-  // 只列出真的有配息紀錄的標的 —— 沒配過息的加進來只會是一排 0。
+  // 還沒配過息的也列（站主要求）：持股先記著，之後有除息紀錄就自動算進來。
+  // 選單上標出來，免得加進去看到一排 0 以為壞了。
   // 分成 ETF 與個股兩組：金控股跟三百多檔 ETF 混在同一個清單裡會很難找。
   const options = useMemo<SelectOption[]>(() => {
     const pick = (kind: 'etf' | 'stock', group: string) => Object.keys(index.codes)
       .filter(c => index.codes[c].kind === kind)
-      .filter(c => (index.codes[c].payouts ?? 0) > 0)
       .filter(c => !entries.some(e => e.code === c))
       .sort()
-      .map(c => ({ value: c, label: c, hint: index.codes[c].name, group }));
-    // 全部上市櫃個股：最近 15 個月內有除過息的才列（停配的加進來只會是一排 0）
+      .map(c => ({ value: c, label: c, group,
+                   hint: index.codes[c].name + ((index.codes[c].payouts ?? 0) > 0 ? '' : '・尚未配息') }));
+    // 全部上市櫃個股；最近 15 個月內沒除過息的標「近期未配息」
     const cutoff = new Date(Date.now() - 456 * 86_400_000).toISOString().slice(0, 10);
     const all = stockDivs ? Object.entries(stockDivs.stocks)
-      .filter(([c, s]) => !(c in index.codes) && activePayer(s, cutoff))
+      .filter(([c]) => !(c in index.codes))
       .filter(([c]) => !entries.some(e => e.code === c))
-      .map(([c, s]) => ({ value: c, label: c, hint: s.n, group: '個股' })) : [];
+      .map(([c, s]) => ({ value: c, label: c, group: '個股',
+                          hint: s.n + (activePayer(s, cutoff) ? '' : '・近期未配息') })) : [];
     return [...pick('stock', '個股'), ...all, ...pick('etf', 'ETF')];
   }, [index.codes, entries, stockDivs]);
 
@@ -255,7 +257,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                         style={{ background: colorOf(r.code) }} />
                   <span className="font-mono font-semibold text-ink">{r.code}</span>
-                  <span className="text-muted">{money(r.annual)}</span>
+                  <span className="text-muted">{r.latest > 0 ? money(r.annual) : '待配息'}</span>
                 </li>
               ))}
             </ul>
@@ -364,15 +366,20 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                           hint={r.shares >= 1000
                             ? `${nf2.format(r.shares / SHARES_PER_LOT)} 張` : undefined} />
                     <Cell label="配息頻率" value={`${r.freq}`} />
-                    <Cell label="最近一次" value={`${nf4(r.latest)} 元`}
-                          hint={`${r.latestMonth}${r.exact ? '' : '　約略值'}`} />
+                    <Cell label="最近一次" value={r.latest > 0 ? `${nf4(r.latest)} 元` : '—'}
+                          hint={r.latest > 0 ? `${r.latestMonth}${r.exact ? '' : '　約略值'}` : undefined} />
                     <Cell label="預估年配息/股" value={`${nf2.format(r.perShare)} 元`} />
                     <Cell label="殖利率" value={`${nf2.format(r.yieldPct)}%`} tone />
                     <Cell label="一年可領" value={`${money(r.annual)} 元`} tone />
                   </dl>
                   {/* 上市未滿一年時，推估與近 12 個月實際本來就會差很多
                       —— 那是「還沒配滿一年」，不是「調整了配息」，不能說成同一件事 */}
-                  {r.monthsListed < 12 ? (
+                  {r.latest === 0 ? (
+                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
+                      近 12 個月沒有配息紀錄，先記在持股裡、不計入配息。
+                      之後有除息資料時會自動算進來，不用重新加入。
+                    </p>
+                  ) : r.monthsListed < 12 ? (
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       這檔上市才 {r.monthsListed} 個月，只配過 {r.payouts} 次
                       （實際共 {money(r.annualTtm)} 元）。上面的年配息是照公告的

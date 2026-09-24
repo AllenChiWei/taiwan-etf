@@ -160,7 +160,7 @@ export function FinancialSection({ data }: { data: StockData }) {
   if (!cur) {
     return (
       <Section title="財務報表">
-        <p className="mt-2 py-3 text-center text-[12.5px] text-muted">還沒有財報資料。</p>
+        <p className="mt-2 py-3 text-center text-[12.5px] text-muted">觀測站沒有這一檔的季報。存託憑證（DR）、剛上市或還沒公佈財報的公司不在這份資料裡。</p>
       </Section>
     );
   }
@@ -186,7 +186,9 @@ export function FinancialSection({ data }: { data: StockData }) {
       )}
 
       <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Cell label="營業收入" value={moneyFromThousands(cur.rev)} sub="累計" />
+        {/* 銀行、金控沒有「營業收入」，觀測站給的是淨收益（利息淨收益＋利息以外淨損益） */}
+        <Cell label={/金融/.test(data.info.industry ?? '') ? '淨收益' : '營業收入'}
+              value={moneyFromThousands(cur.rev)} sub="累計" />
         <Cell label="營業利益" value={moneyFromThousands(cur.op)} sub="累計" />
         <Cell label="稅後淨利" value={moneyFromThousands(cur.ni)} sub="歸屬母公司" />
         <Cell label="每股盈餘" value={cur.eps === null || cur.eps === undefined

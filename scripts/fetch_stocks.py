@@ -13,8 +13,8 @@ u"""個股頁的資料：財報（累積式）＋ 籌碼（每日）。
 
     TWSE  opendata/t187ap03_L      公司基本資料（產業、股本、上市日）
     TWSE  opendata/t187ap05_L      月營收（含上月、去年同月、累計與 YoY）
-    TWSE  opendata/t187ap06_L_ci   綜合損益表（含基本每股盈餘）
-    TWSE  opendata/t187ap07_L_ci   資產負債表（含每股參考淨值）
+    TWSE  opendata/t187ap06_L_*    綜合損益表（含基本每股盈餘），依產業分六種格式
+    TWSE  opendata/t187ap07_L_*    資產負債表（含每股參考淨值），同上
     TPEx  openapi/v1/mopsfin_*     上櫃的同五份
     TWSE  fund/T86                 三大法人買賣超（可指定日期）
     TWSE  marginTrading/MI_MARGN   融資融券餘額
@@ -273,31 +273,108 @@ def merge_quarterly(history):
                 continue
             mapper(staging.setdefault((code, period), {'p': period}), r)
 
+    def first(r, *names):
+        u"""第一個有數字的欄位。pick() 只看鍵在不在，這幾份表很多鍵在、值是空字串。"""
+        for n in names:
+            v = num(r.get(n))
+            if v is not None:
+                return v
+        return None
+
+    def near(a, b):
+        # 觀測站各欄自己四捨五入到千元，加減之後可以差 1～2
+        return a is not None and b is not None and abs(a - b) <= max(2, abs(b) * 1e-6)
+
     def from_income(rec, r):
-        rec['rev'] = num(pick(r, u'營業收入'))
-        rec['gp'] = num(pick(r, u'營業毛利（毛損）淨額', u'營業毛利（毛損）'))
-        rec['op'] = num(pick(r, u'營業利益（損失）'))
-        rec['pre'] = num(pick(r, u'稅前淨利（淨損）'))
-        rec['ni'] = num(pick(r, u'淨利（淨損）歸屬於母公司業主', u'本期淨利（淨損）'))
-        rec['eps'] = num(pick(r, u'基本每股盈餘（元）'))
+        # 一般業；保險業的損益表也是這幾個欄位名稱
+        rec['rev'] = first(r, u'營業收入')
+        rec['gp'] = first(r, u'營業毛利（毛損）淨額', u'營業毛利（毛損）')
+        rec['op'] = first(r, u'營業利益（損失）')
+        rec['pre'] = first(r, u'稅前淨利（淨損）', u'繼續營業單位稅前純益（純損）')
+        rec['ni'] = first(r, u'淨利（淨損）歸屬於母公司業主', u'本期淨利（淨損）')
+        rec['eps'] = first(r, u'基本每股盈餘（元）')
+
+    def from_income_ins(rec, r):
+        u"""保險。欄名跟一般業一樣，但「營業收入 − 營業成本 − 營業費用」對不上它自己的
+        營業利益（2026-09 實測旺旺保：營收 9.3 億、營業利益 19.3 億）。對得上才收營收與
+        營業利益；稅前、淨利、EPS 與資產負債表驗過是一致的，照收。"""
+        from_income(rec, r)
+        cost, exp = first(r, u'營業成本'), first(r, u'營業費用')
+        if not (rec['rev'] is not None and cost is not None and exp is not None
+                and near(rec['rev'] - cost - exp, rec['op'])):
+            rec['rev'] = rec['op'] = None
+        rec['gp'] = None
+
+    def from_income_bank(rec, r):
+        # 銀行沒有營業收入，對應的是「淨收益」＝利息淨收益＋利息以外淨損益
+        a, b = first(r, u'利息淨收益'), first(r, u'利息以外淨損益')
+        rec['rev'] = a + b if a is not None and b is not None else None
+        rec['pre'] = first(r, u'繼續營業單位稅前淨利（淨損）')
+        rec['ni'] = first(r, u'淨利（損）歸屬於母公司業主', u'本期淨利（淨損）')
+        rec['eps'] = first(r, u'基本每股盈餘（元）')
+
+    def from_income_fh(rec, r):
+        u"""金控。**證交所這份的表頭比數值多一欄**（多了「其他收益及費損淨額」、
+        少了「所得稅費用」），從第二欄起每個值都落在下一個欄名底下 —— 2026-09 實測
+        華南金的「淨收益」欄是 152 萬，實際淨收益 407 億落在「利息以外淨收益」。
+        所以不照欄名取，先用加總關係判斷是對齊還是錯位，兩種都對不上就不收營收與稅前。
+        """
+        k = [u'利息淨收益', u'其他收益及費損淨額', u'利息以外淨收益', u'淨收益',
+             u'營業費用', u'繼續營業單位稅前損益', u'繼續營業單位本期淨利（淨損）']
+        v = dict((n, first(r, n)) for n in k)
+        net = first(r, u'本期稅後淨利（淨損）', k[6])
+        if v[k[0]] is not None and v[k[2]] is not None and near(v[k[0]] + v[k[2]], v[k[3]]):
+            rec['rev'], rec['pre'] = v[k[3]], v[k[5]]              # 欄名與數值對齊
+        elif (v[k[0]] is not None and v[k[1]] is not None
+              and near(v[k[0]] + v[k[1]], v[k[2]])
+              and v[k[4]] is not None and v[k[5]] is not None
+              and near(v[k[4]] - v[k[5]], net)):
+            rec['rev'], rec['pre'] = v[k[2]], v[k[4]]              # 錯位一欄
+        rec['ni'] = first(r, u'淨利（淨損）歸屬於母公司業主', u'本期稅後淨利（淨損）')
+        rec['eps'] = first(r, u'基本每股盈餘（元）')
+
+    def from_income_bd(rec, r):
+        # 證券：收益、營業利益
+        rec['rev'] = first(r, u'收益')
+        rec['op'] = first(r, u'營業利益')
+        rec['pre'] = first(r, u'稅前淨利（淨損）')
+        rec['ni'] = first(r, u'淨利（損）歸屬於母公司業主', u'本期淨利（淨損）')
+        rec['eps'] = first(r, u'基本每股盈餘（元）')
+
+    def from_income_mim(rec, r):
+        # 異業（新纖、中華紙漿…）：只有收入與支出
+        rec['rev'] = first(r, u'收入')
+        rec['pre'] = first(r, u'繼續營業單位稅前淨利（淨損）')
+        rec['ni'] = first(r, u'淨利（淨損）歸屬於母公司業主', u'本期淨利（淨損）')
+        rec['eps'] = first(r, u'基本每股盈餘（元）')
 
     def from_balance(rec, r):
-        rec['ca'] = num(pick(r, u'流動資產'))
-        rec['cl'] = num(pick(r, u'流動負債'))
-        rec['ta'] = num(pick(r, u'資產總計'))
-        rec['tl'] = num(pick(r, u'負債總計'))
-        rec['eq'] = num(pick(r, u'權益總計'))
-        rec['bv'] = num(pick(r, u'每股參考淨值'))
+        ta = first(r, u'資產總計', u'資產總額')
+        tl = first(r, u'負債總計', u'負債總額')
+        eq = first(r, u'權益總計', u'權益總額')
+        # 金控那份損益表錯過位，資產負債表也驗一次恆等式；對不上就整份不收
+        if ta is not None and tl is not None and eq is not None and not near(tl + eq, ta):
+            return
+        rec['ca'] = first(r, u'流動資產')                          # 金融業沒有流動／非流動之分
+        rec['cl'] = first(r, u'流動負債')
+        rec['ta'], rec['tl'], rec['eq'] = ta, tl, eq
+        rec['bv'] = first(r, u'每股參考淨值')
 
     # 毛利率／營益率／純益率不另外抓「營益分析」那份：證交所有、櫃買沒有，
     # 而三個比率都是損益表欄位的除法。在前端算（lib/stock.ts，有測試）可以
     # 保證兩個市場一致，也少兩次請求。
-    for market, inc, bs in (
-            (u'上市', 't187ap06_L_ci', 't187ap07_L_ci'),
-            (u'上櫃', 'mopsfin_t187ap06_O_ci', 'mopsfin_t187ap07_O_ci')):
-        base = TWSE_OPEN if market == u'上市' else TPEX_OPEN
-        collect(base % inc, u'%s綜合損益表' % market, from_income)
-        collect(base % bs, u'%s資產負債表' % market, from_balance)
+    #
+    # 觀測站依產業分六種格式：ci 一般業、basi 銀行、bd 證券、fh 金控、ins 保險、
+    # mim 異業。原本只抓 ci，金融股與幾檔異業（共 49 檔）財報整格空白。
+    for suffix, income in (('ci', from_income), ('basi', from_income_bank),
+                           ('bd', from_income_bd), ('fh', from_income_fh),
+                           ('ins', from_income_ins), ('mim', from_income_mim)):
+        for market, inc, bs in (
+                (u'上市', 't187ap06_L_' + suffix, 't187ap07_L_' + suffix),
+                (u'上櫃', 'mopsfin_t187ap06_O_' + suffix, 'mopsfin_t187ap07_O_' + suffix)):
+            base = TWSE_OPEN if market == u'上市' else TPEX_OPEN
+            collect(base % inc, u'%s綜合損益表（%s）' % (market, suffix), income)
+            collect(base % bs, u'%s資產負債表（%s）' % (market, suffix), from_balance)
 
     added = 0
     for (code, period), rec in staging.items():

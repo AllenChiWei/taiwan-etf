@@ -218,13 +218,14 @@ def main():
         done, len(backfilled & set(c for c, v in uni.items() if v['m'] == 'tpex')),
         sum(1 for v in uni.values() if v['m'] == 'tpex')))
 
-    # ── 組合輸出：只留有配息紀錄的 ──
+    # ── 組合輸出：全部普通股都留，沒配過息的 ev 是空的 ──
+    # 配息試算要能先把「還沒配息」的持股記下來（站主要求），等之後有除息紀錄
+    # 自動算進去；只留有紀錄的話，那些股票連選單都進不去，也拿不到收盤價。
     cutoff = '%d-01-01' % (today.year - KEEP_YEARS + 1)
     out = {}
     for code, info in sorted(uni.items()):
         events = sorted(e for e in ev.get(code, {}).values() if cutoff <= e[0] <= today.isoformat())
-        if events:
-            out[code] = {'n': info['n'], 'm': info['m'], 'c': info['c'], 'ev': events}
+        out[code] = {'n': info['n'], 'm': info['m'], 'c': info['c'], 'ev': events}
     payload = {
         'meta': {
             'updated': today.isoformat(),
@@ -237,8 +238,9 @@ def main():
     }
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(payload, ensure_ascii=False, separators=(',', ':')))
-    log(u'完成：%s（%d 檔有配息紀錄，%.0f KB）' % (OUT, len(out), os.path.getsize(OUT) / 1024.0))
-    return 0 if out else 1
+    log(u'完成：%s（%d 檔，其中 %d 檔有配息紀錄，%.0f KB）' % (
+        OUT, len(out), sum(1 for v in out.values() if v['ev']), os.path.getsize(OUT) / 1024.0))
+    return 0 if any(v['ev'] for v in out.values()) else 1
 
 
 if __name__ == '__main__':
