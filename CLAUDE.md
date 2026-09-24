@@ -755,6 +755,16 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 - 上市未滿三個月的 ETF 沒有 `calc/tw/*.json`（`fetch_calc.py` 要 60 個交易日），配息試算
   改用 `dividends.json`＋`yields.json` 的收盤價組同樣形狀的序列，頻率照 `etfs.json` 的公告。
 
+### 美股 ETF
+
+配息試算也收美股 ETF（清單是 `us_etfs.json`，持股存成 `{code, shares, m: 'us'}`）。
+**FinMind 沒有美股配息的資料集**，所以配息從 `USStockPrice` 的 Close 與 Adj_Close 比值
+在除息日的跳動反推（`lib/usDividend.ts`）：SCHD、QYLD、SPY、TLT 實測都對得上實際水準，
+但 Adj_Close 只到小數第二位，誤差約 1 美分，畫面一律標約略值；比值跳超過 15% 的是分割，丟掉。
+匯率是 FinMind `TaiwanExchangeRate` 的台銀即期買賣中價。兩者都是**瀏覽器直接抓**（跟財務
+分析儀表板同一條路）：一檔一個請求、匯率一天一個並存在 localStorage，部署流程不碰。
+金額在進 `projectHolding` 前就乘上匯率，下游完全不知道有美元。
+
 ## 前十大持股
 
 台股清單點 ETF 名稱跳出的視窗（`Top10Modal`、`lib/top10.ts`）。`scripts/fetch_top10.py` →

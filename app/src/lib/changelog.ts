@@ -43,6 +43,9 @@ export const CHANGELOG: ChangeDay[] = [
       { kind: 'improve', to: '/dividend',
         text: '配息試算可以加入還沒配過息的股票與 ETF：先記在持股裡、算進持股市值，'
           + '標示「待配息」；之後有除息紀錄時會自動算進來，不用重新加入。' },
+      { kind: 'new', to: '/dividend',
+        text: '配息試算可以加入美股 ETF：配息由含息還原價反推（約略值），用台銀美元即期中價換成台幣，'
+          + '跟台股一起算進配息月曆、年配息與持股市值；明細附美元原值與當天匯率。' },
       { kind: 'improve', to: '/dividend',
         text: '配息試算加入特別股（例如 2887E 台新新光戊特一），以及上市未滿三個月的新 ETF（例如 00411A、00409A）。' },
       { kind: 'fix', to: '/stock',

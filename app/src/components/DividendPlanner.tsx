@@ -14,6 +14,9 @@ import {
 } from '../lib/dividend';
 import { fetchStockDividends, fetchEtfDividends, fetchYields } from '../api/extras';
 import { useDataset } from '../hooks/useDataset';
+import { useUsDataset } from '../hooks/useUsDataset';
+import { fetchUsPrices, fetchUsdTwd } from '../api/finmind';
+import { seriesFromUs, type UsPriceRow } from '../lib/usDividend';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
 
 const STORAGE_KEY = 'twetf.holdings';
@@ -63,7 +66,8 @@ const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
 const nf4 = (v: number) => v.toFixed(3).replace(/\.?0+$/, '') || '0';
 const money = (v: number) => nf0.format(Math.round(v));
 
-interface Entry { code: string; shares: number }
+/** m='us' 是美股 ETF：代號可能跟台股撞名以外，也決定要不要走匯率換算 */
+interface Entry { code: string; shares: number; m?: 'us' }
 
 function loadHoldings(): Entry[] {
   try {
@@ -123,6 +127,30 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return m;
   }, [dataset, index.codes]);
 
+  // 美股 ETF：清單來自 us_etfs.json；日價與匯率由瀏覽器直接向 FinMind 抓（api/finmind.ts）
+  const usDataset = useUsDataset();
+  const usNames = useMemo(() => new Map(usDataset.status === 'ready'
+    ? usDataset.data.etfs.map(e => [e.code, e.name] as const) : []), [usDataset]);
+  const [usRows, setUsRows] = useState<Map<string, UsPriceRow[] | Error>>(new Map());
+  const [fx, setFx] = useState<{ date: string; rate: number; stale: boolean } | Error | null>(null);
+  const usCodes = entries.filter(e => e.m === 'us').map(e => e.code);
+  const usKey = usCodes.join(',');
+  useEffect(() => {
+    if (!usKey) return;
+    let cancelled = false;
+    if (fx === null) {
+      fetchUsdTwd().then(v => { if (!cancelled) setFx(v); })
+        .catch((e: Error) => { if (!cancelled) setFx(e); });
+    }
+    for (const code of usKey.split(',')) {
+      if (usRows.has(code)) continue;
+      fetchUsPrices(code)
+        .then(r => { if (!cancelled) setUsRows(prev => new Map(prev).set(code, r.length ? r : new Error('FinMind 查不到這一檔'))); })
+        .catch((e: Error) => { if (!cancelled) setUsRows(prev => new Map(prev).set(code, e)); });
+    }
+    return () => { cancelled = true; };
+  }, [usKey, usRows, fx]);
+
   useEffect(() => { saveHoldings(entries); }, [entries]);
 
   // 只抓還沒抓過的，換張數不會重抓
@@ -151,6 +179,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   const rows: HoldingProjection[] = useMemo(() => {
     const out: HoldingProjection[] = [];
     for (const e of entries) {
+      if (e.m === 'us') {
+        const r = usRows.get(e.code);
+        if (!Array.isArray(r) || !fx || fx instanceof Error) continue;
+        out.push(projectHolding(seriesFromUs(e.code, usNames.get(e.code) ?? e.code, r, fx.rate, index.months),
+                                index.months, e.shares));
+        continue;
+      }
       const stock = stockDivs?.stocks[e.code];
       const fresh = newEtfs.get(e.code);
       const s = series.get(e.code)
@@ -170,9 +205,18 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
     out.sort((a, b) => b.annual - a.annual);
     return out;
-  }, [entries, series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields]);
+  }, [entries, series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames]);
 
   const portfolio = useMemo(() => buildPortfolio(rows), [rows]);
+  const usSet = useMemo(() => new Set(usKey ? usKey.split(',') : []), [usKey]);
+  /** 加了卻算不出來的美股：抓不到日價或匯率。不說的話它們會安靜地從畫面消失 */
+  const usProblems = usCodes.flatMap(c => {
+    const r = usRows.get(c);
+    if (r instanceof Error) return [`${c}：${r.message}`];
+    if (fx instanceof Error) return [`${c}：匯率抓不到（${fx.message}）`];
+    return [];
+  });
+  const usPending = usCodes.some(c => !usRows.has(c)) || (usCodes.length > 0 && fx === null);
   const maxMonth = Math.max(1, ...portfolio.byMonth);
   const colors = useMemo(() => buildColorMap(rows.map(r => r.code)), [rows]);
   const colorOf = (code: string) => colors.get(code) ?? SERIES_COLORS[0];
@@ -198,12 +242,16 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       .map(([c, v]) => ({ value: c, label: c, group: 'ETF',
                           hint: v.name + ((etfDivs?.dividends[c]?.length ?? 0) > 0 ? '・新上市' : '・尚未配息') }));
     const etfs = [...pick('etf', 'ETF'), ...fresh].sort((a, b) => a.value.localeCompare(b.value));
-    return [...pick('stock', '個股'), ...all, ...etfs];
-  }, [index.codes, entries, stockDivs, newEtfs, etfDivs]);
+    // 美股的 value 加前綴，跟台股代號分開（加入時再拿掉）
+    const us = [...usNames].filter(([c]) => !entries.some(e => e.m === 'us' && e.code === c))
+      .map(([c, n]) => ({ value: `us:${c}`, label: c, hint: n, group: '美股 ETF' }));
+    return [...pick('stock', '個股'), ...all, ...etfs, ...us];
+  }, [index.codes, entries, stockDivs, newEtfs, etfDivs, usNames]);
 
   const add = useCallback(() => {
     if (!pick || !(shares > 0)) return;
-    setEntries(prev => [...prev, { code: pick, shares }]);
+    setEntries(prev => [...prev, pick.startsWith('us:')
+      ? { code: pick.slice(3), shares, m: 'us' as const } : { code: pick, shares }]);
     setPick('');
   }, [pick, shares]);
 
@@ -264,7 +312,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
         </p>
       )}
 
-      {loading && rows.length < entries.length && (
+      {usProblems.length > 0 && (
+        <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-muted">
+          {usProblems.map(p => <p key={p}>{p}</p>)}
+        </div>
+      )}
+
+      {(loading || usPending) && rows.length < entries.length && (
         <p className="py-6 text-center text-[13px] text-muted">載入配息資料中…</p>
       )}
 
@@ -408,6 +462,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   </dl>
                   {/* 上市未滿一年時，推估與近 12 個月實際本來就會差很多
                       —— 那是「還沒配滿一年」，不是「調整了配息」，不能說成同一件事 */}
+                  {usSet.has(r.code) && fx && !(fx instanceof Error) && (
+                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
+                      美股，金額以 1 美元 = {fx.rate} 元（台銀即期中價，{fx.date}
+                      {fx.stale ? '，今天抓不到，沿用上次' : ''}）換成台幣。
+                      最近一次 US${nf4(r.latest / fx.rate)}、股價 US${nf2.format(r.price / fx.rate)}。
+                      配息由還原股價反推，約略值（誤差約 1 美分），未扣美國 30% 預扣稅。
+                    </p>
+                  )}
                   {r.latest === 0 ? (
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       近 12 個月沒有配息紀錄，先記在持股裡、不計入配息。
