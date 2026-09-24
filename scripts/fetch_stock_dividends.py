@@ -132,13 +132,26 @@ class QuotaError(Exception):
     pass
 
 
-def merge(events, new):
-    u"""events: {除息日: [日, 金額, 精確]}。精確的不被約略的覆蓋。"""
+FIXED = []
+
+
+def merge(events, new, code=''):
+    u"""events: {除息日: [日, 金額, 精確]}。精確的不被約略的覆蓋。
+
+    **官方數字有變就更新**（站主要求，2026-09-24）：新的是精確值、金額跟既有的
+    不同時也換掉，記進 FIXED 印在最後 —— 原本只在「既有的不精確」時才換，
+    交易所事後更正金額就會一直留著舊的。
+    """
     for day, amt, exact in new:
+        # 取到小數第四位：證交所的「權值+息值」有計算誤差（台積電 4.5 元寫成 4.50002）
+        amt = round(amt, 4)
         cur = events.get(day)
-        if cur is None or (exact and not cur[2]):
-            # 取到小數第四位：證交所的「權值+息值」有計算誤差（台積電 4.5 元寫成 4.50002）
-            events[day] = [day, round(amt, 4), 1 if exact else 0]
+        if cur is None:
+            events[day] = [day, amt, 1 if exact else 0]
+        elif exact and (not cur[2] or abs(cur[1] - amt) > 1e-6):
+            if cur[2]:
+                FIXED.append(u'%s %s：%s -> %s' % (code, day, cur[1], amt))
+            events[day] = [day, amt, 1]
 
 
 def main():
@@ -181,10 +194,10 @@ def main():
             if code not in uni or kind == fd.KIND_STOCK:
                 continue
             if kind == fd.KIND_CASH:
-                merge(ev.setdefault(code, {}), [(day, amt, True)])
+                merge(ev.setdefault(code, {}), [(day, amt, True)], code)
             else:                                   # 權息：合併計價，拆不出現金
                 latest_both[code] = max(latest_both.get(code, ''), day)
-                merge(ev.setdefault(code, {}), [(day, amt, False)])
+                merge(ev.setdefault(code, {}), [(day, amt, False)], code)
         # 權息那筆若是最近一次，就用宣告的現金股利換掉合併計價的數字
         for code, day in latest_both.items():
             if code in declared and day in ev.get(code, {}):
@@ -195,7 +208,7 @@ def main():
     try:
         for code, day, amt, _ in fd.fetch_tpex():
             if code in uni:
-                merge(ev.setdefault(code, {}), [(day, amt, True)])
+                merge(ev.setdefault(code, {}), [(day, amt, True)], code)
     except Exception as e:                                    # noqa: BLE001
         note(u'櫃買今天的除息：%s' % str(e)[:60])
 
@@ -212,7 +225,7 @@ def main():
         except Exception as e:                                # noqa: BLE001
             note(u'FinMind %s：%s' % (code, str(e)[:50]))
             continue
-        merge(ev.setdefault(code, {}), [(d, a, True) for d, a in got])
+        merge(ev.setdefault(code, {}), [(d, a, True) for d, a in got], code)
         backfilled.add(code)
         done += 1
         time.sleep(1.2)
@@ -240,6 +253,9 @@ def main():
     }
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(payload, ensure_ascii=False, separators=(',', ':')))
+    for f in FIXED:
+        log(u'  更正 ' + f)
+    log(u'官方數字更正 %d 筆' % len(FIXED))
     log(u'完成：%s（%d 檔，其中 %d 檔有配息紀錄，%.0f KB）' % (
         OUT, len(out), sum(1 for v in out.values() if v['ev']), os.path.getsize(OUT) / 1024.0))
     return 0 if any(v['ev'] for v in out.values()) else 1

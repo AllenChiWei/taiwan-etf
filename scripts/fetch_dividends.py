@@ -233,6 +233,33 @@ def load_existing(path):
         return {}
 
 
+def upsert(lst, code, iso, amt, exact):
+    u"""把一筆除息收進 lst（[[日, 金額, 精確], …]）。回傳 'added'／'fixed'／None。
+
+    **官方數字有變就更新**（站主要求，2026-09-24）。原本同一天已經有紀錄就跳過，
+    交易所事後更正金額時我們會一直留著舊的。現在新的是精確值、而舊的不精確或
+    金額不同時，改成新的並記在 log 裡。不精確的（「權息」合併計價）不蓋掉精確的 ——
+    那筆可能已經用宣告的現金股利修正過。
+    """
+    amt = round(amt, 6)
+    for r in lst:
+        if r[0] != iso:
+            continue
+        if not exact:
+            return None
+        if len(r) > 2 and r[2] and abs(r[1] - amt) < 1e-6:
+            return None
+        log(u'  更正 %s %s：%s -> %s' % (code, iso, r[1], amt))
+        r[1] = amt
+        if len(r) > 2:
+            r[2] = 1
+        else:
+            r.append(1)
+        return 'fixed'
+    lst.append([iso, amt, 1 if exact else 0])
+    return 'added'
+
+
 def main():
     sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     from etfdata import EXTRA_STOCKS
@@ -245,6 +272,7 @@ def main():
     log(u'名單裡有 %d 檔 ETF，另加 %d 檔個股' % (len(etfs['etfs']), len(EXTRA_STOCKS)))
 
     merged = load_existing(OUT)
+    fixed = 0
     before = sum(len(v) for v in merged.values())
     log(u'既有紀錄 %d 筆（%d 檔）' % (before, len(merged)))
 
@@ -294,11 +322,9 @@ def main():
             # 標成不精確，稍後再用宣告的現金股利去修正**最近那一筆** ——
             # 宣告表只涵蓋最近一次，套到歷年每一筆會讓每年都變成同一個數字。
             exact = kind != KIND_BOTH
-            lst = merged.setdefault(code, [])
-            if any(r[0] == iso for r in lst):
-                continue
-            lst.append([iso, round(amt, 6), 1 if exact else 0])
-            n += 1
+            got = upsert(merged.setdefault(code, []), code, iso, amt, exact)
+            n += got == 'added'
+            fixed += got == 'fixed'
         added += n
         log(u'  %d 年：%d 筆除權息，收錄 %d 筆' % (year, len(rows), n))
         time.sleep(DELAY)
@@ -311,11 +337,9 @@ def main():
         for code, iso, amt, _kind in rows:
             if code not in codes:
                 continue
-            lst = merged.setdefault(code, [])
-            if any(r[0] == iso for r in lst):
-                continue
-            lst.append([iso, round(amt, 6), 1])
-            n += 1
+            got = upsert(merged.setdefault(code, []), code, iso, amt, True)
+            n += got == 'added'
+            fixed += got == 'fixed'
         added += n
         log(u'  當前清單 %d 筆，收錄 %d 筆' % (len(rows), n))
     except Exception as e:                             # noqa: BLE001
@@ -372,8 +396,8 @@ def main():
             % (len(failed_years), u'、'.join(str(y) for y in failed_years)))
 
     log(u'排除純股票股利 %d 筆；權息用宣告的現金拆開 %d 筆' % (skipped_stock, split_both))
-    log(u'新增 %d 筆，合計 %d 筆（%d 檔），寫入 %s（%.0f KB）'
-        % (added, payload['meta']['records'], payload['meta']['codes'],
+    log(u'新增 %d 筆、更正 %d 筆，合計 %d 筆（%d 檔），寫入 %s（%.0f KB）'
+        % (added, fixed, payload['meta']['records'], payload['meta']['codes'],
            OUT, os.path.getsize(OUT) / 1024.0))
 
 

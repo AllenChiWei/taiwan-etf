@@ -569,6 +569,11 @@ ClaudeBot 等代理）是同一條線：不繞過、不換 host、不假裝成�
 紀錄。回補用 `scripts/fetch_dividends_finmind.py`，那是**一次性**的，每天的新資料
 仍然由交易所的官方端點提供。
 
+**官方數字有變就更新**（2026-09-24 起，站主要求）：`fetch_dividends.py` 的 `upsert()` 與
+`fetch_stock_dividends.py` 的 `merge()` 在新抓到的是精確值、而既有的不精確或金額不同時換掉，
+log 印「更正 代號 日期：舊 -> 新」。不精確的（「權息」合併計價）仍然不蓋掉精確的 —— 那筆
+可能已經用宣告的現金股利修正過。上線當天兩支實跑都是「更正 0 筆」，沒有來回翻的情形。
+
 ## 殖利率怎麼算
 
 `scripts/fetch_yields.py` → `app/public/data/yields.json`（進版控）。
