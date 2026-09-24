@@ -13,13 +13,30 @@ import type { UsPriceRow, FxRow } from '../lib/usDividend.ts';
 import { latestMidRate } from '../lib/usDividend.ts';
 
 const API = 'https://api.finmindtrade.com/api/v4/data';
+
+/**
+ * FinMind 額度用完時回 HTTP 402，但**那個回應沒有 Access-Control-Allow-Origin**，
+ * 瀏覽器只丟出一個籠統的 TypeError「Failed to fetch」，拿不到狀態碼。所以連線層的
+ * 失敗一律翻成使用者看得懂的話 —— 實際最常見的原因就是額度（免費層每個網路每小時
+ * 300 次，同一個網路上其他程式也算在內）。2026-09-24 站主就撞到過一次。
+ */
+async function get(url: string, signal?: AbortSignal): Promise<Response> {
+  try {
+    return await fetch(url, { signal });
+  } catch (err) {
+    if (signal?.aborted) throw err;
+    throw new Error('FinMind 暫時連不上，多半是你這個網路這一小時的免費查詢次數用完了'
+      + '（每小時 300 次），大約一小時內會恢復，稍後再試');
+  }
+}
+
 const cache = new Map<string, Promise<FmSet>>();
 
 export interface FmSet { income: FmRow[]; balance: FmRow[]; cashflow: FmRow[] }
 
 async function one(dataset: string, code: string, start: string, signal?: AbortSignal): Promise<FmRow[]> {
   const url = `${API}?${new URLSearchParams({ dataset, data_id: code, start_date: start })}`;
-  const res = await fetch(url, { signal });
+  const res = await get(url, signal);
   if (res.status === 402) throw new Error('FinMind 免費額度這一小時用完了，稍後再試');
   if (!res.ok) throw new Error(`FinMind 回應 HTTP ${res.status}`);
   const d = (await res.json()) as { msg?: string; data?: FmRow[] };
@@ -50,7 +67,7 @@ export function fetchFundamentals(code: string, signal?: AbortSignal): Promise<F
 
 async function rows<T>(dataset: string, code: string, start: string, signal?: AbortSignal): Promise<T[]> {
   const url = `${API}?${new URLSearchParams({ dataset, data_id: code, start_date: start })}`;
-  const res = await fetch(url, { signal });
+  const res = await get(url, signal);
   if (res.status === 402) throw new Error('FinMind 免費額度這一小時用完了，稍後再試');
   if (!res.ok) throw new Error(`FinMind 回應 HTTP ${res.status}`);
   const d = (await res.json()) as { msg?: string; data?: T[] };

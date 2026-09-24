@@ -315,6 +315,17 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       {usProblems.length > 0 && (
         <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[12px] text-muted">
           {usProblems.map(p => <p key={p}>{p}</p>)}
+          {/* 失敗的會被記住（不然每次重新渲染都重打一次），所以要給一個重試的出口 */}
+          <button
+            type="button"
+            onClick={() => {
+              setUsRows(prev => new Map([...prev].filter(([, v]) => !(v instanceof Error))));
+              if (fx instanceof Error) setFx(null);
+            }}
+            className="mt-1.5 text-[12px] font-semibold text-accent"
+          >
+            重試
+          </button>
         </div>
       )}
 
