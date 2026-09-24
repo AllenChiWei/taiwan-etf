@@ -43,6 +43,8 @@ export const CHANGELOG: ChangeDay[] = [
       { kind: 'improve', to: '/dividend',
         text: '配息試算可以加入還沒配過息的股票與 ETF：先記在持股裡、算進持股市值，'
           + '標示「待配息」；之後有除息紀錄時會自動算進來，不用重新加入。' },
+      { kind: 'improve', to: '/dividend',
+        text: '配息試算的各檔明細加上市值（股數 × 最新收盤價，附股價；美股顯示美元股價、市值換成台幣）。' },
       { kind: 'fix', to: '/futures',
         text: '對帳單分析讀 Excel 用的元件升級到修補過資安漏洞的新版；檔案一樣只在你的瀏覽器裡解析，不會上傳。' },
       { kind: 'improve', to: '/us',

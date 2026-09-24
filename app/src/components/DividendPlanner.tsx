@@ -449,10 +449,18 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     </div>
                   )}
 
-                  <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-6">
+                  <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-7">
                     <Cell label="股數" value={`${nf0.format(r.shares)} 股`}
                           hint={r.shares >= 1000
                             ? `${nf2.format(r.shares / SHARES_PER_LOT)} 張` : undefined} />
+                    {/* 市值＝股數 × 最新收盤價（美股已換成台幣）。沒有收盤價的顯示「—」，
+                        不要顯示 0 —— 那會跟「持有 0 股」看起來一樣 */}
+                    <Cell label="市值" value={r.price > 0 ? `${money(r.value)} 元` : '—'}
+                          hint={r.price <= 0 ? undefined
+                            // 美股的 price 已經換成台幣，提示給美元原價才不會被當成美元股價
+                            : usSet.has(r.code) && fx && !(fx instanceof Error)
+                              ? `股價 US$${nf2.format(r.price / fx.rate)}`
+                              : `股價 ${nf2.format(r.price)}`} />
                     <Cell label="配息頻率" value={`${r.freq}`} />
                     <Cell label="最近一次" value={r.latest > 0 ? `${nf4(r.latest)} 元` : '—'}
                           hint={r.latest > 0 ? `${r.latestMonth}${r.exact ? '' : '　約略值'}` : undefined} />
