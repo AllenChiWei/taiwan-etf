@@ -76,15 +76,40 @@ async function rows<T>(dataset: string, code: string, start: string, signal?: Ab
 }
 
 const usCache = new Map<string, Promise<UsPriceRow[]>>();
+const US_KEY = (code: string) => `twetf.usprice.${code}`;
 
-/** 近 15 個月的日價（湊得出近 12 個月的配息，也看得到上一年同一次）。 */
+interface SavedUs { fetched: string; rows: UsPriceRow[] }
+
+function loadUs(code: string): SavedUs | null {
+  try { return JSON.parse(localStorage.getItem(US_KEY(code)) ?? 'null'); } catch { return null; }
+}
+
+/**
+ * 近 15 個月的日價（湊得出近 12 個月的配息，也看得到上一年同一次）。
+ *
+ * 跟匯率一樣存在 localStorage：同一天抓過就不再打 FinMind，抓不到時（多半是這個網路
+ * 的免費額度用完）沿用上次的 —— 配息一年才幾次，舊幾天的價格不影響試算，總比整檔
+ * 顯示錯誤好。2026-09-24 站主的 QYLG 就是額度被同網路的其他程式用光而整天抓不到。
+ */
 export function fetchUsPrices(code: string): Promise<UsPriceRow[]> {
   const hit = usCache.get(code);
   if (hit) return hit;
+  const today = new Date().toISOString().slice(0, 10);
+  const saved = loadUs(code);
+  if (saved && saved.fetched === today && saved.rows.length) return Promise.resolve(saved.rows);
+
   const d = new Date();
   d.setMonth(d.getMonth() - 15);
   const p = rows<UsPriceRow>('USStockPrice', code, d.toISOString().slice(0, 10))
-    .then(r => r.map(x => ({ date: x.date, Close: Number(x.Close), Adj_Close: Number(x.Adj_Close) })));
+    .then(r => {
+      const out = r.map(x => ({ date: x.date, Close: Number(x.Close), Adj_Close: Number(x.Adj_Close) }));
+      try { localStorage.setItem(US_KEY(code), JSON.stringify({ fetched: today, rows: out })); } catch { /* 忽略 */ }
+      return out;
+    })
+    .catch(err => {
+      if (saved && saved.rows.length) return saved.rows;
+      throw err;
+    });
   usCache.set(code, p);
   p.catch(() => usCache.delete(code));
   return p;
