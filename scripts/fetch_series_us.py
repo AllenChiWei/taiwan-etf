@@ -33,8 +33,9 @@ u"""美股 ETF 的績效曲線，用 FinMind 產生（不動用 FinLab，也不�
 沒有流動性的標的畫出來也只是一條階梯。抽樣 10 檔（含 FBL、JNUG、NVDY、JMUB 這種
 冷門的）FinMind 都有資料。
 
-**報酬率表格仍然來自 FinLab**（`fetch_us_etfs.py`）：那是三千七百檔的排行，
-逐檔請求不可行。所以表格是價格報酬、曲線是含息報酬，UI 上兩邊都有標。
+**報酬率表格**的底稿來自 FinLab（`fetch_us_etfs.py`，價格報酬）；部署時
+`apply_us_total_return.py` 用這裡的曲線把有曲線的那些改成含息報酬、標 `tr`，
+其餘的維持價格報酬。
 
 ## 資料來源的注意事項
 
@@ -58,6 +59,11 @@ OUTDIR, LIMIT, ONLY_MISSING = fm.parse_args(sys.argv, os.path.join(DATA, 'series
 
 log = fm.log
 note = fm.note
+
+# 不看流動性門檻、一定要有曲線的（站主指定）。QYLG 日成交約 130 萬美元，過不了門檻，
+# 但它是拿來跟 QYLD／台股備兌型比較的那一檔。有曲線，表格的報酬率也會跟著變成含息
+# （apply_us_total_return.py）。
+ALWAYS = frozenset(['QQQ', 'QYLG'])
 
 
 def fetch_adjusted(code):
@@ -87,7 +93,7 @@ def main():
     # 只畫有流動性的：三千七百檔逐檔請求撐不住，而且沒量的畫出來是階梯。
     # **按成交金額由大到小**：一輪抓不完時，先有曲線的會是 SPY、QQQ 這些真的
     # 會被拿來比較的（order_by_staleness 對同樣新舊的維持這個順序）。
-    liquid = [r for r in doc['etfs'] if r.get('liquid')]
+    liquid = [r for r in doc['etfs'] if r.get('liquid') or r['code'] in ALWAYS]
     liquid.sort(key=lambda r: -(r.get('adv') or 0))
     all_codes = [r['code'] for r in liquid]
     log(u'清單 %d 檔，其中有流動性的 %d 檔' % (len(doc['etfs']), len(all_codes)))

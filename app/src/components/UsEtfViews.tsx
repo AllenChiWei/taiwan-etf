@@ -181,6 +181,7 @@ export function UsEtfTable({ rows, sortKey, sortDir, onSort, isFav, onToggleFav 
               <td className={td}>
                 <a href={nasdaqUrl(e.code)} target="_blank" rel="noopener noreferrer"
                    className="font-mono font-bold text-accent hover:underline">{e.code}</a>
+                {e.tr && <span title="含息總報酬" className="ml-1 rounded bg-accent-soft px-1 align-middle text-[10px] font-semibold text-accent">含息</span>}
               </td>
               <td className={`${td} font-medium`}>{e.name}</td>
               <td className={`${td} text-xs text-muted`}>{exchangeName(e.exch)}</td>
@@ -241,6 +242,7 @@ export function UsEtfCards({ rows, isFav, onToggleFav }: Omit<ViewProps, 'sortKe
           <div className="flex items-center justify-between gap-2">
             <a href={nasdaqUrl(e.code)} target="_blank" rel="noopener noreferrer"
                className="font-mono text-base font-bold text-accent">{e.code}</a>
+            {e.tr && <span title="含息總報酬" className="ml-1 mr-auto rounded bg-accent-soft px-1 align-middle text-[10px] font-semibold text-accent">含息</span>}
             <div className="flex items-center gap-2">
               <span className="tabular font-mono text-xs text-muted">{formatAdv(e.adv)}</span>
               <FavButton code={e.code} active={isFav(e.code)} onToggle={onToggleFav} />

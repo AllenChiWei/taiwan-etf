@@ -83,7 +83,7 @@ export interface UsEtf {
   name: string;
   /** 上市交易所代碼（Nasdaq Trader 的 Listing Exchange，如 P=NYSE Arca、Q=Nasdaq） */
   exch: string;
-  /** 近 3 個月累積總報酬（含息再投資），或 'N/A' */
+  /** 近 3 個月累積報酬，或 'N/A'。tr 為 true 時含息，否則是價格報酬 */
   r3: string;
   r6: string;
   r12: string;
@@ -95,6 +95,8 @@ export interface UsEtf {
   adv: number;
   /** adv 達到 meta.liquidMinAdv，且歷史長度夠算近 3 月報酬（meta.liquidMinDays） */
   liquid: boolean;
+  /** true：報酬率是含息總報酬（部署時用 FinMind 含息曲線重算）；缺席：FinLab 的價格報酬 */
+  tr?: boolean;
 }
 
 export interface UsEtfMeta {
@@ -109,6 +111,9 @@ export interface UsEtfMeta {
   source: string;
   note?: string;
   generated_by?: string;
+  /** 報酬率改成含息的檔數與曲線日期（apply_us_total_return.py）；沒有曲線的部署沒有這兩欄 */
+  totalReturn?: number;
+  totalReturnAsOf?: string;
 }
 
 export interface UsEtfDataset {

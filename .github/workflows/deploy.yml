@@ -262,6 +262,12 @@ jobs:
           # 加密時代留下來的檔案：美股曲線現在也是公開資料
           rm -f app/public/data/series/us/*.json.enc app/public/data/series/_us.json.enc
 
+      # 美股表格的報酬率：有曲線的改用含息還原價重算（FinLab 那份只還原分割）。
+      # 不發任何請求，曲線缺席時什麼都不做。只改工作副本，部署不提交。
+      - name: 美股報酬率改成含息
+        continue-on-error: true
+        run: python scripts/apply_us_total_return.py
+
       # 補到的就要留住。條件只看「有沒有東西」，不看這次是重抓還是沿用 ——
       # 沿用的那種正是會一點一點把缺口補起來的。
       - name: 存下績效曲線快取

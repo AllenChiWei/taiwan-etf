@@ -83,14 +83,23 @@ export function UsPage() {
             {meta!.liquidMinDays ? '，且有滿 3 個月的價格資料' : ''}。
             價格資料截至 {meta!.asof}。
           </p>
+          {meta!.totalReturn ? (
+            <p className="mt-1">
+              標示<span className="mx-0.5 rounded bg-accent-soft px-1 text-[11px] font-semibold text-accent">含息</span>的
+              {' '}<strong className="tabular font-mono text-ink">{meta!.totalReturn}</strong> 檔，報酬率是
+              <strong className="text-ink">含息總報酬</strong>（配息再投入，截至 {meta!.totalReturnAsOf}），
+              可以直接跟台股頁的報酬率比。其餘沒有標示的是<strong className="text-up">價格報酬、不含配息</strong>
+              —— 含息的價格要一檔一個請求，三千七百檔每天跑不完，所以只做成交量夠大的那些。
+              全部都是累積、非年化。
+            </p>
+          ) : (
+            <p className="mt-1">
+              報酬率為<strong className="text-up">價格報酬，不含配息</strong>、累積非年化。
+            </p>
+          )}
           <p className="mt-1">
-            報酬率為<strong className="text-up">價格報酬，不含配息</strong>、累積非年化。
-            我們能合法取得的來源沒有提供含息的總報酬，所以這裡照實標示。
-          </p>
-          <p className="mt-1">
-            這對高配息的標的影響很大：QYLD 近5年的<em>價格</em>跌 12.66%，
-            但把每年約 12% 的配息計入後，總報酬其實是正的（約 +48%）。
-            看這類 ETF 時請務必另外查含息的總報酬。指數型 ETF 配息少，兩者差距有限。
+            兩者差很多的例子：QYLD 近 5 年的<em>價格</em>跌 12.66%，把配息計入後總報酬約 +48%；
+            槓桿型的 AAPU 每年 12 月配一大筆資本利得，近 3 年價格報酬 +87%、含息 +141%。
           </p>
         </div>
       </div>

@@ -17,7 +17,7 @@ Where each field comes from, because it is not one source:
 | Taiwan 保管銀行 / 配息頻率 | MoneyDJ `Basic0004` — **每週抓一次**，這兩個欄位幾乎不變 |
 | Taiwan 殖利率 | 自己算：近 12 個月公告配息 ÷ 當日收盤價（全部官方免費端點） |
 | US ETF list | Nasdaq Trader's public symbol file ∩ FinLab price matrix |
-| US returns | computed from FinLab `us_fund_price` — **price return only**, see below |
+| US returns | FinLab `us_fund_price`（價格報酬）；有曲線的那些部署時改成 FinMind 含息報酬（`apply_us_total_return.py`，標 `tr`） |
 | 籌碼（法人期貨／選擇權未平倉、Put/Call Ratio、大額交易人） | 期交所的 CSV 下載端點 |
 | 籌碼（法人買賣超前十大） | TWSE `T86` + TPEx `insti/dailyTrade`，金額是估算 |
 | 新聞 | 鉅亨網 API + 中央社 RSS（只存標題與連結） |
@@ -431,8 +431,12 @@ Call 取價平以上、Put 取價平以下 —— 沒過濾時剛掛牌的薄合
     SCHD   179.7%    115.1%    65 個百分點
 
 FinMind 的 `Adj_Close` 是含息還原的，所以美股曲線不必像台股那樣自己接，也不需要
-配息紀錄與分割偵測。**但表格裡的美股報酬率仍然來自 FinLab**（三千七百檔逐檔請求
-不可行），那一欄還是價格報酬 —— 曲線與表格對不上是預期內的，UI 兩邊都有標。
+配息紀錄與分割偵測。**表格的美股報酬率**底稿仍是 FinLab 的價格報酬（三千七百檔逐檔
+請求不可行），但部署時 `apply_us_total_return.py` 會用已經抓好的曲線把有曲線的那些
+（流動性門檻以上＋`fetch_series_us.py` 的 `ALWAYS`，目前 QQQ、QYLG）改成含息報酬、
+標 `tr`，**不多發任何請求**；曲線超過 10 天沒更新的維持價格報酬，免得拿舊日期跟別人比。
+畫面上含息的列有「含息」標籤。差距可以很大：AAPU 每年 12 月配一大筆資本利得，
+近三年價格 +87%、含息 +141%。
 
 換掉之後跟著拿掉的東西（都在同一次改動裡）：
 
