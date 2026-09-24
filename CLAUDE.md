@@ -533,9 +533,12 @@ FinMind 的 `Adj_Close` 是含息還原的，所以美股曲線不必像台股�
    `parseSheet` 逐列檢查「平倉損益 − 手續費 − 期交稅 = 合計損益」，對不上的
    超過一成就直接報錯 —— 寧可說看不懂，也不要安靜地算出一份錯的績效。
 2. **.xls 的解析跑在 Web Worker 裡。** 讀 BIFF8 在瀏覽器只有 SheetJS 一個實際
-   選項，而 npm 上的 `xlsx@0.18.5` 有兩個沒有修補版本的 advisory（原型污染與
-   ReDoS），兩個都是解析檔案時觸發。放進 worker 之後，污染關在它自己的 realm、
-   ReDoS 只卡住 worker。CSV 那條路自己切，完全不經過它。
+   選項。npm 上的 `xlsx` 停在 0.18.5、帶兩個 advisory（原型污染與 ReDoS），
+   所以 2026-09-24 起 `package.json` 直接指向 SheetJS 官方 CDN 的 0.20.3
+   （`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`，兩個都修了，
+   `npm audit` 為 0）。**升級改網址裡的版本號，不要改回 npm 的 `xlsx`。**
+   worker 隔離照樣保留：污染關在它自己的 realm、ReDoS 只卡住 worker。
+   CSV 那條路自己切，完全不經過它。
 3. **商品分組的正則有陷阱**：股票期貨是「小型智邦-202605」，月份前面還有連字號，
    只去掉六位數字會留下「智邦-」。選擇權的樣式要先比（比期貨嚴格）。
    `tests/futures.test.ts` 的每一列都取自真實檔案 —— 靠位置的解析拿假資料測，

@@ -1,11 +1,12 @@
 /* 把 .xls／.xlsx 讀成二維陣列。**跑在 Web Worker 裡，這是刻意的。**
  *
- * 讀 BIFF8（真正的 .xls，元大匯出的就是）在瀏覽器裡只有 SheetJS 一個實際選項，
- * 而 npm 上的 xlsx@0.18.5 帶著兩個沒有修補版本的 advisory：原型污染
- * （GHSA-4r6h-8v6p-xvw6）與 ReDoS（GHSA-5pgg-2g8v-p4x9），兩個都是「解析檔案時
- * 被觸發」。
+ * 讀 BIFF8（真正的 .xls，元大匯出的就是）在瀏覽器裡只有 SheetJS 一個實際選項。
+ * npm 上的 xlsx 停在 0.18.5，帶著原型污染（GHSA-4r6h-8v6p-xvw6）與 ReDoS
+ * （GHSA-5pgg-2g8v-p4x9）兩個 advisory；SheetJS 之後只在自己的 CDN 發布，
+ * 所以 package.json 直接指向 cdn.sheetjs.com 的 0.20.3（兩個都修掉了，lock 檔
+ * 有完整性雜湊）。升級時改那個網址的版本號，不要改回 npm 的 xlsx。
  *
- * 放進 worker 之後：
+ * worker 這層隔離照樣留著 —— 解析的是使用者丟進來的任意檔案，多一層總是好的：
  *
  * - **原型污染關在 worker 自己的 realm**。這裡除了解析什麼都不做，沒有 DOM、
  *   沒有金鑰、沒有其他程式碼會讀到被污染的原型。

@@ -43,6 +43,8 @@ export const CHANGELOG: ChangeDay[] = [
       { kind: 'improve', to: '/dividend',
         text: '配息試算可以加入還沒配過息的股票與 ETF：先記在持股裡、算進持股市值，'
           + '標示「待配息」；之後有除息紀錄時會自動算進來，不用重新加入。' },
+      { kind: 'fix', to: '/futures',
+        text: '對帳單分析讀 Excel 用的元件升級到修補過資安漏洞的新版；檔案一樣只在你的瀏覽器裡解析，不會上傳。' },
       { kind: 'improve', to: '/us',
         text: '美股清單的報酬率改成含息總報酬（配息再投入），可以直接跟台股比：成交量夠大的七百多檔，'
           + '加上 QQQ、QYLG，標示「含息」；其餘的仍是價格報酬。QYLG 也開始有績效曲線。' },
