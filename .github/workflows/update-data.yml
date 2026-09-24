@@ -363,7 +363,15 @@ jobs:
             echo "::notice title=新上市 ETF::${NEW}"
           fi
           git commit -m "資料：每日更新（${TOTAL} 檔，報酬率截至 ${SNAP}）" -m "${BODY}"
-          git push
+
+          # 流程跑將近一小時，期間有人推程式碼的話，直接 push 會被拒、整天的資料白抓
+          # （2026-09-24 就這樣掉了一次）。這裡只改資料檔，跟程式碼的提交不會衝突，
+          # 所以先接上遠端最新版再推；真的衝突才失敗。
+          for i in 1 2 3; do
+            git pull --rebase --quiet origin "${GITHUB_REF_NAME}" && git push && break
+            [ "$i" = 3 ] && exit 1
+            sleep 10
+          done
           echo "changed=true" >> $GITHUB_OUTPUT
 
       # 其餘測試。放在提交之後：它們吃的是不會被這個流程改到的資料與純邏輯，
