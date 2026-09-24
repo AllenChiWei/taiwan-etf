@@ -160,7 +160,10 @@ def main():
     log('  最新交易日仍有報價：%d 檔' % len(alive))
 
     log('計算報酬率與日均成交金額…')
-    dollar_vol = (volume[alive].iloc[-ADV_WINDOW:] * close[alive].iloc[-ADV_WINDOW:]).mean()
+    # 成交量或價格是負的那幾天是來源的壞點（2026-09-24 XNDX 就算出 -173 萬），
+    # 當成缺值不算進平均，免得一檔壞資料讓整份美股清單擱置。
+    daily = volume[alive].iloc[-ADV_WINDOW:] * close[alive].iloc[-ADV_WINDOW:]
+    dollar_vol = daily.where(daily >= 0).mean()
     # 歷史長度算在報價上（close），與報酬率用的 adj 分開 —— 這樣「close 有、adj 沒有」
     # 那種矩陣壞法仍然會被驗證器的 liquid 缺 r3 規則抓到。
     history = close[alive].notna().sum()
