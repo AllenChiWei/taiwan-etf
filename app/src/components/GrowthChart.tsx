@@ -2,9 +2,14 @@
    跟 PerformanceChart 一樣手寫 SVG —— 兩條線一個面積，不值得為它背一個圖表庫。
 
    刻意只畫兩個量：本金與總價值。兩者之間那塊面積就是損益，
-   不必再多一條線去說同一件事。 */
+   不必再多一條線去說同一件事。
 
-import { useId, useMemo, useState } from 'react';
+   座標用容器的實際像素寬度，不是固定 1000 單位再縮放：固定寬度在手機上會縮成
+   三分之一，字剩 7px、圖只有 80px 高；而左邊的刻度欄寬是寫死的，金額到「億」
+   就切掉前幾位（20.59億 只剩 .59億），到「兆」整排不見 —— 使用者回報的
+   「金額太大圖就消失」就是這個。現在刻度欄寬依最長的標籤算。 */
+
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 
 export interface GrowthPoint {
   label: string;
@@ -22,14 +27,29 @@ interface Props {
 export function GrowthChart({ points, height = 240, format }: Props) {
   const [hover, setHover] = useState<number | null>(null);
   const clipId = useId();
+  const box = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(640);
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const update = () => { if (el.clientWidth > 0) setW(el.clientWidth); };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
-  const W = 1000;
   const H = height;
-  const PAD = { top: 10, right: 8, bottom: 22, left: 58 };
+  const FONT = 11;
 
   const hi = useMemo(
     () => Math.max(1, ...points.map(p => Math.max(p.invested, p.value))),
     [points]);
+  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => hi * f);
+  // 刻度欄寬：最長的標籤 × 字寬。中文字與數字寬度不同，數字約 0.6 個字高、中文 1 個
+  const labelWidth = Math.max(...yTicks.map(v => [...format(v)]
+    .reduce((w, ch) => w + (ch.charCodeAt(0) < 128 ? 0.62 : 1) * FONT, 0)));
+  const PAD = { top: 10, right: 8, bottom: 20, left: Math.ceil(labelWidth) + 8 };
 
   const x = (i: number) =>
     PAD.left + (points.length <= 1 ? 0 : (i / (points.length - 1)) * (W - PAD.left - PAD.right));
@@ -47,16 +67,17 @@ export function GrowthChart({ points, height = 240, format }: Props) {
 
   // 只標首尾與中間三個位置，手機寬度下再多就糊成一團
   const xTicks = [0, Math.floor((points.length - 1) / 2), points.length - 1];
-  const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => hi * f);
 
   const active = hover === null ? points.length - 1 : hover;
   const cur = points[active];
 
   return (
-    <div className="mt-2">
+    <div className="mt-2" ref={box}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        className="w-full touch-pan-y"
+        width={W}
+        height={H}
+        className="block w-full touch-pan-y"
         role="img"
         aria-label="資產成長圖"
         onMouseLeave={() => setHover(null)}
@@ -79,7 +100,7 @@ export function GrowthChart({ points, height = 240, format }: Props) {
             <line x1={PAD.left} x2={W - PAD.right} y1={y(v)} y2={y(v)}
                   className="stroke-line" strokeWidth={1} />
             <text x={PAD.left - 6} y={y(v) + 4} textAnchor="end"
-                  className="fill-faint text-[22px]">{format(v)}</text>
+                  className="fill-faint" fontSize={FONT}>{format(v)}</text>
           </g>
         ))}
 
@@ -94,7 +115,7 @@ export function GrowthChart({ points, height = 240, format }: Props) {
         {xTicks.map(i => (
           <text key={i} x={x(i)} y={H - 4}
                 textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
-                className="fill-faint text-[22px]">{points[i].label}</text>
+                className="fill-faint" fontSize={FONT}>{points[i].label}</text>
         ))}
 
         <line x1={x(active)} x2={x(active)} y1={PAD.top} y2={H - PAD.bottom}

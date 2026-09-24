@@ -16,7 +16,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useCalcIndex } from '../hooks/useCalcIndex';
 import {
   runBacktest, project, monthIndex,
-  type CalcIndex, type CalcSeries, type Timing,
+  type CalcIndex, type CalcSeries, type Timing, type ProjectYear,
 } from '../lib/backtest';
 
 type Tab = 'backtest' | 'retire';
@@ -49,6 +49,8 @@ const pct = (v: number | null) => (v === null ? '—' : `${nf2.format(v)}%`);
 /** 圖表座標軸用：把 1234567 縮成「123.5萬」，不然軸標籤會擠成一團。 */
 function compact(v: number): string {
   const a = Math.abs(v);
+  // 退休推估填得大一點就會到兆：沒有這一級會變成「12,345.67億」，刻度欄塞不下
+  if (a >= 1e12) return `${nf2.format(v / 1e12)}兆`;
   if (a >= 1e8) return `${nf2.format(v / 1e8)}億`;
   if (a >= 1e4) return `${nf0.format(Math.round(v / 1e4))}萬`;
   return nf0.format(Math.round(v));
@@ -503,6 +505,62 @@ function BacktestTab({ index }: { index: CalcIndex }) {
 
 /* ── 退休推估 ───────────────────────────────────────────── */
 
+/**
+ * 逐年明細。圖只看得出形狀，要知道「第 15 年到底有多少」得看數字。
+ * 金額用完整的元（不縮成萬、億）—— 這張表就是給人抄數字用的；窄螢幕時橫向捲動，
+ * 年份欄固定在左邊。
+ */
+function RetireTable({ rows, initial, reinvest }: {
+  rows: ProjectYear[]; initial: number; reinvest: boolean;
+}) {
+  if (rows.length === 0) return null;
+  const th = 'px-2.5 py-2 text-right font-semibold whitespace-nowrap';
+  const td = 'px-2.5 py-1.5 text-right font-mono tabular-nums whitespace-nowrap';
+  return (
+    <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <h2 className="text-sm font-bold text-ink">逐年明細</h2>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full border-collapse text-[12px]">
+          <thead className="text-muted">
+            <tr className="border-b border-line">
+              <th className={`${th} sticky left-0 bg-surface text-left`}>年</th>
+              <th className={th}>當年投入</th>
+              <th className={th}>累計投入</th>
+              <th className={th}>{reinvest ? '資產' : '組合市值'}</th>
+              {!reinvest && <th className={th}>累計領息</th>}
+              <th className={th}>累計報酬</th>
+              <th className={th}>今天購買力</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const total = r.value + r.cash;
+              const gain = r.invested > 0 ? (total / r.invested - 1) * 100 : 0;
+              return (
+                <tr key={r.year} className="border-b border-line last:border-0">
+                  <td className={`${td} sticky left-0 bg-surface text-left text-ink`}>{r.year}</td>
+                  <td className={`${td} text-muted`}>{money(r.invested - (i ? rows[i - 1].invested : initial))}</td>
+                  <td className={`${td} text-muted`}>{money(r.invested)}</td>
+                  <td className={`${td} font-semibold text-ink`}>{money(r.value)}</td>
+                  {!reinvest && <td className={`${td} text-ink`}>{money(r.cash)}</td>}
+                  <td className={`${td} ${gain >= 0 ? 'text-up' : 'text-down'}`}>
+                    {gain >= 0 ? '+' : ''}{nf2.format(gain)}%
+                  </td>
+                  <td className={`${td} text-muted`}>{money(r.real)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        累計報酬＝（{reinvest ? '資產' : '組合市值＋累計領息'}）÷ 累計投入 − 1。
+        今天購買力是把{reinvest ? '資產' : '兩者合計'}依通膨折回現在的幣值。
+      </p>
+    </section>
+  );
+}
+
 function RetireTab({ index }: { index: CalcIndex }) {
   const data = useEtfData();
 
@@ -702,6 +760,8 @@ function RetireTab({ index }: { index: CalcIndex }) {
         <h2 className="text-sm font-bold text-ink">資產累積</h2>
         <GrowthChart points={points} format={compact} />
       </section>
+
+      <RetireTable rows={result.rows} initial={initial} reinvest={reinvest} />
 
       <p className="mt-3 rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
         這一頁是<strong className="text-ink">推估</strong>，不是回測：假設每個月固定報酬、
