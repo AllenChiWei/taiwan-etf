@@ -49,7 +49,9 @@ OUT = os.path.join(ROOT, 'app', 'public', 'data', 'stock_dividends.json')
 TPE = timezone(timedelta(hours=8))
 UA = ('Mozilla/5.0 (compatible; TaiwanETF/1.0; +https://allenchiwei.github.io/taiwan-etf/) '
       'stock dividends for a dividend planner')
-STOCK = re.compile(r'^[1-9]\d{3}$')
+# 普通股，加上特別股（2887E、2881A 這種四位數字後面一個英文字母）——
+# 特別股多半是為了固定股息買的，配息試算本來就該算得到
+STOCK = re.compile(r'^[1-9]\d{3}[A-Z]?$')
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
 FINMIND_TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
 # 保留幾年的配息紀錄。試算只看最近 12 個月，多留一些是為了推配息頻率與月份

@@ -10,9 +10,10 @@ import { DividendPie } from './DividendPie';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   seriesFromStock, activePayer,
-  type HoldingProjection, type StockDividendData,
+  type HoldingProjection, type StockDividendData, type EtfDividendData, type YieldData,
 } from '../lib/dividend';
-import { fetchStockDividends } from '../api/extras';
+import { fetchStockDividends, fetchEtfDividends, fetchYields } from '../api/extras';
+import { useDataset } from '../hooks/useDataset';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
 
 const STORAGE_KEY = 'twetf.holdings';
@@ -101,6 +102,27 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return () => ac.abort();
   }, []);
 
+  // 還沒進試算資料的新上市 ETF（上市未滿三個月不產生回測序列）：
+  // 改用交易所公告的配息＋當日收盤價，跟個股同一條路
+  const dataset = useDataset();
+  const [etfDivs, setEtfDivs] = useState<EtfDividendData | null>(null);
+  const [yields, setYields] = useState<YieldData | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchEtfDividends(ac.signal).then(d => { if (!ac.signal.aborted) setEtfDivs(d); }).catch(() => {});
+    fetchYields(ac.signal).then(d => { if (!ac.signal.aborted) setYields(d); }).catch(() => {});
+    return () => ac.abort();
+  }, []);
+  /** 代號 -> 名稱與公告頻率；只收試算資料裡沒有的 ETF */
+  const newEtfs = useMemo(() => {
+    const m = new Map<string, { name: string; freq: string }>();
+    if (dataset.status !== 'ready') return m;
+    for (const e of dataset.data.etfs) {
+      if (!(e.code in index.codes)) m.set(e.code, { name: e.name, freq: e.freq });
+    }
+    return m;
+  }, [dataset, index.codes]);
+
   useEffect(() => { saveHoldings(entries); }, [entries]);
 
   // 只抓還沒抓過的，換張數不會重抓
@@ -130,8 +152,16 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     const out: HoldingProjection[] = [];
     for (const e of entries) {
       const stock = stockDivs?.stocks[e.code];
+      const fresh = newEtfs.get(e.code);
       const s = series.get(e.code)
-        ?? (stock && !(e.code in index.codes) ? seriesFromStock(e.code, stock, index.months) : undefined);
+        ?? (stock && !(e.code in index.codes) ? seriesFromStock(e.code, stock, index.months) : undefined)
+        ?? (fresh ? {
+          ...seriesFromStock(e.code, {
+            n: fresh.name, m: 'twse', c: yields?.yields[e.code]?.price ?? null,
+            ev: etfDivs?.dividends[e.code] ?? [],
+          }, index.months),
+          freq: fresh.freq,                     // 公告頻率優先，跟其他 ETF 一致
+        } : undefined);
       if (!s) continue;
       out.push(projectHolding(s, index.months, e.shares));
     }
@@ -140,7 +170,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
     out.sort((a, b) => b.annual - a.annual);
     return out;
-  }, [entries, series, index.months, index.codes, stockDivs]);
+  }, [entries, series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields]);
 
   const portfolio = useMemo(() => buildPortfolio(rows), [rows]);
   const maxMonth = Math.max(1, ...portfolio.byMonth);
@@ -164,8 +194,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       .filter(([c]) => !entries.some(e => e.code === c))
       .map(([c, s]) => ({ value: c, label: c, group: '個股',
                           hint: s.n + (activePayer(s, cutoff) ? '' : '・近期未配息') })) : [];
-    return [...pick('stock', '個股'), ...all, ...pick('etf', 'ETF')];
-  }, [index.codes, entries, stockDivs]);
+    const fresh = [...newEtfs].filter(([c]) => !entries.some(e => e.code === c))
+      .map(([c, v]) => ({ value: c, label: c, group: 'ETF',
+                          hint: v.name + ((etfDivs?.dividends[c]?.length ?? 0) > 0 ? '・新上市' : '・尚未配息') }));
+    const etfs = [...pick('etf', 'ETF'), ...fresh].sort((a, b) => a.value.localeCompare(b.value));
+    return [...pick('stock', '個股'), ...all, ...etfs];
+  }, [index.codes, entries, stockDivs, newEtfs, etfDivs]);
 
   const add = useCallback(() => {
     if (!pick || !(shares > 0)) return;

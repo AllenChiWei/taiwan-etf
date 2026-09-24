@@ -741,7 +741,7 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 ## 配息試算的個股
 
 配息試算原本只有 ETF 與 `EXTRA_STOCKS`（有 FinLab 逐月序列 `calc/tw/*.json` 的）。其他上市櫃
-普通股（`^[1-9]\d{3}$`）走 `scripts/fetch_stock_dividends.py` → `stock_dividends.json`，
+普通股與特別股（`^[1-9]\d{3}[A-Z]?$`，例如 2887E）走 `scripts/fetch_stock_dividends.py` → `stock_dividends.json`，
 前端 `seriesFromStock()` 把除息紀錄轉成同樣形狀的序列，`projectHolding` 以下完全共用。
 
 - **上市**：`TWT49U` 一年一個請求、全市場。「權息」的權值＋息值是合併計價，最近一次用
@@ -750,7 +750,10 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 - **上櫃**：官方**只有當天**（`tpex_exright_daily`）與預告；`mopsfin_t187ap39_O` 停在 110 年，
   不能用。歷史用 FinMind `TaiwanStockDividend`（每股現金＋除息交易日）一檔一個請求，每次
   `FINMIND_BUDGET_STOCKS` 檔，做過的記在 `meta.backfilled`，碰到 402 就停、下次接著補。
-- 最近 15 個月沒除過息的不列進選單（停配的加進來只是一排 0）。
+- 沒配過息、停配的也列進選單（站主要求先記著持股），選單標「尚未配息／近期未配息」，
+  明細顯示「待配息」，有除息紀錄後自動算進來。所以 `stock_dividends.json` 保留 ev 為空的個股。
+- 上市未滿三個月的 ETF 沒有 `calc/tw/*.json`（`fetch_calc.py` 要 60 個交易日），配息試算
+  改用 `dividends.json`＋`yields.json` 的收盤價組同樣形狀的序列，頻率照 `etfs.json` 的公告。
 
 ## 前十大持股
 

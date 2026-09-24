@@ -6,7 +6,7 @@
 import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
-import type { StockDividendData } from '../lib/dividend.ts';
+import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -39,3 +39,10 @@ export const fetchTop10 = (signal?: AbortSignal) =>
 
 export const fetchStockDividends = (signal?: AbortSignal) =>
   load<StockDividendData>('stock_dividends.json', d => Boolean(d.stocks), signal);
+
+/** ETF 的交易所公告配息（dividends.json）與收盤價（yields.json 的 price）。
+ *  配息試算用它們補上還沒進試算資料的新上市 ETF（上市未滿三個月的不產生回測序列）。 */
+export const fetchEtfDividends = (signal?: AbortSignal) =>
+  load<EtfDividendData>('dividends.json', d => Boolean(d.dividends), signal);
+export const fetchYields = (signal?: AbortSignal) =>
+  load<YieldData>('yields.json', d => Boolean(d.yields), signal);

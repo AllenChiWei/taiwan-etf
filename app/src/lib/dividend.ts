@@ -338,6 +338,16 @@ export interface StockDividendData {
                            ev: [string, number, number][] }>;
 }
 
+/** dividends.json：ETF 代號 -> [除息日, 每股現金, 是否精確]（交易所公告，累積式） */
+export interface EtfDividendData {
+  dividends: Record<string, [string, number, number][]>;
+}
+
+/** yields.json：這裡只用到收盤價 */
+export interface YieldData {
+  yields: Record<string, { price?: number | null }>;
+}
+
 /**
  * 除息紀錄 -> 對齊 months（'YYYY-MM'）的序列。同一個月除息兩次就加總。
  * 序列結束在 months 的最後一個月，projectHolding 取的「最近 12 個月」才會對。

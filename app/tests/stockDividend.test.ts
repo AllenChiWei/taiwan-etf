@@ -66,7 +66,7 @@ test('真實 stock_dividends.json', { skip: !existsSync(PATH) && '沒有 stock_d
   assert.ok(codes.length > 500, `只有 ${codes.length} 檔`);
   const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10);
   for (const [code, s] of Object.entries(d.stocks)) {
-    assert.match(code, /^[1-9]\d{3}$/, `${code} 不是普通股代號`);
+    assert.match(code, /^[1-9]\d{3}[A-Z]?$/, `${code} 不是普通股或特別股代號`);
     let ttm = 0;
     for (const [day, cash] of s.ev) {
       assert.match(day, /^\d{4}-\d{2}-\d{2}$/);
