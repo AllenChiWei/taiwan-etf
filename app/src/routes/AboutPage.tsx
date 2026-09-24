@@ -22,8 +22,9 @@ export function AboutPage() {
           績效曲線：兩個市場都來自 <strong className="text-ink">FinMind</strong> 的公開資料，
           畫的都是<strong className="text-ink">含息總報酬</strong>，不需要密碼。
           台股是日收盤價加上交易所公告配息自行還原；美股用的是 FinMind 已經含息還原的
-          收盤價。表格裡的美股報酬率則仍來自 FinLab，那是<strong className="text-up">
-          價格報酬、不含配息</strong> —— 三千七百檔逐檔請求不可行，所以那一欄沒有跟著換。
+          收盤價。美股表格裡有曲線的七百多檔，報酬率也用這條曲線算，是含息總報酬（標「含息」）；
+          其餘約三千檔仍是 FinLab 的<strong className="text-up">價格報酬、不含配息</strong>
+          —— 三千七百檔逐檔請求不可行。
         </li>
         <li>
           報酬率：由 FinLab 的還原股價計算，是<strong className="text-ink">含息的總報酬</strong>、
