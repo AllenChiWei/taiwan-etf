@@ -22,6 +22,7 @@ import { TONE_CLASS } from '../lib/format';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
 import { StockSheet } from '../components/StockSheet';
+import { FundamentalsBoard } from '../components/FundamentalsBoard';
 // 面板抽在 StockBoard，因為清單的抽屜要用同一組（見那個檔案的說明）
 import {
   Chip, Cell, InfoSection, RevenueSection, FinancialSection, PositionSection,
@@ -587,6 +588,7 @@ export function StockPage() {
           <InstDailySection data={data} />
           <RevenueSection data={data} />
           <FinancialSection data={data} />
+          <FundamentalsBoard code={data.code} />
           <ChipsSection data={data} />
         </>
       )}

@@ -28,7 +28,8 @@ const DIRECTIVES = [
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data:",
   "font-src 'self'",
-  "connect-src 'self'",
+  // FinMind：個股財務分析在瀏覽器直接抓那一檔的財報（見 src/api/finmind.ts）
+  "connect-src 'self' https://api.finmindtrade.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",

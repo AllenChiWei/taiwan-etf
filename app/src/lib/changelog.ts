@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-09-24',
+    items: [
+      { kind: 'new', to: '/stock',
+        text: '個股分析新增「財務分析儀表板」：ROE、淨利率、毛利率、自由現金流、存貨與現金循環天數、'
+          + '負債比等指標磚（附和去年同期比與走勢線），杜邦 ROE 拆解（淨利率 × 週轉率 × 權益乘數，'
+          + '並標出這一年 ROE 的變化主要來自哪一項），以及獲利、效率、現金流、財務結構的近八季趨勢圖。' },
+    ],
+  },
+  {
     date: '2026-09-23',
     items: [
       { kind: 'new', to: '/dividend',
