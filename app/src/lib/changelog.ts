@@ -16,7 +16,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
 export type SitePath = '/' | '/us' | '/favorites' | '/calc' | '/dividend' | '/futures'
-  | '/chips' | '/news' | '/stock' | '/poker' | '/about' | '/changelog';
+  | '/chips' | '/news' | '/macro' | '/calendar' | '/stock' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
   kind: ChangeKind;
@@ -33,6 +33,18 @@ export interface ChangeDay {
 
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
+  {
+    date: '2026-09-27',
+    items: [
+      { kind: 'new', to: '/macro',
+        text: '新增「總經」頁：美國 CPI、核心 CPI、核心 PCE 年增率，失業率、非農新增就業、初領失業金，'
+          + 'GDP 成長率，聯邦基金利率、10 年期公債殖利率與利差，WTI 油價與原油庫存，'
+          + '外加殖利率曲線（最新、一個月前、一年前對照，標出有沒有倒掛）。走勢可切 1／5／10／20 年。' },
+      { kind: 'new', to: '/calendar',
+        text: '新增「行事曆」頁：接下來四個月的除權息、股東會（交易所公告），加上財報與月營收的法定公告期限、'
+          + '台指期月結算日。可以只看收藏與配息持股。' },
+    ],
+  },
   {
     date: '2026-09-24',
     items: [

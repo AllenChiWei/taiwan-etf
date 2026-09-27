@@ -37,6 +37,8 @@ Where each field comes from, because it is not one source:
 | 創 150／200／250 日新高、漲跌幅 | 由 FinLab `etl:adj_close` 計算 —— **與試算資料共用同一次下載** |
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
 | 美股績效曲線 | **FinMind** `USStockPrice` 的 `Adj_Close`，已含息還原（公開資料，不加密） |
+| 美國總經（`/macro`） | FRED `fredgraph.csv`（**只收美國政府機關的數列**）＋ EIA 原油庫存 —— 部署時產生 |
+| 台股行事曆（`/calendar`） | 證交所 `TWT48U`、櫃買 `tpex_exright_prepost`（除權息預告）、`t187ap41_L/_O`（股東會）；財報期限與結算日依規則算 |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -66,6 +68,8 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）
   fetch_series_us.py         美股績效曲線（FinMind）→ series/us/（明文）
   fetch_dividends_finmind.py 一次性：用 FinMind 回補交易所補不到的配息歷史
+  fetch_macro.py             美國總經（FRED＋EIA）→ macro.json（部署時產生）
+  fetch_calendar.py          台股行事曆（除權息預告、股東會）→ calendar.json（部署時產生）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -490,6 +494,9 @@ FinMind 的 `Adj_Close` 是含息還原的，所以美股曲線不必像台股�
 | 集保 TDCC | 沒有 robots.txt | 股權分散表 ✅ |
 | 鉅亨網 API | 沒有 robots.txt | `/media/api/v1/newslist` ✅ |
 | Nasdaq Trader | 沒有 robots.txt | 官方代號檔 ✅ |
+| FRED | `*` 只擋圖片與搜尋頁，`Crawl-delay: 1` | `/graph/fredgraph.csv` ✅（每次間隔 1.5 秒） |
+| EIA | `*` 是 `Allow: /`，`/dnav/` 不在禁止清單 | `dnav/pet/hist/LeafHandler.ashx` ✅ |
+| 公開資訊觀測站舊版 mopsov | `*` 是 `Disallow: /`（只開放 bingbot） | **不抓**；只當使用者點的外連 |
 | **中央社** | `*` 是 `ai-input=yes, ai-train=no`，但**點名 ClaudeBot 等代理 `Disallow: /`** | 走官方 FeedBurner RSS，只存標題與外連 ⚠ |
 | **MoneyDJ** | `*` 沒擋 `/ETF/X/Basic/`（只擋 `/ETF/X/xdjbcd/`、`/etf/bcd/`），但**點名 ClaudeBot／anthropic-ai／Claude-Web `Disallow: /`** | `Basic0004.xdjhtm` ⚠ |
 
@@ -506,6 +513,19 @@ FinMind 的 `Adj_Close` 是含息還原的，所以美股曲線不必像台股�
 2026-09-19 補掉最後三支還在假裝瀏覽器的（`scrape_moneydj`、`scrape_returns`、
 `fetch_universe`、`fetch_us_etfs`）—— 實測 MoneyDJ 與 Nasdaq Trader 對誠實的 UA
 回應完全一樣（同一頁、同樣的欄位、同樣的位元組數），所以裝瀏覽器從來沒有換到什麼。
+
+## 美國總經與台股行事曆
+
+`/macro`：`scripts/fetch_macro.py` → `macro.json`，換算在 `lib/macro.ts`（`tests/macro.test.ts`）。
+**FRED 上不是每條都能轉載** —— S&P、ICE 美銀債券指數、Moody's 那些著作權屬於第三方。只收原始
+發佈者是美國聯邦政府機關的（BLS、BEA、DOL、Fed、EIA），加數列前先看 FRED 頁面的 Source。
+JSON 存原始數列，年增率、月增、利差在前端算；CPI 年增率是**同月對去年同月**，不是往前數 12 筆。
+原油商業庫存（WCESTUS1）FRED 沒有，直接解析 EIA 的歷史表。
+
+`/calendar`：`scripts/fetch_calendar.py` → `calendar.json`（除權息預告＋股東會），財報與月營收的
+法定期限（證交法 36 條：3/31、5/15、8/14、11/14；月營收每月 10 日）與台指期月結算（第三個星期三，
+遇假日順延）由 `lib/calendar.ts` 依規則算，畫面標「規則」。**法說會刻意沒有**：官方一覽表只在
+mopsov，那裡的 robots 是 `Disallow: /`，新版觀測站也是轉呼叫它（2026-09-27 查過）。
 
 ## 定期定額 vs 一次投入
 

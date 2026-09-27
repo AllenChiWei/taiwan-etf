@@ -22,6 +22,8 @@ const TABS = [
   { to: '/futures', label: '對帳單' },
   { to: '/chips', label: '籌碼' },
   { to: '/news', label: '新聞' },
+  { to: '/macro', label: '總經' },
+  { to: '/calendar', label: '行事曆' },
   { to: '/stock', label: '個股' },
   { to: '/poker', label: '撲克' },
   { to: '/changelog', label: '更新' },

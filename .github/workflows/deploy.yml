@@ -292,6 +292,14 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_news.py
 
+      # 美國總經（FRED＋EIA，二十幾個請求）與台股行事曆（交易所的除權息預告與股東會）。
+      # 跟新聞一樣容許失敗：缺檔時那兩頁自己會說還沒有資料。
+      - name: 產生總經與行事曆資料
+        continue-on-error: true
+        run: |
+          python scripts/fetch_macro.py || echo "::warning title=總經::這次沒有產生 macro.json"
+          python scripts/fetch_calendar.py || echo "::warning title=行事曆::這次沒有產生 calendar.json"
+
       # 即將上市的 ETF（證交所 e添富的新上市簡介）。一個列表加十幾頁簡介；
       # 缺檔時台股頁的「即將上市」分頁會說還沒有資料，不影響其他東西。
       - name: 產生即將上市 ETF 資料

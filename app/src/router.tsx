@@ -33,6 +33,8 @@ const CalculatorPage = lazyRoute(() => import('./routes/CalculatorPage'), m => m
 const PokerPage = lazyRoute(() => import('./routes/PokerPage'), m => m.PokerPage);
 const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage);
 const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
+const MacroPage = lazyRoute(() => import('./routes/MacroPage'), m => m.MacroPage);
+const CalendarPage = lazyRoute(() => import('./routes/CalendarPage'), m => m.CalendarPage);
 const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
 const DividendPage = lazyRoute(
   () => import('./routes/DividendPage'), m => m.DividendPage);
@@ -120,6 +122,18 @@ const newsRoute = createRoute({
   component: NewsPage,
 });
 
+const macroRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/macro',
+  component: MacroPage,
+});
+
+const calendarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/calendar',
+  component: CalendarPage,
+});
+
 /** 個股頁只有一個參數：看哪一檔。型別不對就當成沒選。 */
 const stockRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -148,7 +162,7 @@ const changelogRoute = createRoute({
 
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
-   chipsRoute, newsRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute]);
+   chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute]);
 
 export const router = createRouter({
   routeTree,

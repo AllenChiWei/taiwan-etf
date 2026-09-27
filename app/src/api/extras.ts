@@ -7,6 +7,8 @@ import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
+import type { MacroData } from '../lib/macro.ts';
+import type { CalendarData } from '../lib/calendar.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -46,3 +48,9 @@ export const fetchEtfDividends = (signal?: AbortSignal) =>
   load<EtfDividendData>('dividends.json', d => Boolean(d.dividends), signal);
 export const fetchYields = (signal?: AbortSignal) =>
   load<YieldData>('yields.json', d => Boolean(d.yields), signal);
+
+/** 美國總經（FRED／EIA）與台股行事曆（交易所公告）。都是部署時產生、不進版控。 */
+export const fetchMacro = (signal?: AbortSignal) =>
+  load<MacroData>('macro.json', d => Boolean(d.series && d.meta), signal);
+export const fetchCalendar = (signal?: AbortSignal) =>
+  load<CalendarData>('calendar.json', d => Array.isArray(d.exdiv) && Array.isArray(d.meetings), signal);
