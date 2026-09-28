@@ -782,6 +782,9 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 - **上櫃**：官方**只有當天**（`tpex_exright_daily`）與預告；`mopsfin_t187ap39_O` 停在 110 年，
   不能用。歷史用 FinMind `TaiwanStockDividend`（每股現金＋除息交易日）一檔一個請求，每次
   `FINMIND_BUDGET_STOCKS` 檔，做過的記在 `meta.backfilled`，碰到 402 就停、下次接著補。
+- **名單是輸出的骨架**：某個市場的收盤行情沒抓到（2026-09-25 中秋休市時櫃買回空的），
+  那個市場沿用上一版；檔數比上一版少一成以上就不寫出、讓 `sdiv` 擱置。少了這兩道，
+  891 檔上櫃的配息歷史被整批丟掉過（它們在 `meta.backfilled` 裡，不會再回補，是靠 git 還原的）。
 - 沒配過息、停配的也列進選單（站主要求先記著持股），選單標「尚未配息／近期未配息」，
   明細顯示「待配息」，有除息紀錄後自動算進來。所以 `stock_dividends.json` 保留 ev 為空的個股。
 - 上市未滿三個月的 ETF 沒有 `calc/tw/*.json`（`fetch_calc.py` 要 60 個交易日），配息試算

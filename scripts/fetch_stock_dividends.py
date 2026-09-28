@@ -172,6 +172,17 @@ def main():
     ev = dict((c, dict((e[0], e) for e in s.get('ev') or [])) for c, s in stocks.items())
 
     uni = universe()
+    # 某一個市場的名單沒抓到（或抓到的比上一版少一半以上）時，那個市場沿用上一版的
+    # 名稱、收盤價與代號 —— 名單是輸出的骨架，少了它，既有的配息紀錄會整批被丟掉。
+    # 2026-09-25（中秋休市）櫃買收盤行情沒回上櫃股票，891 檔上櫃的配息歷史就這樣消失，
+    # 而它們在 meta.backfilled 裡、之後不會再回補。
+    for market, label in (('twse', u'上市'), ('tpex', u'上櫃')):
+        prev = dict((c, v) for c, v in stocks.items() if v.get('m') == market)
+        got = sum(1 for v in uni.values() if v['m'] == market)
+        if prev and got < len(prev) * 0.5:
+            note(u'%s名單只抓到 %d 檔（上一版 %d 檔），沿用上一版' % (label, got, len(prev)))
+            for c, v in prev.items():
+                uni.setdefault(c, {'n': v.get('n', ''), 'm': market, 'c': v.get('c')})
     log(u'上市櫃普通股 %d 檔（上市 %d、上櫃 %d）' % (
         len(uni), sum(1 for v in uni.values() if v['m'] == 'twse'),
         sum(1 for v in uni.values() if v['m'] == 'tpex')))
@@ -251,6 +262,11 @@ def main():
         },
         'stocks': out,
     }
+    # 最後一道關：檔數驟降多半是來源壞了，不是真的一次下市幾百檔。寧可這一塊擱置、
+    # 保留前一版（update-data.yml 會還原），也不要把少掉的寫進版控。
+    if stocks and len(out) < len(stocks) * 0.9:
+        log(u'::error::個股數從 %d 掉到 %d（少了一成以上），不寫出' % (len(stocks), len(out)))
+        return 1
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(payload, ensure_ascii=False, separators=(',', ':')))
     for f in FIXED:
