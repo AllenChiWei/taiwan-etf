@@ -102,6 +102,7 @@ function ExDivRow({ r, today, y }: { r: EtfExDivRow; today: string; y: number | 
         </div>
         <p className="mt-0.5 text-[12px] text-muted">
           {[r.freq && r.freq !== '—' ? r.freq : '',
+            r.cust && r.cust !== '—' ? `保管：${r.cust}` : '',
             y != null ? `年化殖利率 ${y.toFixed(2)}%` : '',
             !r.exact ? '權息合併計價，金額可能高估' : ''].filter(Boolean).join('・')}
         </p>
@@ -136,7 +137,7 @@ function EtfExDivTab({ calendar, today, query, mine }: {
   }, []);
 
   const etfs = useMemo(
-    () => new Map<string, EtfInfo>(dataset.etfs.map(e => [e.code, { name: e.name, freq: e.freq }])),
+    () => new Map<string, EtfInfo>(dataset.etfs.map(e => [e.code, { name: e.name, freq: e.freq, cust: e.cust }])),
     [dataset]);
   const rows = useMemo(
     () => etfExDivMonth(month, divs?.dividends ?? null, calendar, etfs),

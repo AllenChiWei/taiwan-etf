@@ -76,8 +76,8 @@ test('分組與日期文字', () => {
 // ── ETF 除息月曆 ──
 
 const ETFS = new Map<string, EtfInfo>([
-  ['00400A', { name: '主動國泰動能高息', freq: '月配' }],
-  ['00939', { name: '統一台灣高息動能', freq: '月配' }],
+  ['00400A', { name: '主動國泰動能高息', freq: '月配', cust: '中國信託商業銀行' }],
+  ['00939', { name: '統一台灣高息動能', freq: '月配', cust: '台北富邦商業銀行' }],
 ]);
 
 const DIVS: Record<string, [string, number, number][]> = {
@@ -93,6 +93,7 @@ test('ETF 除息月曆：合併配息紀錄與預告、只收 ETF、只收該月
     ['2026-09-01 00939', '2026-09-07 00400A', '2026-09-20 00999']);
   assert.equal(rows[0].name, '統一台灣高息動能');
   assert.equal(rows[0].freq, '月配');
+  assert.equal(rows.find(r => r.code === '00400A')?.cust, '中國信託商業銀行');
   assert.equal(rows[2].name, '00999');                      // 兩邊都沒有名稱時用代號
   assert.equal(rows[2].exact, false);
 });

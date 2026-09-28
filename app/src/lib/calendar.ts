@@ -198,9 +198,11 @@ export interface EtfExDivRow {
   exact: boolean;
   /** 配息頻率（etfs.json），沒有就是 null */
   freq: string | null;
+  /** 保管銀行（etfs.json 的 cust），沒有就是 null */
+  cust: string | null;
 }
 
-export interface EtfInfo { name: string; freq: string | null }
+export interface EtfInfo { name: string; freq: string | null; cust?: string | null }
 
 /** 台股 ETF 代號都是 00 開頭（0050、00878、00940B、00400A）。個股不收。 */
 const ETF_CODE = /^00\d{2,4}[A-Z]?$/;
@@ -224,6 +226,7 @@ export function etfExDivMonth(
       const info = etfs.get(code);
       rows.set(`${code}|${d}`, {
         d, code, name: info?.name ?? code, cash, exact: exact === 1, freq: info?.freq ?? null,
+        cust: info?.cust ?? null,
       });
     }
   }
@@ -238,7 +241,7 @@ export function etfExDivMonth(
     const info = etfs.get(r.code);
     rows.set(key, {
       d: r.d, code: r.code, name: info?.name ?? r.name, cash: r.cash ?? null,
-      exact: true, freq: info?.freq ?? null,
+      exact: true, freq: info?.freq ?? null, cust: info?.cust ?? null,
     });
   }
   return [...rows.values()].sort((a, b) => a.d.localeCompare(b.d) || a.code.localeCompare(b.code));
