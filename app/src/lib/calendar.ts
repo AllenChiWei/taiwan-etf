@@ -179,3 +179,73 @@ export function dayLabel(d: string): string {
 export function daysUntil(d: string, today: string): number {
   return Math.round((Date.parse(`${d}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 86_400_000);
 }
+
+/* ───────────── ETF 除息月曆 ─────────────
+ *
+ * 行事曆的除權息（calendar.json 的 exdiv）是交易所「預告」，只列還沒到的日子，股票與 ETF 混在一起；
+ * 想看「這個月有哪幾檔 ETF 除息」還需要已經除息的那幾天，所以再合併 dividends.json（交易所公告的
+ * 配息紀錄，累積式，含已除息與已公告未除息）。同一檔同一天兩邊都有時只留一筆，金額以配息紀錄為準
+ * （預告的金額可能還沒公布）。
+ */
+
+export interface EtfExDivRow {
+  d: string;
+  code: string;
+  name: string;
+  /** 每股現金；null＝交易所預告了日期但金額還沒公布 */
+  cash: number | null;
+  /** false＝那次是「權息」合併計價、拆不出現金部分，金額會高估 */
+  exact: boolean;
+  /** 配息頻率（etfs.json），沒有就是 null */
+  freq: string | null;
+}
+
+export interface EtfInfo { name: string; freq: string | null }
+
+/** 台股 ETF 代號都是 00 開頭（0050、00878、00940B、00400A）。個股不收。 */
+const ETF_CODE = /^00\d{2,4}[A-Z]?$/;
+
+/**
+ * 某個月（'YYYY-MM'）所有 ETF 的除息，依日期、代號排序。
+ * etfs：代號 -> 名稱與頻率（etfs.json）；不在清單裡但代號像 ETF 的，名稱改用預告上的。
+ */
+export function etfExDivMonth(
+  month: string,
+  dividends: Record<string, [string, number, number][]> | null,
+  calendar: CalendarData | null,
+  etfs: ReadonlyMap<string, EtfInfo>,
+): EtfExDivRow[] {
+  const rows = new Map<string, EtfExDivRow>();
+  const isEtf = (code: string) => etfs.has(code) || ETF_CODE.test(code);
+  for (const [code, evs] of Object.entries(dividends ?? {})) {
+    if (!isEtf(code)) continue;
+    for (const [d, cash, exact] of evs) {
+      if (!d.startsWith(month)) continue;
+      const info = etfs.get(code);
+      rows.set(`${code}|${d}`, {
+        d, code, name: info?.name ?? code, cash, exact: exact === 1, freq: info?.freq ?? null,
+      });
+    }
+  }
+  for (const r of calendar?.exdiv ?? []) {
+    if (!r.d.startsWith(month) || !isEtf(r.code) || !r.k.includes('息')) continue;
+    const key = `${r.code}|${r.d}`;
+    const had = rows.get(key);
+    if (had) {
+      if (had.cash === null && r.cash) had.cash = r.cash;
+      continue;
+    }
+    const info = etfs.get(r.code);
+    rows.set(key, {
+      d: r.d, code: r.code, name: info?.name ?? r.name, cash: r.cash ?? null,
+      exact: true, freq: info?.freq ?? null,
+    });
+  }
+  return [...rows.values()].sort((a, b) => a.d.localeCompare(b.d) || a.code.localeCompare(b.code));
+}
+
+/** 'YYYY-MM' 加減 n 個月。 */
+export function shiftMonth(month: string, n: number): string {
+  const total = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + n;
+  return `${Math.floor(total / 12)}-${pad((total % 12) + 1)}`;
+}

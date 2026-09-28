@@ -343,9 +343,9 @@ export interface EtfDividendData {
   dividends: Record<string, [string, number, number][]>;
 }
 
-/** yields.json：這裡只用到收盤價 */
+/** yields.json：配息試算用收盤價；行事曆的 ETF 除息分頁另外用年化殖利率 y（%，一年以前才配過的是 null） */
 export interface YieldData {
-  yields: Record<string, { price?: number | null }>;
+  yields: Record<string, { price?: number | null; y?: number | null }>;
 }
 
 /**

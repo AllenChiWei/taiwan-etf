@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   thirdWednesday, ruleEvents, allEvents, filterEvents, groupByDate, dayLabel, daysUntil,
-  exdivEvent, type CalendarData, type EventKind,
+  exdivEvent, etfExDivMonth, shiftMonth, type CalendarData, type EventKind, type EtfInfo,
 } from '../src/lib/calendar.ts';
 
 test('第三個星期三（期交所月結算日）', () => {
@@ -71,4 +71,54 @@ test('分組與日期文字', () => {
     [['2026-09-29', 2], ['2026-10-08', 1], ['2026-10-10', 1], ['2026-10-21', 1]]);
   assert.equal(dayLabel('2026-10-08'), '10/8（四）');
   assert.equal(daysUntil('2026-09-29', '2026-09-27'), 2);
+});
+
+// ── ETF 除息月曆 ──
+
+const ETFS = new Map<string, EtfInfo>([
+  ['00400A', { name: '主動國泰動能高息', freq: '月配' }],
+  ['00939', { name: '統一台灣高息動能', freq: '月配' }],
+]);
+
+const DIVS: Record<string, [string, number, number][]> = {
+  '00939': [['2026-08-01', 0.12, 1], ['2026-09-01', 0.125, 1]],
+  '00400A': [['2026-09-07', 0.12, 1]],
+  '2881': [['2026-09-10', 1.5, 1]],                       // 個股：不收
+  '00999': [['2026-09-20', 0.3, 0]],                      // 不在清單但代號像 ETF；權息合併計價
+};
+
+test('ETF 除息月曆：合併配息紀錄與預告、只收 ETF、只收該月', () => {
+  const rows = etfExDivMonth('2026-09', DIVS, DATA, ETFS);
+  assert.deepEqual(rows.map(r => `${r.d} ${r.code}`),
+    ['2026-09-01 00939', '2026-09-07 00400A', '2026-09-20 00999']);
+  assert.equal(rows[0].name, '統一台灣高息動能');
+  assert.equal(rows[0].freq, '月配');
+  assert.equal(rows[2].name, '00999');                      // 兩邊都沒有名稱時用代號
+  assert.equal(rows[2].exact, false);
+});
+
+test('ETF 除息月曆：只有預告的也列出，金額未公布是 null 而不是 0', () => {
+  const rows = etfExDivMonth('2026-10', DIVS, DATA, ETFS);
+  assert.equal(rows.length, 1);                             // 00400A 10/8 預告；2109 是個股
+  assert.equal(rows[0].code, '00400A');
+  assert.equal(rows[0].cash, null);
+});
+
+test('ETF 除息月曆：同一檔同一天兩邊都有只留一筆，金額以配息紀錄為準', () => {
+  const cal: CalendarData = {
+    ...DATA,
+    exdiv: [{ d: '2026-09-07', code: '00400A', name: '主動國泰動能高息', k: '息', cash: 0.2, stock: null, m: 'twse' }],
+  };
+  const rows = etfExDivMonth('2026-09', DIVS, cal, ETFS).filter(r => r.code === '00400A');
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].cash, 0.12);
+  // 配息紀錄缺席時用預告的金額
+  assert.equal(etfExDivMonth('2026-09', null, cal, ETFS)[0].cash, 0.2);
+});
+
+test('月份加減跨年', () => {
+  assert.equal(shiftMonth('2026-09', 1), '2026-10');
+  assert.equal(shiftMonth('2026-12', 1), '2027-01');
+  assert.equal(shiftMonth('2026-01', -1), '2025-12');
+  assert.equal(shiftMonth('2026-09', -12), '2025-09');
 });
