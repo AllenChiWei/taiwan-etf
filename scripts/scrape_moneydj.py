@@ -56,5 +56,10 @@ for n, c in enumerate(codes, 1):
 if errors:
     io.open(os.path.join(WORK, 'scrape_errors.txt'), 'w', encoding='utf-8').write(u'\n'.join(errors))
 print('scraped ok=%d fail=%d skip=%d' % (ok, fail, skip))
-if fail:
+# 少數幾頁失敗（MoneyDJ 下架了某一檔、偶發逾時）時，建置會沿用上一版那幾檔的
+# 保管銀行與配息頻率（etfdata.load_rows），不值得為此擱置整份台股清單。
+# 失敗多到像是整站擋掉或改版時才中止。
+if fail > max(3, len(codes) * 0.05):
     sys.exit('%d pages failed - see scrape_errors.txt, re-run to retry just those' % fail)
+if fail:
+    print('WARNING: %d pages failed - build reuses the previous custodian/frequency for them' % fail)

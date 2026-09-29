@@ -3,7 +3,7 @@
 section classification. Imported by build_page.py; edit THIS file when a new bank
 spelling or a new fund category shows up.
 """
-import re, os, collections
+import re, os, io, json, collections
 
 DASH = u'—'          # the em dash the page uses for "no data"
 
@@ -305,6 +305,17 @@ def pick_section(code, name, page, current_sections):
         code, name, page.get(u'投資標的', ''), page.get(u'投資區域', ''))
 
 
+def load_previous_basic(root):
+    u"""{code: {cust, freq}}，取自目前的 etfs.json；讀不到就回空的（等於不沿用）。"""
+    path = os.path.join(root, 'app', 'public', 'data', 'etfs.json')
+    try:
+        doc = json.load(io.open(path, encoding='utf-8'))
+    except Exception:                                         # noqa: BLE001
+        return {}
+    return dict((e['code'], {'cust': e.get('cust') or DASH, 'freq': e.get('freq') or DASH})
+                for e in doc.get('etfs', []) if e.get('code'))
+
+
 def load_rows(work, universe, current_sections):
     """universe: [(code, name, market)]; current_sections: {code: section_id}.
     -> rows, missing_basic, missing_returns, ret_asof, yld_asof
@@ -321,11 +332,19 @@ def load_rows(work, universe, current_sections):
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     calc_yields, calc_asof = load_yields(root)
     used_calc = 0
+    # MoneyDJ 那一頁抓不到時沿用上一版的保管銀行與配息頻率。這兩個欄位幾乎不變，
+    # 而一頁失敗就讓整份台股清單擱置代價太大：2026-09-28 起 MoneyDJ 對 00793B 回
+    # 「查無此ETF」（交易所那邊還在交易），台股清單連續兩天沒更新。
+    prev_basic = load_previous_basic(root)
+    reused = []
     for code, name, _market in universe:
         path = os.path.join(work, 'pages', code + '.html')
         d = parse_page(path) if os.path.exists(path) else {}
-        if not d:
+        prev = prev_basic.get(code) if not d else None
+        if not d and not prev:
             missing.append(code)
+        elif prev:
+            reused.append(code)
         yld, ya = parse_yield(d.get(u'殖利率(%)', ''))
         if code in calc_yields:
             # 自己算的優先：它是當日收盤價換算的，MoneyDJ 那份可能是一週前的快照
@@ -351,14 +370,17 @@ def load_rows(work, universe, current_sections):
         rows.append({
             'code': code,
             'name': name,
-            'cust': norm_cust(d.get(u'保管機構', '')),
-            'freq': norm_freq(d.get(u'配息頻率', '')),
+            'cust': prev['cust'] if prev else norm_cust(d.get(u'保管機構', '')),
+            'freq': prev['freq'] if prev else norm_freq(d.get(u'配息頻率', '')),
             'yield': yld,
             'ret': ret,
             'sec': pick_section(code, name, d, current_sections),
             'act': is_active(name),
         })
     top = lambda c: (c.most_common(1)[0][0] if c else '')
+    if reused:
+        print('basic: %d 檔沒有 MoneyDJ 頁面，沿用上一版的保管銀行與配息頻率（%s）'
+              % (len(reused), ', '.join(reused[:10])))
     if used_calc:
         print('yield: %d 檔用自己算的（%s），%d 檔沿用 MoneyDJ'
               % (used_calc, calc_asof, len(rows) - used_calc))
