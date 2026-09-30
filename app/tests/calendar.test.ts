@@ -141,3 +141,18 @@ test('ETF 除息：交易所還沒填金額時用投信公告（標預估），�
     [['00406A', 0.138, 'est', '2026-11-02'], ['00939', 0.125, 'est', '2026-10-29']]);
   assert.equal(exdivEvent(cal.exdiv[0]).detail, '預估 0.138 元（投信公告）・11/2 發放（上市）');
 });
+
+test('只有投信公告、交易所預告表還沒列出的 ETF，兩個分頁都會出現', () => {
+  const cal: CalendarData = {
+    meta: { updated: '2026-09-30', until: '2027-01-28', source: '', errors: [] },
+    exdiv: [], meetings: [],
+    pay: { '00985A|2026-10-19': '2026-11-13' },
+    notices: [{ code: '00985A', ex: '2026-10-19', pay: '2026-11-13', cash: 2.15, ck: 'est',
+                nd: '2026-09-30', u: 'x', name: '主動野村臺灣50' }],
+  };
+  const ev = allEvents(cal, '2026-09-30', '2026-10-31').filter(e => e.kind === 'exdiv');
+  assert.deepEqual(ev.map(e => [e.d, e.code, e.title]), [['2026-10-19', '00985A', '主動野村臺灣50 除息']]);
+  assert.equal(ev[0].detail, '預估 2.15 元（投信公告）・11/13 發放（上市）');
+  const rows = etfExDivMonth('2026-10', null, cal, new Map());
+  assert.deepEqual(rows.map(r => [r.code, r.cash, r.ck, r.pay]), [['00985A', 2.15, 'est', '2026-11-13']]);
+});

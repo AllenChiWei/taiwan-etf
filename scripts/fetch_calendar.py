@@ -286,19 +286,20 @@ def etf_notices(today):
 
 
 def etf_pay_dates(today, until):
-    u"""e添富 dividendList -> {'代號|除息日': 發放日}。"""
+    u"""e添富 dividendList -> ({'代號|除息日': 發放日}, {代號: 簡稱})。"""
     html_ = fetch_html(DIVIDEND_LIST)
     since = (date.fromisoformat(today) - timedelta(days=PAY_BACK_DAYS)).isoformat()
-    out = {}
+    out, names = {}, {}
     for tr in re.findall(r'<tr[^>]*>(.*?)</tr>', html_, re.S):
         cells = [plain(c) for c in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
         if len(cells) < 5:
             continue
+        names.setdefault(cells[0], cells[1])
         ex, pay = roc_date(cells[2]), roc_date(cells[4])
         if ex and pay and since <= ex <= until:
             out['%s|%s' % (cells[0], ex)] = pay
     log(u'e添富發放日：%d 筆' % len(out))
-    return out
+    return out, names
 
 
 def main():
@@ -337,15 +338,17 @@ def main():
 
     # ETF：發放日，以及交易所還沒填金額時用投信公告的金額（標明是預估還是實際）
     try:
-        pay = etf_pay_dates(today, until)
+        pay, names = etf_pay_dates(today, until)
     except Exception as e:                                    # noqa: BLE001
         errors.append(u'e添富發放日：%s' % str(e)[:80])
-        pay = {}
+        pay, names = {}, {}
     try:
         notices = etf_notices(today)
     except Exception as e:                                    # noqa: BLE001
         errors.append(u'ETF 收益分配公告：%s' % str(e)[:80])
         notices = []
+    for n in notices:
+        n['name'] = names.get(n['code'], '')
     by_key = dict(('%s|%s' % (n['code'], n['ex']), n) for n in notices)
     filled = 0
     for r in exdiv:

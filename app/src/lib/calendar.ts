@@ -36,6 +36,8 @@ export interface NoticeRow {
   /** 公告日 */
   nd: string;
   u: string;
+  /** 簡稱（e添富配息清單）；沒有時畫面用代號 */
+  name?: string;
 }
 
 export interface MeetingRow {
@@ -154,6 +156,16 @@ export function allEvents(data: CalendarData | null, from: string, to: string): 
   const list: CalEvent[] = [];
   if (data) {
     for (const r of data.exdiv) list.push(exdivEvent(r));
+    // 投信已經公告、交易所預告表還沒列出的 ETF 除息，也要出現（公告通常比預告表早幾天）
+    const listed = new Set(data.exdiv.map(r => `${r.code}|${r.d}`));
+    for (const n of data.notices ?? []) {
+      const key = `${n.code}|${n.ex}`;
+      if (n.ck === 'none' || listed.has(key)) continue;
+      list.push(exdivEvent({
+        d: n.ex, code: n.code, name: n.name || n.code, k: '息', cash: n.cash, stock: null,
+        m: 'twse', ck: n.ck, pay: data.pay?.[key] ?? n.pay,
+      }));
+    }
     for (const r of data.meetings) list.push(meetingEvent(r));
   }
   list.push(...ruleEvents(from, to));
@@ -285,7 +297,7 @@ export function etfExDivMonth(
     }
     const info = etfs.get(n.code);
     rows.set(key, {
-      d: n.ex, code: n.code, name: info?.name ?? n.code, cash: n.cash, exact: true,
+      d: n.ex, code: n.code, name: info?.name ?? (n.name || n.code), cash: n.cash, exact: true,
       freq: info?.freq ?? null, cust: info?.cust ?? null, ck: n.ck, pay: null,
     });
   }
