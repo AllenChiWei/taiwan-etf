@@ -324,3 +324,25 @@ test('前幾名 + 其他', async (t) => {
     assert.equal(summarizeRest(few, rows.slice(0, 2), 5).count, 0);
   });
 });
+
+test('已公告還沒除息的下一次：比已記錄的新就改用它推估，同月以交易所為準', async () => {
+  const { withUpcoming } = await import('../src/lib/dividend.ts');
+  const base = {
+    code: '00985A', name: 'x', shares: 1000, latest: 1.9, latestMonth: '2026-07', perYear: 4, freq: '季配',
+    payoutMonths: [0, 3, 6, 9], actualMonths: [6], perShare: 7.6, byMonth: [1.9, 0, 0, 1.9, 0, 0, 1.9, 0, 0, 1.9, 0, 0],
+    annual: 7600, perShareTtm: 1.9, annualTtm: 1900, payouts: 1, price: 50, yieldPct: 15.2, value: 50000,
+    monthsListed: 4, exact: true,
+  };
+  const up = withUpcoming(base, { d: '2026-10-19', cash: 2.15, ck: 'est', pay: '2026-11-13' });
+  assert.equal(up.latest, 2.15);
+  assert.equal(up.latestMonth, '2026-10');
+  assert.equal(up.annual, 2.15 * 4 * 1000);
+  assert.equal(up.byMonth.filter(v => v > 0).length, 4);              // 月曆格數跟一年次數一致
+  assert.equal(up.exact, false);                                       // 預估不是精確值
+  assert.equal(up.fromUpcoming, true);
+  // 交易所已經記錄到同一個月：不改推估，只附上日期與發放日
+  const same = withUpcoming({ ...base, latestMonth: '2026-10' }, { d: '2026-10-19', cash: 2.15, ck: 'est' });
+  assert.equal(same.latest, 1.9);
+  assert.equal(same.fromUpcoming, undefined);
+  assert.equal(same.upcoming?.cash, 2.15);
+});

@@ -9,10 +9,11 @@ import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
-  seriesFromStock, activePayer,
-  type HoldingProjection, type StockDividendData, type EtfDividendData, type YieldData,
+  seriesFromStock, activePayer, withUpcoming,
+  type HoldingProjection, type ProjectionWithUpcoming, type StockDividendData, type EtfDividendData, type YieldData,
 } from '../lib/dividend';
-import { fetchStockDividends, fetchEtfDividends, fetchYields } from '../api/extras';
+import { fetchStockDividends, fetchEtfDividends, fetchYields, fetchCalendar } from '../api/extras';
+import { upcomingByCode, dayLabel, type CalendarData } from '../lib/calendar';
 import { useDataset } from '../hooks/useDataset';
 import { useUsDataset } from '../hooks/useUsDataset';
 import { fetchUsPrices, fetchUsdTwd } from '../api/finmind';
@@ -202,8 +203,19 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return () => { cancelled = true; };
   }, [entries, series, index.codes]);
 
+  // 行事曆那份資料（部署時產生）：交易所除權息預告＋投信的收益分配公告
+  const [calendar, setCalendar] = useState<CalendarData | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchCalendar(ac.signal).then(d => { if (!ac.signal.aborted) setCalendar(d); }).catch(() => {});
+    return () => ac.abort();
+  }, []);
+  const upcoming = useMemo(
+    () => upcomingByCode(calendar, new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' })),
+    [calendar]);
+
   /** 一筆持股 -> 配息推估；資料還沒到或查不到時回 null。總帳戶與各帳戶共用。 */
-  const project = useCallback((e: { code: string; shares: number; m?: 'us' }): HoldingProjection | null => {
+  const project = useCallback((e: { code: string; shares: number; m?: 'us' }): ProjectionWithUpcoming | null => {
       if (e.m === 'us') {
         const r = usRows.get(e.code);
         if (!Array.isArray(r) || !fx || fx instanceof Error) return null;
@@ -222,13 +234,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           freq: fresh.freq,                     // 公告頻率優先，跟其他 ETF 一致
         } : undefined);
       if (!s) return null;
-      return projectHolding(s, index.months, e.shares);
-  }, [series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames]);
+      // 已公告還沒除息的下一次（交易所預告或投信公告）：比已記錄的新就提前反映
+      return withUpcoming(projectHolding(s, index.months, e.shares), upcoming.get(e.code));
+  }, [series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames, upcoming]);
 
-  const rows: HoldingProjection[] = useMemo(() => {
+  const rows: ProjectionWithUpcoming[] = useMemo(() => {
     // 總帳戶一檔一列。站主的用法是一檔只在一個帳戶，但萬一同一檔分在兩個帳戶，
     // 合併股數比出現兩列同代號（撞顏色、撞 key）好
-    const out = mergeByCode(entries).map(project).filter((r): r is HoldingProjection => r !== null);
+    const out = mergeByCode(entries).map(project).filter((r): r is ProjectionWithUpcoming => r !== null);
     // 依一年可領金額由大到小。圖例、月曆的分段、佔比圖與各檔明細都吃這個順序，
     // 四處才會一致 —— 加入的先後對「誰貢獻最多」沒有意義。
     // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
@@ -240,7 +253,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   /** 各帳戶自己的推估。配息對股數是線性的，各帳戶相加就等於上面的總帳戶。 */
   const byAccount = useMemo(() => accounts.map(name => {
     const own = entries.filter(e => e.acct === name);
-    const list = own.map(project).filter((r): r is HoldingProjection => r !== null)
+    const list = own.map(project).filter((r): r is ProjectionWithUpcoming => r !== null)
       .sort((a, b) => b.annual - a.annual);
     return { name, rows: list, count: own.length, portfolio: buildPortfolio(list) };
   }), [accounts, entries, project]);
@@ -613,8 +626,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                               ? `股價 US$${nf2.format(r.price / fx.rate)}`
                               : `股價 ${nf2.format(r.price)}`} />
                     <Cell label="配息頻率" value={`${r.freq}`} />
-                    <Cell label="最近一次" value={r.latest > 0 ? `${nf4(r.latest)} 元` : '—'}
-                          hint={r.latest > 0 ? `${r.latestMonth}${r.exact ? '' : '　約略值'}` : undefined} />
+                    <Cell label={r.fromUpcoming ? '下一次（已公告）' : '最近一次'}
+                          value={r.latest > 0 ? `${nf4(r.latest)} 元` : '—'}
+                          hint={r.latest > 0
+                            ? r.fromUpcoming && r.upcoming
+                              ? `${Number(r.upcoming.d.slice(5, 7))}/${Number(r.upcoming.d.slice(8, 10))} 除息${r.upcoming.ck === 'est' ? '・預估' : ''}`
+                              : `${r.latestMonth}${r.exact ? '' : '　約略值'}`
+                            : undefined} />
                     <Cell label="預估年配息/股" value={`${nf2.format(r.perShare)} 元`} />
                     <Cell label="殖利率" value={`${nf2.format(r.yieldPct)}%`} tone />
                     <Cell label="一年可領" value={`${money(r.annual)} 元`} tone />
@@ -627,6 +645,18 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       {fx.stale ? '，今天抓不到，沿用上次' : ''}）換成台幣。
                       最近一次 US${nf4(r.latest / fx.rate)}、股價 US${nf2.format(r.price / fx.rate)}。
                       配息由還原股價反推，約略值（誤差約 1 美分），未扣美國 30% 預扣稅。
+                    </p>
+                  )}
+                  {r.upcoming && (
+                    <p className="mt-1 rounded bg-accent-soft px-2 py-1 text-[11px] leading-snug text-ink">
+                      下次除息 {dayLabel(r.upcoming.d)}，每股
+                      {r.upcoming.ck === 'est' ? ' 預估' : ''} {nf4(r.upcoming.cash)} 元
+                      （約 {money(r.upcoming.cash * r.shares)} 元）
+                      {r.upcoming.pay ? `，${dayLabel(r.upcoming.pay)} 發放` : ''}。
+                      {r.upcoming.ck === 'est'
+                        ? '金額是投信公告的預估值，實際金額公布後會自動更新。'
+                        : r.upcoming.ck === 'final' ? '金額取自投信公告。' : ''}
+                      {r.fromUpcoming ? '上面的年配息已經用這次的金額推估。' : ''}
                     </p>
                   )}
                   {r.latest === 0 ? (

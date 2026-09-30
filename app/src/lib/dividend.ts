@@ -206,6 +206,61 @@ export function projectHolding(
   };
 }
 
+/** 已公告、還沒除息的下一次配息（交易所預告表或投信的收益分配公告）。 */
+export interface Upcoming {
+  /** 除息日 */
+  d: string;
+  cash: number;
+  /** 金額來源：沒有＝交易所；'est' 投信預估；'final' 投信公告的實際金額 */
+  ck?: 'est' | 'final';
+  /** 發放日 */
+  pay?: string | null;
+}
+
+export type ProjectionWithUpcoming = HoldingProjection & {
+  upcoming?: Upcoming;
+  /** 推估用的「最近一次」其實是還沒除息、已公告的那一次 */
+  fromUpcoming?: boolean;
+};
+
+/**
+ * 把已公告的下一次配息接進推估。
+ *
+ * 推估是「最近一次 × 一年幾次」，所以投信剛公布的新金額（例如 00985A 預估 2.15）要等除息、
+ * 交易所記錄之後才會反映 —— 站主要的是公告當天就看到。下一次比已記錄的最近一次還新時，
+ * 就改用它當「最近一次」；同一個月（交易所已經記錄了）則以交易所為準、只附上日期與發放日。
+ *
+ * 年配息是「每次金額 × 次數」而不是把每一次加起來，所以之後交易所補上正式紀錄時不會重複計算。
+ */
+export function withUpcoming(p: HoldingProjection, up: Upcoming | undefined): ProjectionWithUpcoming {
+  if (!up || !(up.cash > 0)) return p;
+  const month = up.d.slice(0, 7);
+  if (p.latestMonth && month <= p.latestMonth) return { ...p, upcoming: up };
+  const latest = up.cash;
+  const m = Number(month.slice(5, 7)) - 1;
+  // 月份沿用原本推得的（月曆的格數要跟「一年幾次」一致；季配偶爾挪一個月不另外加格）。
+  // 沒有配息紀錄的（新上市、之前沒配過）就放在公告的那個月，當一年一次
+  const months = p.perYear > 0 && p.payoutMonths.length ? p.payoutMonths : [m];
+  const perYear = p.perYear > 0 ? p.perYear : 1;
+  const byMonth = new Array<number>(12).fill(0);
+  for (const k of months) byMonth[k] = latest;
+  const perShare = latest * perYear;
+  return {
+    ...p,
+    latest,
+    latestMonth: month,
+    perYear,
+    payoutMonths: months,
+    byMonth,
+    perShare,
+    annual: perShare * p.shares,
+    yieldPct: p.price > 0 ? (perShare / p.price) * 100 : 0,
+    exact: up.ck !== 'est',
+    upcoming: up,
+    fromUpcoming: true,
+  };
+}
+
 export function buildPortfolio(rows: HoldingProjection[]): Portfolio {
   const byMonth = new Array<number>(12).fill(0);
   let annual = 0;

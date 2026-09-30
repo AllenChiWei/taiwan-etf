@@ -313,3 +313,33 @@ export function shiftMonth(month: string, n: number): string {
   const total = Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1 + n;
   return `${Math.floor(total / 12)}-${pad((total % 12) + 1)}`;
 }
+
+/**
+ * 每一檔「已公告、還沒除息」的下一次配息（今天含以後最近的一次，要有金額）。
+ * 交易所預告表優先（它有金額時就是正式的）；預告表還沒列出或還沒金額的，用投信公告。
+ * 配息試算拿它來提前反映剛公布的金額（lib/dividend.ts 的 withUpcoming）。
+ */
+export function upcomingByCode(
+  cal: CalendarData | null, today: string,
+): Map<string, { d: string; cash: number; ck?: 'est' | 'final'; pay?: string | null }> {
+  const out = new Map<string, { d: string; cash: number; ck?: 'est' | 'final'; pay?: string | null }>();
+  if (!cal) return out;
+  const put = (code: string, v: { d: string; cash: number; ck?: 'est' | 'final'; pay?: string | null }) => {
+    const had = out.get(code);
+    if (!had || v.d < had.d) out.set(code, v);
+  };
+  const listed = new Set<string>();
+  for (const r of cal.exdiv) {
+    if (r.d < today || !r.k.includes('息')) continue;
+    listed.add(`${r.code}|${r.d}`);
+    if (r.cash && r.cash > 0) {
+      put(r.code, { d: r.d, cash: r.cash, ck: r.ck, pay: r.pay ?? cal.pay?.[`${r.code}|${r.d}`] ?? null });
+    }
+  }
+  for (const n of cal.notices ?? []) {
+    const key = `${n.code}|${n.ex}`;
+    if (n.ex < today || n.ck === 'none' || !(n.cash > 0) || listed.has(key)) continue;
+    put(n.code, { d: n.ex, cash: n.cash, ck: n.ck, pay: cal.pay?.[key] ?? n.pay });
+  }
+  return out;
+}
