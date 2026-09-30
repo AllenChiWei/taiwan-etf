@@ -18,8 +18,14 @@ import { useUsDataset } from '../hooks/useUsDataset';
 import { fetchUsPrices, fetchUsdTwd } from '../api/finmind';
 import { seriesFromUs, type UsPriceRow } from '../lib/usDividend';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
+import {
+  accountList, withAccounts, nextAccountName, mergeByCode, renameAccount, removeAccount,
+  addHolding,
+} from '../lib/accounts';
 
 const STORAGE_KEY = 'twetf.holdings';
+/** 帳戶名稱與順序。持股的 acct 欄位記配息進哪個帳戶（lib/accounts.ts）。 */
+const ACCOUNTS_KEY = 'twetf.accounts';
 
 /* 月曆柱狀圖每檔一個顏色。刻意避開紅綠 —— 這裡是多檔並列比較，
    紅綠在台股語境代表漲跌，用在這會被誤讀。 */
@@ -66,8 +72,18 @@ const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
 const nf4 = (v: number) => v.toFixed(3).replace(/\.?0+$/, '') || '0';
 const money = (v: number) => nf0.format(Math.round(v));
 
-/** m='us' 是美股 ETF：代號可能跟台股撞名以外，也決定要不要走匯率換算 */
-interface Entry { code: string; shares: number; m?: 'us' }
+/** m='us' 是美股 ETF：代號可能跟台股撞名以外，也決定要不要走匯率換算。
+    acct 是配息進哪個帳戶；舊資料沒有，載入時歸到第一個帳戶。 */
+interface Entry { code: string; shares: number; m?: 'us'; acct?: string }
+
+function loadAccounts(): string[] {
+  try {
+    const v: unknown = JSON.parse(localStorage.getItem(ACCOUNTS_KEY) ?? '[]');
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+  } catch {
+    return [];
+  }
+}
 
 function loadHoldings(): Entry[] {
   try {
@@ -89,7 +105,12 @@ function saveHoldings(v: Entry[]): void {
 }
 
 export function DividendPlanner({ index }: { index: CalcIndex }) {
-  const [entries, setEntries] = useState<Entry[]>(loadHoldings);
+  const [accounts, setAccounts] = useState<string[]>(() => accountList(loadAccounts(), loadHoldings()));
+  const [entries, setEntries] = useState<Entry[]>(() => withAccounts(loadHoldings(), accounts[0]));
+  const [acct, setAcct] = useState(accounts[0]);
+  /** 正在改名的帳戶（含草稿）；等待確認刪除的帳戶 */
+  const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const [pick, setPick] = useState('');
   const [shares, setShares] = useState(1000);
   const [series, setSeries] = useState<Map<string, CalcSeries>>(new Map());
@@ -152,6 +173,11 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   }, [usKey, usRows, fx]);
 
   useEffect(() => { saveHoldings(entries); }, [entries]);
+  useEffect(() => {
+    try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)); } catch { /* 忽略 */ }
+  }, [accounts]);
+  // 選著的帳戶被刪掉時退回第一個
+  useEffect(() => { if (!accounts.includes(acct)) setAcct(accounts[0]); }, [accounts, acct]);
 
   // 只抓還沒抓過的，換張數不會重抓
   useEffect(() => {
@@ -176,15 +202,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return () => { cancelled = true; };
   }, [entries, series, index.codes]);
 
-  const rows: HoldingProjection[] = useMemo(() => {
-    const out: HoldingProjection[] = [];
-    for (const e of entries) {
+  /** 一筆持股 -> 配息推估；資料還沒到或查不到時回 null。總帳戶與各帳戶共用。 */
+  const project = useCallback((e: { code: string; shares: number; m?: 'us' }): HoldingProjection | null => {
       if (e.m === 'us') {
         const r = usRows.get(e.code);
-        if (!Array.isArray(r) || !fx || fx instanceof Error) continue;
-        out.push(projectHolding(seriesFromUs(e.code, usNames.get(e.code) ?? e.code, r, fx.rate, index.months),
-                                index.months, e.shares));
-        continue;
+        if (!Array.isArray(r) || !fx || fx instanceof Error) return null;
+        return projectHolding(seriesFromUs(e.code, usNames.get(e.code) ?? e.code, r, fx.rate, index.months),
+                              index.months, e.shares);
       }
       const stock = stockDivs?.stocks[e.code];
       const fresh = newEtfs.get(e.code);
@@ -197,17 +221,30 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           }, index.months),
           freq: fresh.freq,                     // 公告頻率優先，跟其他 ETF 一致
         } : undefined);
-      if (!s) continue;
-      out.push(projectHolding(s, index.months, e.shares));
-    }
+      if (!s) return null;
+      return projectHolding(s, index.months, e.shares);
+  }, [series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames]);
+
+  const rows: HoldingProjection[] = useMemo(() => {
+    // 總帳戶一檔一列。站主的用法是一檔只在一個帳戶，但萬一同一檔分在兩個帳戶，
+    // 合併股數比出現兩列同代號（撞顏色、撞 key）好
+    const out = mergeByCode(entries).map(project).filter((r): r is HoldingProjection => r !== null);
     // 依一年可領金額由大到小。圖例、月曆的分段、佔比圖與各檔明細都吃這個順序，
     // 四處才會一致 —— 加入的先後對「誰貢獻最多」沒有意義。
     // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
     out.sort((a, b) => b.annual - a.annual);
     return out;
-  }, [entries, series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames]);
+  }, [entries, project]);
 
   const portfolio = useMemo(() => buildPortfolio(rows), [rows]);
+  /** 各帳戶自己的推估。配息對股數是線性的，各帳戶相加就等於上面的總帳戶。 */
+  const byAccount = useMemo(() => accounts.map(name => {
+    const own = entries.filter(e => e.acct === name);
+    const list = own.map(project).filter((r): r is HoldingProjection => r !== null)
+      .sort((a, b) => b.annual - a.annual);
+    return { name, rows: list, count: own.length, portfolio: buildPortfolio(list) };
+  }), [accounts, entries, project]);
+  const acctOf = (code: string) => entries.find(e => e.code === code)?.acct ?? accounts[0];
   const usSet = useMemo(() => new Set(usKey ? usKey.split(',') : []), [usKey]);
   /** 加了卻算不出來的美股：抓不到日價或匯率。不說的話它們會安靜地從畫面消失 */
   const usProblems = usCodes.flatMap(c => {
@@ -250,10 +287,31 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
 
   const add = useCallback(() => {
     if (!pick || !(shares > 0)) return;
-    setEntries(prev => [...prev, pick.startsWith('us:')
-      ? { code: pick.slice(3), shares, m: 'us' as const } : { code: pick, shares }]);
+    setEntries(prev => addHolding(prev, pick.startsWith('us:')
+      ? { code: pick.slice(3), shares, m: 'us' as const, acct } : { code: pick, shares, acct }));
     setPick('');
-  }, [pick, shares]);
+  }, [pick, shares, acct]);
+
+  const newAccount = () => {
+    const name = nextAccountName(accounts);
+    setAccounts(prev => [...prev, name]);
+    setAcct(name);
+  };
+  const commitRename = () => {
+    if (!renaming) return;
+    const r = renameAccount(accounts, entries, renaming.from, renaming.to);
+    if (r) {
+      setAccounts(r.accounts);
+      setEntries(r.entries);
+      if (acct === renaming.from) setAcct(renaming.to.trim());
+    }
+    setRenaming(null);
+  };
+  const deleteAccount = (name: string) => {
+    const r = removeAccount(accounts, entries, name);
+    if (r) { setAccounts(r.accounts); setEntries(r.entries); }
+    setDeleting(null);
+  };
 
   // 不要把 w-full 寫進共用的 class：下面數字框需要 w-24，兩個寬度 utility
   // 權重相同，誰贏取決於 CSS 產生的先後，會變成不可靠的版面。寬度各自指定。
@@ -301,8 +359,20 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             </button>
           </div>
         </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+          <label htmlFor="div-acct" className="text-muted">配息進</label>
+          <select id="div-acct" value={acct} onChange={e => setAcct(e.target.value)}
+                  className="h-9 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink">
+            {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <button type="button" onClick={newAccount}
+                  className="h-9 rounded-lg px-2 font-semibold text-accent hover:underline">
+            ＋ 新增帳戶
+          </button>
+        </div>
         <p className="mt-1 text-[11px] text-faint">
-          以股為單位。一張 = 1000 股，零股直接填實際股數。
+          以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
+          下面會另外算出每個帳戶各領多少。
         </p>
       </section>
 
@@ -401,6 +471,22 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
 
           <DividendPie rows={rows} total={portfolio.annual} colorOf={colorOf} />
 
+          {accounts.length > 1 && (
+            <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+                <h2 className="text-sm font-bold text-ink">各帳戶配息</h2>
+                <span className="text-[11.5px] text-faint">上面是全部帳戶的合計</span>
+              </div>
+              <div className="mt-2 grid gap-3 lg:grid-cols-2">
+                {byAccount.map(a => (
+                  <AccountCard key={a.name} a={a} total={portfolio.annual} colorOf={colorOf}
+                               renaming={renaming} setRenaming={setRenaming} commitRename={commitRename}
+                               deleting={deleting} setDeleting={setDeleting} onDelete={deleteAccount} />
+                ))}
+              </div>
+            </section>
+          )}
+
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <h2 className="text-sm font-bold text-ink">各檔明細</h2>
             <ul className="mt-2 divide-y divide-line">
@@ -411,9 +497,20 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                             style={{ background: colorOf(r.code) }} />
                       <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
-                      <span className="ml-1.5 text-[13px] text-muted">{r.name}</span>
+                      <span className="ml-1.5 truncate text-[13px] text-muted">{r.name}</span>
                     </div>
                     <span className="flex shrink-0 items-center gap-2.5">
+                      {accounts.length > 1 && (
+                        <select value={acctOf(r.code)} aria-label={`${r.code} 的配息帳戶`}
+                                onChange={e => {
+                                  const to = e.target.value;
+                                  setEntries(prev => prev.map(x => (x.code === r.code ? { ...x, acct: to } : x)));
+                                }}
+                                className="h-7 max-w-[7.5em] rounded border border-line bg-bg px-1
+                                           text-[11.5px] text-ink">
+                          {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+                        </select>
+                      )}
                       <button
                         type="button"
                         onClick={() => {
@@ -547,6 +644,108 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
         </>
       )}
     </>
+  );
+}
+
+interface AccountView {
+  name: string;
+  rows: HoldingProjection[];
+  count: number;
+  portfolio: ReturnType<typeof buildPortfolio>;
+}
+
+/** 一個帳戶的配息：年配息（與佔全部的比例）、每月、市值、殖利率，十二個月各領多少，持股清單。 */
+function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, deleting, setDeleting, onDelete }: {
+  a: AccountView; total: number; colorOf: (code: string) => string;
+  renaming: { from: string; to: string } | null;
+  setRenaming: (v: { from: string; to: string } | null) => void;
+  commitRename: () => void;
+  deleting: string | null;
+  setDeleting: (v: string | null) => void;
+  onDelete: (name: string) => void;
+}) {
+  const isRenaming = renaming?.from === a.name;
+  return (
+    <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        {isRenaming ? (
+          <span className="flex items-center gap-1.5">
+            <input value={renaming.to} autoFocus aria-label="帳戶名稱"
+                   onChange={e => setRenaming({ from: a.name, to: e.target.value })}
+                   onKeyDown={e => {
+                     if (e.key === 'Enter') commitRename();
+                     if (e.key === 'Escape') setRenaming(null);
+                   }}
+                   className="h-8 w-32 rounded border border-line bg-surface px-2 text-[13px] text-ink" />
+            <button type="button" onClick={commitRename}
+                    className="text-[12px] font-semibold text-accent">儲存</button>
+            <button type="button" onClick={() => setRenaming(null)}
+                    className="text-[12px] font-semibold text-muted">取消</button>
+          </span>
+        ) : (
+          <h3 className="text-[14px] font-bold text-ink">{a.name}</h3>
+        )}
+        <span className="flex items-center gap-2.5 text-[11.5px] font-semibold">
+          {!isRenaming && (
+            <button type="button" className="text-accent"
+                    onClick={() => setRenaming({ from: a.name, to: a.name })}>改名</button>
+          )}
+          {/* 刪除會連持股一起刪，所以要按第二次確認（這裡不能用 confirm()） */}
+          {deleting === a.name ? (
+            <>
+              <button type="button" className="text-up" onClick={() => onDelete(a.name)}>
+                確定刪除{a.count > 0 ? `（含 ${a.count} 檔持股）` : ''}
+              </button>
+              <button type="button" className="text-muted" onClick={() => setDeleting(null)}>取消</button>
+            </>
+          ) : (
+            <button type="button" className="text-muted hover:text-up"
+                    onClick={() => setDeleting(a.name)}>刪除</button>
+          )}
+        </span>
+      </div>
+      {a.count === 0 ? (
+        <p className="mt-1.5 text-[12px] text-muted">
+          還沒有持股。在上方「配息進」選這個帳戶再加入，或在各檔明細把持股改到這個帳戶。
+        </p>
+      ) : (
+        <>
+          <dl className="mt-1.5 grid grid-cols-2 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-4">
+            <Cell label="年配息" value={`${money(a.portfolio.annual)} 元`} tone
+                  hint={total > 0 ? `佔全部 ${nf2.format((a.portfolio.annual / total) * 100)}%` : undefined} />
+            <Cell label="平均每月" value={`${money(a.portfolio.monthlyAverage)} 元`} />
+            <Cell label="市值" value={`${money(a.portfolio.value)} 元`} />
+            <Cell label="殖利率" value={`${nf2.format(a.portfolio.yieldPct)}%`} tone />
+          </dl>
+          {/* 十二個月各領多少：兩列各六個月，手機上也放得下 */}
+          <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
+            {MONTH_LABELS.map((label, m) => (
+              <div key={label} className="rounded bg-sunken px-0.5 py-1">
+                <dt className="text-[10.5px] text-faint">{label}</dt>
+                <dd className="font-mono text-[11px] font-semibold tabular-nums text-ink">
+                  {a.portfolio.byMonth[m] > 0 ? money(a.portfolio.byMonth[m]) : '—'}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          <ul className="mt-2 space-y-0.5 text-[12px]">
+            {a.rows.map(r => (
+              <li key={r.code} className="flex items-baseline justify-between gap-2">
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="inline-block h-2 w-2 shrink-0 rounded-sm"
+                        style={{ background: colorOf(r.code) }} />
+                  <span className="font-mono font-semibold text-ink">{r.code}</span>
+                  <span className="truncate text-muted">{r.name}</span>
+                </span>
+                <span className="shrink-0 font-mono tabular-nums text-ink">
+                  {r.latest > 0 ? `${money(r.annual)} 元` : '待配息'}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 

@@ -794,6 +794,13 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 - 上市未滿三個月的 ETF 沒有 `calc/tw/*.json`（`fetch_calc.py` 要 60 個交易日），配息試算
   改用 `dividends.json`＋`yields.json` 的收盤價組同樣形狀的序列，頻率照 `etfs.json` 的公告。
 
+### 多帳戶
+
+持股多一個 `acct`（配息進哪個帳戶），帳戶名稱與順序存在 `twetf.accounts`；舊資料載入時歸到第一個
+帳戶（「帳戶A」）。站主的用法是**一檔只在一個帳戶**，所以選單照舊排除已持有的代號、明細直接改帳戶。
+總帳戶以 `mergeByCode` 一檔一列算，各帳戶各算各的（`lib/accounts.ts`，有測試）；配息對股數是線性的，
+各帳戶相加等於總額。
+
 ### 美股 ETF
 
 配息試算也收美股 ETF（清單是 `us_etfs.json`，持股存成 `{code, shares, m: 'us'}`）。
