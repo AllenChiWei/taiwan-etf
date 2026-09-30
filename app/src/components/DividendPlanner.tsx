@@ -708,7 +708,7 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
   onDelete: (name: string) => void;
 }) {
   const isRenaming = renaming?.from === a.name;
-  // 跟「年配息來源」同一套：預設收合只看重點數字，要看每個月與持股再展開（站主要求）
+  // 持股清單預設收合（跟「年配息來源」同一套），重點數字與每月配息一直顯示（站主要求）
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
@@ -762,16 +762,8 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
             <Cell label="市值" value={`${money(a.portfolio.value)} 元`} />
             <Cell label="殖利率" value={`${nf2.format(a.portfolio.yieldPct)}%`} tone />
           </dl>
-          <button
-            type="button"
-            onClick={() => setExpanded(v => !v)}
-            aria-expanded={expanded}
-            className="mt-2 text-[12px] font-semibold text-accent"
-          >
-            {expanded ? '收合' : `展開每月配息與 ${a.count} 檔持股`}
-          </button>
-          {expanded && (<>
-          {/* 十二個月各領多少：兩列各六個月，手機上也放得下 */}
+          {/* 十二個月各領多少：一直顯示（站主要求），只有下面的持股清單收合。
+              兩列各六個月，手機上也放得下 */}
           <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
             {MONTH_LABELS.map((label, m) => (
               <div key={label} className="rounded bg-sunken px-0.5 py-1">
@@ -782,7 +774,16 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
               </div>
             ))}
           </dl>
-          <ul className="mt-2 space-y-0.5 text-[12px]">
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            aria-expanded={expanded}
+            className="mt-2 text-[12px] font-semibold text-accent"
+          >
+            {expanded ? '收合持股' : `展開 ${a.count} 檔持股`}
+          </button>
+          {expanded && (
+          <ul className="mt-1 space-y-0.5 text-[12px]">
             {a.rows.map(r => (
               <li key={r.code} className="flex items-baseline justify-between gap-2">
                 <span className="flex min-w-0 items-center gap-1.5">
@@ -797,7 +798,7 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
               </li>
             ))}
           </ul>
-          </>)}
+          )}
         </>
       )}
     </div>
