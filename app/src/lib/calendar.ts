@@ -17,6 +17,25 @@ export interface ExDivRow {
   /** '息' | '權' | '權息' */
   k: string;
   cash: number | null; stock: number | null; m: 'twse' | 'tpex';
+  /** 金額的來源：沒有＝交易所；'est'／'final'＝交易所還沒填，改用投信公告的預估／實際金額 */
+  ck?: 'est' | 'final';
+  /** 投信公告的網址（ck 有值時） */
+  nu?: string;
+  /** 收益分配發放日（ETF，e添富或投信公告） */
+  pay?: string | null;
+}
+
+/** 投信的收益分配公告，整理成一檔一個除息日一筆（實際優先於預估）。 */
+export interface NoticeRow {
+  code: string;
+  ex: string;
+  pay: string | null;
+  cash: number;
+  /** 'final' 實際、'est' 預估、'none' 不分配 */
+  ck: 'final' | 'est' | 'none';
+  /** 公告日 */
+  nd: string;
+  u: string;
 }
 
 export interface MeetingRow {
@@ -30,6 +49,9 @@ export interface CalendarData {
   meta: { updated: string; until: string; source: string; errors: string[] };
   exdiv: ExDivRow[];
   meetings: MeetingRow[];
+  /** '代號|除息日' -> 發放日（e添富，含已除息還沒發錢的） */
+  pay?: Record<string, string>;
+  notices?: NoticeRow[];
 }
 
 export interface CalEvent {
@@ -105,9 +127,13 @@ const fmtNum = (v: number) => (Math.round(v * 10000) / 10000).toString();
 
 export function exdivEvent(r: ExDivRow): CalEvent {
   const parts: string[] = [];
-  if (r.cash) parts.push(`現金 ${fmtNum(r.cash)} 元`);
+  if (r.cash) {
+    parts.push(r.ck === 'est' ? `預估 ${fmtNum(r.cash)} 元（投信公告）`
+      : r.ck === 'final' ? `現金 ${fmtNum(r.cash)} 元（投信公告）` : `現金 ${fmtNum(r.cash)} 元`);
+  }
   if (r.stock) parts.push(`配股率 ${fmtNum(r.stock)}`);
   if (!parts.length) parts.push(r.k.includes('息') ? '金額待公告' : '');
+  if (r.pay) parts.push(`${Number(r.pay.slice(5, 7))}/${Number(r.pay.slice(8, 10))} 發放`);
   return {
     d: r.d, kind: 'exdiv', code: r.code,
     title: `${r.name} 除${r.k}`,
@@ -200,6 +226,10 @@ export interface EtfExDivRow {
   freq: string | null;
   /** 保管銀行（etfs.json 的 cust），沒有就是 null */
   cust: string | null;
+  /** 金額來自投信公告而不是交易所：'est' 預估、'final' 實際 */
+  ck?: 'est' | 'final';
+  /** 收益分配發放日；不知道是 null */
+  pay: string | null;
 }
 
 export interface EtfInfo { name: string; freq: string | null; cust?: string | null }
@@ -226,7 +256,7 @@ export function etfExDivMonth(
       const info = etfs.get(code);
       rows.set(`${code}|${d}`, {
         d, code, name: info?.name ?? code, cash, exact: exact === 1, freq: info?.freq ?? null,
-        cust: info?.cust ?? null,
+        cust: info?.cust ?? null, pay: null,
       });
     }
   }
@@ -235,14 +265,33 @@ export function etfExDivMonth(
     const key = `${r.code}|${r.d}`;
     const had = rows.get(key);
     if (had) {
-      if (had.cash === null && r.cash) had.cash = r.cash;
+      if (had.cash === null && r.cash) { had.cash = r.cash; had.ck = r.ck; }
       continue;
     }
     const info = etfs.get(r.code);
     rows.set(key, {
       d: r.d, code: r.code, name: info?.name ?? r.name, cash: r.cash ?? null,
-      exact: true, freq: info?.freq ?? null, cust: info?.cust ?? null,
+      exact: true, freq: info?.freq ?? null, cust: info?.cust ?? null, ck: r.ck, pay: null,
     });
+  }
+  // 投信公告：交易所兩份資料都還沒有金額時補上；預告表還沒列出的除息也補一列
+  for (const n of calendar?.notices ?? []) {
+    if (!n.ex.startsWith(month) || !isEtf(n.code) || n.ck === 'none') continue;
+    const key = `${n.code}|${n.ex}`;
+    const had = rows.get(key);
+    if (had) {
+      if (had.cash === null) { had.cash = n.cash; had.ck = n.ck; }
+      continue;
+    }
+    const info = etfs.get(n.code);
+    rows.set(key, {
+      d: n.ex, code: n.code, name: info?.name ?? n.code, cash: n.cash, exact: true,
+      freq: info?.freq ?? null, cust: info?.cust ?? null, ck: n.ck, pay: null,
+    });
+  }
+  const notice = new Map((calendar?.notices ?? []).map(n => [`${n.code}|${n.ex}`, n]));
+  for (const [key, r] of rows) {
+    r.pay = calendar?.pay?.[key] ?? notice.get(key)?.pay ?? null;
   }
   return [...rows.values()].sort((a, b) => a.d.localeCompare(b.d) || a.code.localeCompare(b.code));
 }

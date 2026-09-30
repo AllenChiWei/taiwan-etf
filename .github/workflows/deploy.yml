@@ -294,11 +294,27 @@ jobs:
 
       # 美國總經（FRED＋EIA，二十幾個請求）與台股行事曆（交易所的除權息預告與股東會）。
       # 跟新聞一樣容許失敗：缺檔時那兩頁自己會說還沒有資料。
+      # ETF 收益分配公告解析過的存在這份快取，每次只抓新的公告（一則一個請求）。
+      - name: 取回 ETF 收益分配公告快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/etf_notices.json
+          key: etf-notices-${{ github.run_id }}
+          restore-keys: |
+            etf-notices-
+
       - name: 產生總經與行事曆資料
         continue-on-error: true
         run: |
           python scripts/fetch_macro.py || echo "::warning title=總經::這次沒有產生 macro.json"
           python scripts/fetch_calendar.py || echo "::warning title=行事曆::這次沒有產生 calendar.json"
+
+      - name: 存下 ETF 收益分配公告快取
+        if: ${{ always() && hashFiles('.cache/etf_notices.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/etf_notices.json
+          key: etf-notices-${{ github.run_id }}
 
       # 即將上市的 ETF（證交所 e添富的新上市簡介）。一個列表加十幾頁簡介；
       # 缺檔時台股頁的「即將上市」分頁會說還沒有資料，不影響其他東西。

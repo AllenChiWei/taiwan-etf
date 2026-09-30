@@ -527,6 +527,13 @@ JSON 存原始數列，年增率、月增、利差在前端算；CPI 年增率�
 遇假日順延）由 `lib/calendar.ts` 依規則算，畫面標「規則」。**法說會刻意沒有**：官方一覽表只在
 mopsov，那裡的 robots 是 `Disallow: /`，新版觀測站也是轉呼叫它（2026-09-27 查過）。
 
+**ETF 的金額比交易所早**：預告表對 ETF 常寫「待公告實際收益分配金額」。投信的收益分配公告轉載在
+e添富 `ETFortune/announcementList?type=distribution`（一頁最多 10 則、不能用代號篩選，只能從最新往回翻），
+內文固定有「每受益權單位配發金額」（實際）或「預估配發金額」（評價結果公告）、除息交易日、發放日。
+解析結果存 `.cache/etf_notices.json`（deploy 用 actions/cache 保留），只抓新的。畫面上預估的標「預估」。
+發放日從 e添富 `dividendList` 一次取得。集保 fundclear 的配息 API 只給 SITCA 上的 PDF 連結（DocuWorks
+圖檔），不用。
+
 ## 定期定額 vs 一次投入
 
 試算頁的回測本來就同時吃「單筆投入」與「每月定期定額」兩個欄位，但沒有把它們

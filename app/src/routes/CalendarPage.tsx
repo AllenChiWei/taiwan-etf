@@ -109,11 +109,25 @@ function ExDivRow({ r, today, y }: { r: EtfExDivRow; today: string; y: number | 
       </div>
       <div className="shrink-0 text-right">
         <div className="font-mono text-[14px] font-bold text-ink">
-          {r.cash === null ? <span className="text-[12px] font-semibold text-faint">金額待公告</span> : `${fmtCash(r.cash)} 元`}
+          {r.cash === null ? <span className="text-[12px] font-semibold text-faint">金額待公告</span> : (
+            <>
+              {/* 交易所還沒填、先用投信公告的：預估的要標出來，實際金額可能不同 */}
+              {r.ck === 'est' && (
+                <span className="mr-1 rounded bg-sunken px-1 py-0.5 align-middle font-sans text-[10.5px]
+                                 font-semibold text-muted">預估</span>
+              )}
+              {`${fmtCash(r.cash)} 元`}
+            </>
+          )}
         </div>
         <div className={`text-[11.5px] ${n < 0 ? 'text-faint' : n <= 1 ? 'font-semibold text-up' : 'text-muted'}`}>
           {status}
         </div>
+        {r.pay && (
+          <div className={`text-[11.5px] ${r.pay < today ? 'text-faint' : 'text-muted'}`}>
+            {dayLabel(r.pay)} {r.pay < today ? '已發放' : '發放'}
+          </div>
+        )}
       </div>
     </li>
   );
@@ -210,7 +224,9 @@ function EtfExDivTab({ calendar, today, query, mine }: {
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
         除息日與每股金額來源：臺灣證券交易所、證券櫃檯買賣中心公告（配息紀錄＋除權息預告），以公告為準，
-        投信可能更改日期或金額。「金額待公告」是交易所已預告日期、但還沒公布金額。
+        投信可能更改日期或金額。交易所還沒填金額時，改用投信在 e添富發布的收益分配公告：
+        標「預估」的是評價日估算的金額，實際金額通常在除息前幾天公布、可能略有不同。
+        「金額待公告」是連投信都還沒公布金額。發放日取自證交所 e添富與投信公告。
         年化殖利率＝最近一次除息金額 × 每年配息次數 ÷ 最近收盤價，和台股清單上的殖利率相同。
       </p>
     </>

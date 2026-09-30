@@ -123,3 +123,21 @@ test('月份加減跨年', () => {
   assert.equal(shiftMonth('2026-01', -1), '2025-12');
   assert.equal(shiftMonth('2026-09', -12), '2025-09');
 });
+
+test('ETF 除息：交易所還沒填金額時用投信公告（標預估），並帶上發放日', () => {
+  const cal: CalendarData = {
+    meta: { updated: '2026-09-30', until: '2027-01-28', source: '', errors: [] },
+    exdiv: [{ d: '2026-10-05', code: '00406A', name: '主動中信台灣收益', k: '息', cash: 0.138, stock: null,
+              m: 'twse', ck: 'est', pay: '2026-11-02' }],
+    meetings: [],
+    pay: { '00406A|2026-10-05': '2026-11-02', '00939|2026-10-05': '2026-10-29' },
+    notices: [
+      { code: '00939', ex: '2026-10-05', pay: '2026-10-29', cash: 0.125, ck: 'est', nd: '2026-09-30', u: 'x' },
+      { code: '00989A', ex: '2026-10-20', pay: null, cash: 0, ck: 'none', nd: '2026-09-30', u: 'y' },
+    ],
+  };
+  const rows = etfExDivMonth('2026-10', null, cal, new Map());
+  assert.deepEqual(rows.map(r => [r.code, r.cash, r.ck, r.pay]),
+    [['00406A', 0.138, 'est', '2026-11-02'], ['00939', 0.125, 'est', '2026-10-29']]);
+  assert.equal(exdivEvent(cal.exdiv[0]).detail, '預估 0.138 元（投信公告）・11/2 發放（上市）');
+});
