@@ -472,7 +472,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">配息月曆</h2>
-              <span className="text-[11.5px] text-faint">依一年可領金額排序</span>
+              <span className="text-[11.5px] text-faint">月份以除息日為準・依一年可領金額排序</span>
             </div>
 
             {/* 圖例。每檔的顏色在十二個月裡固定，才看得出誰佔比大 */}
@@ -483,6 +483,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                         style={{ background: colorOf(r.code) }} />
                   <span className="font-mono font-semibold text-ink">{r.code}</span>
                   <span className="text-muted">{r.latest > 0 ? money(r.annual) : '待配息'}</span>
+                  {r.fromUpcoming && r.upcoming?.ck === 'est' && (
+                    <span className="rounded bg-sunken px-1 text-[10.5px] text-muted">預估</span>
+                  )}
                 </li>
               ))}
             </ul>
@@ -504,13 +507,16 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                         {parts.map(({ r, amount }) => (
                           <span
                             key={r.code}
-                            title={`${label}　${r.code} ${r.name}　${money(amount)} 元`}
+                            title={`${label}　${r.code} ${r.name}　${money(amount)} 元${
+                              r.fromUpcoming && r.upcoming?.ck === 'est' ? '（依投信預估金額）' : ''}`}
                             className="flex items-center justify-center overflow-hidden
                                        text-[10px] font-semibold whitespace-nowrap text-white"
                             style={{ width: `${(amount / v) * 100}%`,
                                      background: colorOf(r.code) }}
                           >
-                            {amount / v > 0.22 ? r.code : ''}
+                            {/* 看分段實際多長（佔最高月份的比例），不是佔當月多少：月配小金額那一格
+                                雖然佔當月 100%，整條卻很短，硬塞代號只會剩「40」 */}
+                            {amount / maxMonth > 0.18 ? r.code : ''}
                           </span>
                         ))}
                       </span>

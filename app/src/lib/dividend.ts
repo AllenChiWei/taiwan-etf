@@ -238,10 +238,14 @@ export function withUpcoming(p: HoldingProjection, up: Upcoming | undefined): Pr
   if (p.latestMonth && month <= p.latestMonth) return { ...p, upcoming: up };
   const latest = up.cash;
   const m = Number(month.slice(5, 7)) - 1;
-  // 月份沿用原本推得的（月曆的格數要跟「一年幾次」一致；季配偶爾挪一個月不另外加格）。
-  // 沒有配息紀錄的（新上市、之前沒配過）就放在公告的那個月，當一年一次
-  const months = p.perYear > 0 && p.payoutMonths.length ? p.payoutMonths : [m];
+  // 月曆（依除息月份）一定要有公告的那個月 —— 站主看的就是「10 月那一格有沒有出現」。
+  // 原本推得的月份裡已經有它就沿用；沒有的話以它為基準、依一年幾次等距重排
+  // （半年配 10 月 -> 4 月、10 月），格數仍然等於一年幾次，年配息與月曆加總才對得起來。
   const perYear = p.perYear > 0 ? p.perYear : 1;
+  const step = Math.max(1, Math.round(12 / perYear));
+  const months = p.payoutMonths.includes(m) && p.payoutMonths.length === perYear
+    ? p.payoutMonths
+    : Array.from({ length: perYear }, (_, i) => (m + i * step) % 12).sort((a, b) => a - b);
   const byMonth = new Array<number>(12).fill(0);
   for (const k of months) byMonth[k] = latest;
   const perShare = latest * perYear;

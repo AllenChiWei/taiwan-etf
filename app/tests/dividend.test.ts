@@ -338,6 +338,12 @@ test('已公告還沒除息的下一次：比已記錄的新就改用它推估�
   assert.equal(up.latestMonth, '2026-10');
   assert.equal(up.annual, 2.15 * 4 * 1000);
   assert.equal(up.byMonth.filter(v => v > 0).length, 4);              // 月曆格數跟一年次數一致
+  assert.ok(up.byMonth[9] > 0);                                         // 10 月（公告的除息月）一定有
+  // 半年配、原本推得 1 月與 7 月，公告 10 月除息 -> 以 10 月為基準重排成 4 月與 10 月
+  const half = withUpcoming({ ...base, perYear: 2, payoutMonths: [0, 6], freq: '半年配' },
+                            { d: '2026-10-19', cash: 2.15, ck: 'est' });
+  assert.deepEqual(half.payoutMonths, [3, 9]);
+  assert.equal(half.byMonth.reduce((a, b) => a + b, 0), half.perShare);  // 月曆加總 = 年配息
   assert.equal(up.exact, false);                                       // 預估不是精確值
   assert.equal(up.fromUpcoming, true);
   // 交易所已經記錄到同一個月：不改推估，只附上日期與發放日
