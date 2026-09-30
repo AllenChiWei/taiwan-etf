@@ -359,16 +359,59 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             </button>
           </div>
         </div>
-        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12.5px]">
+        {/* 帳戶的新增、改名、刪除都放在這裡，跟選帳戶同一列。
+            只放在下方「各帳戶配息」的話，空帳戶（那一區要有持股才出現）會找不到地方刪 */}
+        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
           <label htmlFor="div-acct" className="text-muted">配息進</label>
-          <select id="div-acct" value={acct} onChange={e => setAcct(e.target.value)}
-                  className="h-9 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink">
-            {accounts.map(a => <option key={a} value={a}>{a}</option>)}
-          </select>
+          {renaming?.from === acct ? (
+            <span className="flex items-center gap-1.5">
+              <input value={renaming.to} autoFocus aria-label="帳戶名稱"
+                     onChange={e => setRenaming({ from: acct, to: e.target.value })}
+                     onKeyDown={e => {
+                       if (e.key === 'Enter') commitRename();
+                       if (e.key === 'Escape') setRenaming(null);
+                     }}
+                     className="h-9 w-32 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink" />
+              <button type="button" onClick={commitRename}
+                      className="h-9 px-1 font-semibold text-accent">儲存</button>
+              <button type="button" onClick={() => setRenaming(null)}
+                      className="h-9 px-1 font-semibold text-muted">取消</button>
+            </span>
+          ) : (
+            <select id="div-acct" value={acct}
+                    onChange={e => { setAcct(e.target.value); setDeleting(null); }}
+                    className="h-9 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink">
+              {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+            </select>
+          )}
           <button type="button" onClick={newAccount}
-                  className="h-9 rounded-lg px-2 font-semibold text-accent hover:underline">
+                  className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
             ＋ 新增帳戶
           </button>
+          {renaming?.from !== acct && (
+            <button type="button" onClick={() => setRenaming({ from: acct, to: acct })}
+                    className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
+              改名
+            </button>
+          )}
+          {accounts.length > 1 && (deleting === acct ? (
+            <span className="flex items-center gap-1.5">
+              <button type="button" onClick={() => deleteAccount(acct)}
+                      className="h-9 rounded-lg px-1.5 font-semibold text-up">
+                確定刪除「{acct}」{(() => {
+                  const n = entries.filter(e => e.acct === acct).length;
+                  return n > 0 ? `（連同 ${n} 檔持股）` : '';
+                })()}
+              </button>
+              <button type="button" onClick={() => setDeleting(null)}
+                      className="h-9 rounded-lg px-1.5 font-semibold text-muted">取消</button>
+            </span>
+          ) : (
+            <button type="button" onClick={() => setDeleting(acct)}
+                    className="h-9 rounded-lg px-1.5 font-semibold text-muted hover:text-up">
+              刪除帳戶
+            </button>
+          ))}
         </div>
         <p className="mt-1 text-[11px] text-faint">
           以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
@@ -665,6 +708,8 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
   onDelete: (name: string) => void;
 }) {
   const isRenaming = renaming?.from === a.name;
+  // 跟「年配息來源」同一套：預設收合只看重點數字，要看每個月與持股再展開（站主要求）
+  const [expanded, setExpanded] = useState(false);
   return (
     <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -717,6 +762,15 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
             <Cell label="市值" value={`${money(a.portfolio.value)} 元`} />
             <Cell label="殖利率" value={`${nf2.format(a.portfolio.yieldPct)}%`} tone />
           </dl>
+          <button
+            type="button"
+            onClick={() => setExpanded(v => !v)}
+            aria-expanded={expanded}
+            className="mt-2 text-[12px] font-semibold text-accent"
+          >
+            {expanded ? '收合' : `展開每月配息與 ${a.count} 檔持股`}
+          </button>
+          {expanded && (<>
           {/* 十二個月各領多少：兩列各六個月，手機上也放得下 */}
           <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
             {MONTH_LABELS.map((label, m) => (
@@ -743,6 +797,7 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
               </li>
             ))}
           </ul>
+          </>)}
         </>
       )}
     </div>
