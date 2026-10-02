@@ -80,6 +80,8 @@ export interface Trade {
   net: number;
   note: string;
   isOption: boolean;
+  /** 選擇權的買權／賣權；期貨沒有 */
+  cp?: 'C' | 'P';
   strategy: Strategy;
   /** 只有台指選擇權有；由 classifyOptions 填 */
   optKind?: OptKind;
@@ -159,6 +161,12 @@ export function strategyOf(base: string): Strategy {
 }
 
 const isOptionBase = (base: string) => base.endsWith('選擇權');
+
+/** 月選的 C／P 在最後（台指32000202603P），週選在月份前面（台指W437300P04）。 */
+export function callPut(name: string): 'C' | 'P' | undefined {
+  const m = /([CP])\d{0,2}$/.exec(String(name ?? '').replace(/\s+/g, ''));
+  return m ? (m[1] as 'C' | 'P') : undefined;
+}
 
 const num = (v: unknown): number => {
   const s = String(v ?? '').trim().replace(/,/g, '');
@@ -287,6 +295,7 @@ export function parseSheet(rows: unknown[][]): Trade[] {
       gross, fee, tax, net,
       note: cell(r, L.note),
       isOption,
+      ...(isOption ? { cp: callPut(product) } : {}),
       strategy: strategyOf(base),
     });
   }
@@ -545,6 +554,54 @@ export function monthMatrix(trades: Trade[]): MonthRow[] {
     .map(([year, months]) => ({
       year, months, total: months.reduce<number>((s, v) => s + (v ?? 0), 0),
     }));
+}
+
+/* ── 選擇權專用指標 ──────────────────────────────────── */
+
+/** 台指選擇權每點 50 元。 */
+export const TXO_POINT = 50;
+
+export interface OptionMetrics {
+  /** 開倉的權利金總額（元）：賣方是收進來的，避險是付出去的 */
+  premium: number;
+  /** 開倉均價（點，依口數加權） */
+  avgPrice: number;
+  /** 賣方：合計損益 ÷ 收到的權利金 —— 權利金留下了幾成 */
+  keepRate: number | null;
+  /** 避險：(付出的權利金 ＋ 平倉損益) ÷ 付出的權利金 —— 花出去的錢收回幾成 */
+  recoverRate: number | null;
+  /** 放到結算（未履約／履約結算）的筆數，以及其中賺錢的 */
+  settled: number;
+  settledWin: number;
+  /** 最大單筆虧損 ÷ 平均獲利：一次大賠要幾筆小賺才補得回來 */
+  tailRatio: number | null;
+  /** 有交易的月數，以及平均每月損益 */
+  months: number;
+  perMonth: number;
+}
+
+export function optionMetrics(trades: Trade[]): OptionMetrics {
+  const lots = trades.reduce((a, t) => a + t.lots, 0);
+  const pts = trades.reduce((a, t) => a + t.openPrice * t.lots, 0);
+  const premium = pts * TXO_POINT;
+  const gross = trades.reduce((a, t) => a + t.gross, 0);
+  const net = trades.reduce((a, t) => a + t.net, 0);
+  const settledList = trades.filter(t => t.sellPrice === null);
+  const wins = trades.filter(t => t.net > 0);
+  const avgWin = wins.length ? wins.reduce((a, t) => a + t.net, 0) / wins.length : 0;
+  const worst = trades.length ? Math.min(...trades.map(t => t.net)) : 0;
+  const months = new Set(trades.map(t => t.month)).size;
+  return {
+    premium,
+    avgPrice: lots ? pts / lots : 0,
+    keepRate: premium > 0 ? net / premium : null,
+    recoverRate: premium > 0 ? (premium + gross) / premium : null,
+    settled: settledList.length,
+    settledWin: settledList.filter(t => t.net > 0).length,
+    tailRatio: worst < 0 && avgWin > 0 ? Math.abs(worst) / avgWin : null,
+    months,
+    perMonth: months ? net / months : 0,
+  };
 }
 
 /** 單筆損益的分佈直方圖。bins 是等寬的，回傳每一格的區間與筆數。 */

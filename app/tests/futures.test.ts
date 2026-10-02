@@ -10,7 +10,7 @@ import assert from 'node:assert/strict';
 import {
   baseProduct, excelDate, parseSheet, stats, equityCurve, groupBy, byMonth,
   histogram, StatementError, strategyOf, classifyOptions, mergeTrades,
-  byYear, monthMatrix, dailyCurves, drawdownSeries,
+  byYear, monthMatrix, dailyCurves, drawdownSeries, callPut, optionMetrics,
 } from '../src/lib/futures.ts';
 
 /** 真實檔案的標題列（欄 7、11、13～16 是空白的，這正是重點）。 */
@@ -402,5 +402,45 @@ test('年度、月份與曲線', async (t) => {
     assert.ok(Math.abs(s.recovery! - 3983 / 1601) < 1e-9);
     assert.equal(s.days, 2);
     assert.equal(s.dayWinRate, 0.5);
+  });
+});
+
+test('選擇權專用指標', async (t) => {
+  const tr = classifyOptions(parseSheet(SHORTS));
+
+  await t.test('買權／賣權：月選在最後、週選在月份前面', () => {
+    assert.equal(callPut('台指32000202603P'), 'P');
+    assert.equal(callPut('台指W437300C04'), 'C');
+    assert.equal(callPut('台指F147000P10'), 'P');
+    assert.equal(tr[0].cp, 'C');
+    assert.equal(tr[5].cp, undefined);      // 期貨沒有
+  });
+
+  await t.test('賣方：收進的權利金與留下的比例', () => {
+    // 賣 13.5 點 1 口 = 675 元，合計賺 614
+    const m = optionMetrics([tr[0]]);
+    assert.equal(m.premium, 675);
+    assert.ok(Math.abs(m.keepRate! - 614 / 675) < 1e-9);
+    assert.equal(m.settled, 0);
+  });
+
+  await t.test('到期結算的筆數與賺錢的筆數', () => {
+    const m = optionMetrics([tr[0], tr[2]]);
+    assert.equal(m.settled, 1);
+    assert.equal(m.settledWin, 1);
+    assert.equal(m.avgPrice, (13.5 + 9.1) / 2);
+  });
+
+  await t.test('避險：付出的權利金收回幾成', () => {
+    // 買 46.5 點 2 口 = 4650 元，平倉賺 5350 → 收回 (4650+5350)/4650
+    const m = optionMetrics([tr[1]]);
+    assert.equal(m.premium, 4650);
+    assert.ok(Math.abs(m.recoverRate! - 10000 / 4650) < 1e-9);
+  });
+
+  await t.test('一次大賠要幾次小賺：沒有虧損時是 null', () => {
+    assert.equal(optionMetrics([tr[0]]).tailRatio, null);
+    const m = optionMetrics([tr[0], tr[3]]);       // +614、−1293
+    assert.ok(Math.abs(m.tailRatio! - 1293 / 614) < 1e-9);
   });
 });

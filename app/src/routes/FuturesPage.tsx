@@ -14,7 +14,7 @@
 import { useMemo, useRef, useState } from 'react';
 import {
   parseSheet, stats, groupBy, byYear, monthMatrix, histogram, dailyCurves,
-  mergeTrades, classifyOptions, StatementError,
+  mergeTrades, classifyOptions, optionMetrics, StatementError,
   STRATEGIES, STRATEGY_LABEL, OPT_KIND_LABEL, DEFAULT_OPTION_RULE,
   type Trade, type Stats, type Group, type Strategy, type OptKind,
 } from '../lib/futures';
@@ -31,8 +31,9 @@ const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
 
 const money = (v: number) => `${v >= 0 ? '+' : '−'}${nf0.format(Math.abs(v))}`;
 const tone = (v: number) => TONE_CLASS[v > 0 ? 'up' : v < 0 ? 'down' : 'flat'];
-/** 月績效格子：一律用萬、一位小數，欄寬才對得齊。 */
-const wan = (v: number) => `${v >= 0 ? '+' : '−'}${nf1.format(Math.abs(v) / 10000)}萬`;
+/** 月績效格子：一律用萬，欄寬才對得齊；不到 1 萬的多給一位小數，免得變成「+0萬」。 */
+const wan = (v: number) =>
+  `${v >= 0 ? '+' : '−'}${(Math.abs(v) < 10000 ? nf2 : nf1).format(Math.abs(v) / 10000)}萬`;
 const ratio = (v: number | null) => (v === null ? '—' : nf2.format(v));
 const ratioTone = (v: number | null) => (v === null ? 'text-muted' : v >= 1 ? 'text-up' : 'text-down');
 
@@ -226,7 +227,7 @@ function strategyRows(trades: Trade[]): Row[] {
 
 const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
-function MonthGrid({ trades }: { trades: Trade[] }) {
+function MonthGrid({ trades, note = true }: { trades: Trade[]; note?: boolean }) {
   const rows = useMemo(() => monthMatrix(trades), [trades]);
   const peak = Math.max(1, ...rows.flatMap(r => r.months.map(v => Math.abs(v ?? 0))));
   const all = rows.flatMap(r => r.months).filter((v): v is number => v !== null);
@@ -270,10 +271,10 @@ function MonthGrid({ trades }: { trades: Trade[] }) {
           </tbody>
         </table>
       </div>
-      <p className="mt-1.5 text-[11px] text-faint">
+      {note && <p className="mt-1.5 text-[11px] text-faint">
         依結算日歸月。有交易的 {all.length} 個月裡 {up} 個月賺錢
         （{all.length ? nf0.format((up / all.length) * 100) : 0}%）；「·」是那個月沒有交易。
-      </p>
+      </p>}
     </>
   );
 }
@@ -431,6 +432,149 @@ function DetailTab({ trades, onToggle }: {
         </button>
       )}
     </>
+  );
+}
+
+/* ── 選擇權：賣方策略 vs 避險 ──────────────────────────── */
+
+const pct = (v: number | null) => (v === null ? '—' : `${nf0.format(v * 100)}%`);
+
+function KindCard({ kind, trades }: { kind: OptKind; trades: Trade[] }) {
+  const s = stats(trades);
+  const m = optionMetrics(trades);
+  const guess = trades.filter(t => t.optGuess).length;
+  const common: Array<[string, string, string?]> = [
+    ['勝率', `${nf1.format(s.winRate * 100)}%`, `${s.nWin} 勝 ${s.nLoss} 敗`],
+    ['賠率', ratio(s.payoff), `均賺 ${nf0.format(s.avgWin)}／均賠 ${nf0.format(Math.abs(s.avgLoss))}`],
+    ['獲利因子', ratio(s.profitFactor)],
+  ];
+  const lines: Array<[string, string, string?]> = kind === '賣方'
+    ? [
+        ...common,
+        ['平均賣價', `${nf1.format(m.avgPrice)} 點`, `${nf0.format(s.lots)} 口`],
+        ['收進權利金', nf0.format(m.premium)],
+        ['權利金留下', pct(m.keepRate), '合計損益 ÷ 收進的權利金'],
+        ['放到結算', `${m.settled} 筆`, m.settled ? `其中 ${m.settledWin} 筆賺錢` : undefined],
+        ['一次大賠＝幾次小賺', m.tailRatio === null ? '—' : `${nf1.format(m.tailRatio)} 次`,
+          `最大單筆 ${money(s.worst)}`],
+        ['最大回撤', money(s.maxDrawdown)],
+      ]
+    : [
+        ...common,
+        ['平均買價', `${nf1.format(m.avgPrice)} 點`, `${nf0.format(s.lots)} 口`],
+        ['付出權利金', nf0.format(m.premium)],
+        ['收回比例', pct(m.recoverRate), '(付出 ＋ 平倉損益) ÷ 付出'],
+        ['放到結算', `${m.settled} 筆`, m.settled ? `其中 ${m.settledWin} 筆有價值` : undefined],
+        ['最大單筆獲利', money(s.best), '保險真正理賠的那一次'],
+        ['平均每月成本', money(m.perMonth), `有交易的 ${m.months} 個月`],
+      ];
+  return (
+    <div className="rounded-lg border border-line bg-bg p-3">
+      <div className="flex items-baseline justify-between gap-2">
+        <h3 className="flex items-center gap-1.5 text-[13px] font-bold text-ink">
+          <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full"
+                style={{ background: COLOR[kind] }} />
+          {OPT_KIND_LABEL[kind]}
+        </h3>
+        <span className={`font-mono text-[16px] font-bold tabular-nums ${tone(s.net)}`}>{money(s.net)}</span>
+      </div>
+      <div className="mt-0.5 text-[11px] text-faint">
+        {s.n} 筆{guess > 0 && `（其中 ${guess} 筆是推定的）`}
+      </div>
+      {s.n === 0 ? (
+        <p className="mt-2 text-[12px] text-muted">這段期間沒有這一類的交易。</p>
+      ) : (
+        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px]">
+          {lines.map(([k, v, sub]) => (
+            <div key={k} className="contents">
+              <dt className="text-muted">{k}</dt>
+              <dd className="text-right">
+                <span className="font-mono font-semibold tabular-nums text-ink">{v}</span>
+                {sub && <span className="block text-[10.5px] text-faint">{sub}</span>}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      )}
+    </div>
+  );
+}
+
+function OptionCompare({ inPeriod, all, periodLabel }: {
+  inPeriod: Trade[]; all: Trade[]; periodLabel: string;
+}) {
+  const optsAll = useMemo(() => all.filter(t => t.strategy === '選擇權'), [all]);
+  const opts = useMemo(() => inPeriod.filter(t => t.strategy === '選擇權'), [inPeriod]);
+
+  const years = useMemo(() => byYear(optsAll).map(g => ({
+    year: g.key,
+    total: g.stats.net,
+    s: stats(g.trades.filter(t => t.optKind === '賣方')),
+    h: stats(g.trades.filter(t => t.optKind === '避險')),
+  })), [optsAll]);
+
+  // 賣方與避險各自再拆買權／賣權：賣 Call 跟賣 Put 的風險完全不同
+  const cpGroups = useMemo(() => groupBy(opts, t =>
+    `${OPT_KIND_LABEL[t.optKind ?? '避險']}・${t.cp === 'C' ? '買權 Call' : '賣權 Put'}`)
+    .sort((a, b) => (a.key < b.key ? -1 : 1)), [opts]);
+
+  if (!optsAll.length) return null;
+  return (
+    <Section title="選擇權：賣方策略 vs 避險" hint={periodLabel}>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <KindCard kind="賣方" trades={opts.filter(t => t.optKind === '賣方')} />
+        <KindCard kind="避險" trades={opts.filter(t => t.optKind === '避險')} />
+      </div>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+        兩種要用不同的尺看：賣方策略勝率高、賠率低是正常的，重點是「權利金留下幾成」與
+        「一次大賠要幾次小賺才補得回來」；避險本來就預期大多數會賠掉權利金，重點是
+        「每月花多少」與「真正出事那一次賺回多少」。
+      </p>
+
+      <h3 className="mt-3 text-[12.5px] font-bold text-ink">各年度（不受期間篩選影響）</h3>
+      <div className="mt-1 overflow-x-auto">
+        <table className="w-full min-w-[620px] text-[12px]">
+          <thead>
+            <tr className="text-right text-[11px] text-faint">
+              <th className="py-1 pr-2 text-left font-medium">年度</th>
+              <th className="py-1 pr-2 font-medium" style={{ color: COLOR.賣方 }}>賣方損益</th>
+              <th className="py-1 pr-2 font-medium">勝率</th>
+              <th className="py-1 pr-2 font-medium">獲利因子</th>
+              <th className="py-1 pr-2 font-medium" style={{ color: COLOR.避險 }}>避險損益</th>
+              <th className="py-1 pr-2 font-medium">勝率</th>
+              <th className="py-1 pr-2 font-medium">獲利因子</th>
+              <th className="py-1 font-medium">選擇權合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {years.map(y => (
+              <tr key={y.year} className="border-t border-line/60 text-right font-mono tabular-nums">
+                <td className="py-1.5 pr-2 text-left text-muted">{y.year}</td>
+                <td className={`py-1.5 pr-2 ${tone(y.s.net)}`}>{y.s.n ? money(y.s.net) : '—'}</td>
+                <td className="py-1.5 pr-2 text-muted">{y.s.n ? `${nf0.format(y.s.winRate * 100)}%` : '—'}</td>
+                <td className={`py-1.5 pr-2 ${ratioTone(y.s.profitFactor)}`}>{ratio(y.s.profitFactor)}</td>
+                <td className={`py-1.5 pr-2 ${tone(y.h.net)}`}>{y.h.n ? money(y.h.net) : '—'}</td>
+                <td className="py-1.5 pr-2 text-muted">{y.h.n ? `${nf0.format(y.h.winRate * 100)}%` : '—'}</td>
+                <td className={`py-1.5 pr-2 ${ratioTone(y.h.profitFactor)}`}>{ratio(y.h.profitFactor)}</td>
+                <td className={`py-1.5 font-semibold ${tone(y.total)}`}>{money(y.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <h3 className="mt-3 text-[12.5px] font-bold" style={{ color: COLOR.賣方 }}>賣方策略・月績效</h3>
+      <MonthGrid trades={optsAll.filter(t => t.optKind === '賣方')} note={false} />
+      <h3 className="mt-3 text-[12.5px] font-bold" style={{ color: COLOR.避險 }}>避險・月績效</h3>
+      <MonthGrid trades={optsAll.filter(t => t.optKind === '避險')} note={false} />
+
+      {opts.length > 0 && (
+        <>
+          <h3 className="mt-3 text-[12.5px] font-bold text-ink">買權 Call／賣權 Put</h3>
+          <GroupTable groups={cpGroups} label="分類" />
+        </>
+      )}
+    </Section>
   );
 }
 
@@ -721,6 +865,10 @@ export function FuturesPage() {
             <MonthGrid trades={pickedAllYears} />
           </Section>
 
+          {hasOptions && (
+            <OptionCompare inPeriod={inPeriod} all={all}
+                           periodLabel={period === 'all' ? '全部期間' : `${period} 年`} />
+          )}
           {hasOptions && <OptionPanel trades={all} prefs={prefs} setPrefs={setPrefs} />}
 
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
