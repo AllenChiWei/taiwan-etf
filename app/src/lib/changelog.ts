@@ -34,6 +34,16 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-10-03',
+    items: [
+      { kind: 'new', to: '/futures',
+        text: '對帳單可以看單月：點月績效的任一格（或在期間下方選月份），整頁都只算那個月；'
+          + '新增「虧損來源」：交易方式 × 當沖／留倉、每日損益長條、虧最多的日子與虧最多的 10 筆，點一下就跳到那天的明細。' },
+      { kind: 'improve', to: '/futures',
+        text: '交易明細可以排序（虧最多的在前）、只看虧損，每一筆標出是程式、主觀還是選擇權。' },
+    ],
+  },
+  {
     date: '2026-10-02',
     items: [
       { kind: 'new', to: '/futures',

@@ -61,6 +61,14 @@ function matches(t: Trade, p: Pick): boolean {
 
 type Tab = 'product' | 'hold' | 'dist' | 'detail';
 
+/** 期間：'all'、某一年 'YYYY'、或某個月 'YYYY-MM'。 */
+const inPeriodOf = (t: Trade, period: string) =>
+  period === 'all' || (period.length === 4 ? t.year === period : t.month === period);
+const periodLabel = (period: string) =>
+  period === 'all' ? '全部期間'
+    : period.length === 4 ? `${period} 年`
+      : `${period.slice(0, 4)} 年 ${Number(period.slice(5, 7))} 月`;
+
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'product', label: '各商品' },
   { id: 'hold', label: '當沖／留倉' },
@@ -227,7 +235,9 @@ function strategyRows(trades: Trade[]): Row[] {
 
 const MONTHS = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
-function MonthGrid({ trades, note = true }: { trades: Trade[]; note?: boolean }) {
+function MonthGrid({ trades, note = true, onPick, active }: {
+  trades: Trade[]; note?: boolean; onPick?: (ym: string) => void; active?: string;
+}) {
   const rows = useMemo(() => monthMatrix(trades), [trades]);
   const peak = Math.max(1, ...rows.flatMap(r => r.months.map(v => Math.abs(v ?? 0))));
   const all = rows.flatMap(r => r.months).filter((v): v is number => v !== null);
@@ -252,14 +262,18 @@ function MonthGrid({ trades, note = true }: { trades: Trade[]; note?: boolean })
                     {v === null ? (
                       <div className="py-1 text-right text-faint">·</div>
                     ) : (
-                      <div className={`rounded px-1 py-1 text-right font-mono tabular-nums ${tone(v)}`}
-                           style={{
-                             background: `color-mix(in srgb, var(${v >= 0 ? '--c-up' : '--c-down'}) ${
-                               Math.round(6 + (Math.abs(v) / peak) * 26)}%, transparent)`,
-                           }}
-                           title={`${r.year}-${String(i + 1).padStart(2, '0')}：${money(v)}`}>
+                      <button type="button" disabled={!onPick}
+                              onClick={() => onPick?.(`${r.year}-${String(i + 1).padStart(2, '0')}`)}
+                              className={`block w-full rounded px-1 py-1 text-right font-mono tabular-nums ${tone(v)} ${
+                                onPick ? 'cursor-pointer hover:ring-2 hover:ring-accent/60' : 'cursor-default'} ${
+                                active === `${r.year}-${String(i + 1).padStart(2, '0')}` ? 'ring-2 ring-accent' : ''}`}
+                              style={{
+                                background: `color-mix(in srgb, var(${v >= 0 ? '--c-up' : '--c-down'}) ${
+                                  Math.round(6 + (Math.abs(v) / peak) * 26)}%, transparent)`,
+                              }}
+                              title={`${r.year}-${String(i + 1).padStart(2, '0')}：${money(v)}${onPick ? '（點一下看這個月）' : ''}`}>
                         {wan(v)}
-                      </div>
+                      </button>
                     )}
                   </td>
                 ))}
@@ -272,7 +286,7 @@ function MonthGrid({ trades, note = true }: { trades: Trade[]; note?: boolean })
         </table>
       </div>
       {note && <p className="mt-1.5 text-[11px] text-faint">
-        依結算日歸月。有交易的 {all.length} 個月裡 {up} 個月賺錢
+        依結算日歸月。{onPick && <strong className="text-muted">點任一格可以只看那個月（含交易明細）。</strong>}有交易的 {all.length} 個月裡 {up} 個月賺錢
         （{all.length ? nf0.format((up / all.length) * 100) : 0}%）；「·」是那個月沒有交易。
       </p>}
     </>
@@ -358,23 +372,177 @@ function DistTab({ trades }: { trades: Trade[] }) {
   );
 }
 
+/* ── 虧損來源：賠錢的錢是從哪裡出去的 ─────────────────── */
+
+const DW = 640, DH = 120;
+
+/** 每日損益長條。只在單月時畫 —— 一整年兩百多根擠在一起看不出東西。 */
+function DailyBars({ trades, onDay }: { trades: Trade[]; onDay: (d: string) => void }) {
+  const days = useMemo(() => groupBy(trades, t => t.date).sort((a, b) => (a.key < b.key ? -1 : 1)), [trades]);
+  const vals = days.map(d => d.stats.net);
+  const hi = Math.max(0, ...vals);
+  const lo = Math.min(0, ...vals);
+  const span = hi - lo || 1;
+  const zero = 8 + (hi / span) * (DH - 26);
+  const bw = (DW - 8) / Math.max(1, days.length);
+  return (
+    <div className="mt-1 overflow-x-auto">
+      <svg viewBox={`0 0 ${DW} ${DH}`} className="h-auto w-full min-w-[480px]" role="img" aria-label="每日損益">
+        <line x1="0" x2={DW} y1={zero} y2={zero} stroke="var(--c-border-strong)" strokeWidth="1" />
+        {days.map((d, i) => {
+          const v = d.stats.net;
+          const h = (Math.abs(v) / span) * (DH - 26);
+          return (
+            <g key={d.key} className="cursor-pointer" onClick={() => onDay(d.key)}>
+              <title>{`${d.key}：${money(v)}（${d.stats.n} 筆）點一下看明細`}</title>
+              <rect x={4 + i * bw + bw * 0.15} width={bw * 0.7} y={v >= 0 ? zero - h : zero} height={Math.max(1, h)}
+                    fill={v >= 0 ? 'var(--c-up)' : 'var(--c-down)'} opacity="0.85" />
+              <text x={4 + i * bw + bw / 2} y={DH - 3} textAnchor="middle" fontSize="11" fill="var(--c-faint)">
+                {Number(d.key.slice(8, 10))}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+function LossBreakdown({ trades, label, monthView, onDay }: {
+  trades: Trade[]; label: string; monthView: boolean; onDay: (d: string) => void;
+}) {
+  // 交易方式 × 當沖／留倉：七月這種月份，問題常常只集中在其中一格
+  const cells = useMemo(() => groupBy(trades, t =>
+    `${STRATEGY_LABEL[t.strategy]}・${t.dayTrade ? '當沖' : '留倉'}`), [trades]);
+  const worstDays = useMemo(() => groupBy(trades, t => t.date)
+    .filter(g => g.stats.net < 0)
+    .sort((a, b) => a.stats.net - b.stats.net).slice(0, 8), [trades]);
+  const worstTrades = useMemo(() => [...trades].filter(t => t.net < 0)
+    .sort((a, b) => a.net - b.net).slice(0, 10), [trades]);
+  const loss = trades.filter(t => t.net < 0).reduce((a, t) => a + t.net, 0);
+  const top10 = worstTrades.reduce((a, t) => a + t.net, 0);
+  const cost = trades.reduce((a, t) => a + t.fee + t.tax, 0);
+
+  return (
+    <Section title="虧損來源" hint={label}>
+      <p className="mt-1 text-[12px] leading-relaxed text-muted">
+        這段期間虧損的單合計 <span className="font-mono text-down">{money(loss)}</span>，
+        其中最大的 10 筆佔 <span className="font-mono text-ink">
+          {loss < 0 ? `${nf0.format((top10 / loss) * 100)}%` : '—'}</span>；
+        手續費＋期交稅 <span className="font-mono text-down">{money(-cost)}</span>。
+      </p>
+
+      <h3 className="mt-3 text-[12.5px] font-bold text-ink">交易方式 × 當沖／留倉</h3>
+      <GroupTable groups={cells} label="分類" />
+
+      {monthView && (
+        <>
+          <h3 className="mt-3 text-[12.5px] font-bold text-ink">每日損益</h3>
+          <DailyBars trades={trades} onDay={onDay} />
+          <p className="mt-0.5 text-[11px] text-faint">橫軸是日期（結算日）；點一根長條看那天的明細。</p>
+        </>
+      )}
+
+      <div className="mt-3 grid gap-3 lg:grid-cols-2">
+        <div>
+          <h3 className="text-[12.5px] font-bold text-ink">虧最多的日子</h3>
+          <table className="mt-1 w-full text-[12px]">
+            <tbody>
+              {worstDays.map(g => (
+                <tr key={g.key} className="cursor-pointer border-t border-line/60 hover:bg-hover"
+                    onClick={() => onDay(g.key)} title="點一下看那天的明細">
+                  <td className="py-1.5 pr-2 font-mono tabular-nums text-muted">{g.key}</td>
+                  <td className="py-1.5 pr-2 text-[11px] text-faint">
+                    {[...new Set(g.trades.map(t => t.base))].slice(0, 3).join('、')} · {g.stats.n} 筆
+                  </td>
+                  <td className={`py-1.5 text-right font-mono font-semibold tabular-nums ${tone(g.stats.net)}`}>
+                    {money(g.stats.net)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div>
+          <h3 className="text-[12.5px] font-bold text-ink">虧最多的 10 筆</h3>
+          <table className="mt-1 w-full text-[12px]">
+            <tbody>
+              {worstTrades.map(t => (
+                <tr key={t.id} className="cursor-pointer border-t border-line/60 hover:bg-hover"
+                    onClick={() => onDay(t.date)} title="點一下看那天的明細">
+                  <td className="py-1.5 pr-2 font-mono tabular-nums text-muted">{t.date.slice(5)}</td>
+                  <td className="py-1.5 pr-2">
+                    <span className="text-ink">{t.base}</span>
+                    <span className="ml-1 text-[10.5px] text-faint">
+                      {t.lots} 口 · {t.dayTrade ? '當沖' : '留倉'} · 買 {nf2.format(t.buyPrice)}／賣 {t.sellPrice === null ? "結算" : nf2.format(t.sellPrice)}
+                    </span>
+                  </td>
+                  <td className="py-1.5 text-right font-mono font-semibold tabular-nums text-down">{money(t.net)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </Section>
+  );
+}
+
 /* ── 交易明細 ───────────────────────────────────────────── */
 
 const PAGE = 50;
 
-function DetailTab({ trades, onToggle }: {
+type Sort = 'new' | 'old' | 'loss' | 'win';
+
+function DetailTab({ trades, onToggle, day, setDay }: {
   trades: Trade[]; onToggle: (t: Trade) => void;
+  day: string | null; setDay: (d: string | null) => void;
 }) {
   const [shown, setShown] = useState(PAGE);
   const [onlyGuess, setOnlyGuess] = useState(false);
+  const [onlyLoss, setOnlyLoss] = useState(false);
+  const [sort, setSort] = useState<Sort>('new');
   const list = useMemo(() => {
-    const l = onlyGuess ? trades.filter(t => t.optGuess) : trades;
-    return [...l].reverse();               // 新的在上面
-  }, [trades, onlyGuess]);
+    let l = trades;
+    if (day) l = l.filter(t => t.date === day);
+    if (onlyGuess) l = l.filter(t => t.optGuess);
+    if (onlyLoss) l = l.filter(t => t.net < 0);
+    const out = [...l];
+    if (sort === 'new') out.reverse();
+    else if (sort === 'loss') out.sort((a, b) => a.net - b.net);
+    else if (sort === 'win') out.sort((a, b) => b.net - a.net);
+    return out;
+  }, [trades, onlyGuess, onlyLoss, sort, day]);
   const rows = list.slice(0, shown);
   const nGuess = trades.filter(t => t.optGuess).length;
+  const sum = list.reduce((a, t) => a + t.net, 0);
   return (
     <>
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5 text-[12px] text-muted">
+        <label className="flex items-center gap-1">
+          排序
+          <select value={sort} onChange={e => { setSort(e.target.value as Sort); setShown(PAGE); }}
+                  className="h-7 rounded border border-line bg-bg px-1 text-ink">
+            <option value="new">新到舊</option>
+            <option value="old">舊到新</option>
+            <option value="loss">虧最多的在前</option>
+            <option value="win">賺最多的在前</option>
+          </select>
+        </label>
+        <label className="flex items-center gap-1">
+          <input type="checkbox" checked={onlyLoss} onChange={e => { setOnlyLoss(e.target.checked); setShown(PAGE); }} />
+          只看虧損
+        </label>
+        {day && (
+          <button type="button" onClick={() => setDay(null)}
+                  className="rounded-lg bg-accent-soft px-2 py-0.5 font-semibold text-accent">
+            只看 {day} ✕
+          </button>
+        )}
+        <span className="ml-auto font-mono tabular-nums">
+          {list.length} 筆 · <span className={tone(sum)}>{money(sum)}</span>
+        </span>
+      </div>
       {nGuess > 0 && (
         <label className="mt-2 flex items-center gap-1.5 text-[12px] text-muted">
           <input type="checkbox" checked={onlyGuess} onChange={e => { setOnlyGuess(e.target.checked); setShown(PAGE); }} />
@@ -388,7 +556,7 @@ function DetailTab({ trades, onToggle }: {
               <th className="py-1 pr-2 font-medium">結算日</th>
               <th className="py-1 pr-2 font-medium">商品</th>
               <th className="py-1 pr-2 text-right font-medium">口</th>
-              <th className="py-1 pr-2 text-right font-medium">開／平</th>
+              <th className="py-1 pr-2 text-right font-medium">買價／賣價</th>
               <th className="py-1 text-right font-medium">損益</th>
             </tr>
           </thead>
@@ -397,10 +565,12 @@ function DetailTab({ trades, onToggle }: {
               <tr key={t.id} className="border-t border-line/60">
                 <td className="py-1 pr-2 font-mono tabular-nums text-muted">{t.date}</td>
                 <td className="py-1 pr-2">
+                  <span className="mr-1 rounded px-1 py-px text-[10px] font-semibold text-white"
+                        style={{ background: COLOR[t.strategy] }}>{STRATEGY_LABEL[t.strategy].slice(0, 2)}</span>
                   <span className="text-ink">{t.product}</span>
                   <span className={`ml-1 text-[10.5px] ${t.side === '多' ? 'text-up' : 'text-down'}`}
                         title={t.sideKnown ? '' : '同一天買賣、檔案沒有時間，方向是推定的'}>
-                    {t.side}{t.sideKnown ? '' : '?'}
+                    {t.dayTrade && !t.sideKnown ? '' : `${t.side}${t.sideKnown ? '' : '?'}`}
                   </span>
                   {t.dayTrade && <span className="ml-1 text-[10.5px] text-faint">當沖</span>}
                   {t.optKind && (
@@ -415,7 +585,9 @@ function DetailTab({ trades, onToggle }: {
                 </td>
                 <td className="py-1 pr-2 text-right font-mono tabular-nums text-muted">{t.lots}</td>
                 <td className="py-1 pr-2 text-right font-mono text-[11px] tabular-nums text-faint">
-                  {nf2.format(t.openPrice)}／{t.closePrice ? nf2.format(t.closePrice) : '結算'}
+                  {t.sellPrice === null
+                    ? `${t.side === '空' ? '賣' : '買'} ${nf2.format(t.openPrice)}／結算`
+                    : `${nf2.format(t.buyPrice)}／${nf2.format(t.sellPrice)}`}
                 </td>
                 <td className={`py-1 text-right font-mono font-semibold tabular-nums ${tone(t.net)}`}>
                   {money(t.net)}
@@ -500,8 +672,8 @@ function KindCard({ kind, trades }: { kind: OptKind; trades: Trade[] }) {
   );
 }
 
-function OptionCompare({ inPeriod, all, periodLabel }: {
-  inPeriod: Trade[]; all: Trade[]; periodLabel: string;
+function OptionCompare({ inPeriod, all, periodLabel, onPickMonth }: {
+  inPeriod: Trade[]; all: Trade[]; periodLabel: string; onPickMonth: (ym: string, kind?: OptKind) => void;
 }) {
   const optsAll = useMemo(() => all.filter(t => t.strategy === '選擇權'), [all]);
   const opts = useMemo(() => inPeriod.filter(t => t.strategy === '選擇權'), [inPeriod]);
@@ -564,9 +736,9 @@ function OptionCompare({ inPeriod, all, periodLabel }: {
       </div>
 
       <h3 className="mt-3 text-[12.5px] font-bold" style={{ color: COLOR.賣方 }}>賣方策略・月績效</h3>
-      <MonthGrid trades={optsAll.filter(t => t.optKind === '賣方')} note={false} />
+      <MonthGrid trades={optsAll.filter(t => t.optKind === '賣方')} note={false} onPick={ym => onPickMonth(ym, '賣方')} />
       <h3 className="mt-3 text-[12.5px] font-bold" style={{ color: COLOR.避險 }}>避險・月績效</h3>
-      <MonthGrid trades={optsAll.filter(t => t.optKind === '避險')} note={false} />
+      <MonthGrid trades={optsAll.filter(t => t.optKind === '避險')} note={false} onPick={ym => onPickMonth(ym, '避險')} />
 
       {opts.length > 0 && (
         <>
@@ -642,6 +814,9 @@ export function FuturesPage() {
   const [pickKey, setPickKey] = useState<Pick>('all');
   const [tab, setTab] = useState<Tab>('product');
   const [drawdown, setDrawdown] = useState(false);
+  const [day, setDay] = useState<string | null>(null);
+  const filterRef = useRef<HTMLElement>(null);
+  const tabsRef = useRef<HTMLElement>(null);
   const [prefs, setPrefsState] = useState<FuturesPrefs>(
     () => loadFuturesPrefs({ ...DEFAULT_OPTION_RULE, overrides: {} }));
   const input = useRef<HTMLInputElement>(null);
@@ -655,8 +830,29 @@ export function FuturesPage() {
     () => classifyOptions(mergeTrades(files.map(f => f.trades)), prefs),
     [files, prefs]);
   const years = useMemo(() => [...new Set(all.map(t => t.year))].sort(), [all]);
-  const inPeriod = useMemo(
-    () => (period === 'all' ? all : all.filter(t => t.year === period)), [all, period]);
+  const inPeriod = useMemo(() => all.filter(t => inPeriodOf(t, period)), [all, period]);
+  const monthsOfYear = useMemo(() => {
+    const y = period.slice(0, 4);
+    return period === 'all' ? [] : [...new Set(all.filter(t => t.year === y).map(t => t.month))].sort();
+  }, [all, period]);
+  const pLabel = periodLabel(period);
+
+  function goPeriod(p: string) {
+    setPeriod(p);
+    setDay(null);
+  }
+  /** 點月績效格子：切到那個月，捲回篩選列，下面整頁都只算那個月 */
+  function pickMonth(ym: string, kind?: Pick) {
+    goPeriod(ym);
+    if (kind) setPickKey(kind);
+    filterRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+  /** 點某一天：切到明細、只看那一天 */
+  function pickDay(d: string) {
+    setDay(d);
+    setTab('detail');
+    tabsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
   const picked = useMemo(() => inPeriod.filter(t => matches(t, pickKey)), [inPeriod, pickKey]);
   const pickedAllYears = useMemo(() => all.filter(t => matches(t, pickKey)), [all, pickKey]);
   const s = useMemo(() => stats(picked), [picked]);
@@ -713,7 +909,7 @@ export function FuturesPage() {
     }
     if (added.length) {
       setFiles(prev => [...prev.filter(p => !added.some(a => a.name === p.name)), ...added]);
-      setPeriod('all');
+      goPeriod('all');
     }
     setError(errors.join('\n'));
     setBusy(false);
@@ -798,14 +994,24 @@ export function FuturesPage() {
 
       {all.length > 0 && (
         <>
-          <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <section ref={filterRef} className="mt-3 scroll-mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11.5px] text-faint">期間</span>
-              <Chip active={period === 'all'} onClick={() => setPeriod('all')}>全部</Chip>
+              <Chip active={period === 'all'} onClick={() => goPeriod('all')}>全部</Chip>
               {years.map(y => (
-                <Chip key={y} active={period === y} onClick={() => setPeriod(y)}>{y}</Chip>
+                <Chip key={y} active={period.slice(0, 4) === y} onClick={() => goPeriod(y)}>{y}</Chip>
               ))}
             </div>
+            {monthsOfYear.length > 0 && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 pl-[2.6rem]">
+                <Chip small active={period.length === 4} onClick={() => goPeriod(period.slice(0, 4))}>全年</Chip>
+                {monthsOfYear.map(m => (
+                  <Chip key={m} small active={period === m} onClick={() => goPeriod(m)}>
+                    {Number(m.slice(5, 7))} 月
+                  </Chip>
+                ))}
+              </div>
+            )}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
               <span className="mr-1 text-[11.5px] text-faint">交易方式</span>
               {pickOptions.map(p => (
@@ -825,11 +1031,11 @@ export function FuturesPage() {
           </section>
 
           <Section title="三種交易方式比較"
-                   hint={period === 'all' ? `${all[0].date} ～ ${all[all.length - 1].date}` : `${period} 年`}>
+                   hint={period === 'all' ? `${all[0].date} ～ ${all[all.length - 1].date}` : pLabel}>
             <StatsTable rows={compareRows} first="交易方式" active={pickKey}
                         onPick={k => setPickKey(k as Pick)} />
             <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
-              點一列可以只看那一種。賠率＝平均獲利 ÷ 平均虧損；獲利因子＝總獲利 ÷ 總虧損；
+              點一列可以只看那一種（下面的績效、虧損來源與交易明細都會跟著換）。賠率＝平均獲利 ÷ 平均虧損；獲利因子＝總獲利 ÷ 總虧損；
               報酬回撤比＝總損益 ÷ 最大回撤。三個都是越大越好，獲利因子 1 是損益兩平。
               沒有虧損筆數時顯示「—」而不是 ∞ —— 那種數字不能拿來比較。
             </p>
@@ -850,28 +1056,32 @@ export function FuturesPage() {
             </p>
           </Section>
 
-          <Section title={`整體績效 · ${PICK_LABEL(pickKey)}`}
-                   hint={period === 'all' ? '全部期間' : `${period} 年`}>
+          <Section title={`整體績效 · ${PICK_LABEL(pickKey)}`} hint={pLabel}>
             {picked.length ? <Summary s={s} /> : (
               <p className="mt-2 text-[12px] text-muted">這段期間沒有這一類的交易。</p>
             )}
           </Section>
 
+          {picked.length > 0 && (
+            <LossBreakdown trades={picked} label={`${PICK_LABEL(pickKey)} · ${pLabel}`}
+                           monthView={period.length === 7} onDay={pickDay} />
+          )}
+
           <Section title={`年度績效 · ${PICK_LABEL(pickKey)}`} hint="不受上面的期間篩選影響">
-            <StatsTable rows={yearRows} first="年度" />
+            <StatsTable rows={yearRows} first="年度" active={period.slice(0, 4)} onPick={y => goPeriod(y)} />
+            <p className="mt-1.5 text-[11px] text-faint">點一列可以只看那一年。</p>
           </Section>
 
           <Section title={`月績效 · ${PICK_LABEL(pickKey)}`} hint="合計損益（已扣手續費與稅）">
-            <MonthGrid trades={pickedAllYears} />
+            <MonthGrid trades={pickedAllYears} onPick={pickMonth} active={period} />
           </Section>
 
           {hasOptions && (
-            <OptionCompare inPeriod={inPeriod} all={all}
-                           periodLabel={period === 'all' ? '全部期間' : `${period} 年`} />
+            <OptionCompare inPeriod={inPeriod} all={all} periodLabel={pLabel} onPickMonth={pickMonth} />
           )}
           {hasOptions && <OptionPanel trades={all} prefs={prefs} setPrefs={setPrefs} />}
 
-          <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <section ref={tabsRef} className="mt-3 scroll-mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-center gap-1.5">
               {TABS.map(t => (
                 <Chip key={t.id} active={tab === t.id} onClick={() => setTab(t.id)}>
@@ -879,7 +1089,7 @@ export function FuturesPage() {
                 </Chip>
               ))}
               <span className="ml-auto text-[11px] text-faint">
-                {PICK_LABEL(pickKey)} · {period === 'all' ? '全部期間' : `${period} 年`}
+                {PICK_LABEL(pickKey)} · {pLabel}
               </span>
             </div>
 
@@ -893,7 +1103,7 @@ export function FuturesPage() {
               </>
             )}
             {tab === 'dist' && <DistTab trades={picked} />}
-            {tab === 'detail' && <DetailTab trades={picked} onToggle={toggle} />}
+            {tab === 'detail' && <DetailTab trades={picked} onToggle={toggle} day={day} setDay={setDay} />}
           </section>
         </>
       )}
