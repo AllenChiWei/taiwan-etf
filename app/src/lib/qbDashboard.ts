@@ -140,7 +140,8 @@ export function mountQbDashboard(root, D, echarts, loadWeek) {
   const fmt2 = v => v == null || !isFinite(v) ? '—' : v.toFixed(2);
   const fmt1 = v => v == null || !isFinite(v) ? '—' : v.toFixed(1);
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
-  const defB = cfgByKey.LS10_500 ? 'LS10_500' : (cfgByKey.GATE15_250 ? 'GATE15_250' : D.configs[1].key);
+  // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
+  const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
   const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0 };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
