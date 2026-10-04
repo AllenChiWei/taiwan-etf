@@ -23,7 +23,7 @@ function v18Input(d: V18Data): SeriesInput {
 }
 
 /** 一次比較太多條線會糊成一團，也讓圖例擠不下。 */
-const MAX_COMPARE = 8;
+const MAX_COMPARE = 6;
 
 const PERIODS: Array<{ value: string; label: string }> = [
   { value: '6m', label: '近6月' },

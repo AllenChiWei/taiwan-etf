@@ -4,10 +4,10 @@
 import { useMemo, useState } from 'react';
 import type { AlignedResult } from '../lib/series';
 import { extent } from '../lib/series';
-import { CATEGORY_COLORS } from '../lib/palette';
+import { rankColor } from '../lib/palette';
 
 /* 線的顏色與配息圖共用一份色表（lib/palette.ts），刻意避開紅綠。 */
-export const lineColor = (i: number) => CATEGORY_COLORS[i % CATEGORY_COLORS.length];
+export const lineColor = (i: number) => rankColor(i);
 
 interface Props {
   result: AlignedResult;
