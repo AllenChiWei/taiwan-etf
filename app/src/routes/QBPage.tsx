@@ -73,7 +73,9 @@ export function QBPage() {
     Promise.all([import('echarts'), import('../lib/qbDashboard')]).then(([echarts, mod]) => {
       if (cancelled || !host.current) return;
       unmount = mod.mountQbDashboard(host.current, data, echarts,
-        (key: string) => vault.fetchJson<number[][]>(`w_${key}.enc`));
+        (key: string) => vault.fetchJson<number[][]>(`w_${key}.enc`),
+        // v18 ＋ QB 組合（另一檔；舊資料沒有這檔就不顯示該區塊）
+        () => vault.fetchJson<unknown>('blend.enc').catch(() => null));
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data]);

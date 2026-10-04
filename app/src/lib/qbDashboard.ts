@@ -59,6 +59,11 @@ const CSS = `
 .qbd .verdict { border-left:4px solid var(--a); } .qbd .verdict ul { margin:6px 0 0; padding-left:18px; }
 .qbd .legend-row { display:flex; gap:14px; flex-wrap:wrap; align-items:center; font-size:12.5px; color:var(--ink-2); margin:4px 0 6px; }
 .qbd .mt { margin-top:12px; }
+.qbd input[type=number] { font:inherit; font-size:13px; padding:4px 8px; border:1px solid var(--line-strong); border-radius:8px;
+  background:var(--surface); color:var(--ink); width:9.5em; min-height:34px; }
+.qbd .calc { display:grid; gap:4px 16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); margin-top:8px; font-size:13px; }
+.qbd .calc b { font-variant-numeric:tabular-nums; }
+.qbd .best td { background:#fff4ec; }
 `;
 
 const HTML = `
@@ -74,6 +79,23 @@ const HTML = `
   <div class="lbl">部位大小 <span class="seg" data-id="segScale"></span></div>
 </div>
 <div class="card verdict" data-id="verdict"></div>
+<div class="card mt" data-id="blendCard" hidden>
+  <h2>v18 ＋ QB 組合（資金層級）</h2>
+  <div class="note" data-id="blendNote"></div>
+  <div class="legend-row"><span>QB 用 <span class="seg" data-id="segBlend"></span></span></div>
+  <div class="tbl-wrap"><table data-id="tBlend"></table></div>
+  <div class="note mt">組合權益（對數刻度，起點 = 1）</div>
+  <div data-id="cBlend" class="chart"></div>
+  <h2 class="mt">資金配置計算器</h2>
+  <div class="note">依「兩邊年化波動的比例」算出 QB 專案的動能轉換率與大約口數（QB 為上面所選的設定）。</div>
+  <div class="legend-row">
+    <span>v18 資金 <input type="number" data-id="inV18" value="10000000" step="1000000"></span>
+    <span>QB 專案資金 <input type="number" data-id="inQB" value="10000000" step="1000000"></span>
+    <span>v18 佔波動 <select data-id="inW"><option value="0.8">80%</option><option value="0.7">70%</option>
+      <option value="0.6">60%</option><option value="0.5" selected>50%</option><option value="0.4">40%</option></select></span>
+  </div>
+  <div class="calc" data-id="calcOut"></div>
+</div>
 <div class="card mt">
   <h2>QB 序位 × Sortino 回溯期（所選期間）</h2>
   <div class="note">每格：Sharpe ／ 淨利÷回撤 ／ 虧損月比例。紅字＝比評價前好、綠字＝比評價前差（台股慣例）。點格子設為 B。
@@ -125,7 +147,7 @@ const HTML = `
 </div>
 `;
 
-export function mountQbDashboard(root, D, echarts, loadWeek) {
+export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend) {
   const style = document.createElement('style');
   style.textContent = CSS;
   root.classList.add('qbd');
@@ -451,6 +473,66 @@ export function mountQbDashboard(root, D, echarts, loadWeek) {
       const c = th.dataset.c; stSort = { col: c, dir: stSort.col === c ? -stSort.dir : -1 }; render(); });
     $('tStrat').querySelectorAll('tbody tr[data-j]').forEach(tr => tr.onclick = () => selectStrategy(+tr.dataset.j));
     renderStratTableHighlight();
+  }
+
+  // ── v18 ＋ QB 組合（資料另外一檔，載得到才顯示）──
+  let B = null, blendKey = 'LS15_250';
+  function renderBlend() {
+    if (!B) return;
+    if (!B.data[blendKey]) blendKey = Object.keys(B.data)[0];
+    const d = B.data[blendKey];
+    seg($('segBlend'), Object.keys(B.data).map(k => [k, B.qb_labels?.[k] || k]), () => blendKey, v => { blendKey = v; });
+    $('segBlend').querySelectorAll('button').forEach((b, i) => {
+      const k = Object.keys(B.data)[i];
+      b.onclick = () => { blendKey = k; renderBlend(); };
+    });
+    $('blendNote').textContent = `v18 與 ${B.qb_labels?.[blendKey] || blendKey} 的日報酬相關 ${d.corr.toFixed(2)}、月報酬相關 ${d.monthly_corr.toFixed(2)}。` +
+      `比例是「波動度」的比例（QB 已縮放成與 v18 同波動），每日再平衡。${B.note}（產生於 ${B.generated}）`;
+    // 比例的鍵是 Python 寫出的字串（"1.0"、"0.8"…），用原字串查、用數值排序
+    const ws = Object.keys(d.results).sort((a, b) => +b - +a);
+    const cell = r => `${r.cagr}% ／ ${r.mdd}% ／ <b>${r.calmar}</b>`;
+    $('tBlend').innerHTML = `<thead><tr><th>v18 比例</th><th>2012–2017 年化／MDD／Calmar</th><th>2018–2026 年化／MDD／Calmar</th>
+      <th>全期 年化／MDD／Calmar</th><th>Sharpe</th></tr></thead><tbody>${ws.map(w => {
+        const r = d.results[w], x = +w;
+        const lab = x === 1 ? '只做 v18' : x === 0 ? '只做 QB' : `v18 ${Math.round(x * 100)}%＋QB ${Math.round((1 - x) * 100)}%`;
+        return `<tr class="${x === 0.5 ? 'best' : ''}"><td>${lab}</td><td>${cell(r['前半'])}</td><td>${cell(r['後半'])}</td><td>${cell(r['全期'])}</td><td>${r['全期'].sharpe}</td></tr>`;
+      }).join('')}</tbody>`;
+    const cols = { 1: '#85847e', 0.8: C.a, 0.5: C.b, 0: '#4a3aa7' };
+    const names = { 1: '只做 v18', 0.8: 'v18 80%＋QB 20%', 0.5: 'v18 50%＋QB 50%', 0: '只做 QB' };
+    chart('cBlend').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, legend,
+      tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
+      xAxis: { type: 'category', data: d.weeks, ...axisCommon, splitLine: { show: false } },
+      yAxis: { type: 'log', ...axisCommon, axisLabel: { ...axisCommon.axisLabel, formatter: v => v + '×' } },
+      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
+      // 春節等整週休市的週沒有資料，線接起來
+      series: Object.keys(d.curves).map(w => ({ ...lineSeries(names[+w] || w, d.curves[w], cols[+w] || C.ink2), connectNulls: true })) }, true);
+    renderCalc();
+  }
+  function renderCalc() {
+    if (!B || !B.sizing) { $('calcOut').innerHTML = '<span class="note">（缺 QB 基準數字）</span>'; return; }
+    const sz = B.sizing;
+    const V = +$('inV18').value || 0, Q = +$('inQB').value || 0, w = +$('inW').value;
+    const target = V * B.v18_ann_vol * (1 - w) / w;               // QB 年化損益波動目標（元）
+    const K = target / sz.qb_k1_ann_vol;                          // QB 規模倍數（K = 資金 × 轉換率 ÷ 1 億）
+    const conv = Q > 0 ? K * 1e8 / Q : NaN;
+    const n = v => v.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
+    const p95 = Math.ceil(K * sz.qb_k1_pos_p95_last250);
+    $('calcOut').innerHTML = `
+      <div>v18 年化波動 <b>${(B.v18_ann_vol * 100).toFixed(1)}%</b> → v18 年化損益波動約 <b>${n(V * B.v18_ann_vol)}</b> 元</div>
+      <div>QB 年化損益波動目標 <b>${n(target)}</b> 元（v18 的 ${((1 - w) / w).toFixed(2)} 倍）</div>
+      <div>QB 規模倍數 K ＝ <b>${K.toFixed(4)}</b></div>
+      <div>QB 專案「動能轉換率」設 <b>${isFinite(conv) ? conv.toFixed(3) : '—'}</b>（%；專案資金 ${n(Q)} 元）</div>
+      <div>平均部位約 <b>${(K * sz.qb_k1_pos_mean).toFixed(1)}</b> 口${sz.contract}；近一年 95% 時間 ≤ <b>${p95}</b> 口</div>
+      <div>保證金估計（${p95} 口 × ${n(sz.margin_per_contract_est)}）約 <b>${n(p95 * sz.margin_per_contract_est)}</b> 元</div>
+      <div class="note" style="grid-column:1/-1">${sz.margin_note}。口數小於 5 時取整影響大，可考慮在 QB 商品設定「大轉小」改用小台（×4 口）。
+        回測的 QB 是樣本內，建議先用計算結果的一半上線。</div>`;
+  }
+  for (const id of ['inV18', 'inQB', 'inW']) $(id).addEventListener('input', renderCalc);
+  if (loadBlend) {
+    Promise.resolve(loadBlend()).then(b => {
+      if (!b || !b.data) return;
+      B = b; $('blendCard').hidden = false; renderBlend();
+    }).catch(() => {});
   }
 
   render();
