@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-10-04',
+    items: [
+      { kind: 'new', to: '/chips',
+        text: '籌碼頁新增「盤中價平和」：週選價平和每 15 分鐘（可切 60 分鐘）的走勢，含前一晚夜盤；'
+          + '並把最近 10／20／30 天疊起來，依剩餘天數看時間價值在夜盤、隔夜跳空、日盤各流失多少，'
+          + '用來判斷雙賣什麼時候比較有利。資料來自期交所逐筆成交，隔一個交易日更新。' },
+    ],
+  },
+  {
     date: '2026-10-03',
     items: [
       { kind: 'new', to: '/futures',

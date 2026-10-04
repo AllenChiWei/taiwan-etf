@@ -22,6 +22,7 @@ import { fearGreed, vixView, COMPONENT_LABEL, type Mood } from '../lib/sentiment
 import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
+import { AtmIntradaySection } from '../components/AtmIntradaySection';
 import { RetailSection } from '../components/RetailSection';
 import { StockSheet } from '../components/StockSheet';
 
@@ -926,6 +927,7 @@ export function ChipsPage() {
       <>
         <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>
         <AtmSection />
+        <AtmIntradaySection />
         <RetailSection />
       </>
     );
@@ -940,6 +942,7 @@ export function ChipsPage() {
           <EmptyState title="籌碼資料載入失敗" hint={message} />
         )}
         <AtmSection />
+        <AtmIntradaySection />
         <RetailSection />
       </>
     );
@@ -965,6 +968,7 @@ export function ChipsPage() {
       <SentimentSection data={data} />
       <OptionsSection data={data} />
       <AtmSection />
+      <AtmIntradaySection />
       <LargeSection data={data} />
       <SectorSection data={data} />
       <TopSection data={data} onPick={setSheet} />
