@@ -43,6 +43,8 @@ const DividendPage = lazyRoute(
 const FuturesPage = lazyRoute(() => import('./routes/FuturesPage'), m => m.FuturesPage);
 // v18 策略頁：獨立密碼、資料在本機加密後才上傳；不放進上方選單（見 routes/V18Page.tsx）
 const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
+// QB 策略層評價看板：與 v18 共用密碼與解鎖工作階段；不放進選單（見 routes/QBPage.tsx）
+const QBPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBPage);
 
 export interface ListSearch {
   q: string;
@@ -162,6 +164,12 @@ const v18Route = createRoute({
   component: V18Page,
 });
 
+const qbRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/QB',
+  component: QBPage,
+});
+
 const changelogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/changelog',
@@ -171,7 +179,7 @@ const changelogRoute = createRoute({
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route]);
+   v18Route, qbRoute]);
 
 export const router = createRouter({
   routeTree,
