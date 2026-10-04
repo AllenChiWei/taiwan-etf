@@ -8,6 +8,19 @@ import { toNumber } from '../lib/filters';
 import { PerformanceChart, lineColor } from '../components/PerformanceChart';
 import { EmptyState } from '../components/EmptyState';
 import { PasswordGate } from '../components/PasswordGate';
+import { loadV18IfUnlocked, type V18Data } from '../lib/v18';
+
+/** v18 的線用文字色（深色模式自動變淺），跟 ETF 的類別色明顯區分 */
+const V18_COLOR = 'var(--c-ink)';
+
+/** v18 權益曲線 -> 與 ETF 曲線同形狀的輸入（起點 = 1 的倍數，對齊後一樣正規化成 100） */
+function v18Input(d: V18Data): SeriesInput {
+  return {
+    code: 'v18', label: '回測策略', market: 'tw',
+    raw: { code: 'v18', first: 0, values: d.equity.v },
+    calendar: d.equity.d,
+  };
+}
 
 /** 一次比較太多條線會糊成一團，也讓圖例擠不下。 */
 const MAX_COMPARE = 8;
@@ -84,6 +97,16 @@ export function FavoritesPage() {
   const [sortBy, setSortBy] = useState<SortField | ''>('');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
 
+  // v18 只在已用密碼解鎖（v18 頁）時才出現；沒解鎖時這頁完全不提到它
+  const [v18, setV18] = useState<V18Data | null>(null);
+  const [withV18, setWithV18] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    loadV18IfUnlocked().then(d => { if (alive) setV18(d); });
+    return () => { alive = false; };
+  }, []);
+  const extra = useMemo(() => (v18 && withV18 ? v18Input(v18) : null), [v18, withV18]);
+
   // 排序只影響清單的顯示順序，不影響勾選內容，也不影響圖表的線條顏色對應
   const shown = useMemo(() => {
     if (!sortBy) return items;
@@ -134,9 +157,12 @@ export function FavoritesPage() {
 
   // 勾選順序決定顏色，與圖表用的順序一致
   const colorOf = (code: string) => {
+    if (code === 'v18') return V18_COLOR;
     const i = items.filter(it => selected.includes(it.code)).findIndex(it => it.code === code);
     return i >= 0 ? lineColor(i) : undefined;
   };
+  // 圖上的線依代號取色：某一檔對齊後被拿掉時，其他線的顏色仍與清單色點一致
+  const chartColor = (code: string, i: number) => colorOf(code) ?? lineColor(i);
 
   // 勾選的標的裡有沒有美股 —— 只有那時才需要密碼（美股曲線仍是 FinLab 的付費資料，
   // 台股那半改用 FinMind 之後是公開資料，不必解鎖）
@@ -166,16 +192,23 @@ export function FavoritesPage() {
             {p.label}
           </button>
         ))}
+        {v18 && (
+          <button type="button" aria-pressed={withV18} onClick={() => setWithV18(v => !v)}
+                  className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors
+                    ${withV18 ? 'border-ink bg-ink text-surface' : 'border-line bg-surface text-ink hover:bg-hover'}`}>
+            {withV18 ? '✓ v18 策略' : '＋ 加入 v18 策略'}
+          </button>
+        )}
       </div>
 
       {/* 台股曲線改用 FinMind（公開資料）之後不必解鎖；只有選到美股標的時才需要，
           因為美股那半仍是 FinLab 的付費資料。 */}
       {selectedNeedsUnlock ? (
         <PasswordGate what="美股績效曲線">
-          <ChartPanel items={items} selected={selected} period={period} />
+          <ChartPanel items={items} selected={selected} period={period} extra={extra} colorOf={chartColor} />
         </PasswordGate>
       ) : (
-        <ChartPanel items={items} selected={selected} period={period} />
+        <ChartPanel items={items} selected={selected} period={period} extra={extra} colorOf={chartColor} />
       )}
 
       <h2 className="mt-6 mb-2 text-base font-bold text-ink">
@@ -283,9 +316,10 @@ export function FavoritesPage() {
  * 曲線檔是加密的，未解鎖時抓取一定失敗，而 effect 的依賴不會因為「解鎖了」而改變，
  * 所以放在閘外就再也不會重試。掛載時機等於解鎖時機，問題自然消失。
  */
-function ChartPanel({ items, selected, period }:
-  { items: Item[]; selected: string[]; period: string }) {
-  const chart = useChartData(items, selected, period);
+function ChartPanel({ items, selected, period, extra, colorOf }:
+  { items: Item[]; selected: string[]; period: string; extra: SeriesInput | null;
+    colorOf: (code: string, i: number) => string }) {
+  const chart = useChartData(items, selected, period, extra);
 
   if (chart.loading) {
     return (
@@ -309,7 +343,7 @@ function ChartPanel({ items, selected, period }:
 
   return (
     <>
-      <PerformanceChart result={chart.result} />
+      <PerformanceChart result={chart.result} colorOf={colorOf} />
       <p className="mt-1.5 text-[12px] text-faint">
         起點 {chart.result.startDate}　·　共同期間 {chart.result.dates.length} 個交易日
         {absent.length > 0 && `　·　${absent.join('、')} 缺曲線資料`}
@@ -333,7 +367,8 @@ interface ChartState {
 }
 
 /** 抓取被勾選標的的曲線，對齊後回傳。 */
-function useChartData(items: Item[], selected: string[], period: string): ChartState {
+function useChartData(items: Item[], selected: string[], period: string,
+                      extra: SeriesInput | null = null): ChartState {
   const [state, setState] = useState<ChartState>(
     { loading: false, error: null, result: null, missing: [] });
 
@@ -341,10 +376,10 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
     () => items.filter(i => selected.includes(i.code)),
     [items, selected],
   );
-  const key = picked.map(p => `${p.market}/${p.code}`).join(',');
+  const key = picked.map(p => `${p.market}/${p.code}`).join(',') + (extra ? `,+${extra.code}` : '');
 
   useEffect(() => {
-    if (picked.length === 0) {
+    if (picked.length === 0 && !extra) {
       setState({ loading: false, error: '勾選至少一檔 ETF 來比較績效。', result: null, missing: [] });
       return;
     }
@@ -368,6 +403,7 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
         if (!raw || !calendar) { missing.push(p.code); continue; }
         inputs.push({ code: p.code, label: p.name, market: p.market, raw, calendar });
       }
+      if (extra) inputs.push(extra);         // 最後畫，v18 的線在最上層
       if (inputs.length === 0) {
         setState({
           loading: false,
@@ -389,7 +425,7 @@ function useChartData(items: Item[], selected: string[], period: string): ChartS
     });
 
     return () => { cancelled = true; };
-  }, [key, period, picked]);
+  }, [key, period, picked, extra]);
 
   return state;
 }

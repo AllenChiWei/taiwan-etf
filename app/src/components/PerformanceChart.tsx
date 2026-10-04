@@ -4,24 +4,29 @@
 import { useMemo, useState } from 'react';
 import type { AlignedResult } from '../lib/series';
 import { extent } from '../lib/series';
+import { CATEGORY_COLORS } from '../lib/palette';
 
-/* 線的顏色。刻意避開紅綠 —— 這張圖是多檔相互比較，紅綠在台股語境
-   代表漲跌，用在這裡會被誤讀成「這條是跌的」。 */
-const LINE_COLORS = [
-  '#1f6feb', '#e06c00', '#7b4fd6', '#0f9b8e',
-  '#c2185b', '#5d7a17', '#0277bd', '#8d6e63',
-];
-
-export const lineColor = (i: number) => LINE_COLORS[i % LINE_COLORS.length];
+/* 線的顏色與配息圖共用一份色表（lib/palette.ts），刻意避開紅綠。 */
+export const lineColor = (i: number) => CATEGORY_COLORS[i % CATEGORY_COLORS.length];
 
 interface Props {
   result: AlignedResult;
   height?: number;
+  /** 依代號給色（與勾選清單的色點一致）；沒給就依序號 */
+  colorOf?: (code: string, i: number) => string;
 }
 
-export function PerformanceChart({ result, height = 300 }: Props) {
+export function PerformanceChart({ result, height = 300, colorOf }: Props) {
   const { dates, series } = result;
   const [hover, setHover] = useState<number | null>(null);
+  /** 下方圖例：預設依期間報酬由高到低，可切回加入順序 */
+  const [ranked, setRanked] = useState(true);
+  const color = (code: string, i: number) => (colorOf ? colorOf(code, i) : lineColor(i));
+  const legend = useMemo(() => {
+    const list = series.map((s, i) => ({ s, i }));
+    if (!ranked) return list;
+    return [...list].sort((a, b) => (b.s.totalReturn ?? -Infinity) - (a.s.totalReturn ?? -Infinity));
+  }, [series, ranked]);
 
   const W = 1000;                       // viewBox 寬度；實際寬度由 CSS 決定
   const H = height;
@@ -104,7 +109,7 @@ export function PerformanceChart({ result, height = 300 }: Props) {
         ))}
 
         {paths.map((d, i) => (
-          <path key={series[i].code} d={d} fill="none" stroke={lineColor(i)}
+          <path key={series[i].code} d={d} fill="none" stroke={color(series[i].code, i)}
                 strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
         ))}
 
@@ -116,33 +121,43 @@ export function PerformanceChart({ result, height = 300 }: Props) {
               const p = s.points[hoverIdx];
               return p === null ? null : (
                 <circle key={s.code} cx={x(hoverIdx)} cy={y(p)} r="3.5"
-                        fill={lineColor(i)} stroke="var(--c-surface)" strokeWidth="1.5" />
+                        fill={color(s.code, i)} stroke="var(--c-surface)" strokeWidth="1.5" />
               );
             })}
           </>
         )}
       </svg>
 
-      {/* 圖例兼讀值：沒有 hover 時顯示期末報酬，有 hover 時顯示該日 */}
-      <ul className="mt-1 flex flex-wrap gap-x-4 gap-y-1 px-1 text-[13px]">
-        {series.map((s, i) => {
+      {/* 圖例兼讀值：沒有 hover 時顯示期末報酬，有 hover 時顯示該日。
+          預設依期末報酬由高到低排名（hover 時順序不跳，免得游標移動時清單一直重排） */}
+      <div className="mt-1 flex items-center justify-between gap-2 px-1">
+        <span className="text-[11.5px] text-faint">
+          {hoverIdx === null ? '期間報酬' : `${dates[hoverIdx]} 的累積報酬`}
+        </span>
+        <button type="button" onClick={() => setRanked(v => !v)} aria-pressed={ranked}
+                className="text-[11.5px] font-semibold text-accent">
+          {ranked ? '依報酬高→低 ↓' : '依勾選順序'}
+        </button>
+      </div>
+      <ol className="mt-0.5 grid grid-cols-1 gap-x-4 px-1 text-[13px] sm:grid-cols-2">
+        {legend.map(({ s, i }, rank) => {
           const v = hoverIdx === null ? s.totalReturn : (s.points[hoverIdx] ?? null);
           const shown = hoverIdx === null ? v : (v === null ? null : v - 100);
           return (
-            <li key={s.code} className="flex items-center gap-1.5">
-              <span aria-hidden="true" className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ background: lineColor(i) }} />
+            <li key={s.code} className="flex items-center gap-1.5 border-b border-line/50 py-1">
+              {ranked && <span className="w-4 shrink-0 text-right font-mono text-[11px] text-faint">{rank + 1}</span>}
+              <span aria-hidden="true" className="inline-block h-2.5 w-2.5 shrink-0 rounded-full"
+                    style={{ background: color(s.code, i) }} />
               <span className="font-mono font-semibold text-ink">{s.code}</span>
-              <span className="tabular font-mono text-muted">
+              <span className="min-w-0 flex-1 truncate text-[12px] text-muted">{s.label !== s.code ? s.label : ''}</span>
+              <span className={`tabular shrink-0 font-mono font-semibold ${
+                shown === null ? 'text-faint' : shown > 0 ? 'text-up' : shown < 0 ? 'text-down' : 'text-muted'}`}>
                 {shown === null ? '—' : `${shown >= 0 ? '+' : ''}${shown.toFixed(1)}%`}
               </span>
             </li>
           );
         })}
-        {hoverIdx !== null && (
-          <li className="tabular ml-auto font-mono text-faint">{dates[hoverIdx]}</li>
-        )}
-      </ul>
+      </ol>
     </div>
   );
 }

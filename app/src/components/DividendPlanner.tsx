@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
+import { rankColorMap, rankColor } from '../lib/palette';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
   seriesFromStock, activePayer, withUpcoming,
@@ -27,44 +28,6 @@ import {
 const STORAGE_KEY = 'twetf.holdings';
 /** 帳戶名稱與順序。持股的 acct 欄位記配息進哪個帳戶（lib/accounts.ts）。 */
 const ACCOUNTS_KEY = 'twetf.accounts';
-
-/* 月曆柱狀圖每檔一個顏色。刻意避開紅綠 —— 這裡是多檔並列比較，
-   紅綠在台股語境代表漲跌，用在這會被誤讀。 */
-const SERIES_COLORS = [
-  '#1f6feb', '#e06c00', '#7b4fd6', '#0f9b8e',
-  '#c2185b', '#5d7a17', '#0277bd', '#8d6e63',
-  '#00695c', '#ad1457', '#4527a0', '#827717',
-];
-
-/** 代號 -> 0..n 的穩定雜湊。同一檔 ETF 永遠落在同一個位置。 */
-function hashCode(code: string): number {
-  let h = 0;
-  for (let i = 0; i < code.length; i++) h = (h * 31 + code.charCodeAt(i)) | 0;
-  return Math.abs(h) % SERIES_COLORS.length;
-}
-
-/**
- * 決定每一檔的顏色。
- *
- * 顏色由**代號**決定而不是清單位置 —— 照位置給的話，移除中間一檔會讓後面
- * 每一檔都換色，而使用者是靠顏色記住哪條是哪檔的。
- *
- * 撞色時往後找還沒用到的顏色。用排序後的順序決定誰先挑，這樣同一組持股
- * 不論加入先後都得到同一份配色。
- */
-function buildColorMap(codes: string[]): Map<string, string> {
-  const map = new Map<string, string>();
-  const used = new Set<number>();
-  for (const code of [...codes].sort()) {
-    let slot = hashCode(code);
-    for (let k = 0; used.has(slot) && k < SERIES_COLORS.length; k++) {
-      slot = (slot + 1) % SERIES_COLORS.length;
-    }
-    used.add(slot);
-    map.set(code, SERIES_COLORS[slot]);
-  }
-  return map;
-}
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
@@ -244,7 +207,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     const out = mergeByCode(entries).map(project).filter((r): r is ProjectionWithUpcoming => r !== null);
     // 依一年可領金額由大到小。圖例、月曆的分段、佔比圖與各檔明細都吃這個順序，
     // 四處才會一致 —— 加入的先後對「誰貢獻最多」沒有意義。
-    // 顏色是由代號決定的（buildColorMap），所以排序不會讓顏色跟著跳。
+    // 顏色依這個順序給（lib/palette.ts）：貢獻最大的拿最好分辨的顏色，第 9 名之後是灰階。
     out.sort((a, b) => b.annual - a.annual);
     return out;
   }, [entries, project]);
@@ -268,8 +231,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   });
   const usPending = usCodes.some(c => !usRows.has(c)) || (usCodes.length > 0 && fx === null);
   const maxMonth = Math.max(1, ...portfolio.byMonth);
-  const colors = useMemo(() => buildColorMap(rows.map(r => r.code)), [rows]);
-  const colorOf = (code: string) => colors.get(code) ?? SERIES_COLORS[0];
+  const colors = useMemo(() => rankColorMap(rows.map(r => r.code)), [rows]);
+  const colorOf = (code: string) => colors.get(code) ?? rankColor(0);
 
   // 還沒配過息的也列（站主要求）：持股先記著，之後有除息紀錄就自動算進來。
   // 選單上標出來，免得加進去看到一排 0 以為壞了。

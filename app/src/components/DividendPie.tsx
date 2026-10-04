@@ -4,7 +4,7 @@
  * 來源集中度 —— 同一筆年配息，來自一檔還是來自八檔，風險完全不同。
  *
  * 圖是內嵌 SVG，幾何在 lib/dividend.ts 的 donutSlices()（純函式、有測試）。
- * 顏色沿用月曆那一套「由代號決定」的配色，兩張圖才對得起來。
+ * 顏色與月曆同一份（lib/palette.ts，依年配息名次給色），兩張圖才對得起來。
  */
 
 import { useState } from 'react';
@@ -54,7 +54,9 @@ export function DividendPie({ rows, total, colorOf }: {
                 // 只有一檔有配息時 arc 的起終點重合，畫不出扇形，改用圓環
                 ? <circle key={s.i} cx="50" cy="50" r="34" fill="none"
                           strokeWidth="16" stroke={colorOf(rows[s.i].code)} />
-                : <path key={s.i} d={s.d} fill={colorOf(rows[s.i].code)} />
+                // 扇形之間留一道底色細縫：後段的灰色小片相鄰時才分得出是不同檔
+                : <path key={s.i} d={s.d} fill={colorOf(rows[s.i].code)}
+                        stroke="var(--c-surface)" strokeWidth="0.8" strokeLinejoin="round" />
             ))}
             {/* 中間留白處放總額，圖與數字不必分開看 */}
             <text x="50" y="47" textAnchor="middle"

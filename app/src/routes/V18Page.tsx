@@ -5,27 +5,9 @@
  * 這頁刻意不放進上方選單、也不寫進更新日誌：只給知道網址與密碼的人自己看。 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Vault, type VaultManifest } from '../lib/vault';
+import type { VaultManifest } from '../lib/vault';
+import { v18Vault as vault, type V18Data } from '../lib/v18';
 
-interface Holding {
-  id: string; name: string; entry: string; entryPrice: number; price: number;
-  ret: number; status: string; nextWeight: number;
-}
-interface Trade { id: string; name: string; entry: string; exit: string | null; ret: number }
-export interface V18Data {
-  asof: string;
-  generated: string;
-  regime: { bull: boolean; signal: number | null; signalChg: number | null; m1b: number | null };
-  holdings: Holding[];
-  actions: Array<{ id: string; name: string; action: string }>;
-  selection: { date: string; list: Array<{ id: string; name: string; yoy: number | null }>; pending?: boolean };
-  stats: { since: string; cagr: number; mdd: number; sharpe: number; ytd: number; ytdMdd: number; m1: number; m3: number };
-  equity: { d: string[]; v: number[] };
-  monthly: Record<string, number>;
-  trades: Trade[];
-}
-
-const vault = new Vault(`${import.meta.env.BASE_URL}data/v18/`, 'twetf.v18.unlock');
 const pct = (v: number | null | undefined, d = 1) =>
   v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)}%`;
 const tone = (v: number) => (v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'text-muted');
