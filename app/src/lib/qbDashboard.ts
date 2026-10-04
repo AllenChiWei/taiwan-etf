@@ -23,10 +23,19 @@ const CSS = `
 .qbd .grid { display:grid; gap:12px; } .qbd .g2 { grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr)); }
 .qbd .filters { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
   background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin:14px 0; }
-.qbd .filters label { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2); }
+.qbd .filters label, .qbd .filters .lbl { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2); }
 .qbd select { font:inherit; font-size:13px; padding:4px 8px; border:1px solid var(--line-strong); border-radius:8px; background:var(--surface); color:var(--ink); max-width:100%; }
 .qbd .seg { display:inline-flex; border:1px solid var(--line-strong); border-radius:8px; overflow:hidden; }
-.qbd .seg button { font:inherit; font-size:12.5px; border:0; background:var(--surface); padding:4px 10px; cursor:pointer; color:var(--ink-2); }
+.qbd .seg button { font:inherit; font-size:13.5px; border:0; background:var(--surface); padding:6px 14px; min-height:36px; cursor:pointer; color:var(--ink-2); touch-action:manipulation; }
+.qbd .seg button + button { border-left:1px solid var(--line); }
+.qbd .filters label { min-width:0; max-width:100%; } .qbd .filters select { min-width:0; flex:1 1 auto; }
+@media (max-width: 640px) {
+  .qbd { padding:10px; }
+  .qbd .seg button { min-height:40px; padding:8px 14px; } .qbd select { min-height:40px; }
+  /* 手機上篩選列有半個螢幕高，固定在上方會擋住內容 → 不固定；選單撐滿一列 */
+  .qbd .filters { position:static; }
+  .qbd .filters label { width:100%; } .qbd .filters select { width:100%; }
+}
 .qbd .seg button[aria-pressed="true"] { background:var(--ink); color:var(--surface); }
 .qbd .dot { display:inline-block; width:10px; height:10px; border-radius:50%; }
 .qbd .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; }
@@ -61,8 +70,8 @@ const HTML = `
 <div class="filters">
   <label><span class="dot" style="background:var(--a)"></span>A<select data-id="selA"></select></label>
   <label><span class="dot" style="background:var(--b)"></span>B<select data-id="selB"></select></label>
-  <label>期間 <span class="seg" data-id="segPeriod"></span></label>
-  <label>部位大小 <span class="seg" data-id="segScale"></span></label>
+  <div class="lbl">期間 <span class="seg" data-id="segPeriod"></span></div>
+  <div class="lbl">部位大小 <span class="seg" data-id="segScale"></span></div>
 </div>
 <div class="card verdict" data-id="verdict"></div>
 <div class="card mt">
@@ -160,7 +169,12 @@ export function mountQbDashboard(root, D, echarts, loadWeek) {
       const b = document.createElement('button');
       b.type = 'button'; b.textContent = label;
       b.setAttribute('aria-pressed', String(getv() === v));
-      b.onclick = () => { setv(v); render(); };
+      b.onclick = () => {
+        if (getv() === v) return;
+        setv(v);
+        el.querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+        requestAnimationFrame(() => setTimeout(render, 0));   // 先讓按下的狀態畫出來
+      };
       el.appendChild(b);
     }
   }
