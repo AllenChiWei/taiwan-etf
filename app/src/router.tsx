@@ -41,6 +41,8 @@ const DividendPage = lazyRoute(
 // 對帳單頁還會在使用者選檔時動態載入 SheetJS（約 400 KB），所以更不該
 // 跟主程式綁在一起 —— 沒點進來的人一個位元組都不用下載。
 const FuturesPage = lazyRoute(() => import('./routes/FuturesPage'), m => m.FuturesPage);
+// v18 策略頁：獨立密碼、資料在本機加密後才上傳；不放進上方選單（見 routes/V18Page.tsx）
+const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
 
 export interface ListSearch {
   q: string;
@@ -154,6 +156,12 @@ const aboutRoute = createRoute({
   component: AboutPage,
 });
 
+const v18Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/v18',
+  component: V18Page,
+});
+
 const changelogRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/changelog',
@@ -162,7 +170,8 @@ const changelogRoute = createRoute({
 
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
-   chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute]);
+   chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
+   v18Route]);
 
 export const router = createRouter({
   routeTree,
