@@ -23,8 +23,10 @@ u"""台指選擇權週選的**盤中**價平和（每 15 分鐘），從期交�
 
 ## 定義（與 fetch_atm.py 相同，只是改成每個時間點）
 
-    每 15 分鐘的時間點 T：每個履約價取「T 以前、同一盤別、30 分鐘內」最後一筆 Call／Put 成交價
-    價平履約價 = |Call − Put| 最小者（至少 5 個履約價兩邊都有成交才算）
+    每 15 分鐘的時間點 T：每個履約價取「T 以前、同一盤別、60 分鐘內」最後一筆 Call／Put 成交價
+    價平履約價 = |Call − Put| 最小者（至少 5 個履約價兩邊都有成交時）；
+                 配對不足 5 組（冷門合約）時改取「最接近標的價格」的履約價（差距 ≤ 150 點）
+    標的價格   = 所有活絡合約（30 分鐘內 ≥ 5 組配對）|C−P| 最小 3 組的合成期貨中位數
     價平和     = Call + Put
     合成期貨   = 履約價 + Call − Put（買賣權平價，不用另外抓期貨）
 
@@ -54,7 +56,9 @@ ZIP_URL = ('https://www.taifex.com.tw/file/taifex/Dailydownload/OptionsDailydown
 UA = {'User-Agent': ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
                      '+https://allenchiwei.github.io/taiwan-etf/) TXO intraday ATM')}
 STEP = 15            # 分鐘
-STALE = 30           # 成交超過幾分鐘就不算「現在的價格」
+STALE = 30           # 推算標的價格時：成交超過幾分鐘就不算「現在的價格」
+STALE_THIN = 60      # 每口合約的價平：冷門合約成交稀疏，放寬到 60 分鐘
+NEAR = 150           # 配對太少時，價平履約價離標的價格最多幾點
 MIN_PAIRS = 5
 DELAY = 2.0
 ERRORS = []
@@ -178,11 +182,11 @@ def parse_ticks(path, d):
     return out
 
 
-def series_rows(ticks, bks):
-    u"""一口合約 → 每個時間點的 (履約價, Call, Put)。"""
+def fresh_pairs(ticks, bks, stale):
+    u"""一口合約 → 每個時間點「同盤別、stale 分鐘內 Call 與 Put 都有成交」的 [(履約價, C, P)]。"""
     last = {}            # (履約價, C/P) -> (分鐘, 價格, 盤別)
     i, n = 0, len(ticks)
-    ks, cs, ps = [], [], []
+    out = []
     for sess, end in bks:
         while i < n and ticks[i][1] <= end:
             s, m, k, cp, px = ticks[i]
@@ -190,16 +194,50 @@ def series_rows(ticks, bks):
             i += 1
         pairs = []
         for (k, cp), (m, px, s) in last.items():
-            if cp != 'C' or s != sess or end - m > STALE:
+            if cp != 'C' or s != sess or end - m > stale:
                 continue
             q = last.get((k, 'P'))
-            if q and q[2] == sess and end - q[0] <= STALE:
+            if q and q[2] == sess and end - q[0] <= stale:
                 pairs.append((k, px, q[1]))
-        if len(pairs) < MIN_PAIRS:
+        out.append(pairs)
+    return out
+
+
+def underlying(all_pairs, nb):
+    u"""每個時間點的標的價格：各合約 |C−P| 最小的 3 組配對換算合成期貨（K + C − P），取中位數。
+
+    只用「夠活絡」的時間點（該合約至少 MIN_PAIRS 組配對），冷門合約的價格不拿來推標的。
+    """
+    fut = []
+    for b in range(nb):
+        xs = []
+        for pairs in all_pairs:
+            ps = pairs[b]
+            if len(ps) < MIN_PAIRS:
+                continue
+            for k, c, p in sorted(ps, key=lambda x: abs(x[1] - x[2]))[:3]:
+                xs.append(k + c - p)
+        xs.sort()
+        fut.append(xs[len(xs) // 2] if xs else None)
+    return fut
+
+
+def pick_atm(pairs_by_bucket, fut):
+    u"""每個時間點的價平：活絡時用 |C−P| 最小；配對太少時改用「最接近標的價格」的履約價
+    （冷門合約常常只有價平附近一兩個履約價有成交，|C−P| 最小的判定不可靠，但離標的最近的那一個仍是價平）。"""
+    ks, cs, ps = [], [], []
+    for pairs, f in zip(pairs_by_bucket, fut):
+        best = None
+        if len(pairs) >= MIN_PAIRS:
+            best = min(pairs, key=lambda x: (abs(x[1] - x[2]), x[0]))
+        elif pairs and f is not None:
+            cand = min(pairs, key=lambda x: (abs(x[0] - f), x[0]))
+            if abs(cand[0] - f) <= NEAR:
+                best = cand
+        if best is None:
             ks.append(None), cs.append(None), ps.append(None)
-            continue
-        k, c, p = min(pairs, key=lambda x: (abs(x[1] - x[2]), x[0]))
-        ks.append(k), cs.append(round(c, 1)), ps.append(round(p, 1))
+        else:
+            ks.append(best[0]), cs.append(round(best[1], 1)), ps.append(round(best[2], 1))
     return ks, cs, ps
 
 
@@ -207,6 +245,7 @@ def build_day(d, path, expiries):
     bks = buckets()
     by_contract = parse_ticks(path, d)
     dd = datetime.strptime(d, '%Y-%m-%d').date()
+    fut = underlying([fresh_pairs(v, bks, STALE) for v in by_contract.values()], len(bks))
     groups = {}
     for c in by_contract:
         s = series_of(c)
@@ -220,7 +259,7 @@ def build_day(d, path, expiries):
     rows = []
     for s in sorted(groups):
         for r, (e, c) in enumerate(sorted(groups[s])[:2]):
-            ks, cs, ps = series_rows(by_contract[c], bks)
+            ks, cs, ps = pick_atm(fresh_pairs(by_contract[c], bks, STALE_THIN), fut)
             if not any(k is not None for k in ks):
                 continue
             rows.append({'s': s, 'r': r, 'c': c, 'e': e.isoformat(), 'dte': (e - dd).days,
@@ -274,7 +313,9 @@ def main():
             write_json(os.path.join(OUT_DIR, d + '.json'), doc)
             have.add(d)
             log(u'%s：%s' % (d, '、'.join('%s r%d %s' % (r['s'], r['r'], r['c']) for r in doc['rows'])))
-    write_json(os.path.join(OUT_DIR, 'index.json'), {'dates': sorted(have), 'step': STEP,
+    # partial：只有夜盤（日盤還沒收盤）的日子，前端預設不選它
+    partial = sorted(d for d in have if not complete(os.path.join(OUT_DIR, d + '.json')))
+    write_json(os.path.join(OUT_DIR, 'index.json'), {'dates': sorted(have), 'partial': partial, 'step': STEP,
                                                      'source': u'期交所選擇權每筆成交資料'})
     if ERRORS:
         log(u'完成，但有 %d 個警告' % len(ERRORS))

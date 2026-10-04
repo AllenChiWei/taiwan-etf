@@ -142,7 +142,9 @@ export function AtmIntradaySection() {
     fetchIntradayIndex(ac.signal).then(ix => {
       if (!ix || !ix.dates.length) { setState('missing'); return; }
       setIndex(ix);
-      setDate(ix.dates[ix.dates.length - 1]);
+      // 預設看最近一個「完整」的交易日：週末期交所會先公布週五夜盤（歸屬下週一），那天只有夜盤
+      const done = ix.dates.filter(d => !(ix.partial ?? []).includes(d));
+      setDate((done.length ? done : ix.dates)[(done.length ? done : ix.dates).length - 1]);
       setState('ready');
     }).catch(() => { if (!ac.signal.aborted) setState('error'); });
     return () => ac.abort();
@@ -201,7 +203,7 @@ export function AtmIntradaySection() {
             <Chip active={excl} onClick={() => setExcl(!excl)}>到期當日看下一口</Chip>
             <select value={date} onChange={e => setDate(e.target.value)}
                     className="h-8 rounded-lg border border-line bg-bg px-2 text-[12.5px] text-ink">
-              {[...index.dates].reverse().map(d => <option key={d} value={d}>{d}</option>)}
+              {[...index.dates].reverse().map(d => <option key={d} value={d}>{d}{(index.partial ?? []).includes(d) ? "（僅夜盤）" : ""}</option>)}
             </select>
           </div>
 

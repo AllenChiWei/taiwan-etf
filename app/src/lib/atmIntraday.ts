@@ -33,6 +33,8 @@ export interface AtmDay {
 
 export interface AtmIntradayIndex {
   dates: string[];
+  /** 只有夜盤（當天日盤還沒收盤）的日期 */
+  partial?: string[];
   step: number;
   source: string;
 }
