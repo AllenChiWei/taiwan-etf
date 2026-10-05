@@ -90,6 +90,21 @@ export class Vault {
     return true;
   }
 
+  /** 只在記憶體解鎖（不寫 localStorage、不影響其他私人頁）：配息頁私人持股每次都要當場輸入密碼（2026-10-06 使用者要求）。 */
+  async unlockTransient(password: string, m: VaultManifest): Promise<boolean> {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
+    const raw = await crypto.subtle.deriveBits(
+      { name: 'PBKDF2', hash: 'SHA-256', salt: b64ToBytes(m.salt), iterations: m.iterations }, base, 256);
+    const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['encrypt', 'decrypt']);
+    if (!(await this.verify(key, m))) return false;
+    this.key = key;
+    this.manifest = m;
+    return true;
+  }
+
+  /** 只清掉記憶體裡的金鑰（不動 localStorage 的工作階段）。 */
+  forget(): void { this.key = null; }
+
   lock(): void {
     this.key = null;
     try { localStorage.removeItem(this.storageKey); } catch { /* 忽略 */ }

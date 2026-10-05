@@ -37,3 +37,21 @@ test('錯的密碼解不開', async () => {
   assert.equal(await v.unlock('wrong', m), false);
   await assert.rejects(() => v.encryptJson({ a: 1 }));
 });
+
+test('unlockTransient：密碼對才解得開、不寫工作階段', async () => {
+  const m = await makeManifest('pw', true);
+  const store = new Map<string, string>();
+  (globalThis as unknown as { localStorage: Storage }).localStorage = {
+    getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); },
+    removeItem: (k: string) => { store.delete(k); }, clear: () => store.clear(), key: () => null, length: 0,
+  } as Storage;
+  const v = new Vault('/x/', 'test.transient');
+  assert.equal(await v.unlockTransient('wrong', m), false);
+  assert.equal(v.unlocked, false);
+  assert.equal(await v.unlockTransient('pw', m), true);
+  assert.equal(store.has('test.transient'), false);                // 不寫工作階段
+  const obj = { holdings: [{ code: '2330', shares: 20 }] };
+  assert.deepEqual(await v.decryptJson(await v.encryptJson(obj)), obj);
+  v.forget();
+  assert.equal(v.unlocked, false);
+});

@@ -6,12 +6,12 @@
  *   ⚙ 同步設定：第一次儲存前，貼上自己申請的 GitHub fine-grained 權杖（只限 taiwan-etf 倉庫、Contents 讀寫）；
  *               權杖用私人頁密碼加密後存成 token.enc，其他裝置解鎖後自動取用，只要設定一次。
  *   📋 複製持股資料：備用（貼給 Claude 用 holdings_export.py 發布，效果相同）。
- * 這台沒有持股、而私人持股有資料時自動載入；已有持股時一律先確認才取代或覆蓋。
+ * 載入／儲存／同步設定每次進頁面都要當場輸入私人頁密碼（2026-10-06 使用者要求：不能因為這台解鎖過私人頁就能載入）；
+ * 密碼只在記憶體驗證、不寫工作階段，離開頁面就清掉。已有持股時一律先確認才取代或覆蓋。
  * twetf.holdings.synced 記住這台最後一次載入／儲存的版本時間，私人持股比較新時提示。 */
 
 import { useEffect, useState } from 'react';
-import { Link } from '@tanstack/react-router';
-import { Vault } from '../lib/vault';
+import { Vault, type VaultManifest } from '../lib/vault';
 import { ghRead, ghWrite } from '../lib/ghSync';
 
 export interface SyncEntry { code: string; shares: number; m?: 'us'; acct?: string }
@@ -61,7 +61,11 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
   accounts: readonly string[];
   onLoad: (holdings: SyncEntry[], accounts: string[]) => void;
 }) {
-  const [priv, setPriv] = useState<'none' | 'locked' | 'ready'>('none');
+  const [manifest, setManifest] = useState<VaultManifest | null>(null);
+  const [unlocked, setUnlocked] = useState(false);
+  /** 等待輸入密碼的動作 */
+  const [ask, setAsk] = useState<'load' | 'save' | 'setup' | null>(null);
+  const [pw, setPw] = useState('');
   const [remote, setRemote] = useState<Remote | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<'load' | 'save' | null>(null);
@@ -82,37 +86,40 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
 
   useEffect(() => {
     let cancelled = false;
-    holdingsVault.loadManifest().then(async m => {
-      if (!m || cancelled) return;
-      if (!(await holdingsVault.restore(m))) { if (!cancelled) setPriv('locked'); return; }
-      if (cancelled) return;
-      setPriv('ready');
-      const [r, t] = await Promise.all([readRemote(), readToken()]);
-      if (cancelled) return;
-      setRemote(r);
-      setToken(t);
-      if (r && r.holdings.length && entries.length === 0) apply(r);       // 這台還沒有持股：直接載入
-    }).catch(() => { /* 沒有私人持股就不顯示 */ });
-    return () => { cancelled = true; };
-    // 只在進頁面時檢查一次
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    holdingsVault.forget();
+    holdingsVault.loadManifest().then(m => { if (!cancelled) setManifest(m); }).catch(() => { /* 沒有私人持股就不顯示 */ });
+    return () => { cancelled = true; holdingsVault.forget(); };
   }, []);
 
-  const startLoad = async () => {
-    setMsg(''); setBusy(true);
+  /** 需要密碼的動作：已輸入過就直接做，否則先問密碼 */
+  const guarded = (what: 'load' | 'save' | 'setup') => {
+    setMsg('');
+    if (unlocked) { run(what); return; }
+    setAsk(what); setPw('');
+  };
+
+  const submitPw = async () => {
+    if (!manifest || !pw) return;
+    setBusy(true);
     try {
-      const r = await readRemote();
-      setRemote(r);
-      if (!r || !r.holdings.length) { setMsg('私人持股是空的。'); return; }
-      if (entries.length === 0) apply(r); else setConfirm('load');
+      if (!(await holdingsVault.unlockTransient(pw, manifest))) { setMsg('密碼不對。'); return; }
+      setUnlocked(true); setPw('');
+      const [r, t] = await Promise.all([readRemote(), readToken()]);
+      setRemote(r); setToken(t);
+      const what = ask; setAsk(null);
+      if (what) await run(what, r, t);
     } finally { setBusy(false); }
   };
 
-  const startSave = async () => {
-    setMsg('');
-    if (!token) { setSetup(true); setMsg('第一次儲存前要先設定同步權杖（只要一次）。'); return; }
-    setBusy(true);
-    try { setRemote(await readRemote()); setConfirm('save'); } finally { setBusy(false); }
+  const run = async (what: 'load' | 'save' | 'setup', r: Remote | null = remote, t: string | null = token) => {
+    if (what === 'setup') { setSetup(v => !v); return; }
+    if (what === 'load') {
+      if (!r || !r.holdings.length) { setMsg('私人持股是空的。'); return; }
+      if (entries.length === 0) apply(r); else setConfirm('load');
+      return;
+    }
+    if (!t) { setSetup(true); setMsg('第一次儲存前要先設定同步權杖（只要一次）。'); return; }
+    setConfirm('save');
   };
 
   const doSave = async () => {
@@ -157,29 +164,36 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
     <div className="mt-2 border-t border-line pt-2 text-[12.5px]">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
         <span className="text-muted">我的持股</span>
-        {priv === 'ready' && (
+        {manifest && (
           <>
-            <button type="button" onClick={startLoad} disabled={busy} className={btn}>☁ 載入私人持股</button>
-            <button type="button" onClick={startSave} disabled={busy || entries.length === 0} className={btn}>☁ 儲存到私人持股</button>
-            <button type="button" onClick={() => { setSetup(v => !v); setMsg(''); }} className="h-9 rounded-lg px-1.5 text-muted hover:text-ink">⚙ 同步設定</button>
+            <button type="button" onClick={() => guarded('load')} disabled={busy} className={btn}>☁ 載入私人持股</button>
+            <button type="button" onClick={() => guarded('save')} disabled={busy || entries.length === 0} className={btn}>☁ 儲存到私人持股</button>
+            <button type="button" onClick={() => guarded('setup')} disabled={busy} className="h-9 rounded-lg px-1.5 text-muted hover:text-ink">⚙ 同步設定</button>
           </>
-        )}
-        {priv === 'locked' && (
-          <span className="text-faint">私人持股需先到 <Link to="/me" className="font-semibold text-accent hover:underline">🔒 私人</Link> 解鎖</span>
         )}
         <button type="button" onClick={copy} disabled={entries.length === 0}
                 className="h-9 rounded-lg px-1.5 text-muted hover:text-ink disabled:opacity-40">📋 複製</button>
         {copyState === 'copied' && <span className="text-faint">已複製（{entries.length} 檔）</span>}
       </div>
 
-      {priv === 'ready' && remote && (
+      {ask && manifest && (
+        <form className="mt-1 flex flex-wrap items-center gap-2" onSubmit={e => { e.preventDefault(); void submitPw(); }}>
+          <span className="text-muted">輸入私人頁密碼：</span>
+          <input type="password" value={pw} onChange={e => setPw(e.target.value)} autoFocus autoComplete="current-password"
+                 aria-label="私人頁密碼" className="h-9 w-40 min-w-0 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink" />
+          <button type="submit" disabled={busy || !pw} className={btn}>確定</button>
+          <button type="button" onClick={() => { setAsk(null); setPw(''); }} className="h-9 rounded-lg px-1.5 font-semibold text-muted">取消</button>
+        </form>
+      )}
+
+      {unlocked && remote && (
         <p className={`text-[11px] ${newer ? 'font-semibold text-up' : 'text-faint'}`}>
           私人持股 {remote.holdings.length} 檔，更新於 {remote.generated || '—'}
           {newer ? '：比這台的持股新，按「☁ 載入私人持股」更新' : (synced ? '：這台已是最新' : '')}。
         </p>
       )}
 
-      {setup && priv === 'ready' && (
+      {setup && unlocked && (
         <div className="mt-1 rounded-lg border border-line p-2">
           <p className="text-[11.5px] text-muted">
             {token ? '已設定同步權杖。要更換時貼上新的權杖：' : '貼上你在 GitHub 申請的權杖（只限 taiwan-etf 倉庫、Contents 讀寫）。會用私人頁密碼加密後存放，只要設定一次：'}
