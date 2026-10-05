@@ -80,7 +80,9 @@ function QbBoard({ v }: { v: Variant }) {
         (key: string) => vault.fetchJson<number[][]>(`w_${key}.enc`),
         // v18 ＋ QB 組合（另一檔；舊資料沒有這檔就不顯示該區塊）
         () => vault.fetchJson<unknown>('blend.enc').catch(() => null),
-        { title: v.title, note: v.note });
+        { title: v.title, note: v.note,
+          // 總帳戶槓桿控制研究（lev2_study.py；舊資料沒有這檔就不顯示）
+          loadLev: () => vault.fetchJson<unknown>('lev.enc').catch(() => null) });
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data, vault, v]);

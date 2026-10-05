@@ -99,6 +99,18 @@ const HTML = `
   </div>
   <div class="calc" data-id="calcOut"></div>
 </div>
+<div class="card mt" data-id="levCard" hidden>
+  <h2>總帳戶槓桿控制（Level-2）</h2>
+  <div class="note" data-id="levNote"></div>
+  <div class="legend-row"><label>方法 <select data-id="selLev"></select></label><span>點下表任一列也可以切換；灰線＝固定槓桿（基準）</span></div>
+  <div class="grid g2">
+    <div><div class="note">累積損益（帳戶資金的 %）</div><div data-id="cLevEq" class="chart"></div></div>
+    <div><div class="note">回撤（帳戶資金的 %）</div><div data-id="cLevDD" class="chart"></div></div>
+  </div>
+  <div class="note mt">槓桿倍數（已縮放成平均 1 倍；0＝停止下單）</div>
+  <div data-id="cLevL" class="chart short"></div>
+  <div class="tbl-wrap mt"><table data-id="tLev"></table></div>
+</div>
 <div class="card mt">
   <h2>QB 序位 × Sortino 回溯期（所選期間）</h2>
   <div class="note">每格：Sharpe ／ 淨利÷回撤 ／ 虧損月比例。紅字＝比評價前好、綠字＝比評價前差（台股慣例）。點格子設為 B。
@@ -613,6 +625,56 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     Promise.resolve(loadBlend()).then(b => {
       if (!b || !b.data) return;
       B = b; $('blendCard').hidden = false; renderBlend();
+    }).catch(() => {});
+  }
+
+  // ── 總帳戶槓桿控制（lev2_study.py；資料另一檔，opts.loadLev 載得到才顯示）──
+  let LV = null, levSel = 0;
+  function renderLev() {
+    if (!LV) return;
+    const base = D.daily[LV.cfg], C = LV.capital, ms = LV.methods, m = ms[levSel], b0 = ms[0];
+    const sel = $('selLev');
+    if (sel.options.length !== ms.length) {
+      sel.innerHTML = '';
+      ms.forEach((x, i) => sel.add(new Option(x.name, String(i))));
+      sel.onchange = e => { levSel = +e.target.value; renderLev(); };
+    }
+    sel.value = String(levSel);
+    $('levNote').innerHTML = `對象：<b>${cfgByKey[LV.cfg]?.name || LV.cfg}</b> 的組合權益（評價後）。槓桿只看「槓桿固定 1 倍的參考帳戶」前一天以前的表現（不偷看）。`
+      + `每個方法都縮放成平均槓桿 1 倍才比較；帳戶資金設成讓參考帳戶年化波動 20%（約 ${fmtW(C)} 萬，只影響 % 的尺度）。`
+      + `前半／後半以 ${LV.half_date} 切開。紅字＝比基準好、綠字＝比基準差。方法來自原版 QB 文件「進階管理模式（Level-2）」，另加拉回加碼；`
+      + `「海龜風控（MultiCharts 指標版）」就是 Release\\@QB_Level2_Turtle.txt 的算法。（產生於 ${LV.generated}）`;
+    const cumOf = lev => { let t = 0, pk = 0; const c = [], d = []; base.forEach((v, i) => { t += v * lev[i] / C * 100; pk = Math.max(pk, t); c.push(t); d.push(t - pk); }); return [c, d]; };
+    const [c0, d0] = cumOf(b0.lev), [c1, d1] = cumOf(m.lev);
+    const pct = v => (+v).toFixed(1) + '%';
+    const tlp = { ...tooltipCommon, trigger: 'axis', axisPointer: { type: 'line', lineStyle: { color: C_.ink3 } }, valueFormatter: pct };
+    const yP = { type: 'value', ...axisCommon, axisLabel: { ...axisCommon.axisLabel, formatter: v => v + '%' } };
+    const xD = { type: 'category', data: D.dates, ...axisCommon, splitLine: { show: false } };
+    const zoom = [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C_.line }];
+    chart('cLevEq').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, tooltip: tlp, legend, xAxis: xD, yAxis: yP, dataZoom: zoom,
+      series: [lineSeries('固定槓桿（基準）', c0, C_.before), ...(levSel ? [lineSeries(m.name, c1, C_.b)] : [])] }, true);
+    chart('cLevDD').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, tooltip: tlp, legend, xAxis: xD, yAxis: { ...yP, max: 0 }, dataZoom: zoom,
+      series: [lineSeries('固定槓桿（基準）', d0, C_.before), ...(levSel ? [lineSeries(m.name, d1, C_.b)] : [])] }, true);
+    chart('cLevL').setOption({ animation: false, grid: { left: 54, right: 14, top: 10, bottom: 24 },
+      tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
+      xAxis: xD, yAxis: { type: 'value', ...axisCommon, min: 0 },
+      series: [{ ...lineSeries(m.name, m.lev, C_.b, 1.5), step: 'end', sampling: undefined }] }, true);
+    const cmp = (v, b, hib = true) => v == null || b == null || Math.abs(v - b) < 0.05 ? '' : (hib ? v > b : v < b) ? 'pos' : 'neg';
+    const f1 = v => v == null ? '—' : v.toFixed(1);
+    $('tLev').innerHTML = `<thead><tr><th>方法</th><th>淨利/回撤</th><th>前半</th><th>後半</th><th>最大回撤</th><th>Sharpe</th><th>最差年</th><th>原始平均槓桿</th><th>停止下單天數</th></tr></thead>
+      <tbody>${ms.map((x, i) => `<tr class="clickable${i === levSel ? ' cur' : ''}" data-i="${i}"><td>${x.name}</td>
+        <td><b class="${cmp(x.nd, b0.nd)}">${f1(x.nd)}</b></td><td class="${cmp(x.nd1, b0.nd1)}">${f1(x.nd1)}</td><td class="${cmp(x.nd2, b0.nd2)}">${f1(x.nd2)}</td>
+        <td class="${cmp(x.mdd, b0.mdd, false)}">${f1(x.mdd)}%</td><td class="${cmp(x.sharpe, b0.sharpe)}">${x.sharpe?.toFixed(2) ?? '—'}</td>
+        <td>${f1(x.worst_y)}%</td><td>${x.avg?.toFixed(2) ?? '—'}</td><td>${x.off ? (x.off * 100).toFixed(0) + '%' : '—'}</td></tr>`).join('')}</tbody>`;
+    $('tLev').querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => { levSel = +tr.dataset.i; renderLev(); });
+  }
+  const C_ = C;
+  if (opts.loadLev) {
+    Promise.resolve(opts.loadLev()).then(l => {
+      if (!l || !l.methods || !D.daily[l.cfg]) return;
+      LV = l; $('levCard').hidden = false;
+      levSel = Math.max(0, l.methods.findIndex(x => x.name.includes('MultiCharts')));   // 預設看建議的方法
+      renderLev();
     }).catch(() => {});
   }
 
