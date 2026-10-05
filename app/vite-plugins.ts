@@ -29,7 +29,8 @@ const DIRECTIVES = [
   "img-src 'self' data:",
   "font-src 'self'",
   // FinMind：個股財務分析在瀏覽器直接抓那一檔的財報（見 src/api/finmind.ts）
-  "connect-src 'self' https://api.finmindtrade.com",
+  // GitHub API：配息頁私人持股同步，直接讀寫倉庫裡的加密檔（見 src/lib/ghSync.ts）
+  "connect-src 'self' https://api.finmindtrade.com https://api.github.com",
   "worker-src 'self'",
   "manifest-src 'self'",
   "object-src 'none'",
