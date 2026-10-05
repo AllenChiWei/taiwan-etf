@@ -82,3 +82,18 @@ test('資料過期：週末不算、今天 21:00 前不算', () => {
   assert.equal(missedTradingDays('2026-10-02', new Date('2026-10-07T14:00:00Z')), 3);
   assert.equal(missedTradingDays('2026-10-05', new Date('2026-10-05T14:00:00Z')), 0);
 });
+
+import { equityStats, type EquityRow } from '../src/lib/accountEquity.ts';
+
+test('實盤權益統計：第一天不算損益、回撤取最低、本月加總', () => {
+  const r = (d: string, pnl: number, cum: number, dd: number): EquityRow =>
+    ({ d, tv: 0, flow: 0, pnl, cum, dd, twr: 0, upl: 0, cpl: 0, fee: 0, margin: 0, risk: 0, oi: 0, taiex: 0 });
+  const s = equityStats([r('2026-09-29', 0, 0, 0), r('2026-09-30', 100, 100, 0),
+                         r('2026-10-01', -300, -200, -300), r('2026-10-02', 50, -150, -250)])!;
+  assert.equal(s.days, 3);
+  assert.equal(s.mdd, -300);
+  assert.equal(s.dd, -250);
+  assert.equal(s.month, -250);
+  assert.equal(s.winDays, 2);
+  assert.equal(equityStats([]), null);
+});

@@ -5,8 +5,21 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { loadV18IfUnlocked, v18Vault, type V18Data } from '../lib/v18';
+import type { EquityData } from '../lib/accountEquity';
+import { EquitySection } from '../components/EquitySection';
 
 const qbVault = new Vault(`${import.meta.env.BASE_URL}data/qb/`, 'twetf.v18.unlock');
+// 元大實盤權益：DashBoard_AI\equity_export.py 用同一把密碼、同一個 salt 加密
+const equityVault = new Vault(`${import.meta.env.BASE_URL}data/equity/`, 'twetf.v18.unlock');
+async function loadEquityIfUnlocked(): Promise<EquityData | null> {
+  try {
+    const m = await equityVault.loadManifest();
+    if (!m || (!equityVault.unlocked && !(await equityVault.restore(m)))) return null;
+    return await equityVault.fetchJson<EquityData>('equity.enc');
+  } catch {
+    return null;
+  }
+}
 const pct = (v: number | null | undefined) =>
   v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
 
@@ -15,6 +28,7 @@ export function MePage() {
   const [state, setState] = useState<'loading' | 'locked' | 'ready' | 'missing'>('loading');
   const [v18, setV18] = useState<V18Data | null>(null);
   const [qb, setQb] = useState<VaultManifest | null>(null);
+  const [equity, setEquity] = useState<EquityData | null>(null);
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -23,6 +37,7 @@ export function MePage() {
   const loadAll = async () => {
     setV18(await loadV18IfUnlocked());
     setQb(await qbVault.loadManifest().catch(() => null));
+    setEquity(await loadEquityIfUnlocked());
     setState('ready');
   };
 
@@ -65,7 +80,7 @@ export function MePage() {
     <div className="mt-4">
       <div className="mb-3 flex items-baseline justify-between">
         <h1 className="text-base font-bold text-ink">我的工具</h1>
-        <button type="button" onClick={() => { v18Vault.lock(); setState('locked'); setV18(null); }}
+        <button type="button" onClick={() => { v18Vault.lock(); setState('locked'); setV18(null); setEquity(null); }}
                 className="h-7 rounded-lg bg-sunken px-3 text-[12px] text-muted hover:text-ink">上鎖</button>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -94,6 +109,7 @@ export function MePage() {
           <p className="mt-1 text-[12.5px] text-muted">在籌碼頁：預期波動 ÷ 實際波動、建議履約價（公開頁面）</p>
         </Link>
       </div>
+      {equity && <EquitySection data={equity} />}
       <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
     </div>
   );
