@@ -17,10 +17,10 @@ interface Variant { dir: string; title: string; note?: string }
 
 /* 策略池切換列：同一套看板、不同策略池。切換時 A、B、C、期間、分頁沿用（sessionStorage），方便同設定對照。
  * 之後網路策略盲測有資料，就在 POOLS 加一列（dir 對應 data/<dir>/，再加路由）。 */
-const POOLS: Array<{ dir: string; to: string | null; label: string; hint: string }> = [
-  { dir: 'qb', to: '/QB', label: '原本 Export', hint: '50 個（多空分拆）' },
-  { dir: 'qba', to: '/QBA', label: 'Export＋Activate', hint: '76 個' },
-  { dir: 'qbw', to: null, label: '網路策略盲測', hint: '等台指期資料' },
+const POOLS: Array<{ dir: string; to: string | null; label: string; short: string; hint: string }> = [
+  { dir: 'qb', to: '/QB', label: '原本 Export', short: '原本', hint: 'Export 50 個' },
+  { dir: 'qba', to: '/QBA', label: 'Export＋Activate', short: '合併', hint: '＋Activate 76 個' },
+  { dir: 'qbw', to: null, label: '網路策略盲測', short: '盲測', hint: '等台指期資料' },
 ];
 const SHARED = 'qbd.shared-state';
 function readShared(): Record<string, unknown> {
@@ -31,25 +31,35 @@ function writeShared(s: Record<string, unknown>) {
 }
 
 export function PoolBar({ current }: { current: string }) {
+  // 三等分的切換鈕：手機用短名稱（原本／合併／盲測），寬螢幕顯示完整名稱；下面一行小字是策略數
+  const cell = 'flex min-h-[52px] flex-col items-center justify-center rounded-lg px-1.5 py-1 text-center';
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
-      <span className="text-[12.5px] font-semibold text-muted">策略池</span>
-      {POOLS.map(p => {
-        const cls = 'flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1 text-[13px]';
-        if (!p.to) return (
-          <span key={p.dir} className={`${cls} cursor-not-allowed border-dashed border-line text-faint`} title="提供台指期資料後加入">
-            {p.label}<span className="text-[11px]">（{p.hint}）</span>
-          </span>
-        );
-        const on = p.dir === current;
-        return (
-          <Link key={p.dir} to={p.to} aria-current={on ? 'page' : undefined}
-                className={`${cls} ${on ? 'border-ink bg-ink font-semibold text-surface' : 'border-line-strong bg-surface text-ink hover:bg-hover'}`}>
-            {p.label}<span className={`text-[11px] ${on ? 'opacity-80' : 'text-muted'}`}>（{p.hint}）</span>
-          </Link>
-        );
-      })}
-      <span className="text-[11.5px] text-faint">切換時沿用目前的 A、B、C 與期間</span>
+    <div className="mb-3">
+      <div className="mb-1.5 flex items-baseline justify-between gap-2">
+        <span className="text-[12.5px] font-semibold text-muted">策略池</span>
+        <span className="text-[11px] text-faint">切換時沿用目前的 A、B、C 與期間</span>
+      </div>
+      <div className="grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1" role="tablist" aria-label="策略池">
+        {POOLS.map(p => {
+          const name = (
+            <span className="text-[13.5px] font-semibold leading-tight">
+              <span className="sm:hidden">{p.short}</span><span className="hidden sm:inline">{p.label}</span>
+            </span>
+          );
+          if (!p.to) return (
+            <span key={p.dir} className={`${cell} cursor-not-allowed text-faint`} title="提供台指期資料後加入" aria-disabled="true">
+              {name}<span className="mt-0.5 text-[10.5px] leading-tight">{p.hint}</span>
+            </span>
+          );
+          const on = p.dir === current;
+          return (
+            <Link key={p.dir} to={p.to} role="tab" aria-selected={on} aria-current={on ? 'page' : undefined}
+                  className={`${cell} ${on ? 'bg-surface text-ink shadow-sm ring-1 ring-line-strong' : 'text-muted hover:bg-hover hover:text-ink'}`}>
+              {name}<span className={`mt-0.5 text-[10.5px] leading-tight ${on ? 'text-muted' : 'text-faint'}`}>{p.hint}</span>
+            </Link>
+          );
+        })}
+      </div>
     </div>
   );
 }
