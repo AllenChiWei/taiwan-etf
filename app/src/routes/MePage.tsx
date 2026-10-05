@@ -101,8 +101,8 @@ export function MePage() {
           </p>
         </Link>
         <Link to="/QBA" className={card}>
-          <div className="text-sm font-bold text-ink">QB 看板（Activate 版）</div>
-          <p className="mt-1 text-[12.5px] text-muted">只用 Activate 資料夾的策略另外跑的一份回測；與上面那份分開，事後挑選、結果偏樂觀</p>
+          <div className="text-sm font-bold text-ink">QB 看板（Export＋Activate 合併版）</div>
+          <p className="mt-1 text-[12.5px] text-muted">原本的策略再加上 Activate 的策略一起回測；與上面那份分開，可以對照差異（Activate 是事後挑選，偏樂觀）</p>
         </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>

@@ -6,7 +6,7 @@
  * 看板本體在 lib/qbDashboard.ts（本機 HTML 也用同一份），ECharts 只在這一頁才載入。
  * 入口在上方選單「🔒 私人」（#/me）。
  *
- * 2026-10-05：同一個元件也用在 #/QBA —— 只用 Export\Activate 策略的獨立版本（資料在 data/qba/，
+ * 2026-10-05：同一個元件也用在 #/QBA —— Export 第一層＋Activate 合併的獨立版本（資料在 data/qba/，
  * 由 QB_EXPORT_DIR／QB_OUT_DIR 切換後的 qb_dashboard.py 產生），兩份資料完全分開。 */
 
 import { useEffect, useRef, useState } from 'react';
@@ -103,9 +103,10 @@ function QbBoard({ v }: { v: Variant }) {
 const QB: Variant = { dir: 'qb', title: 'QB 策略層評價看板' };
 const QBA: Variant = {
   dir: 'qba',
-  title: 'QB 策略層評價看板（Activate 版）',
-  note: '資料：<b>只用 Export\\Activate\\*.csv</b>（使用者挑出來正在用的策略，多空分拆成 _L／_S），與 #/QB（Export 第一層）是兩份獨立的回測。'
-    + '<b>注意：Activate 是看過績效之後才挑出來的，回測會比實際樂觀（選擇偏誤）</b>，評價前後的「差距」比絕對績效更值得參考。'
+  title: 'QB 策略層評價看板（Export＋Activate 合併版）',
+  note: '資料：<b>Export 第一層＋Export\\Activate 的策略合在一起</b>（每個策略拆成多方 _L、空方 _S），'
+    + '與 #/QB（只有 Export 第一層、不含 Activate）是兩份獨立的回測，可以對照看加入 Activate 後的差異。'
+    + '<b>注意：Activate 是看過績效之後才挑出來的，含 Activate 的結果會比實際樂觀（選擇偏誤）</b>。'
     + '分數只用前一天收盤以前的資料；「QB 序位」「QB 分多空」照複製版 QB 規則逐日模擬。',
 };
 
