@@ -1,5 +1,5 @@
 /* 私人頁的「QB 架構流程」：從 MultiCharts 策略到下單、加上 Level-2 槓桿回授與研究回饋兩條支線。
- * 內容以 2026-10-05 定案的設定為準（X1_v3 Sortino 250、分多空各序位 15、海龜風控指標）；設定改了要一起改這裡。
+ * 內容以 2026-10-05 定案的設定為準（X1_v3 Sortino 250、分多空各序位 15、慢速恢復海龜指標）；設定改了要一起改這裡。
  * 純 HTML／CSS 方塊，手機上直排也看得清楚。 */
 
 interface Step {
@@ -31,9 +31,9 @@ const MAIN: Step[] = [
 
 const LEVEL2: Step[] = [
   { where: '複製版 QB', title: 'EquityServer（DDE）', lines: ['=QuantBrains|帳號!accountall：總體帳戶金額'] },
-  { where: 'MultiCharts', title: '指標 @QB_Level2_Turtle（海龜風控）',
+  { where: 'MultiCharts', title: '指標 @QB_Level2_Turtle（慢速恢復海龜）',
     lines: ['帳戶損益 ÷ 當天槓桿 → 還原成槓桿 1 倍的參考帳戶（避免回授）',
-            '參考帳戶回撤每滿「年化波動 × 0.25」縮小 10%，最低 0.2 倍；收復後恢復',
+            '參考帳戶回撤每滿「年化波動 × 0.20」立刻縮小 20%，最低 0.2 倍；收復後每天最多回升 0.03 倍',
             '寫出 conv_rate.txt ＝ 基準動能轉換率 × 槓桿倍數'] },
 ];
 

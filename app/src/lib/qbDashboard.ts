@@ -259,8 +259,9 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
              loseM: mv.length ? mv.filter(v => v < 0).length / mv.length : null,
              worstM: mv.length ? Math.min(...mv) : null, cum, dd, mon };
   }
-  // C＝B 再套用總帳戶自動槓桿（海龜風控，與 Release\@QB_Level2_Turtle.txt 同一套算法）：
-  // 參考帳戶＝B 的權益；一階回撤＝參考帳戶「至今」年化波動 × 0.25；每階縮 10%，最低 0.2 倍；前 60 天不調整；只用前一天以前的資料
+  // C＝B 再套用總帳戶自動槓桿（慢速恢復海龜，與 Release\@QB_Level2_Turtle.txt 同一套算法）：
+  // 參考帳戶＝B 的權益；一階回撤＝參考帳戶「至今」年化波動 × 0.20；每階縮 20%（立刻縮），最低 0.2 倍；
+  // 回撤收復後每天最多回升 0.03 倍；前 60 天不調整；只用前一天以前的資料（2026-10-05 lev3_study 選定）
   const levCache = {};
   function autoLev(x) {
     const lev = new Array(x.length).fill(1);
@@ -270,7 +271,8 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       eq += x[i]; pk = Math.max(pk, eq); s1 += x[i]; s2 += x[i] * x[i];
       const n = i + 1;
       const vol = n > 1 ? Math.sqrt(Math.max(0, (s2 - s1 * s1 / n) / (n - 1))) * Math.sqrt(252) : 0;
-      cur = n >= 60 && vol > 0 ? Math.max(0.2, 1 - 0.1 * Math.floor((pk - eq) / (vol * 0.25))) : 1;
+      const tgt = n >= 60 && vol > 0 ? Math.max(0.2, 1 - 0.2 * Math.floor((pk - eq) / (vol * 0.2))) : 1;
+      cur = tgt < cur ? tgt : Math.min(tgt, cur + 0.03);
     }
     return lev;
   }
@@ -365,7 +367,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       <li class="note">提醒：設定越多、期間切得越短，排名越容易只是運氣；要看前半、後半、近期是否都成立。</li></ul>`;
 
     $('kpiNote').textContent = `A＝${ca.name}；B＝${cb.name}（${cb.desc}）。${state.scaled ? '同曝險：部位已調整成與評價前相同的平均在場倍數（B ×' + cb.scale.toFixed(2) + '）。' : '原始：照設定的倍數，不調整。'}`
-      + `C＝B 再加上總帳戶自動槓桿（海龜風控：參考帳戶回撤每滿「年化波動 × 0.25」縮小 10%，最低 0.2 倍，收復後恢復；MultiCharts 指標 @QB_Level2_Turtle 同算法），`
+      + `C＝B 再加上總帳戶自動槓桿（慢速恢復海龜：參考帳戶回撤每滿「年化波動 × 0.20」立刻縮小 20%，最低 0.2 倍；收復後每天最多回升 0.03 倍；MultiCharts 指標 @QB_Level2_Turtle 同算法），`
       + `所選期間平均槓桿 ${(() => { const l = levCache[state.b + '|' + (state.scaled ? cb.scale : 1)].lev; const [i0, i1] = idxRange(); const x = l.slice(i0, i1); return (x.reduce((t, v) => t + v, 0) / x.length).toFixed(2); })()} 倍。`;
     const kp = [['淨利（萬）', A.net, B.net, Cm.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, Cm.mdd, fmtW, false],
                 ['淨利 / 回撤', A.nd, B.nd, Cm.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, Cm.sharpe, fmt2, true],
@@ -672,7 +674,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('levNote').innerHTML = `對象：<b>${cfgByKey[LV.cfg]?.name || LV.cfg}</b> 的組合權益（評價後）。槓桿只看「槓桿固定 1 倍的參考帳戶」前一天以前的表現（不偷看）。`
       + `每個方法都縮放成平均槓桿 1 倍才比較；帳戶資金設成讓參考帳戶年化波動 20%（約 ${fmtW(C)} 萬，只影響 % 的尺度）。`
       + `前半／後半以 ${LV.half_date} 切開。紅字＝比基準好、綠字＝比基準差。方法來自原版 QB 文件「進階管理模式（Level-2）」，另加拉回加碼；`
-      + `「海龜風控（MultiCharts 指標版）」就是 Release\\@QB_Level2_Turtle.txt 的算法。`
+      + `「慢速恢復海龜（MultiCharts 指標版…）」就是 Release\\@QB_Level2_Turtle.txt 的算法。`
       + `<b>判讀：要兩個策略池（#/QB、#/QBA）、前後半都變好，而且鄰近參數（例如通道 15／20／30 日）也都變好才算數；`
       + `只有單一參數特別好的（如高低通道 20 日）多半是巧合。</b>（產生於 ${LV.generated}）`;
     const cumOf = lev => { let t = 0, pk = 0; const c = [], d = []; base.forEach((v, i) => { t += v * lev[i] / C * 100; pk = Math.max(pk, t); c.push(t); d.push(t - pk); }); return [c, d]; };
