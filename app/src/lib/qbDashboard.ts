@@ -323,6 +323,11 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     return tgt < r.cur ? tgt : Math.min(tgt, r.cur + up);
   });
   const linearDD = k => x => refWalk(x, r => Math.max(0.2, 1 - k * r.ddv));
+  // 拉回減碼＋上漲加碼：沒有回撤（未滿一階）時 up 倍，回撤中照海龜往下縮（lev3_study「海龜＋順勢加碼」）
+  const turtleBoost = (step, cut, up) => x => refWalk(x, r => {
+    const k = Math.floor(r.ddv / step);
+    return k === 0 ? up : Math.max(0.2, 1 - cut * k);
+  });
   const nearHigh = (near, up) => x => refWalk(x, r => (r.ddv < near ? up : 1));
   const dipAdd = (step, add, cap) => x => refWalk(x, r => Math.min(cap, 1 + add * Math.floor(r.ddv / step)));
   const breaker = (off, on) => x => { let st = 1; return refWalk(x, r => (st = st ? (r.ddv >= off ? 0 : 1) : (r.ddv <= on ? 1 : 0))); };
@@ -351,22 +356,24 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   }
   const LEV = [
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
-    ['slow', '慢速恢復海龜（MultiCharts 指標版）', turtle(0.20, 0.20, 0.03)],
-    ['slow10', '慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
-    ['t25', '海龜（舊版指標：一階 0.25、縮 10%）', turtle(0.25, 0.10)],
-    ['t10', '海龜（一階 0.10、縮 10%）', turtle(0.10, 0.10)],
-    ['lin', '線性回撤縮放（k＝1）', linearDD(1)],
-    ['ma20', '均線 20 日以下 → 0.5 倍', maRule(20, 0.5)],
-    ['ma60', '均線 60 日以下 → 0.5 倍', maRule(60, 0.5)],
-    ['ch15', '高低通道 15 日：破低 → 0.5 倍', chan(15, 0.5)],
-    ['ch20', '高低通道 20 日：破低 → 0.5 倍', chan(20, 0.5)],
-    ['ch30', '高低通道 30 日：破低 → 0.5 倍', chan(30, 0.5)],
-    ['bb20', '布林 20 日 −2σ → 0.5 倍', boll(20, 2, 0.5)],
-    ['bb60', '布林 60 日 −2σ → 0.5 倍', boll(60, 2, 0.5)],
-    ['near', '順勢加碼：離高點 < 0.25 年化波動 → 1.5 倍', nearHigh(0.25, 1.5)],
-    ['dip', '拉回加碼：每 0.25 年化波動 +0.5 倍（上限 2）', dipAdd(0.25, 0.5, 2)],
-    ['vol', '波動目標 20 日（0.5～1.5 倍）', volTarget(20)],
-    ['brk', '熔斷：回撤 ≥ 0.5 年化波動停止，≤ 0.25 恢復', breaker(0.5, 0.25)],
+    ['slow', '拉回減碼｜慢速恢復海龜（MultiCharts 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
+    ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
+    ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
+    ['t10', '拉回減碼｜海龜（一階 0.10、縮 10%、立刻恢復）', turtle(0.10, 0.10)],
+    ['lin', '拉回減碼｜線性（回撤越深越小，k＝1）', linearDD(1)],
+    ['tb15', '拉回減碼＋上漲加碼｜海龜（一階 0.20、縮 15%）＋無回撤時 1.25 倍', turtleBoost(0.20, 0.15, 1.25)],
+    ['tb10', '拉回減碼＋上漲加碼｜海龜（一階 0.20、縮 10%）＋無回撤時 1.25 倍', turtleBoost(0.20, 0.10, 1.25)],
+    ['ma20', '權益曲線｜均線 20 日以下 → 0.5 倍', maRule(20, 0.5)],
+    ['ma60', '權益曲線｜均線 60 日以下 → 0.5 倍', maRule(60, 0.5)],
+    ['ch15', '權益曲線｜高低通道 15 日破低 → 0.5 倍', chan(15, 0.5)],
+    ['ch20', '權益曲線｜高低通道 20 日破低 → 0.5 倍', chan(20, 0.5)],
+    ['ch30', '權益曲線｜高低通道 30 日破低 → 0.5 倍', chan(30, 0.5)],
+    ['bb20', '權益曲線｜布林 20 日 −2σ → 0.5 倍', boll(20, 2, 0.5)],
+    ['bb60', '權益曲線｜布林 60 日 −2σ → 0.5 倍', boll(60, 2, 0.5)],
+    ['near', '上漲加碼｜離高點 < 0.25 年化波動時 1.5 倍', nearHigh(0.25, 1.5)],
+    ['dip', '拉回加碼｜每回撤 0.25 年化波動 +0.5 倍（上限 2）', dipAdd(0.25, 0.5, 2)],
+    ['vol', '波動目標｜20 日（0.5～1.5 倍）', volTarget(20)],
+    ['brk', '熔斷｜回撤 ≥ 0.5 年化波動停止，≤ 0.25 恢復', breaker(0.5, 0.25)],
   ];
   const levByKey = Object.fromEntries(LEV.map(([k, n, f]) => [k, { name: n, f }]));
   const levCache = {};
@@ -802,6 +809,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('tLev').querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => { state.c = tr.dataset.k; render(); });
     $('levNote').innerHTML = `B＝<b>${cfgByKey[state.b].name}</b>，期間：${state.period}。每列＝把該方法套在 B 上的結果；<b>點任一列就設為上方的 C</b>，點欄位名稱排序。`
       + `「比 B」＝淨利/回撤相對 B（關閉）的變化；淨利/回撤與 Sharpe 不受槓桿大小影響，淨利與回撤會隨平均槓桿縮放。`
+      + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網。`
       + `回撤門檻以參考帳戶「至今年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；只用前一天收盤以前的資料。`
       + `<b>判讀：要 #/QB、#/QBA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
     const [i0, i1] = idxRange();
