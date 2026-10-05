@@ -139,7 +139,9 @@ function QbBoard({ v }: { v: Variant }) {
           // 自動槓桿研究結論（lev_summary.py；舊資料沒有就不顯示）
           loadLev: () => vault.fetchJson<unknown>('lev.enc').catch(() => null),
           // 三池設定驗證（blind_validate.py；舊資料沒有就不顯示「盲測驗證」分頁）
-          loadValidate: () => vault.fetchJson<unknown>('validate.enc').catch(() => null) });
+          loadValidate: () => vault.fetchJson<unknown>('validate.enc').catch(() => null),
+          // 自動槓桿第四輪：三池穩健度（lev7_robust.py）
+          loadLev7: () => vault.fetchJson<unknown>('lev7.enc').catch(() => null) });
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data, vault, v]);

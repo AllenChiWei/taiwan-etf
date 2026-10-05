@@ -166,6 +166,15 @@ const HTML = `
     <div class="note mt">目前 C 的槓桿倍數（0＝停止下單）</div>
     <div data-id="cLevL" class="chart short"></div>
   </div>
+  <div class="card mt" data-id="lev7Card" hidden>
+    <h2>第四輪：三個策略池都穩健的自動槓桿？（原本／合併／盲測）</h2>
+    <div class="note" data-id="lev7Note"></div>
+    <ul class="note val-notes" data-id="lev7Notes"></ul>
+    <div class="legend-row"><span>點欄位名稱排序</span></div>
+    <div class="tbl-wrap"><table class="val" data-id="tLev7"></table></div>
+    <div class="note mt"><b>三池、前後半六段全部改善的參數</b>（改善＝淨利/回撤 相對 B；括號為前半／後半）</div>
+    <div class="tbl-wrap"><table class="val" data-id="tLev7Top"></table></div>
+  </div>
   <div class="card mt" data-id="levResCard" hidden>
     <h2>研究結論：哪一類自動槓桿在兩種 QB 都有效</h2>
     <div class="note" data-id="levResNote"></div>
@@ -1111,6 +1120,36 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       <tbody>${meths.map(m => `<tr${m.includes('步進 10%') && m.startsWith('固定比例') ? ' class="cur"' : ''}><td>${m}</td>${P.map(p => {
         const r = rowsOf(p).find(x => x.name === m); const v = r[valCM];
         return `<td>${v === bestC[p] ? `<b class="pos">${cf(v)}</b>` : cf(v)}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
+  }
+  // ── 自動槓桿第四輪：三池穩健度（lev7_robust.py → lev7.enc）──
+  let L7 = null, l7Sort = { col: 'all6', dir: -1 };
+  function renderLev7() {
+    if (!L7) return;
+    $('lev7Card').hidden = false;
+    const SH = { '原本 Export': '原本', 'Export＋Activate': '合併', '網路策略盲測': '盲測' };
+    const b = L7.base;
+    $('lev7Note').innerHTML = `B（固定槓桿）淨利/回撤：${L7.pools.map((p, k) => `${SH[p] || p} ${b[k].nd.toFixed(2)}`).join('、')}。`
+      + `已扣槓桿調整成本、縮放成平均槓桿 1，只用前一天收盤以前的 B 權益。<b>六段</b>＝三池×前後半都比 B 好的參數比例；`
+      + `<b>留一池</b>＝用兩池挑最佳參數、看第三池的改善（輪流三次取平均）；勝率＝3 年視窗勝過 B 的中位數。產生於 ${L7.generated}。`;
+    $('lev7Notes').innerHTML = (L7.notes || []).map(n => `<li>${n}</li>`).join('');
+    const pc = v => v == null ? '—' : `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</span>`;
+    const p0 = v => v == null ? '—' : (v * 100).toFixed(0) + '%';
+    const cols = [['family', '方法族'], ['n', '組數'], ['all6', '六段全改善'], ['med0', '原本中位'], ['med1', '合併中位'], ['med2', '盲測中位'],
+                  ['lopo', '留一池'], ['lopo_all', '三次都>0'], ['win2', '盲測勝率']];
+    const rows = L7.families.slice().sort((x, y) => { const k = l7Sort.col; const a = x[k], c = y[k];
+      return typeof a === 'string' ? a.localeCompare(c) * l7Sort.dir : ((+a) - (+c)) * l7Sort.dir; });
+    $('tLev7').innerHTML = `<thead><tr>${cols.map(([k, l]) => `<th class="sortable" data-c="${k}">${l}${l7Sort.col === k ? (l7Sort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr><td>${r.family}</td><td>${r.n}</td><td><b>${p0(r.all6)}</b></td><td>${pc(r.med0)}</td><td>${pc(r.med1)}</td><td>${pc(r.med2)}</td>
+        <td>${pc(r.lopo)}</td><td>${r.lopo_all ? '<b class="pos">是</b>' : '否'}</td><td>${p0(r.win2)}</td></tr>`).join('')}</tbody>`;
+    $('tLev7').querySelectorAll('th').forEach(th => th.onclick = () => {
+      const k = th.dataset.c; l7Sort = { col: k, dir: l7Sort.col === k ? -l7Sort.dir : (k === 'family' ? 1 : -1) }; renderLev7(); });
+    const t = L7.top || [];
+    $('tLev7Top').innerHTML = t.length ? `<thead><tr><th>參數</th><th>原本</th><th>合併</th><th>盲測</th><th>最差段</th></tr></thead>
+      <tbody>${t.map(r => `<tr><td>${r.label}</td>${[0, 1, 2].map(k => `<td>${pc(r[`g${k}_nd`])}<br><span class="note">${pc(r[`g${k}_nd1`])}／${pc(r[`g${k}_nd2`])}</span></td>`).join('')}
+        <td>${pc(r.worst6)}</td></tr>`).join('')}</tbody>` : '<tbody><tr><td>沒有任何參數在六段全部改善。</td></tr></tbody>';
+  }
+  if (opts.loadLev7) {
+    Promise.resolve(opts.loadLev7()).then(v => { if (v && v.families) { L7 = v; renderLev7(); } }).catch(() => {});
   }
   if (opts.loadValidate) {
     Promise.resolve(opts.loadValidate()).then(v => {
