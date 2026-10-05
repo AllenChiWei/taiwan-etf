@@ -108,7 +108,7 @@ export function AppShell() {
       {/* 資料超過 2 個交易日沒更新就提醒（2026-09 曾停在 9/25 好幾天沒人發現） */}
       <StaleBanner updated={meta?.updated} />
 
-      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl px-3 pb-10 sm:px-4">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl overflow-x-clip px-3 pb-10 sm:px-4">
         {state.status === 'loading' && (
           <p className="py-16 text-center text-muted">載入資料中…</p>
         )}

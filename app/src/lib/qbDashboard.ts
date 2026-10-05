@@ -17,6 +17,7 @@ const CSS = `
   background:var(--bg); color:var(--ink); font:14px/1.5 "Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
   border-radius:14px; padding:16px; }
 .qbd * { box-sizing:border-box; }
+.qbd { max-width:100%; overflow-x:clip; }
 .qbd h1 { font-size:20px; margin:0 0 4px; } .qbd h2 { font-size:15px; margin:0 0 2px; }
 .qbd .sub { color:var(--ink-2); font-size:12.5px; } .qbd .note { color:var(--ink-3); font-size:12px; }
 .qbd .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
@@ -46,7 +47,7 @@ const CSS = `
 .qbd .kpi .v span { font-size:13px; color:var(--ink-2); } .qbd .kpi .v b { font-size:16px; color:var(--ink); }
 .qbd .kpi .d { font-size:12px; margin-top:2px; font-variant-numeric:tabular-nums; }
 .qbd .better { color:var(--up); } .qbd .worse { color:var(--down); } .qbd .same { color:var(--ink-3); }
-.qbd .chart { width:100%; height:320px; } .qbd .chart.tall { height:820px; } .qbd .chart.short { height:180px; }
+.qbd .chart { width:100%; height:320px; overflow:hidden; } .qbd .chart.tall { height:820px; } .qbd .chart.short { height:180px; }
 .qbd .tbl-wrap { overflow-x:auto; }
 .qbd table { border-collapse:collapse; width:100%; font-size:12.5px; font-variant-numeric:tabular-nums; }
 .qbd th, .qbd td { padding:5px 8px; border-bottom:1px solid var(--line); text-align:right; white-space:nowrap; }
@@ -462,7 +463,8 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   window.addEventListener('resize', onResize);
   const axisCommon = { axisLine: { lineStyle: { color: C.line } }, axisTick: { show: false },
     axisLabel: { color: C.ink3, fontSize: 11 }, splitLine: { lineStyle: { color: C.line } } };
-  const tooltipCommon = { backgroundColor: C.surface, borderColor: C.line, textStyle: { color: '#0b0b0b', fontSize: 12 } };
+  // confine：提示框限制在圖內。Safari 會把隱藏中、但位置在圖外的提示框算進頁面寬度 → 點過圖之後整頁被撐寬、手機畫面縮小（10/05 實際發生）
+  const tooltipCommon = { confine: true, backgroundColor: C.surface, borderColor: C.line, textStyle: { color: '#0b0b0b', fontSize: 12 } };
   const legend = { top: 0, right: 0, textStyle: { color: C.ink2, fontSize: 12 }, icon: 'circle', itemWidth: 9, itemHeight: 9 };
   const lineSeries = (name, data, color, width = 2) => ({ name, type: 'line', data, showSymbol: false, sampling: 'lttb',
     lineStyle: { width, color }, itemStyle: { color }, emphasis: { disabled: true } });
