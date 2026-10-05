@@ -136,6 +136,23 @@ const HTML = `
   </div>
 </div>
 
+<div data-tab="side" hidden>
+  <div class="card">
+    <h2>多單與空單：A → B → C</h2>
+    <div class="note" data-id="sideNote"></div>
+    <div class="tbl-wrap mt"><table class="kpi" data-id="tSideKpi"></table></div>
+  </div>
+  <div class="grid g2 mt">
+    <div class="card"><h2>多方 累積損益</h2><div class="note">單位：萬元</div><div data-id="cSideL" class="chart"></div></div>
+    <div class="card"><h2>空方 累積損益</h2><div class="note">單位：萬元</div><div data-id="cSideS" class="chart"></div></div>
+  </div>
+  <div class="card mt">
+    <h2>每年損益：多方 vs 空方</h2>
+    <div class="note">單位：萬元。紅＝賺、綠＝賠；年度最大回撤是該年內的多方（或空方）損益曲線回撤。</div>
+    <div class="tbl-wrap"><table class="yr" data-id="tSideYear"></table></div>
+  </div>
+</div>
+
 <div data-tab="lev" hidden>
   <div class="card">
     <h2>總帳戶自動槓桿（Level-2）：套在目前的 B 上</h2>
@@ -192,6 +209,9 @@ const HTML = `
     <h2 class="mt">QB 分多空（多方、空方兩個策略分類，各自序位）</h2>
     <div class="note">_L 策略放「多方」分類、_S 放「空方」分類，各自設序位 N（複製版 QB 已支援，不用改程式）。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLS"></table></div>
+    <h2 class="mt">QB 分多空：多方、空方不同序位</h2>
+    <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（複製版 QB 每個分類可各設序位）。點格子設為 B。</div>
+    <div class="tbl-wrap"><table data-id="tMatrixLSA"></table></div>
   </div>
   <div class="card mt">
     <h2>所有設定比較</h2>
@@ -244,7 +264,8 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'slow', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
-  const getWeek = key => (weekCache[key] ||= loadWeek(key));
+  // w_<設定>：舊格式＝各策略每週損益陣列；新格式（10/05）＝{ w: 每週陣列, dL: 多方每日損益, dS: 空方每日損益 }
+  const getWeek = key => (weekCache[key] ||= Promise.resolve(loadWeek(key)).then(x => (Array.isArray(x) ? { w: x } : x)));
 
   $('meta').textContent = `評估期 ${D.range[0]} ～ ${D.range[1]}（${D.warmup_start} 起的前 500 個交易日當暖機）　·　策略 ${D.strategies.length} 個（多空分拆）　·　產生於 ${D.generated}`;
 
@@ -252,13 +273,13 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const sel = $(id);
     const groups = {};
     for (const c of D.configs) {
-      const g = c.key.startsWith('GATE') ? 'QB 序位（單一分類）' : c.key.startsWith('LS') ? 'QB 分多空序位'
+      const g = c.key.startsWith('GATE') ? 'QB 序位（單一分類）' : c.key.startsWith('LSA') ? 'QB 分多空（多空不同序位）' : c.key.startsWith('LS') ? 'QB 分多空序位'
         : c.key.startsWith('CUT') ? 'QB 最小動能門檻' : KIND[c.kind];
       if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; sel.appendChild(groups[g]); }
       groups[g].appendChild(new Option(c.name, c.key));
     }
   }
-  const TABS = [['year', '年度／月度'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['blend', 'v18＋QB']];
+  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['blend', 'v18＋QB']];
   function showTab(t) {
     state.tab = t;
     root.querySelectorAll('[data-tab]').forEach(el => { el.hidden = el.dataset.tab !== t; });
@@ -471,7 +492,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     catch (e) { $('stratNote').textContent = `載入失敗：${e.message || e}`; return; }
     if (token !== stratToken) return;
     const cum = arr => { let t = 0; return wi.map(i => (t += arr[i]) * 1e3); };
-    const before = cum(D.strat_week_before[j]), A = cum(wa[j]), B = cum(wb[j]);
+    const before = cum(D.strat_week_before[j]), A = cum(wa.w[j]), B = cum(wb.w[j]);
     const last = a => a.length ? a[a.length - 1] : 0;
     const mdd = a => { let p = 0, m = 0; for (const v of a) { p = Math.max(p, v); m = Math.max(m, p - v); } return m; };
     $('stratNote').innerHTML = `${s}　·　${state.period}　·　評價前 ${fmtW(last(before))} 萬（回撤 ${fmtW(mdd(before))}）`
@@ -604,6 +625,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     renderStratTable(mIdx);
     renderYearly();
     renderLev();
+    renderSides();
     renderStrat();
     saveState?.();
   }
@@ -691,12 +713,16 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('tMatrix').innerHTML = `<thead><tr><th>Sortino 回溯</th><th>X1_v2 倍數</th><th>門檻</th>${tops.map(n => `<th>前 ${n}</th>`).join('')}</tr></thead>
       <tbody><tr><td>評價前</td><td colspan="${tops.length + 2}" style="text-align:left">${fmt2(base.sharpe)} ／ ${fmt1(base.nd)} ／ ${pct0(base.loseM)}（對照基準）</td></tr>
       ${looks.map(L => `<tr><td>${L} 天${L === 250 ? '<span class="tag">現行</span>' : ''}</td>${cell('X1V2_' + L)}${cell('CUT_' + L)}${tops.map(n => cell(`GATE${n}_${L}`)).join('')}</tr>`).join('')}</tbody>`;
-    const ls = D.configs.filter(c => c.key.startsWith('LS'));
+    const ls = D.configs.filter(c => c.key.startsWith('LS') && !c.key.startsWith('LSA'));
     const lsLooks = [...new Set(ls.map(c => +c.key.split('_')[1]))];
     const lsTops = [...new Set(ls.map(c => +c.key.slice(2).split('_')[0]))].sort((a, b) => a - b);
     $('tMatrixLS').innerHTML = `<thead><tr><th>Sortino 回溯</th>${lsTops.map(n => `<th>各前 ${n}</th>`).join('')}</tr></thead>
       <tbody>${lsLooks.map(L => `<tr><td>${L} 天</td>${lsTops.map(n => cell(`LS${n}_${L}`)).join('')}</tr>`).join('')}</tbody>`;
-    for (const t of ['tMatrix', 'tMatrixLS'])
+    const asym = D.configs.filter(c => c.key.startsWith('LSA'));
+    $('tMatrixLSA').innerHTML = asym.length ? `<thead><tr><th>Sortino 回溯</th>${asym.map(c => { const [a, b] = c.key.slice(3).split('_')[0].split('x');
+        return `<th>多 ${a}／空 ${b}</th>`; }).join('')}</tr></thead><tbody><tr><td>250 天</td>${asym.map(c => cell(c.key)).join('')}</tr></tbody>`
+      : '<tbody><tr><td class="note">（這份資料還沒有多空不同序位的設定）</td></tr></tbody>';
+    for (const t of ['tMatrix', 'tMatrixLS', 'tMatrixLSA'])
       $(t).querySelectorAll('td[data-k]').forEach(td => td.onclick = () => { state.b = td.dataset.k; render(); });
   }
 
@@ -819,6 +845,53 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     }).catch(() => {});
   }
 
+  // ── 多空分頁：A、B 各自的多方／空方每日損益（w_<設定> 的 dL、dS），C＝B 的多空 × C 的槓桿（槓桿是整個帳戶一起縮放）──
+  let sideToken = 0;
+  async function renderSides() {
+    const token = ++sideToken;
+    let wa, wb;
+    try { [wa, wb] = await Promise.all([getWeek(state.a), getWeek(state.b)]); }
+    catch (e) { $('sideNote').textContent = `載入失敗：${e.message || e}`; return; }
+    if (token !== sideToken) return;
+    if (!wa.dL || !wb.dL) { $('sideNote').textContent = '這份資料還沒有多空分開的每日損益（需要重新產生看板資料）。'; return; }
+    const [i0, i1] = idxRange(), dates = D.dates.slice(i0, i1);
+    const ka = state.scaled ? cfgByKey[state.a].scale : 1, kb = state.scaled ? cfgByKey[state.b].scale : 1;
+    const lev = levOf(state.b, state.c).lev;
+    const ser = {
+      AL: wa.dL.slice(i0, i1).map(v => v * ka), AS: wa.dS.slice(i0, i1).map(v => v * ka),
+      BL: wb.dL.slice(i0, i1).map(v => v * kb), BS: wb.dS.slice(i0, i1).map(v => v * kb),
+    };
+    ser.CL = ser.BL.map((v, i) => v * lev[i0 + i]); ser.CS = ser.BS.map((v, i) => v * lev[i0 + i]);
+    const m = Object.fromEntries(Object.entries(ser).map(([k, x]) => [k, metrics(x, dates)]));
+    const ca = cfgByKey[state.a], cb = cfgByKey[state.b];
+    $('sideNote').innerHTML = `A＝${ca.name}；B＝${cb.name}；C＝B＋${levByKey[state.c].name}。期間：${state.period}。`
+      + `多方＝所有 _L 策略、空方＝所有 _S 策略（${D.strategies.filter(x => x.endsWith('_L')).length} 個／${D.strategies.filter(x => x.endsWith('_S')).length} 個）。`
+      + `損益＝動能 × 策略損益；QB 序位設定的組合另有取整差異，兩邊加總與上方組合數字可能差一點。`;
+    const rows = [['淨利（萬）', 'net', fmtW], ['最大回撤（萬）', 'mdd', fmtW], ['淨利 / 回撤', 'nd', fmt1], ['Sharpe', 'sharpe', fmt2], ['虧損月比例', 'loseM', pct0]];
+    $('tSideKpi').innerHTML = `<thead><tr><th>指標</th><th style="color:${C.a}">A 多</th><th style="color:${C.b}">B 多</th><th style="color:${C.c}">C 多</th>
+        <th class="gap" style="color:${C.a}">A 空</th><th style="color:${C.b}">B 空</th><th style="color:${C.c}">C 空</th></tr></thead>
+      <tbody>${rows.map(([lab, k, f]) => `<tr><td>${lab}</td><td>${f(m.AL[k])}</td><td><b>${f(m.BL[k])}</b></td><td><b>${f(m.CL[k])}</b></td>
+        <td class="gap">${f(m.AS[k])}</td><td><b>${f(m.BS[k])}</b></td><td><b>${f(m.CS[k])}</b></td></tr>`).join('')}</tbody>`;
+    for (const [id, a, b, c] of [['cSideL', 'AL', 'BL', 'CL'], ['cSideS', 'AS', 'BS', 'CS']]) {
+      chart(id).setOption({ animation: false, grid: { left: 70, right: 14, top: 28, bottom: 52 }, tooltip: tl, legend,
+        xAxis: { type: 'category', data: dates, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
+        dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
+        series: [lineSeries(sName('A', ca), m[a].cum, C.a), lineSeries(sName('B', cb), m[b].cum, C.b), lineSeries(cName(), m[c].cum, C.c)] }, true);
+    }
+    const yearly = x => { const o = new Map(); x.forEach((v, i) => { const y = dates[i].slice(0, 4);
+      let r = o.get(y); if (!r) o.set(y, r = { net: 0, peak: 0, mdd: 0 }); r.net += v; r.peak = Math.max(r.peak, r.net); r.mdd = Math.max(r.mdd, r.peak - r.net); }); return o; };
+    const Y = Object.fromEntries(Object.entries(ser).map(([k, x]) => [k, yearly(x)]));
+    const years = [...Y.AL.keys()];
+    const money = v => `<span class="${v > 0.5 ? 'pos' : v < -0.5 ? 'neg' : ''}">${fmtW(v)}</span>`;
+    const tot = k => years.reduce((t, y) => t + Y[k].get(y).net, 0);
+    $('tSideYear').innerHTML = `<thead><tr><th>年度</th><th class="gap" style="color:${C.a}">A 多</th><th style="color:${C.b}">B 多</th><th style="color:${C.c}">C 多</th><th>B 多 回撤</th>
+        <th class="gap" style="color:${C.a}">A 空</th><th style="color:${C.b}">B 空</th><th style="color:${C.c}">C 空</th><th>B 空 回撤</th></tr></thead>
+      <tbody>${years.map(y => `<tr><td>${y}</td><td class="gap">${money(Y.AL.get(y).net)}</td><td>${money(Y.BL.get(y).net)}</td><td>${money(Y.CL.get(y).net)}</td><td>${fmtW(Y.BL.get(y).mdd)}</td>
+        <td class="gap">${money(Y.AS.get(y).net)}</td><td>${money(Y.BS.get(y).net)}</td><td>${money(Y.CS.get(y).net)}</td><td>${fmtW(Y.BS.get(y).mdd)}</td></tr>`).join('')}
+      <tr class="tot"><td>合計</td><td class="gap">${money(tot('AL'))}</td><td>${money(tot('BL'))}</td><td>${money(tot('CL'))}</td><td></td>
+        <td class="gap">${money(tot('AS'))}</td><td>${money(tot('BS'))}</td><td>${money(tot('CS'))}</td><td></td></tr></tbody>`;
+  }
+
   // ── 自動槓桿分頁：所有方法套在目前的 B、所選期間；點欄位排序、點列設為 C ──
   let levSort = { col: 'nd', dir: -1 };
   function renderLev() {
@@ -875,7 +948,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   if (levByKey[init.c]) state.c = init.c;
   if (PERIODS.includes(init.period)) state.period = init.period;
   if (typeof init.scaled === 'boolean') state.scaled = init.scaled;
-  if (['year', 'lev', 'strat', 'cfg'].includes(init.tab)) state.tab = init.tab;
+  if (['year', 'side', 'lev', 'strat', 'cfg'].includes(init.tab)) state.tab = init.tab;
   const saveState = () => opts.onState?.({ a: state.a, b: state.b, c: state.c, period: state.period, scaled: state.scaled, tab: state.tab });
 
   // ── 自動槓桿研究結論（lev_summary.py → lev.enc；載得到才顯示）──
