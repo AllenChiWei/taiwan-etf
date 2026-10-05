@@ -21,7 +21,7 @@ interface Variant { dir: string; title: string; note?: string }
 const POOLS: Array<{ dir: string; to: string | null; label: string; short: string; hint: string }> = [
   { dir: 'qb', to: '/QB', label: '原本 Export', short: '原本', hint: 'Export 50 個' },
   { dir: 'qba', to: '/QBA', label: 'Export＋Activate', short: '合併', hint: '＋Activate 76 個' },
-  { dir: 'qbw', to: null, label: '網路策略盲測', short: '盲測', hint: '等台指期資料' },
+  { dir: 'qbw', to: '/QBW', label: '網路策略盲測', short: '盲測', hint: '網路 30 個' },
 ];
 const SHARED = 'qbd.shared-state';
 function readShared(): Record<string, unknown> {
@@ -137,7 +137,9 @@ function QbBoard({ v }: { v: Variant }) {
         () => vault.fetchJson<unknown>('blend.enc').catch(() => null),
         { title: v.title, note: v.note, initState: readShared(), onState: writeShared,
           // 自動槓桿研究結論（lev_summary.py；舊資料沒有就不顯示）
-          loadLev: () => vault.fetchJson<unknown>('lev.enc').catch(() => null) });
+          loadLev: () => vault.fetchJson<unknown>('lev.enc').catch(() => null),
+          // 三池設定驗證（blind_validate.py；舊資料沒有就不顯示「盲測驗證」分頁）
+          loadValidate: () => vault.fetchJson<unknown>('validate.enc').catch(() => null) });
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data, vault, v]);
@@ -168,5 +170,14 @@ const QBA: Variant = {
     + '分數只用前一天收盤以前的資料；「QB 序位」「QB 分多空」照複製版 QB 規則逐日模擬。',
 };
 
+const QBW: Variant = {
+  dir: 'qbw',
+  title: 'QB 策略層評價看板（網路策略盲測）',
+  note: '資料：<b>wenschair.blogspot.com 的 30 個台指期策略</b>（原文參數、不最佳化、<b>未經 Pass</b>），用台指期還原 1 分 K（2013/12～2026/10，含夜盤）'
+    + '以模擬 MultiCharts 的引擎重跑：每邊 500 元、滑價 0、口數照 GetRPASharesFC(2000 萬, 5, 30, ATR)。'
+    + '用途是盲測：看兩個真實池得到的 QB 設定，換成完全沒看過績效的策略是否仍然有效 —— 結論見「盲測驗證」分頁。',
+};
+
 export function QBPage() { return <QbBoard key="qb" v={QB} />; }
 export function QBAPage() { return <QbBoard key="qba" v={QBA} />; }
+export function QBWPage() { return <QbBoard key="qbw" v={QBW} />; }

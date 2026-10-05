@@ -34,7 +34,7 @@ const TABS = [
 ] as const;
 
 /** 從私人入口點進去的頁面，選單上仍標示在「私人」 */
-const PRIVATE = new Set(['/me', '/v18', '/QB', '/QBA']);
+const PRIVATE = new Set(['/me', '/v18', '/QB', '/QBA', '/QBW']);
 
 export function AppShell() {
   const state = useDataset();

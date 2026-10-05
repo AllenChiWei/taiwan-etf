@@ -56,6 +56,10 @@ const CSS = `
 .qbd tr.sel-a td:first-child { box-shadow:inset 3px 0 0 var(--a); } .qbd tr.sel-b td:first-child { box-shadow:inset 3px 0 0 var(--b); }
 .qbd tr.clickable { cursor:pointer; } .qbd tr.clickable:hover td { background:var(--sunken); }
 .qbd tr.cur td { background:#fff4ec; }
+.qbd ul.val-notes { margin:8px 0 12px; padding-left:20px; } .qbd ul.val-notes li { margin:4px 0; }
+.qbd [data-tab="val"] .seg button { white-space:nowrap; }
+.qbd table.val td:first-child, .qbd table.val th:first-child { white-space:normal; min-width:7.5em; }
+.qbd table.val th:not(:first-child), .qbd table.val td:not(:first-child) { text-align:right; }
 .qbd .pos { color:var(--up); } .qbd .neg { color:var(--down); }
 .qbd .tag { font-size:11px; padding:1px 6px; border-radius:6px; background:var(--sunken); color:var(--ink-2); margin-left:4px; }
 .qbd .verdict { border-left:4px solid var(--a); } .qbd .verdict ul { margin:6px 0 0; padding-left:18px; }
@@ -229,6 +233,29 @@ const HTML = `
   </div>
 </div>
 
+<div data-tab="val" hidden>
+  <div class="card">
+    <h2>盲測驗證：真實池找到的設定，換一池策略還成立嗎？</h2>
+    <div class="note" data-id="valMeta"></div>
+    <ul class="note val-notes" data-id="valNotes"></ul>
+    <div class="tbl-wrap"><table data-id="tValConcl"></table></div>
+  </div>
+  <div class="card mt">
+    <h2>各項設定在三個策略池的表現</h2>
+    <div class="note">每一池各自最好的值用紅色粗體標出。「3 年勝率」＝每季起算一個 3 年視窗，勝過對照組的比例（① 對前一步，其餘對 A 評價前）。</div>
+    <div class="note">指標：全期／前半／後半＝淨利÷最大回撤；勝率＝3 年視窗勝率。</div>
+    <div class="legend-row"><span><span class="seg" data-id="segValM"></span></span></div>
+    <div data-id="valSecs"></div>
+  </div>
+  <div class="card mt">
+    <h2>複利方式（三池對照）</h2>
+    <div class="note">本金 2,800 萬；起始規模讓「不複利」全期最大回撤＝本金 20%；容量上限統一為起始規模 3 倍（與「自動槓桿」分頁的 30 口上限不同）。每一池最好的值用紅色粗體。</div>
+    <div class="legend-row"><span><span class="seg" data-id="segValCS"></span></span></div>
+    <div class="legend-row"><span><span class="seg" data-id="segValCM"></span></span></div>
+    <div class="tbl-wrap"><table data-id="tValComp"></table></div>
+  </div>
+</div>
+
 <div data-tab="blend" hidden>
   <div class="card" data-id="blendCard">
     <h2>v18 ＋ QB 組合（資金層級）</h2>
@@ -288,7 +315,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       groups[g].appendChild(new Option(c.name, c.key));
     }
   }
-  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['blend', 'v18＋QB']];
+  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['val', '盲測驗證'], ['blend', 'v18＋QB']];
   function showTab(t) {
     state.tab = t;
     root.querySelectorAll('[data-tab]').forEach(el => { el.hidden = el.dataset.tab !== t; });
@@ -299,7 +326,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   for (const [t, label] of TABS) {
     const b = document.createElement('button');
     b.type = 'button'; b.dataset.t = t; b.textContent = label; b.setAttribute('role', 'tab');
-    if (t === 'blend') b.hidden = true;
+    if (t === 'blend' || t === 'val') b.hidden = true;
     b.onclick = () => showTab(t);
     $('tabs').appendChild(b);
   }
@@ -958,7 +985,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   if (levByKey[init.c]) state.c = init.c;
   if (PERIODS.includes(init.period)) state.period = init.period;
   if (typeof init.scaled === 'boolean') state.scaled = init.scaled;
-  if (['year', 'side', 'lev', 'strat', 'cfg'].includes(init.tab)) state.tab = init.tab;
+  if (['year', 'side', 'lev', 'strat', 'cfg', 'val'].includes(init.tab)) state.tab = init.tab;
   const saveState = () => opts.onState?.({ a: state.a, b: state.b, c: state.c, period: state.period, scaled: state.scaled, tab: state.tab });
 
   // ── 自動槓桿研究結論（lev_summary.py → lev.enc；載得到才顯示）──
@@ -1022,6 +1049,73 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       yAxis: { type: 'log', ...axisCommon, axisLabel: { ...axisCommon.axisLabel, formatter: v => v + '×' } },
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
       series: rows.map((r, i) => lineSeries(narrow() ? String(i + 1) : r.name, cp.series[`${cmpScen}|${cmpSet}|${r.name}`], pal[i % pal.length], i === 0 ? 2.5 : 1.5)) }, true);
+  }
+  // ── 盲測驗證（blind_validate.py → validate.enc；三池對照，載得到才顯示分頁）──
+  let VAL = null, valM = 'nd', valCS = 'C', valCM = 'calmar';
+  function seg2(el, options, getv, setv) {
+    el.innerHTML = '';
+    for (const [v, label] of options) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label; b.setAttribute('aria-pressed', String(getv() === v));
+      b.onclick = () => { if (getv() === v) return; setv(v); renderVal(); };
+      el.appendChild(b);
+    }
+  }
+  function renderVal() {
+    const V = VAL;
+    if (!V) return;
+    const P = V.pools;
+    const SHORT = { '原本 Export': '原本', 'Export＋Activate': '合併', '網路策略盲測': '盲測' };
+    const hd = p => narrow() ? (SHORT[p] || p) : p;
+    $('valMeta').innerHTML = P.map(p => `<b>${p}</b>${narrow() ? `（${SHORT[p]}）` : ''} ${V.res[p].n} 條（${V.res[p].start}～${V.res[p].end}）`).join('；') + `。產生於 ${V.generated}。`;
+    $('valNotes').innerHTML = V.notes.map(n => `<li>${n}</li>`).join('');
+    const ok = b => b ? `<b class="pos">✔${narrow() ? '' : ' 成立'}</b>` : `<b class="neg">✘${narrow() ? '' : ' 不成立'}</b>`;
+    $('tValConcl').className = 'val';
+    $('tValConcl').innerHTML = `<thead><tr><th>在兩個真實池找到的結論</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead>
+      <tbody>${V.concl.map(r => `<tr><td>${r.check}</td>${P.map(p => `<td>${ok(r[p])}</td>`).join('')}</tr>`).join('')}</tbody>`;
+    seg2($('segValM'), [['nd', '全期'], ['nd1', '前半'], ['nd2', '後半'], ['sharpe', 'Sharpe'], ['win', '勝率']], () => valM, v => { valM = v; });
+    const fmt = v => v == null ? '—' : valM === 'win' ? (v * 100).toFixed(0) + '%' : v.toFixed(2);
+    const S0 = V.res[P[0]].sections;
+    let html = S0.map((s0, i) => {
+      const names = [...new Set(P.flatMap(p => V.res[p].sections[i].rows.map(r => r.name)))];
+      const num = n => { const m = /^序位 (\d+)$/.exec(n); return m ? +m[1] : null; };
+      if (names.every(n => num(n) != null)) names.sort((a, b) => num(a) - num(b));
+      const best = {};
+      for (const p of P) best[p] = Math.max(...V.res[p].sections[i].rows.map(r => r[valM]).filter(v => v != null));
+      return `<div class="note mt"><b>${s0.title}</b></div><div class="tbl-wrap"><table class="val"><thead><tr><th>設定</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead>
+        <tbody>${names.map(n => `<tr><td>${n}</td>${P.map(p => {
+          const r = V.res[p].sections[i].rows.find(x => x.name === n); const v = r ? r[valM] : null;
+          return `<td>${v != null && v === best[p] ? `<b class="pos">${fmt(v)}</b>` : fmt(v)}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+    }).join('');
+    const pc = v => `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</span>`;
+    const G = p => V.res[p].cgrid;
+    html += `<div class="note mt"><b>⑦ 慢速恢復海龜（C）參數網格：步階 0.15～0.30 × 每階減 10～30% × 每天恢復 0.01～0.05，共 36 組，相對 B 的淨利/回撤</b></div>
+      <div class="tbl-wrap"><table class="val"><thead><tr><th>項目</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead><tbody>
+      <tr><td>全期、前半、後半都改善的組數比例</td>${P.map(p => `<td><b>${(G(p).ok * 100).toFixed(0)}%</b></td>`).join('')}</tr>
+      <tr><td>改善中位數</td>${P.map(p => `<td>${pc(G(p).med)}</td>`).join('')}</tr>
+      <tr><td>現行參數（0.20／20%／+0.03）全期</td>${P.map(p => `<td>${pc(G(p).cur)}</td>`).join('')}</tr>
+      <tr><td>現行參數 前半／後半</td>${P.map(p => `<td>${pc(G(p).cur1)}<br>${pc(G(p).cur2)}</td>`).join('')}</tr>
+      <tr><td>現行參數在 36 組中的名次</td>${P.map(p => `<td>${G(p).rank}</td>`).join('')}</tr></tbody></table></div>`;
+    $('valSecs').innerHTML = html;
+    seg2($('segValCS'), [['B', 'B 評價後'], ['C', 'C 自動槓桿']], () => valCS, v => { valCS = v; });
+    const CM = [['calmar', 'Calmar'], ['cagr', '年化'], ['mdd_pct', '回撤%'], ['mult', '倍數'], ['worst_y', '最差年']];
+    seg2($('segValCM'), CM, () => valCM, v => { valCM = v; });
+    const lowBest = valCM === 'mdd_pct';
+    const cf = v => valCM === 'calmar' ? v.toFixed(2) : valCM === 'mult' ? v.toFixed(1) + '×' : (v * 100).toFixed(1) + '%';
+    const rowsOf = p => V.res[p].compound.filter(r => r.set === valCS);
+    const meths = rowsOf(P[0]).map(r => r.name);
+    const bestC = {};
+    for (const p of P) { const vs = rowsOf(p).map(r => r[valCM]); bestC[p] = lowBest ? Math.min(...vs) : Math.max(...vs); }
+    $('tValComp').className = 'val';
+    $('tValComp').innerHTML = `<thead><tr><th>方法</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead>
+      <tbody>${meths.map(m => `<tr${m.includes('步進 10%') && m.startsWith('固定比例') ? ' class="cur"' : ''}><td>${m}</td>${P.map(p => {
+        const r = rowsOf(p).find(x => x.name === m); const v = r[valCM];
+        return `<td>${v === bestC[p] ? `<b class="pos">${cf(v)}</b>` : cf(v)}</td>`; }).join('')}</tr>`).join('')}</tbody>`;
+  }
+  if (opts.loadValidate) {
+    Promise.resolve(opts.loadValidate()).then(v => {
+      if (v && v.res) { VAL = v; $('tabs').querySelector('[data-t="val"]').hidden = false; renderVal(); }
+    }).catch(() => {});
   }
   if (opts.loadLev) {
     Promise.resolve(opts.loadLev()).then(l => { if (l && l.families) { LR = l; renderLevRes(); renderCmp(); } }).catch(() => {});
