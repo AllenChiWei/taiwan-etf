@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
+import { HoldingsSync } from './HoldingsSync';
 import { rankColorMap, rankColor } from '../lib/palette';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
@@ -393,6 +394,13 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
           下面會另外算出每個帳戶各領多少。
         </p>
+        <HoldingsSync entries={entries} accounts={accounts} onLoad={(hold, accs) => {
+          const list = accountList(accs, hold);
+          setAccounts(list);
+          setEntries(withAccounts(hold, list[0]));
+          setAcct(list[0]);
+          setEditing(null); setDeleting(null); setRenaming(null);
+        }} />
       </section>
 
       {entries.length === 0 && (
