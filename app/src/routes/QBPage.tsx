@@ -10,9 +10,49 @@
  * 由 QB_EXPORT_DIR／QB_OUT_DIR 切換後的 qb_dashboard.py 產生），兩份資料完全分開。 */
 
 import { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 
 interface Variant { dir: string; title: string; note?: string }
+
+/* 策略池切換列：同一套看板、不同策略池。切換時 A、B、C、期間、分頁沿用（sessionStorage），方便同設定對照。
+ * 之後網路策略盲測有資料，就在 POOLS 加一列（dir 對應 data/<dir>/，再加路由）。 */
+const POOLS: Array<{ dir: string; to: string | null; label: string; hint: string }> = [
+  { dir: 'qb', to: '/QB', label: '原本 Export', hint: '50 個（多空分拆）' },
+  { dir: 'qba', to: '/QBA', label: 'Export＋Activate', hint: '76 個' },
+  { dir: 'qbw', to: null, label: '網路策略盲測', hint: '等台指期資料' },
+];
+const SHARED = 'qbd.shared-state';
+function readShared(): Record<string, unknown> {
+  try { return JSON.parse(sessionStorage.getItem(SHARED) || '{}'); } catch { return {}; }
+}
+function writeShared(s: Record<string, unknown>) {
+  try { sessionStorage.setItem(SHARED, JSON.stringify(s)); } catch { /* 無痕或停用儲存時就不記 */ }
+}
+
+export function PoolBar({ current }: { current: string }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-2">
+      <span className="text-[12.5px] font-semibold text-muted">策略池</span>
+      {POOLS.map(p => {
+        const cls = 'flex min-h-9 items-center gap-1.5 rounded-lg border px-3 py-1 text-[13px]';
+        if (!p.to) return (
+          <span key={p.dir} className={`${cls} cursor-not-allowed border-dashed border-line text-faint`} title="提供台指期資料後加入">
+            {p.label}<span className="text-[11px]">（{p.hint}）</span>
+          </span>
+        );
+        const on = p.dir === current;
+        return (
+          <Link key={p.dir} to={p.to} aria-current={on ? 'page' : undefined}
+                className={`${cls} ${on ? 'border-ink bg-ink font-semibold text-surface' : 'border-line-strong bg-surface text-ink hover:bg-hover'}`}>
+            {p.label}<span className={`text-[11px] ${on ? 'opacity-80' : 'text-muted'}`}>（{p.hint}）</span>
+          </Link>
+        );
+      })}
+      <span className="text-[11.5px] text-faint">切換時沿用目前的 A、B、C 與期間</span>
+    </div>
+  );
+}
 
 function Locked({ vault, title, manifest, onUnlock }: { vault: Vault; title: string; manifest: VaultManifest; onUnlock: () => void }) {
   const [pw, setPw] = useState('');
@@ -80,9 +120,7 @@ function QbBoard({ v }: { v: Variant }) {
         (key: string) => vault.fetchJson<number[][]>(`w_${key}.enc`),
         // v18 ＋ QB 組合（另一檔；舊資料沒有這檔就不顯示該區塊）
         () => vault.fetchJson<unknown>('blend.enc').catch(() => null),
-        { title: v.title, note: v.note,
-          // 總帳戶槓桿控制研究（lev2_study.py；舊資料沒有這檔就不顯示）
-          loadLev: () => vault.fetchJson<unknown>('lev.enc').catch(() => null) });
+        { title: v.title, note: v.note, initState: readShared(), onState: writeShared });
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data, vault, v]);
@@ -93,6 +131,7 @@ function QbBoard({ v }: { v: Variant }) {
   if (state === 'error') return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
   return (
     <div className="mt-4">
+      <PoolBar current={v.dir} />
       <div className="mb-2 flex justify-end">
         <button type="button" onClick={() => { vault.lock(); setData(null); setState('locked'); }}
                 className="h-7 rounded-lg bg-sunken px-3 text-[12px] text-muted hover:text-ink">上鎖</button>
