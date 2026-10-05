@@ -13,7 +13,7 @@
 
 const CSS = `
 .qbd { color-scheme: light; --bg:#f4f4f2; --surface:#fcfcfb; --sunken:#efeeea; --line:#e2e1dc; --line-strong:#c9c8c1;
-  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#85847e; --a:#2a78d6; --b:#eb6834; --up:#c9302c; --down:#1f8a3b;
+  --ink:#0b0b0b; --ink-2:#52514e; --ink-3:#85847e; --a:#2a78d6; --b:#eb6834; --c:#4a3aa7; --up:#c9302c; --down:#1f8a3b;
   background:var(--bg); color:var(--ink); font:14px/1.5 "Noto Sans TC","Microsoft JhengHei",system-ui,sans-serif;
   border-radius:14px; padding:16px; }
 .qbd * { box-sizing:border-box; }
@@ -120,7 +120,7 @@ const HTML = `
   <div class="note">_L 策略放「多方」分類、_S 放「空方」分類，各自設序位 N（複製版 QB 已支援，不用改程式）。</div>
   <div class="tbl-wrap"><table data-id="tMatrixLS"></table></div>
 </div>
-<h2 class="mt">重點指標（A → B）</h2>
+<h2 class="mt">重點指標（A → B → C）</h2>
 <div class="note" data-id="kpiNote"></div>
 <div class="kpis mt" data-id="kpis"></div>
 <div class="grid g2 mt">
@@ -186,7 +186,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   if (opts.note) $('srcNote').innerHTML = opts.note;
   const cfgByKey = Object.fromEntries(D.configs.map(c => [c.key, c]));
   const KIND = { baseline: '評價前', x1: 'X1 設定', qb: 'QB 設定', theory: '理論（QB 未支援）' };
-  const C = { a: '#2a78d6', b: '#eb6834', up: '#c9302c', down: '#1f8a3b', ink2: '#52514e', ink3: '#85847e',
+  const C = { a: '#2a78d6', b: '#eb6834', c: '#4a3aa7', up: '#c9302c', down: '#1f8a3b', ink2: '#52514e', ink3: '#85847e',
               line: '#e2e1dc', surface: '#fcfcfb', before: '#85847e' };
   const fmtW = v => v == null || !isFinite(v) ? '—' : (Math.round(v / 1e4) || 0).toLocaleString('zh-TW');   // || 0：不顯示「-0」
   const fmt2 = v => v == null || !isFinite(v) ? '—' : v.toFixed(2);
@@ -259,6 +259,28 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
              loseM: mv.length ? mv.filter(v => v < 0).length / mv.length : null,
              worstM: mv.length ? Math.min(...mv) : null, cum, dd, mon };
   }
+  // C＝B 再套用總帳戶自動槓桿（海龜風控，與 Release\@QB_Level2_Turtle.txt 同一套算法）：
+  // 參考帳戶＝B 的權益；一階回撤＝參考帳戶「至今」年化波動 × 0.25；每階縮 10%，最低 0.2 倍；前 60 天不調整；只用前一天以前的資料
+  const levCache = {};
+  function autoLev(x) {
+    const lev = new Array(x.length).fill(1);
+    let eq = 0, pk = 0, s1 = 0, s2 = 0, cur = 1;
+    for (let i = 0; i < x.length; i++) {
+      lev[i] = cur;                                  // 今天用昨天算好的槓桿
+      eq += x[i]; pk = Math.max(pk, eq); s1 += x[i]; s2 += x[i] * x[i];
+      const n = i + 1;
+      const vol = n > 1 ? Math.sqrt(Math.max(0, (s2 - s1 * s1 / n) / (n - 1))) * Math.sqrt(252) : 0;
+      cur = n >= 60 && vol > 0 ? Math.max(0.2, 1 - 0.1 * Math.floor((pk - eq) / (vol * 0.25))) : 1;
+    }
+    return lev;
+  }
+  function seriesC(key) {
+    const k = state.scaled ? cfgByKey[key].scale : 1;
+    const ck = key + '|' + k;
+    if (!levCache[ck]) { const full = D.daily[key].map(v => v * k); const lv = autoLev(full); levCache[ck] = { pnl: full.map((v, i) => v * lv[i]), lev: lv }; }
+    const [i0, i1] = idxRange();
+    return levCache[ck].pnl.slice(i0, i1);
+  }
   const curDates = () => { const [i0, i1] = idxRange(); return D.dates.slice(i0, i1); };
 
   const charts = {};
@@ -329,7 +351,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     seg($('segHeat'), [['before', '評價前'], ['b', 'B 評價後'], ['diff', 'B − 評價前']], () => state.heat, v => state.heat = v);
     $('selA').value = state.a; $('selB').value = state.b;
     const dates = curDates();
-    const A = metrics(series(state.a), dates), B = metrics(series(state.b), dates);
+    const A = metrics(series(state.a), dates), B = metrics(series(state.b), dates), Cm = metrics(seriesC(state.b), dates);
     const ca = cfgByKey[state.a], cb = cfgByKey[state.b];
     const all = D.configs.map(c => ({ c, m: metrics(series(c.key), dates) }));
     const base = all.find(r => r.c.key === 'EQ').m;
@@ -342,40 +364,47 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       <li>淨利/回撤最好：<b>${bestND.c.name}</b>（${fmt1(bestND.m.nd)}）；Sharpe 最好：<b>${bestSh.c.name}</b>（${fmt2(bestSh.m.sharpe)}）。</li>
       <li class="note">提醒：設定越多、期間切得越短，排名越容易只是運氣；要看前半、後半、近期是否都成立。</li></ul>`;
 
-    $('kpiNote').textContent = `A＝${ca.name}；B＝${cb.name}（${cb.desc}）。${state.scaled ? '同曝險：部位已調整成與評價前相同的平均在場倍數（B ×' + cb.scale.toFixed(2) + '）。' : '原始：照設定的倍數，不調整。'}`;
-    const kp = [['淨利（萬）', A.net, B.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, fmtW, false],
-                ['淨利 / 回撤', A.nd, B.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, fmt2, true],
-                ['虧損月比例', A.loseM, B.loseM, pct0, false], ['最差單月（萬）', A.worstM, B.worstM, fmtW, true]];
-    $('kpis').innerHTML = kp.map(([k, a, b, f, hib]) => {
-      const diff = (b ?? 0) - (a ?? 0);
+    $('kpiNote').textContent = `A＝${ca.name}；B＝${cb.name}（${cb.desc}）。${state.scaled ? '同曝險：部位已調整成與評價前相同的平均在場倍數（B ×' + cb.scale.toFixed(2) + '）。' : '原始：照設定的倍數，不調整。'}`
+      + `C＝B 再加上總帳戶自動槓桿（海龜風控：參考帳戶回撤每滿「年化波動 × 0.25」縮小 10%，最低 0.2 倍，收復後恢復；MultiCharts 指標 @QB_Level2_Turtle 同算法），`
+      + `所選期間平均槓桿 ${(() => { const l = levCache[state.b + '|' + (state.scaled ? cb.scale : 1)].lev; const [i0, i1] = idxRange(); const x = l.slice(i0, i1); return (x.reduce((t, v) => t + v, 0) / x.length).toFixed(2); })()} 倍。`;
+    const kp = [['淨利（萬）', A.net, B.net, Cm.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, Cm.mdd, fmtW, false],
+                ['淨利 / 回撤', A.nd, B.nd, Cm.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, Cm.sharpe, fmt2, true],
+                ['虧損月比例', A.loseM, B.loseM, Cm.loseM, pct0, false], ['最差單月（萬）', A.worstM, B.worstM, Cm.worstM, fmtW, true]];
+    const delta = (x, y, hib, who, vs) => {
+      const diff = (y ?? 0) - (x ?? 0);
       const good = hib ? diff > 0 : diff < 0;
       const cls = Math.abs(diff) < 1e-9 ? 'same' : good ? 'better' : 'worse';
-      const rel = a ? ` (${(diff / Math.abs(a) * 100 >= 0 ? '+' : '')}${(diff / Math.abs(a) * 100).toFixed(1)}%)` : '';
-      return `<div class="kpi"><div class="k">${k}</div>
+      const rel = x ? ` (${(diff / Math.abs(x) * 100 >= 0 ? '+' : '')}${(diff / Math.abs(x) * 100).toFixed(1)}%)` : '';
+      return `<div class="d ${cls}">${who} 比 ${vs}：${cls === 'same' ? '相同' : (good ? '▲ 較好' : '▼ 較差')}${cls === 'same' ? '' : rel}</div>`;
+    };
+    $('kpis').innerHTML = kp.map(([k, a, b, c, f, hib]) => `<div class="kpi"><div class="k">${k}</div>
         <div class="v"><span><span class="dot" style="background:var(--a)"></span> A</span><b>${f(a)}</b></div>
         <div class="v"><span><span class="dot" style="background:var(--b)"></span> B</span><b>${f(b)}</b></div>
-        <div class="d ${cls}">${cls === 'same' ? '相同' : (good ? '▲ B 較好' : '▼ B 較差')}${rel}</div></div>`;
-    }).join('');
+        <div class="v"><span><span class="dot" style="background:var(--c)"></span> C</span><b>${f(c)}</b></div>
+        ${delta(a, b, hib, 'B', 'A')}${delta(b, c, hib, 'C', 'B')}</div>`).join('');
 
     chart('cEquity').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, tooltip: tl, legend,
       xAxis: { type: 'category', data: dates, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
-      series: [lineSeries('A ' + ca.name, A.cum, C.a), lineSeries('B ' + cb.name, B.cum, C.b)] }, true);
+      series: [lineSeries('A ' + ca.name, A.cum, C.a), lineSeries('B ' + cb.name, B.cum, C.b), lineSeries('C B＋自動槓桿', Cm.cum, C.c)] }, true);
     chart('cDD').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, tooltip: tl, legend,
       xAxis: { type: 'category', data: dates, ...axisCommon, splitLine: { show: false } }, yAxis: { ...yW, max: 0 },
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
-      series: [lineSeries('A ' + ca.name, A.dd, C.a), lineSeries('B ' + cb.name, B.dd, C.b)] }, true);
+      series: [lineSeries('A ' + ca.name, A.dd, C.a), lineSeries('B ' + cb.name, B.dd, C.b), lineSeries('C B＋自動槓桿', Cm.dd, C.c)] }, true);
     const yearAgg = x => { const m = new Map(); x.forEach((v, i) => { const y = dates[i].slice(0, 4); m.set(y, (m.get(y) || 0) + v); }); return m; };
-    const ya = yearAgg(series(state.a)), yb = yearAgg(series(state.b)), years = [...ya.keys()];
+    const ya = yearAgg(series(state.a)), yb = yearAgg(series(state.b)), yc = yearAgg(seriesC(state.b)), years = [...ya.keys()];
     chart('cYear').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 28 }, tooltip: tb, legend,
       xAxis: { type: 'category', data: years, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
-      series: [barS('A ' + ca.name, years.map(y => ya.get(y)), C.a), barS('B ' + cb.name, years.map(y => yb.get(y)), C.b)] }, true);
+      series: [barS('A ' + ca.name, years.map(y => ya.get(y)), C.a), barS('B ' + cb.name, years.map(y => yb.get(y)), C.b),
+               barS('C B＋自動槓桿', years.map(y => yc.get(y)), C.c)] }, true);
     const fullA = metrics(D.daily[state.a].map(v => v * (state.scaled ? ca.scale : 1)), D.dates).mon;
     const fullB = metrics(D.daily[state.b].map(v => v * (state.scaled ? cb.scale : 1)), D.dates).mon;
+    const fullC = metrics(levCache[state.b + '|' + (state.scaled ? cb.scale : 1)].pnl, D.dates).mon;
     const m24 = [...fullA.keys()].slice(-24);
     chart('cMonth').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 28 }, tooltip: tb, legend,
       xAxis: { type: 'category', data: m24, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
-      series: [barS('A ' + ca.name, m24.map(m => fullA.get(m)), C.a), barS('B ' + cb.name, m24.map(m => fullB.get(m)), C.b)] }, true);
+      series: [barS('A ' + ca.name, m24.map(m => fullA.get(m)), C.a), barS('B ' + cb.name, m24.map(m => fullB.get(m)), C.b),
+               barS('C B＋自動槓桿', m24.map(m => fullC.get(m)), C.c)] }, true);
 
     renderMatrix(all, base);
     renderCfgTable(all, base);
