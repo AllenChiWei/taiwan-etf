@@ -100,6 +100,10 @@ export function MePage() {
             評價前／後比較、單一策略曲線、v18＋QB 組合與資金配置計算器{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
           </p>
         </Link>
+        <Link to="/QBA" className={card}>
+          <div className="text-sm font-bold text-ink">QB 看板（Activate 版）</div>
+          <p className="mt-1 text-[12.5px] text-muted">只用 Activate 資料夾的策略另外跑的一份回測；與上面那份分開，事後挑選、結果偏樂觀</p>
+        </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
           <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>

@@ -45,6 +45,7 @@ const FuturesPage = lazyRoute(() => import('./routes/FuturesPage'), m => m.Futur
 const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
 // QB 策略層評價看板：與 v18 共用密碼與解鎖工作階段；不放進選單（見 routes/QBPage.tsx）
 const QBPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBPage);
+const QBAPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBAPage);
 // 私人入口：v18、QB、對帳單放一頁，密碼同 v18；不放進選單（見 routes/MePage.tsx）
 const MePage = lazyRoute(() => import('./routes/MePage'), m => m.MePage);
 
@@ -172,6 +173,12 @@ const qbRoute = createRoute({
   component: QBPage,
 });
 
+const qbaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/QBA',
+  component: QBAPage,
+});
+
 const meRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/me',
@@ -187,7 +194,7 @@ const changelogRoute = createRoute({
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route, qbRoute, meRoute]);
+   v18Route, qbRoute, qbaRoute, meRoute]);
 
 export const router = createRouter({
   routeTree,

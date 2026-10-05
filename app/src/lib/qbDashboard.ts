@@ -64,12 +64,15 @@ const CSS = `
 .qbd .calc { display:grid; gap:4px 16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); margin-top:8px; font-size:13px; }
 .qbd .calc b { font-variant-numeric:tabular-nums; }
 .qbd .best td { background:#fff4ec; }
+.qbd table.yr td:first-child, .qbd table.yr th:first-child { position:sticky; left:0; background:var(--surface); z-index:1; }
+.qbd table.yr tr.tot td { font-weight:600; border-top:2px solid var(--line-strong); }
+.qbd table.yr td.gap, .qbd table.yr th.gap { border-left:2px solid var(--line-strong); }
 `;
 
 const HTML = `
-<h1>QB 策略層評價看板</h1>
+<h1 data-id="title">QB 策略層評價看板</h1>
 <div class="sub" data-id="meta"></div>
-<div class="note">資料：Export\\*.csv（每個策略拆成多方 _L、空方 _S；<b>Activate\\ 未使用</b>，避免事後挑選的偏差）。
+<div class="note" data-id="srcNote">資料：Export\\*.csv（每個策略拆成多方 _L、空方 _S；<b>Activate\\ 未使用</b>，避免事後挑選的偏差）。
   所有分數只用「前一天收盤以前」的資料。「QB 序位」「QB 分多空」照複製版 QB 規則逐日模擬（名次、名額、部位歸零才出、取整）；
   沒有計入 QB 專案層的動能配置上限。</div>
 <div class="filters">
@@ -114,6 +117,18 @@ const HTML = `
   <div class="card"><h2>各年度損益</h2><div class="note">單位：萬元</div><div data-id="cYear" class="chart"></div></div>
   <div class="card"><h2>近 24 個月 每月損益</h2><div class="note">單位：萬元</div><div data-id="cMonth" class="chart"></div></div>
 </div>
+<div class="card mt">
+  <h2>每年績效（評價前 → A → B）</h2>
+  <div class="note">整個策略組合每一年的淨利與當年最大回撤（萬元）。評價前＝每個策略固定 1 倍。紅＝賺、綠＝賠；「B − 評價前」紅字代表評價後比較好。部位大小跟著上方「原始／同曝險」。</div>
+  <div class="tbl-wrap"><table class="yr" data-id="tYearTot"></table></div>
+  <h2 class="mt">每個策略每年損益</h2>
+  <div class="legend-row"><span>顯示 <span class="seg" data-id="segYMode"></span></span><span>單位：萬元；點策略名稱看績效曲線</span></div>
+  <div class="tbl-wrap"><table class="yr" data-id="tStratYear"></table></div>
+  <h2 class="mt">每個策略每月損益</h2>
+  <div class="legend-row"><label>年度 <select data-id="selMYear"></select></label><span>顯示方式同上（評價前／B 評價後／B − 評價前）</span></div>
+  <div class="tbl-wrap"><table class="yr" data-id="tStratMonth"></table></div>
+  <div class="note">策略加總與上方組合數字可能差幾萬：QB 序位設定的組合損益含取整後的實際口數，策略明細用「動能倍數 × 原始損益」估算。</div>
+</div>
 <div class="card mt" data-id="stratCard">
   <h2>單一策略績效曲線（評價前 vs 評價後）</h2>
   <div class="legend-row">
@@ -147,24 +162,27 @@ const HTML = `
 </div>
 `;
 
-export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend) {
+export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {}) {
   const style = document.createElement('style');
   style.textContent = CSS;
   root.classList.add('qbd');
   root.innerHTML = HTML;
   root.prepend(style);
   const $ = id => root.querySelector(`[data-id="${id}"]`);
+  // 同一份看板也給 Activate 版（#/QBA）用：標題與資料說明可以換
+  if (opts.title) $('title').textContent = opts.title;
+  if (opts.note) $('srcNote').innerHTML = opts.note;
   const cfgByKey = Object.fromEntries(D.configs.map(c => [c.key, c]));
   const KIND = { baseline: '評價前', x1: 'X1 設定', qb: 'QB 設定', theory: '理論（QB 未支援）' };
   const C = { a: '#2a78d6', b: '#eb6834', up: '#c9302c', down: '#1f8a3b', ink2: '#52514e', ink3: '#85847e',
               line: '#e2e1dc', surface: '#fcfcfb', before: '#85847e' };
-  const fmtW = v => v == null || !isFinite(v) ? '—' : (v / 1e4).toLocaleString('zh-TW', { maximumFractionDigits: 0 });
+  const fmtW = v => v == null || !isFinite(v) ? '—' : (Math.round(v / 1e4) || 0).toLocaleString('zh-TW');   // || 0：不顯示「-0」
   const fmt2 = v => v == null || !isFinite(v) ? '—' : v.toFixed(2);
   const fmt1 = v => v == null || !isFinite(v) ? '—' : v.toFixed(1);
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
   // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
   const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
-  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0 };
+  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', myear: D.months[D.months.length - 1].slice(0, 4) };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
   const getWeek = key => (weekCache[key] ||= loadWeek(key));
@@ -389,7 +407,70 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend) {
       });
     }
     renderStratTable(mIdx);
+    renderYearly();
     renderStrat();
+  }
+
+  // ── 每年／每月明細（2026-10-05 使用者要求：每個策略每年評價前後、每年整體總和、每月）──
+  function renderYearly() {
+    seg($('segYMode'), [['before', '評價前'], ['b', 'B 評價後'], ['diff', 'B − 評價前']], () => state.ymode, v => state.ymode = v);
+    const kOf = key => state.scaled ? cfgByKey[key].scale : 1;
+    const money = v => `<span class="${v > 0.5 ? 'pos' : v < -0.5 ? 'neg' : ''}">${fmtW(v)}</span>`;
+    // 組合：依年度切日損益，算淨利與當年最大回撤
+    const yearly = key => {
+      const k = kOf(key), out = new Map();
+      D.daily[key].forEach((v, i) => {
+        const y = D.dates[i].slice(0, 4);
+        let r = out.get(y); if (!r) out.set(y, r = { net: 0, peak: 0, mdd: 0 });
+        r.net += v * k; r.peak = Math.max(r.peak, r.net); r.mdd = Math.max(r.mdd, r.peak - r.net);
+      });
+      return out;
+    };
+    const e = yearly('EQ'), a = yearly(state.a), b = yearly(state.b), years = [...e.keys()];
+    const ca = cfgByKey[state.a], cb = cfgByKey[state.b];
+    const tot = (m, f) => years.reduce((t, y) => t + f(m.get(y)), 0);
+    const nd = r => r.mdd > 0 ? fmt1(r.net / r.mdd) : '—';
+    $('tYearTot').innerHTML = `<thead><tr><th>年度</th><th class="gap">評價前 淨利</th><th>回撤</th><th>淨利/回撤</th>
+        <th class="gap" style="color:${C.a}">A 淨利</th><th>回撤</th><th class="gap" style="color:${C.b}">B 淨利</th><th>回撤</th><th>淨利/回撤</th>
+        <th class="gap">B − 評價前</th><th>B − A</th></tr></thead>
+      <tbody>${years.map(y => { const E = e.get(y), Ar = a.get(y), Br = b.get(y);
+        return `<tr><td>${y}</td><td class="gap">${money(E.net)}</td><td>${fmtW(E.mdd)}</td><td>${nd(E)}</td>
+          <td class="gap">${money(Ar.net)}</td><td>${fmtW(Ar.mdd)}</td><td class="gap">${money(Br.net)}</td><td>${fmtW(Br.mdd)}</td><td>${nd(Br)}</td>
+          <td class="gap">${money(Br.net - E.net)}</td><td>${money(Br.net - Ar.net)}</td></tr>`; }).join('')}
+      <tr class="tot"><td>合計</td><td class="gap">${money(tot(e, r => r.net))}</td><td></td><td></td>
+        <td class="gap">${money(tot(a, r => r.net))}</td><td></td><td class="gap">${money(tot(b, r => r.net))}</td><td></td><td></td>
+        <td class="gap">${money(tot(b, r => r.net) - tot(e, r => r.net))}</td><td>${money(tot(b, r => r.net) - tot(a, r => r.net))}</td></tr>
+      <tr><td class="note" colspan="11" style="text-align:left">A＝${ca.name}；B＝${cb.name}；${years[years.length - 1]} 年只到 ${D.range[1]}；${years[0]} 年從 ${D.range[0]} 起</td></tr></tbody>`;
+
+    // 策略 × 年／月：評價前 = strat_month_before；B = strat_month[B] × 同曝險倍數
+    const kb = kOf(state.b), p0 = D.strat_month_before, pb = D.strat_month[state.b], S = D.strategies;
+    const val = (j, mi) => state.ymode === 'before' ? p0[j][mi] : state.ymode === 'b' ? pb[j][mi] * kb : pb[j][mi] * kb - p0[j][mi];
+    const yIdx = {};
+    D.months.forEach((m, i) => (yIdx[m.slice(0, 4)] ||= []).push(i));
+    const ys = Object.keys(yIdx);
+    const sumIdx = (j, idx) => idx.reduce((t, i) => t + val(j, i), 0);
+    const strRow = (j, cells, total) => `<tr class="clickable" data-j="${j}"><td>${S[j]}</td>${cells.map(v => `<td>${money(v)}</td>`).join('')}<td class="gap">${money(total)}</td></tr>`;
+    const colTot = idxs => idxs.map(idx => S.reduce((t, _, j) => t + sumIdx(j, idx), 0));
+    const yt = colTot(ys.map(y => yIdx[y]));
+    $('tStratYear').innerHTML = `<thead><tr><th>策略</th>${ys.map(y => `<th>${y}</th>`).join('')}<th class="gap">合計</th></tr></thead>
+      <tbody>${S.map((_, j) => { const c = ys.map(y => sumIdx(j, yIdx[y])); return strRow(j, c, c.reduce((t, v) => t + v, 0)); }).join('')}
+      <tr class="tot"><td>全部策略</td>${yt.map(v => `<td>${money(v)}</td>`).join('')}<td class="gap">${money(yt.reduce((t, v) => t + v, 0))}</td></tr></tbody>`;
+
+    const ySel = $('selMYear');
+    if (ySel.options.length !== ys.length) {
+      ySel.innerHTML = '';
+      [...ys].reverse().forEach(y => ySel.add(new Option(y, y)));
+      ySel.onchange = ev => { state.myear = ev.target.value; renderYearly(); };
+    }
+    if (!yIdx[state.myear]) state.myear = ys[ys.length - 1];
+    ySel.value = state.myear;
+    const mi = yIdx[state.myear];
+    const mt = colTot(mi.map(i => [i]));
+    $('tStratMonth').innerHTML = `<thead><tr><th>策略</th>${mi.map(i => `<th>${+D.months[i].slice(5)} 月</th>`).join('')}<th class="gap">${state.myear} 合計</th></tr></thead>
+      <tbody>${S.map((_, j) => { const c = mi.map(i => val(j, i)); return strRow(j, c, c.reduce((t, v) => t + v, 0)); }).join('')}
+      <tr class="tot"><td>全部策略</td>${mt.map(v => `<td>${money(v)}</td>`).join('')}<td class="gap">${money(mt.reduce((t, v) => t + v, 0))}</td></tr></tbody>`;
+    for (const t of ['tStratYear', 'tStratMonth'])
+      $(t).querySelectorAll('tbody tr[data-j]').forEach(tr => tr.onclick = () => selectStrategy(+tr.dataset.j));
   }
 
   function renderMatrix(all, base) {
