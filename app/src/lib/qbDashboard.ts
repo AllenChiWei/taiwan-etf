@@ -672,7 +672,9 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('levNote').innerHTML = `對象：<b>${cfgByKey[LV.cfg]?.name || LV.cfg}</b> 的組合權益（評價後）。槓桿只看「槓桿固定 1 倍的參考帳戶」前一天以前的表現（不偷看）。`
       + `每個方法都縮放成平均槓桿 1 倍才比較；帳戶資金設成讓參考帳戶年化波動 20%（約 ${fmtW(C)} 萬，只影響 % 的尺度）。`
       + `前半／後半以 ${LV.half_date} 切開。紅字＝比基準好、綠字＝比基準差。方法來自原版 QB 文件「進階管理模式（Level-2）」，另加拉回加碼；`
-      + `「海龜風控（MultiCharts 指標版）」就是 Release\\@QB_Level2_Turtle.txt 的算法。（產生於 ${LV.generated}）`;
+      + `「海龜風控（MultiCharts 指標版）」就是 Release\\@QB_Level2_Turtle.txt 的算法。`
+      + `<b>判讀：要兩個策略池（#/QB、#/QBA）、前後半都變好，而且鄰近參數（例如通道 15／20／30 日）也都變好才算數；`
+      + `只有單一參數特別好的（如高低通道 20 日）多半是巧合。</b>（產生於 ${LV.generated}）`;
     const cumOf = lev => { let t = 0, pk = 0; const c = [], d = []; base.forEach((v, i) => { t += v * lev[i] / C * 100; pk = Math.max(pk, t); c.push(t); d.push(t - pk); }); return [c, d]; };
     const [c0, d0] = cumOf(b0.lev), [c1, d1] = cumOf(m.lev);
     const pct = v => (+v).toFixed(1) + '%';
