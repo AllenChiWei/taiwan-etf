@@ -1,5 +1,5 @@
 /* 私人入口（#/me）：v18、QB 看板、對帳單分析放在同一頁。密碼與 v18／QB 相同（共用解鎖工作階段）。
- * 不放進上方選單、也不寫進更新日誌。頁面本身只是連結；各頁的資料都在本機加密後才上傳。 */
+ * 上方選單只有「🔒 私人」一個入口（2026-10-05 使用者要求看得到），不寫進更新日誌。頁面本身只是連結；各頁的資料都在本機加密後才上傳。 */
 
 import { useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
@@ -94,7 +94,7 @@ export function MePage() {
           <p className="mt-1 text-[12.5px] text-muted">在籌碼頁：預期波動 ÷ 實際波動、建議履約價（公開頁面）</p>
         </Link>
       </div>
-      <p className="mt-3 text-[11.5px] text-faint">這一頁不在選單上；解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
+      <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
     </div>
   );
 }

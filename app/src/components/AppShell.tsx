@@ -29,7 +29,12 @@ const TABS = [
   { to: '/poker', label: '撲克' },
   { to: '/changelog', label: '更新' },
   { to: '/about', label: '說明' },
+  // v18、QB 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口
+  { to: '/me', label: '🔒 私人' },
 ] as const;
+
+/** 從私人入口點進去的頁面，選單上仍標示在「私人」 */
+const PRIVATE = new Set(['/me', '/v18', '/QB']);
 
 export function AppShell() {
   const state = useDataset();
@@ -75,7 +80,7 @@ export function AppShell() {
 
         <nav aria-label="主要導覽" className="mx-auto flex w-full max-w-6xl flex-wrap gap-0.5 px-3 sm:flex-nowrap sm:gap-1 sm:px-4">
           {TABS.map(t => {
-            const active = pathname === t.to;
+            const active = pathname === t.to || (t.to === '/me' && PRIVATE.has(pathname));
             return (
               <Link
                 key={t.to}
