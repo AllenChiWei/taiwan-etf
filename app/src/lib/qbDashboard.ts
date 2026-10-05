@@ -324,7 +324,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       lev[i] = cur;
       eq += x[i]; pk = Math.max(pk, eq); s1 += x[i]; s2 += x[i] * x[i];
       const n = i + 1, vol = n > 1 ? Math.sqrt(Math.max(0, (s2 - s1 * s1 / n) / (n - 1))) * Math.sqrt(252) : 0;
-      cur = n >= 60 && vol > 0 ? fn({ i, eq, dd: pk - eq, ddv: (pk - eq) / vol, cur }) : 1;
+      cur = n >= 60 && vol > 0 ? fn({ i, eq, dd: pk - eq, ddv: (pk - eq) / vol, cur, vol }) : 1;
     }
     return lev;
   }
@@ -342,6 +342,26 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const dipAdd = (step, add, cap) => x => refWalk(x, r => Math.min(cap, 1 + add * Math.floor(r.ddv / step)));
   const breaker = (off, on) => x => { let st = 1; return refWalk(x, r => (st = st ? (r.ddv >= off ? 0 : 1) : (r.ddv <= on ? 1 : 0))); };
   const cumEq = x => { let t = 0; return x.map(v => (t += v)); };
+  // ── 第三輪（lev5_study.py）新增的方法 ──
+  const tgtOf = (r, step, cut) => Math.max(0.2, 1 - cut * Math.floor(r.ddv / step));
+  const hwmRestore = (step, cut) => x => refWalk(x, r => (r.dd <= 0 ? 1 : Math.min(r.cur, tgtOf(r, step, cut))));
+  const coolDown = (step, cut, days) => x => { let hold = 0; return refWalk(x, r => {
+    const t = tgtOf(r, step, cut);
+    if (t < r.cur) { hold = days; return t; }
+    if (hold > 0) { hold--; return r.cur; }
+    return t; }); };
+  const cppiRule = (fv, m) => x => refWalk(x, r => Math.min(1, Math.max(0.2, m * (fv - r.ddv) / fv)));
+  function crashBrake(n, k, low, days = 5) {           // 近 n 天損益 < −k × 年化波動 × √(n/252) → low 倍、維持 days 天
+    return x => { const cs = [0]; x.forEach(v => cs.push(cs[cs.length - 1] + v)); let hold = 0;
+      return refWalk(x, r => { const t = r.i;
+        if (t + 1 >= n && cs[t + 1] - cs[t + 1 - n] < -k * r.vol * Math.sqrt(n / 252)) hold = days;
+        if (hold > 0) { hold--; return low; } return 1; }); };
+  }
+  const lossStreak = (n, low) => x => { let st = 0; return refWalk(x, r => { st = x[r.i] < 0 ? st + 1 : 0; return st >= n ? low : 1; }); };
+  function volSpike(ns, nl, th, low) {
+    return x => x.map((_, i) => (i <= nl ? 1 : (sdOf(x.slice(i - ns, i)) / sdOf(x.slice(i - nl, i)) > th ? low : 1)));
+  }
+  const prodLev = (f, g) => x => { const a = f(x), b = g(x); return a.map((v, i) => v * b[i]); };
   function bandRule(x, n, low, lower, mid) {           // 權益跌破下緣 → low 倍；回到中線以上恢復（只用前一天）
     const eq = cumEq(x), lev = new Array(x.length).fill(1);
     let on = true;
@@ -371,6 +391,14 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
     ['t10', '拉回減碼｜海龜（一階 0.10、縮 10%、立刻恢復）', turtle(0.10, 0.10)],
     ['lin', '拉回減碼｜線性（回撤越深越小，k＝1）', linearDD(1)],
+    ['slowAgg', '拉回減碼｜慢速恢復海龜（積極：一階 0.15、縮 30%、每日 +0.01）', turtle(0.15, 0.30, 0.01)],
+    ['hwm', '拉回減碼｜新高才恢復（一階 0.20、縮 20%）', hwmRestore(0.20, 0.20)],
+    ['cool', '拉回減碼｜冷卻期（一階 0.15、縮 20%，縮完維持 20 天）', coolDown(0.15, 0.20, 20)],
+    ['cppi', '拉回減碼｜CPPI（底線＝高點 −1 年化波動）', cppiRule(1.0, 1.0)],
+    ['slowVs', '拉回減碼×波動突升｜慢速恢復海龜 × 10/60 日波動比 > 1.5 → 0.5', prodLev(turtle(0.20, 0.20, 0.03), volSpike(10, 60, 1.5, 0.5))],
+    ['crash', '短期煞車｜急跌：近 5 日跌幅 > 2σ → 0.5 倍 5 天', crashBrake(5, 2.0, 0.5)],
+    ['streak', '短期煞車｜連虧 4 天 → 0.5 倍', lossStreak(4, 0.5)],
+    ['vspike', '短期煞車｜波動突升：10/60 日波動比 > 1.5 → 0.5 倍', volSpike(10, 60, 1.5, 0.5)],
     ['tb15', '拉回減碼＋上漲加碼｜海龜（一階 0.20、縮 15%）＋無回撤時 1.25 倍', turtleBoost(0.20, 0.15, 1.25)],
     ['tb10', '拉回減碼＋上漲加碼｜海龜（一階 0.20、縮 10%）＋無回撤時 1.25 倍', turtleBoost(0.20, 0.10, 1.25)],
     ['ma20', '權益曲線｜均線 20 日以下 → 0.5 倍', maRule(20, 0.5)],
@@ -822,7 +850,8 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('tLev').querySelectorAll('tbody tr').forEach(tr => tr.onclick = () => { state.c = tr.dataset.k; render(); });
     $('levNote').innerHTML = `B＝<b>${cfgByKey[state.b].name}</b>，期間：${state.period}。每列＝把該方法套在 B 上的結果；<b>點任一列就設為上方的 C</b>，點欄位名稱排序。`
       + `「比 B」＝淨利/回撤相對 B（關閉）的變化；淨利/回撤與 Sharpe 不受槓桿大小影響，淨利與回撤會隨平均槓桿縮放。`
-      + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網。`
+      + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網；<b>短期煞車</b>＝急跌、連虧、波動突升。`
+      + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩，目前指標（慢速恢復 0.20）綜合最平衡；短期煞車與市場狀態類在兩池都沒有穩定改善。`
       + `回撤門檻以參考帳戶「至今年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；只用前一天收盤以前的資料。`
       + `<b>判讀：要 #/QB、#/QBA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
     const [i0, i1] = idxRange();
