@@ -144,6 +144,13 @@ const HTML = `
     <div class="note mt">目前 C 的槓桿倍數（0＝停止下單）</div>
     <div data-id="cLevL" class="chart short"></div>
   </div>
+  <div class="card mt" data-id="levResCard" hidden>
+    <h2>研究結論：哪一類自動槓桿在兩種 QB 都有效</h2>
+    <div class="note" data-id="levResNote"></div>
+    <div class="legend-row"><span>篩選 <span class="seg" data-id="segLevRes"></span></span><span>點欄位名稱排序</span></div>
+    <div class="tbl-wrap"><table data-id="tLevRes"></table></div>
+    <ul class="note mt" data-id="levResDefs" style="padding-left:18px;margin:6px 0 0"></ul>
+  </div>
 </div>
 
 <div data-tab="strat" hidden>
@@ -870,6 +877,40 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   if (typeof init.scaled === 'boolean') state.scaled = init.scaled;
   if (['year', 'lev', 'strat', 'cfg'].includes(init.tab)) state.tab = init.tab;
   const saveState = () => opts.onState?.({ a: state.a, b: state.b, c: state.c, period: state.period, scaled: state.scaled, tab: state.tab });
+
+  // ── 自動槓桿研究結論（lev_summary.py → lev.enc；載得到才顯示）──
+  let LR = null, lrSort = { col: 'ok4', dir: -1 }, lrFilter = 'all';
+  function renderLevRes() {
+    if (!LR) return;
+    $('levResCard').hidden = false;
+    const c = LR.current;
+    $('levResNote').innerHTML = `三輪研究共 ${LR.families.reduce((t, f) => t + f.n, 0)} 組參數。目前使用：<b>${c.name}</b> —
+      改善 原本 Export ${(c.g0 * 100).toFixed(1)}%、Export＋Activate ${(c.g1 * 100).toFixed(1)}%，3 年視窗勝率 ${(c.win0 * 100).toFixed(0)}%／${(c.win1 * 100).toFixed(0)}%，平均槓桿 ${c.avg}。
+      <b>結論：只有「拉回減碼」類在兩種 QB 穩定有效；短期煞車、市場狀態、拉回加碼、QB inc 都沒有幫助或變差。</b>（產生於 ${LR.generated}）`;
+    seg($('segLevRes'), [['all', '全部'], ['good', '有效'], ['bad', '無效／變差']], () => lrFilter, v => { lrFilter = v; renderLevRes(); });
+    $('segLevRes').querySelectorAll('button').forEach((b, i) => { b.onclick = () => { lrFilter = ['all', 'good', 'bad'][i]; renderLevRes(); }; });
+    let rows = LR.families.slice();
+    if (lrFilter === 'good') rows = rows.filter(r => r.verdict === '穩定有效' || r.verdict === '部分有效');
+    if (lrFilter === 'bad') rows = rows.filter(r => !(r.verdict === '穩定有效' || r.verdict === '部分有效'));
+    const order = { '穩定有效': 4, '部分有效': 3, '無效': 2, '一池好一池壞': 1, '兩池都變差': 0 };
+    rows.sort((x, y) => { const k = lrSort.col; const a = k === 'verdict' ? order[x.verdict] : x[k], b = k === 'verdict' ? order[y.verdict] : y[k];
+      return typeof a === 'string' ? a.localeCompare(b) * lrSort.dir : ((a ?? -1e9) - (b ?? -1e9)) * lrSort.dir; });
+    const pc = v => v == null ? '—' : `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</span>`;
+    const p0 = v => v == null ? '—' : (v * 100).toFixed(0) + '%';
+    const vcls = v => v === '穩定有效' ? 'pos' : v === '部分有效' ? '' : 'neg';
+    const cols = [['family', '方法'], ['kind', '類型'], ['round', '輪次'], ['n', '組數'], ['ok4', '四段全改善'], ['g0', '原本 Export'],
+                  ['g1', 'Export＋Activate'], ['oos', '前推樣本外'], ['win0', '視窗勝率（原）'], ['win1', '視窗勝率（合）'], ['verdict', '判斷']];
+    $('tLevRes').innerHTML = `<thead><tr>${cols.map(([k, l]) => `<th class="sortable" data-c="${k}">${l}${lrSort.col === k ? (lrSort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
+      <tbody>${rows.map(r => `<tr><td>${r.family}${r.note ? `<div class="note">${r.note}</div>` : ''}</td><td>${r.kind}</td><td>${r.round}</td><td>${r.n}</td>
+        <td><b>${p0(r.ok4)}</b></td><td>${pc(r.g0)}</td><td>${pc(r.g1)}</td><td>${pc(r.oos)}</td><td>${p0(r.win0)}</td><td>${p0(r.win1)}</td>
+        <td><b class="${vcls(r.verdict)}">${r.verdict}</b></td></tr>`).join('')}</tbody>`;
+    $('tLevRes').querySelectorAll('th').forEach(th => th.onclick = () => {
+      const k = th.dataset.c; lrSort = { col: k, dir: lrSort.col === k ? -lrSort.dir : (['family', 'kind', 'round'].includes(k) ? 1 : -1) }; renderLevRes(); });
+    $('levResDefs').innerHTML = LR.notes.map(n => `<li>${n}</li>`).join('');
+  }
+  if (opts.loadLev) {
+    Promise.resolve(opts.loadLev()).then(l => { if (l && l.families) { LR = l; renderLevRes(); } }).catch(() => {});
+  }
 
   render();
   showTab(state.tab);
