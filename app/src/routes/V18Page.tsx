@@ -4,9 +4,10 @@
  * 在本機加密後才推上來；網站與部署流程都碰不到明文。沒有密碼只能下載到亂數。
  * 這頁刻意不放進上方選單、也不寫進更新日誌：只給知道網址與密碼的人自己看。 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { VaultManifest } from '../lib/vault';
 import { v18Vault as vault, type V18Data } from '../lib/v18';
+import { useVaultExpiry } from '../hooks/useVaultExpiry';
 
 const pct = (v: number | null | undefined, d = 1) =>
   v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)}%`;
@@ -131,6 +132,9 @@ export function V18Page() {
   const [state, setState] = useState<'loading' | 'missing' | 'locked' | 'ready' | 'error'>('loading');
   const [data, setData] = useState<V18Data | null>(null);
   const [msg, setMsg] = useState('');
+  // 6 小時後自動上鎖（頁面開著也一樣）
+  const kick = useCallback(() => { setData(null); setState('locked'); }, []);
+  useVaultExpiry(vault, state === 'ready', kick);
 
   const load = async () => {
     try {

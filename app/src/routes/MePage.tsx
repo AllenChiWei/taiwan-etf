@@ -1,13 +1,15 @@
 /* 私人入口（#/me）：v18、QB 看板、對帳單分析放在同一頁。密碼與 v18／QB 相同（共用解鎖工作階段）。
  * 上方選單只有「🔒 私人」一個入口（2026-10-05 使用者要求看得到），不寫進更新日誌。頁面本身只是連結；各頁的資料都在本機加密後才上傳。 */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { loadV18IfUnlocked, v18Vault, type V18Data } from '../lib/v18';
 import type { EquityData } from '../lib/accountEquity';
 import { EquitySection } from '../components/EquitySection';
 import { QbFlow } from '../components/QbFlow';
+import { useVaultExpiry } from '../hooks/useVaultExpiry';
+import { SESSION_HOURS } from '../lib/vault';
 
 const qbVault = new Vault(`${import.meta.env.BASE_URL}data/qb/`, 'twetf.v18.unlock');
 // 元大實盤權益：DashBoard_AI\equity_export.py 用同一把密碼、同一個 salt 加密
@@ -50,6 +52,8 @@ export function MePage() {
     }).catch(() => setState('missing'));
   }, []);
   useEffect(() => { if (state === 'locked') ref.current?.focus(); }, [state]);
+  const kick = useCallback(() => { setState('locked'); setV18(null); setEquity(null); }, []);
+  useVaultExpiry(v18Vault, state === 'ready', kick);
 
   if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
   if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有資料。</p>;
@@ -113,7 +117,7 @@ export function MePage() {
       </div>
       {equity && <EquitySection data={equity} />}
       <QbFlow />
-      <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
+      <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼；{SESSION_HOURS} 小時後自動上鎖，需要重新輸入。</p>
     </div>
   );
 }

@@ -17,6 +17,10 @@ export interface VaultManifest {
 
 interface StoredSession { key: string; salt: string; expires: number }
 
+/** 私人頁（v18、QB、實盤權益）解鎖最多維持幾小時（2026-10-05 使用者要求 6 小時就要重新輸入；不論 manifest 的 ttlHours 設多少） */
+export const SESSION_HOURS = 6;
+const SESSION_MS = SESSION_HOURS * 3600_000;
+
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const bytesToB64 = (b: Uint8Array) => {
   let s = '';
@@ -59,10 +63,13 @@ export class Vault {
       const raw = localStorage.getItem(this.storageKey);
       s = raw ? (JSON.parse(raw) as StoredSession) : null;
     } catch { return false; }
-    if (!s || s.salt !== m.salt || s.expires < Date.now()) { this.lock(); return false; }
+    // 過期，或是舊版留下的長效工作階段（剩餘時間超過 6 小時）→ 一律重新輸入密碼
+    if (!s || s.salt !== m.salt || s.expires < Date.now() || s.expires - Date.now() > SESSION_MS + 60_000) { this.lock(); return false; }
     const key = await crypto.subtle.importKey('raw', b64ToBytes(s.key), 'AES-GCM', true, ['decrypt']);
     if (!(await this.verify(key, m))) { this.lock(); return false; }
     this.key = key;
+    this.everStored = true;
+    this.until = s.expires;
     return true;
   }
 
@@ -73,10 +80,12 @@ export class Vault {
     const key = await crypto.subtle.importKey('raw', raw, 'AES-GCM', true, ['decrypt']);
     if (!(await this.verify(key, m))) return false;
     this.key = key;
+    this.until = Date.now() + Math.min(m.ttlHours * 3600_000, SESSION_MS);
     try {
       const s: StoredSession = { key: bytesToB64(new Uint8Array(raw)), salt: m.salt,
-                                 expires: Date.now() + m.ttlHours * 3600_000 };
+                                 expires: Date.now() + Math.min(m.ttlHours * 3600_000, SESSION_MS) };
       localStorage.setItem(this.storageKey, JSON.stringify(s));
+      this.everStored = true;
     } catch { /* 無痕模式 */ }
     return true;
   }
@@ -87,6 +96,21 @@ export class Vault {
   }
 
   get unlocked(): boolean { return this.key !== null; }
+
+  /** 工作階段是否已過期（看 localStorage；同一把鑰匙的其他頁面上鎖或過期都算）。過期就順便上鎖。 */
+  expired(): boolean {
+    if (!this.key) return false;
+    let s: StoredSession | null = null;
+    try { const raw = localStorage.getItem(this.storageKey); s = raw ? (JSON.parse(raw) as StoredSession) : null; } catch { return false; }
+    // 記憶體裡的到期時間（無痕模式存不了 localStorage 時也照樣 6 小時踢出）
+    const memExpired = Date.now() > this.until;
+    if (!memExpired && s && s.expires >= Date.now()) return false;
+    if (!memExpired && !s && !this.everStored) return false;      // 無痕模式：沒有存檔紀錄，只看記憶體
+    this.lock();
+    return true;
+  }
+  private everStored = false;
+  private until = 0;
 
   /** 下載並解密一個 .enc 檔（IV(12) || 密文），manifest 標 compressed 時先 gunzip。 */
   async fetchJson<T>(file: string): Promise<T> {

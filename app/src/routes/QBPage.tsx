@@ -9,7 +9,8 @@
  * 2026-10-05：同一個元件也用在 #/QBA —— Export 第一層＋Activate 合併的獨立版本（資料在 data/qba/，
  * 由 QB_EXPORT_DIR／QB_OUT_DIR 切換後的 qb_dashboard.py 產生），兩份資料完全分開。 */
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 
@@ -118,6 +119,10 @@ function QbBoard({ v }: { v: Variant }) {
       if (await vault.restore(m)) await load(); else setState('locked');
     }).catch(e => { setMsg(String(e)); setState('error'); });
   }, [vault]);
+
+  // 6 小時後自動上鎖（頁面開著也一樣）
+  const kick = useCallback(() => { setData(null); setState('locked'); }, []);
+  useVaultExpiry(vault, state === 'ready', kick);
 
   // 資料到了才載入 ECharts 與看板程式（兩者都只在這一頁用到）
   useEffect(() => {
