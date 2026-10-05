@@ -98,12 +98,9 @@ export function MePage() {
         <Link to="/QB" className={card}>
           <div className="text-sm font-bold text-ink">QB 策略層評價看板</div>
           <p className="mt-1 text-[12.5px] text-muted">
-            評價前／後比較、單一策略曲線、v18＋QB 組合與資金配置計算器{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
+            A → B → C（評價前、QB 評價後、自動槓桿）比較、每年／每月明細、單一策略曲線、v18＋QB 組合；
+            看板上方可切換策略池（原本 Export／Export＋Activate）{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
           </p>
-        </Link>
-        <Link to="/QBA" className={card}>
-          <div className="text-sm font-bold text-ink">QB 看板（Export＋Activate 合併版）</div>
-          <p className="mt-1 text-[12.5px] text-muted">原本的策略再加上 Activate 的策略一起回測；與上面那份分開，可以對照差異（Activate 是事後挑選，偏樂觀）</p>
         </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
