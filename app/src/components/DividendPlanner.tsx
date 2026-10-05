@@ -467,7 +467,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                           兩層分開，分段比例才不會被外層的縮放扭曲 */}
                       <span className="absolute inset-y-0 left-0 flex"
                             style={{ width: `${(v / maxMonth) * 100}%` }}>
-                        {parts.map(({ r, amount }) => (
+                        {parts.map(({ r, amount }, i) => (
                           <span
                             key={r.code}
                             title={`${label}　${r.code} ${r.name}　${money(amount)} 元${
@@ -475,7 +475,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                             className="flex items-center justify-center overflow-hidden
                                        text-[10px] font-semibold whitespace-nowrap text-white"
                             style={{ width: `${(amount / v) * 100}%`,
-                                     background: colorOf(r.code) }}
+                                     background: colorOf(r.code),
+                                     // 分段之間留 2px 底色縫，同為灰色的相鄰兩檔才分得開
+                                     borderRight: i < parts.length - 1 ? '2px solid var(--c-surface)' : undefined }}
                           >
                             {/* 看分段實際多長（佔最高月份的比例），不是佔當月多少：月配小金額那一格
                                 雖然佔當月 100%，整條卻很短，硬塞代號只會剩「40」 */}

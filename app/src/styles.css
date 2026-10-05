@@ -23,7 +23,8 @@
      刻意不含紅綠（台股語境是漲跌）。深色模式用同色相、為深色底重新挑的色階。 */
   --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a;
   --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #4a3aa7;
-  --cat-tail-a: #94a3b8; --cat-tail-b: #cbd5e1;
+  /* 第 7 名之後的灰：淺灰 #cbd5e1 跟月曆底色只有 1.3:1，使用者看不到柱子（2026-10-05）→ 兩種都要 ≥ 3:1 */
+  --cat-tail-a: #475569; --cat-tail-b: #7c8a9e;
 
   --c-accent:        #1f6feb;
   --c-accent-ink:    #ffffff;
@@ -63,7 +64,7 @@
 
     --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70;
     --cat-4: #c98500; --cat-5: #d55181; --cat-6: #9085e9;
-    --cat-tail-a: #64748b; --cat-tail-b: #475569;
+    --cat-tail-a: #a8b3c2; --cat-tail-b: #64748b;
 
     --c-accent:        #4d9bff;
     --c-accent-ink:    #06121f;
@@ -99,7 +100,7 @@
   --c-faint:         #6e7883;
   --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70;
   --cat-4: #c98500; --cat-5: #d55181; --cat-6: #9085e9;
-  --cat-tail-a: #64748b; --cat-tail-b: #475569;
+  --cat-tail-a: #a8b3c2; --cat-tail-b: #64748b;
 
   --c-accent:        #4d9bff;
   --c-accent-ink:    #06121f;
