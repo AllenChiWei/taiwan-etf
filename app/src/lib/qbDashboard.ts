@@ -20,7 +20,8 @@ const CSS = `
 .qbd h1 { font-size:20px; margin:0 0 4px; } .qbd h2 { font-size:15px; margin:0 0 2px; }
 .qbd .sub { color:var(--ink-2); font-size:12.5px; } .qbd .note { color:var(--ink-3); font-size:12px; }
 .qbd .card { background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
-.qbd .grid { display:grid; gap:12px; } .qbd .g2 { grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr)); }
+.qbd .grid { display:grid; gap:12px; } .qbd .g2 { grid-template-columns:minmax(0,1fr); }
+@media (min-width: 1100px) { .qbd .g2 { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 .qbd .filters { position:sticky; top:0; z-index:5; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center;
   background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:10px 14px; margin:14px 0; }
 .qbd .filters label, .qbd .filters .lbl { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--ink-2); }
@@ -28,7 +29,7 @@ const CSS = `
 .qbd .seg { display:inline-flex; border:1px solid var(--line-strong); border-radius:8px; overflow:hidden; }
 .qbd .seg button { font:inherit; font-size:13.5px; border:0; background:var(--surface); padding:6px 14px; min-height:36px; cursor:pointer; color:var(--ink-2); touch-action:manipulation; }
 .qbd .seg button + button { border-left:1px solid var(--line); }
-.qbd .filters label { min-width:0; max-width:100%; } .qbd .filters select { min-width:0; flex:1 1 auto; }
+.qbd .filters label { min-width:0; max-width:100%; white-space:nowrap; } .qbd .filters select { min-width:0; flex:1 1 auto; }
 @media (max-width: 640px) {
   .qbd { padding:10px; }
   .qbd .seg button { min-height:40px; padding:8px 14px; } .qbd select { min-height:40px; }
@@ -61,7 +62,8 @@ const CSS = `
 .qbd .mt { margin-top:12px; }
 .qbd input[type=number] { font:inherit; font-size:13px; padding:4px 8px; border:1px solid var(--line-strong); border-radius:8px;
   background:var(--surface); color:var(--ink); width:9.5em; min-height:34px; }
-.qbd .calc { display:grid; gap:4px 16px; grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr)); margin-top:8px; font-size:13px; }
+.qbd .calc { display:grid; gap:4px 16px; grid-template-columns:minmax(0,1fr); margin-top:8px; font-size:13px; }
+@media (min-width: 700px) { .qbd .calc { grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 .qbd .calc b { font-variant-numeric:tabular-nums; }
 .qbd .best td { background:#fff4ec; }
 .qbd table.yr td:first-child, .qbd table.yr th:first-child { position:sticky; left:0; background:var(--surface); z-index:1; }
@@ -78,6 +80,14 @@ const CSS = `
 .qbd .tabs button[aria-selected="true"] { color:var(--ink); border-bottom-color:var(--b); }
 .qbd .chart.mid { height:270px; } .qbd .chart.dd { height:170px; }
 .qbd th.sortable { white-space:nowrap; }
+.qbd .dinl { display:none; }
+@media (max-width: 640px) {
+  .qbd .tabs { flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .qbd .tabs button { flex:0 0 auto; padding:8px 12px; }
+  .qbd table.kpi .dcol { display:none; }
+  .qbd .dinl { display:block; font-size:11px; font-weight:400; white-space:nowrap; }
+  .qbd table.kpi th, .qbd table.kpi td { padding:5px 6px; font-size:12.5px; }
+}
 `;
 
 const HTML = `
@@ -383,7 +393,9 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     return levCache[ck];
   }
   function seriesC(key, method = state.c) { const [i0, i1] = idxRange(); return levOf(key, method).pnl.slice(i0, i1); }
-  const cName = () => 'C B＋' + levByKey[state.c].name;
+  const narrow = () => root.clientWidth < 700;
+  const cName = () => narrow() ? 'C' : 'C B＋' + levByKey[state.c].name;
+  const sName = (tag, cfg) => narrow() ? tag : tag + ' ' + cfg.name;
   LEV.forEach(([k, n]) => $('selC').add(new Option(n, k)));
   $('selC').onchange = e => { state.c = e.target.value; render(); };
   const curDates = () => { const [i0, i1] = idxRange(); return D.dates.slice(i0, i1); };
@@ -484,24 +496,25 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       const rel = x ? `${diff / Math.abs(x) * 100 >= 0 ? '+' : ''}${(diff / Math.abs(x) * 100).toFixed(1)}%` : '';
       return `<td class="d ${good ? 'better' : 'worse'}">${good ? '▲' : '▼'} ${rel}</td>`;
     };
+    const inl = (x, y, hib) => delta(x, y, hib).replace(/^<td class="d ([a-z]+)">(.*)<\/td>$/, '<span class="dinl $1">$2</span>');
     $('tKpi').innerHTML = `<thead><tr><th>指標</th><th style="color:${C.a}">A</th><th style="color:${C.b}">B</th><th style="color:${C.c}">C</th>
-        <th>B 比 A</th><th>C 比 B</th></tr></thead>
-      <tbody>${kp.map(([k, a, b, c, f, hib]) => `<tr><td>${k}</td><td>${f(a)}</td><td><b>${f(b)}</b></td><td><b>${f(c)}</b></td>
-        ${delta(a, b, hib)}${delta(b, c, hib)}</tr>`).join('')}</tbody>`;
+        <th class="dcol">B 比 A</th><th class="dcol">C 比 B</th></tr></thead>
+      <tbody>${kp.map(([k, a, b, c, f, hib]) => `<tr><td>${k}</td><td>${f(a)}</td><td><b>${f(b)}</b>${inl(a, b, hib)}</td><td><b>${f(c)}</b>${inl(b, c, hib)}</td>
+        ${delta(a, b, hib).replace('<td class="d', '<td class="dcol d')}${delta(b, c, hib).replace('<td class="d', '<td class="dcol d')}</tr>`).join('')}</tbody>`;
 
     chart('cEquity').setOption({ animation: false, grid: { left: 70, right: 14, top: 28, bottom: 52 }, tooltip: tl, legend,
       xAxis: { type: 'category', data: dates, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
-      series: [lineSeries('A ' + ca.name, A.cum, C.a), lineSeries('B ' + cb.name, B.cum, C.b), lineSeries(cName(), Cm.cum, C.c)] }, true);
+      series: [lineSeries(sName('A', ca), A.cum, C.a), lineSeries(sName('B', cb), B.cum, C.b), lineSeries(cName(), Cm.cum, C.c)] }, true);
     chart('cDD').setOption({ animation: false, grid: { left: 70, right: 14, top: 28, bottom: 52 }, tooltip: tl, legend,
       xAxis: { type: 'category', data: dates, ...axisCommon, splitLine: { show: false } }, yAxis: { ...yW, max: 0 },
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
-      series: [lineSeries('A ' + ca.name, A.dd, C.a), lineSeries('B ' + cb.name, B.dd, C.b), lineSeries(cName(), Cm.dd, C.c)] }, true);
+      series: [lineSeries(sName('A', ca), A.dd, C.a), lineSeries(sName('B', cb), B.dd, C.b), lineSeries(cName(), Cm.dd, C.c)] }, true);
     const yearAgg = x => { const m = new Map(); x.forEach((v, i) => { const y = dates[i].slice(0, 4); m.set(y, (m.get(y) || 0) + v); }); return m; };
     const ya = yearAgg(series(state.a)), yb = yearAgg(series(state.b)), yc = yearAgg(seriesC(state.b)), years = [...ya.keys()];
     chart('cYear').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 28 }, tooltip: tb, legend,
       xAxis: { type: 'category', data: years, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
-      series: [barS('A ' + ca.name, years.map(y => ya.get(y)), C.a), barS('B ' + cb.name, years.map(y => yb.get(y)), C.b),
+      series: [barS(sName('A', ca), years.map(y => ya.get(y)), C.a), barS(sName('B', cb), years.map(y => yb.get(y)), C.b),
                barS(cName(), years.map(y => yc.get(y)), C.c)] }, true);
     const fullA = metrics(D.daily[state.a].map(v => v * (state.scaled ? ca.scale : 1)), D.dates).mon;
     const fullB = metrics(D.daily[state.b].map(v => v * (state.scaled ? cb.scale : 1)), D.dates).mon;
@@ -509,7 +522,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const m24 = [...fullA.keys()].slice(-24);
     chart('cMonth').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 28 }, tooltip: tb, legend,
       xAxis: { type: 'category', data: m24, ...axisCommon, splitLine: { show: false } }, yAxis: yW,
-      series: [barS('A ' + ca.name, m24.map(m => fullA.get(m)), C.a), barS('B ' + cb.name, m24.map(m => fullB.get(m)), C.b),
+      series: [barS(sName('A', ca), m24.map(m => fullA.get(m)), C.a), barS(sName('B', cb), m24.map(m => fullB.get(m)), C.b),
                barS(cName(), m24.map(m => fullC.get(m)), C.c)] }, true);
 
     renderMatrix(all, base);
