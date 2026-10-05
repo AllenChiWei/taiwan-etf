@@ -169,6 +169,14 @@ const HTML = `
     <div class="tbl-wrap"><table data-id="tLevRes"></table></div>
     <ul class="note mt" data-id="levResDefs" style="padding-left:18px;margin:6px 0 0"></ul>
   </div>
+  <div class="card mt" data-id="cmpCard" hidden>
+    <h2>複利方式比較（進階篇[2][3][4]、QB「實際操作資金步進調整」）</h2>
+    <div class="note" data-id="cmpNote"></div>
+    <div class="legend-row"><span>情境 <span class="seg" data-id="segCmpScen"></span></span><span>對象 <span class="seg" data-id="segCmpSet"></span></span></div>
+    <div class="tbl-wrap"><table data-id="tCmp"></table></div>
+    <div class="note mt">權益（起始本金＝1，對數刻度）</div>
+    <div data-id="cCmp" class="chart"></div>
+  </div>
 </div>
 
 <div data-tab="strat" hidden>
@@ -983,8 +991,40 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       const k = th.dataset.c; lrSort = { col: k, dir: lrSort.col === k ? -lrSort.dir : (['family', 'kind', 'round'].includes(k) ? 1 : -1) }; renderLevRes(); });
     $('levResDefs').innerHTML = LR.notes.map(n => `<li>${n}</li>`).join('');
   }
+  // ── 複利方式比較（lev6_compound.py → lev.enc 的 compound）──
+  let cmpScen = '回測原樣', cmpSet = 'C';
+  function renderCmp() {
+    const cp = LR && LR.compound;
+    if (!cp) return;
+    $('cmpCard').hidden = false;
+    const scens = [...new Set(cp.rows.map(r => r.scen))];
+    seg($('segCmpScen'), scens.map(s => [s, s]), () => cmpScen, v => { cmpScen = v; });
+    seg($('segCmpSet'), [['B', 'B 評價後'], ['C', 'C 加自動槓桿']], () => cmpSet, v => { cmpSet = v; });
+    for (const id of ['segCmpScen', 'segCmpSet']) $(id).querySelectorAll('button').forEach(b => {
+      const old = b.onclick; b.onclick = () => { old && old(); requestAnimationFrame(renderCmp); }; });
+    $('cmpNote').innerHTML = `本金 ${(cp.capital / 1e4).toLocaleString('zh-TW')} 萬；起始規模讓「不複利」全期最大回撤＝本金 ${(cp.target_mdd * 100).toFixed(0)}%；`
+      + `容量上限：平均最多 ${cp.cap_lots} 口大台（風險平價下每年口數不同，已逐年換算）。`
+      + `<b>回測原樣</b>報酬很高，很快就碰到容量上限，各方法差不多；<b>保守（Sharpe 降到 1）</b>＝波動不變、報酬大打折，模擬實盤遠不如回測，這時複利方式的差別才明顯。`
+      + `最大回撤%＝相對當時權益高點。資料產生於 ${cp.generated}。`;
+    const rows = cp.rows.filter(r => r.scen === cmpScen && r.set === cmpSet);
+    const base = rows[0];
+    const p1 = v => (v * 100).toFixed(1) + '%';
+    const cls = (v, b, hib = true) => Math.abs(v - b) < 1e-4 ? '' : (hib ? v > b : v < b) ? 'pos' : 'neg';
+    $('tCmp').innerHTML = `<thead><tr><th>方法</th><th>倍數</th><th>年化</th><th>最大回撤%</th><th>Calmar</th><th>最差年</th><th class="gap">後半重算 年化</th><th>後半 最大回撤%</th></tr></thead>
+      <tbody>${rows.map(r => `<tr${r === base ? ' class="cur"' : ''}><td>${r.name}</td><td>${r.mult.toFixed(1)}</td>
+        <td class="${cls(r.cagr, base.cagr)}">${p1(r.cagr)}</td><td class="${cls(r.mdd_pct, base.mdd_pct, false)}">${p1(r.mdd_pct)}</td>
+        <td><b class="${cls(r.calmar, base.calmar)}">${r.calmar.toFixed(2)}</b></td><td>${p1(r.worst_y)}</td>
+        <td class="gap">${p1(r.cagr2)}</td><td>${p1(r.mdd2)}</td></tr>`).join('')}</tbody>`;
+    const pal = ['#85847e', '#2a78d6', '#1c5cab', '#86b6ef', '#cde2fb', '#eb6834', '#4a3aa7', '#9085e9', '#c9c3f5'];
+    chart('cCmp').setOption({ animation: false, grid: { left: 54, right: 14, top: 40, bottom: 52 }, legend: { ...legend, type: 'scroll' },
+      tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
+      xAxis: { type: 'category', data: cp.weeks, ...axisCommon, splitLine: { show: false } },
+      yAxis: { type: 'log', ...axisCommon, axisLabel: { ...axisCommon.axisLabel, formatter: v => v + '×' } },
+      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
+      series: rows.map((r, i) => lineSeries(narrow() ? String(i + 1) : r.name, cp.series[`${cmpScen}|${cmpSet}|${r.name}`], pal[i % pal.length], i === 0 ? 2.5 : 1.5)) }, true);
+  }
   if (opts.loadLev) {
-    Promise.resolve(opts.loadLev()).then(l => { if (l && l.families) { LR = l; renderLevRes(); } }).catch(() => {});
+    Promise.resolve(opts.loadLev()).then(l => { if (l && l.families) { LR = l; renderLevRes(); renderCmp(); } }).catch(() => {});
   }
 
   render();
