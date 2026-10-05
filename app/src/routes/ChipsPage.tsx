@@ -23,6 +23,7 @@ import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
 import { AtmIntradaySection } from '../components/AtmIntradaySection';
+import { SellerDecisionCard } from '../components/SellerDecisionCard';
 import { RetailSection } from '../components/RetailSection';
 import { StockSheet } from '../components/StockSheet';
 
@@ -927,6 +928,7 @@ export function ChipsPage() {
       <>
         <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>
         <AtmSection />
+        <SellerDecisionCard />
         <AtmIntradaySection />
         <RetailSection />
       </>
@@ -942,6 +944,7 @@ export function ChipsPage() {
           <EmptyState title="籌碼資料載入失敗" hint={message} />
         )}
         <AtmSection />
+        <SellerDecisionCard />
         <AtmIntradaySection />
         <RetailSection />
       </>
@@ -968,6 +971,7 @@ export function ChipsPage() {
       <SentimentSection data={data} />
       <OptionsSection data={data} />
       <AtmSection />
+        <SellerDecisionCard />
       <AtmIntradaySection />
       <LargeSection data={data} />
       <SectorSection data={data} />

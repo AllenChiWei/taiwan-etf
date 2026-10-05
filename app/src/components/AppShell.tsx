@@ -12,6 +12,7 @@ import { AppProvider } from '../context/AppContext';
 import { metaLine } from '../lib/format';
 import { EmptyState } from './EmptyState';
 import { ScrollTopButton } from './ScrollTopButton';
+import { StaleBanner } from './StaleBanner';
 
 const TABS = [
   { to: '/', label: '台股' },
@@ -98,6 +99,9 @@ export function AppShell() {
           })}
         </nav>
       </header>
+
+      {/* 資料超過 2 個交易日沒更新就提醒（2026-09 曾停在 9/25 好幾天沒人發現） */}
+      <StaleBanner updated={meta?.updated} />
 
       <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl px-3 pb-10 sm:px-4">
         {state.status === 'loading' && (

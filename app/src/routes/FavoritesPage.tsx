@@ -8,6 +8,7 @@ import { toNumber } from '../lib/filters';
 import { PerformanceChart, lineColor } from '../components/PerformanceChart';
 import { EmptyState } from '../components/EmptyState';
 import { PasswordGate } from '../components/PasswordGate';
+import { OverlapSection } from '../components/OverlapSection';
 import { loadV18IfUnlocked, type V18Data } from '../lib/v18';
 
 /** v18 的線用文字色（深色模式自動變淺），跟 ETF 的類別色明顯區分 */
@@ -307,6 +308,9 @@ export function FavoritesPage() {
           有 {favorites.count - items.length} 個收藏的代號已不在目前的清單中（可能已下市或不在涵蓋範圍）。
         </p>
       )}
+
+      {/* 兩兩比較收藏 ETF 的前十大持股重疊（只看台股清單裡的，美股公會沒有月報） */}
+      <OverlapSection codes={items.filter(i => i.market === 'tw').map(i => i.code)} />
     </div>
   );
 }

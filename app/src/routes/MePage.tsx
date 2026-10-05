@@ -1,0 +1,100 @@
+/* 私人入口（#/me）：v18、QB 看板、對帳單分析放在同一頁。密碼與 v18／QB 相同（共用解鎖工作階段）。
+ * 不放進上方選單、也不寫進更新日誌。頁面本身只是連結；各頁的資料都在本機加密後才上傳。 */
+
+import { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
+import { Vault, type VaultManifest } from '../lib/vault';
+import { loadV18IfUnlocked, v18Vault, type V18Data } from '../lib/v18';
+
+const qbVault = new Vault(`${import.meta.env.BASE_URL}data/qb/`, 'twetf.v18.unlock');
+const pct = (v: number | null | undefined) =>
+  v === null || v === undefined || !Number.isFinite(v) ? '—' : `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)}%`;
+
+export function MePage() {
+  const [manifest, setManifest] = useState<VaultManifest | null>(null);
+  const [state, setState] = useState<'loading' | 'locked' | 'ready' | 'missing'>('loading');
+  const [v18, setV18] = useState<V18Data | null>(null);
+  const [qb, setQb] = useState<VaultManifest | null>(null);
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const ref = useRef<HTMLInputElement>(null);
+
+  const loadAll = async () => {
+    setV18(await loadV18IfUnlocked());
+    setQb(await qbVault.loadManifest().catch(() => null));
+    setState('ready');
+  };
+
+  useEffect(() => {
+    v18Vault.loadManifest().then(async m => {
+      if (!m) { setState('missing'); return; }
+      setManifest(m);
+      if (v18Vault.unlocked || await v18Vault.restore(m)) await loadAll(); else setState('locked');
+    }).catch(() => setState('missing'));
+  }, []);
+  useEffect(() => { if (state === 'locked') ref.current?.focus(); }, [state]);
+
+  if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
+  if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有資料。</p>;
+  if (state === 'locked' && manifest) {
+    return (
+      <form className="mx-auto mt-10 max-w-sm rounded-xl border border-line bg-surface p-5"
+            onSubmit={async e => {
+              e.preventDefault();
+              setBusy(true); setErr(null);
+              const ok = await v18Vault.unlock(pw, manifest);
+              setBusy(false);
+              if (ok) await loadAll(); else setErr('密碼不正確');
+            }}>
+        <h1 className="text-sm font-bold text-ink">我的工具</h1>
+        <p className="mt-1 text-[12px] text-muted">這一頁需要密碼（與 v18、QB 相同）。</p>
+        <input ref={ref} type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password"
+               className="mt-3 h-10 w-full rounded-lg border border-line bg-bg px-3 text-[14px] text-ink" placeholder="密碼" />
+        {err && <p className="mt-2 text-[12px] text-down">{err}</p>}
+        <button type="submit" disabled={busy || !pw}
+                className="mt-3 h-10 w-full rounded-lg bg-accent text-[13px] font-semibold text-accent-ink disabled:opacity-50">
+          {busy ? '解鎖中…' : '解鎖'}
+        </button>
+      </form>
+    );
+  }
+
+  const card = 'block rounded-xl border border-line bg-surface p-4 hover:bg-hover';
+  return (
+    <div className="mt-4">
+      <div className="mb-3 flex items-baseline justify-between">
+        <h1 className="text-base font-bold text-ink">我的工具</h1>
+        <button type="button" onClick={() => { v18Vault.lock(); setState('locked'); setV18(null); }}
+                className="h-7 rounded-lg bg-sunken px-3 text-[12px] text-muted hover:text-ink">上鎖</button>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Link to="/v18" className={card}>
+          <div className="text-sm font-bold text-ink">v18 策略</div>
+          {v18 ? (
+            <p className="mt-1 text-[12.5px] text-muted">
+              資料截至 {v18.asof}　·　今年 <span className={v18.stats.ytd >= 0 ? 'text-up' : 'text-down'}>{pct(v18.stats.ytd)}</span>
+              {'　·　'}持股 {v18.holdings.length} 檔　·　{v18.regime.bull ? '可做多' : '全數空倉'}
+              {v18.actions.length > 0 && <span className="font-semibold text-ink">　·　明日動作 {v18.actions.length} 筆</span>}
+            </p>
+          ) : <p className="mt-1 text-[12.5px] text-muted">績效、持股、選股名單</p>}
+        </Link>
+        <Link to="/QB" className={card}>
+          <div className="text-sm font-bold text-ink">QB 策略層評價看板</div>
+          <p className="mt-1 text-[12.5px] text-muted">
+            評價前／後比較、單一策略曲線、v18＋QB 組合與資金配置計算器{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
+          </p>
+        </Link>
+        <Link to="/futures" className={card}>
+          <div className="text-sm font-bold text-ink">對帳單分析</div>
+          <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>
+        </Link>
+        <Link to="/chips" className={card}>
+          <div className="text-sm font-bold text-ink">選擇權賣方決策卡</div>
+          <p className="mt-1 text-[12.5px] text-muted">在籌碼頁：預期波動 ÷ 實際波動、建議履約價（公開頁面）</p>
+        </Link>
+      </div>
+      <p className="mt-3 text-[11.5px] text-faint">這一頁不在選單上；解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
+    </div>
+  );
+}
