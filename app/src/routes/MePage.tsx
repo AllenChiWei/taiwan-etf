@@ -7,6 +7,7 @@ import { Vault, type VaultManifest } from '../lib/vault';
 import { loadV18IfUnlocked, v18Vault, type V18Data } from '../lib/v18';
 import type { EquityData } from '../lib/accountEquity';
 import { EquitySection } from '../components/EquitySection';
+import { QbFlow } from '../components/QbFlow';
 
 const qbVault = new Vault(`${import.meta.env.BASE_URL}data/qb/`, 'twetf.v18.unlock');
 // 元大實盤權益：DashBoard_AI\equity_export.py 用同一把密碼、同一個 salt 加密
@@ -114,6 +115,7 @@ export function MePage() {
         </Link>
       </div>
       {equity && <EquitySection data={equity} />}
+      <QbFlow />
       <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼（7 天內）。</p>
     </div>
   );
