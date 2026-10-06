@@ -1,1 +1,1 @@
-{"v": 1, "kdf": "PBKDF2-SHA256", "iterations": 600000, "salt": "yXNsBPayYb7TVgEd6YFW0Q==", "check": "eep58kq36HaavQ3hUTb5Kxm59PR6dFIQAMADFB9LlPpX5w==", "ttlHours": 168, "compressed": true, "updated": "2026-10-05 13:50"}
+{"v": 1, "kdf": "PBKDF2-SHA256", "iterations": 600000, "salt": "yXNsBPayYb7TVgEd6YFW0Q==", "check": "jAoWaxJ0OWmXEAvanJNQOspiPTV3EBxYBWUbQGssPLiL0g==", "ttlHours": 6, "compressed": true, "updated": "2026-10-06 13:50"}
