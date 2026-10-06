@@ -19,7 +19,9 @@ interface Pool {
   series_same: Record<string, number[]>; series_raw: Record<string, number[]>;
   wins: Record<string, number | null>; avg_lev: Record<string, number>;
 }
-interface Flow { generated: string; capital: number; target_mdd: number; c_variants: Record<string, string>; pools: Pool[] }
+interface PropSection { h: string; paras?: string[]; table?: { head: string[]; rows: string[][] }; note?: string }
+interface Proposal { title: string; generated: string; summary: string; sections: PropSection[] }
+interface Flow { generated: string; capital: number; target_mdd: number; c_variants: Record<string, string>; pools: Pool[]; proposal?: Proposal }
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/qbflow/`, 'twetf.v18.unlock');
 const COLORS: Record<StageKey, string> = { A: '#85847e', B: '#2a78d6', C: '#eb6834', K: '#4a3aa7' };
@@ -82,6 +84,8 @@ function Board({ data, P, pool, setPool, mode, setMode, cv, setCv, on, setOn }: 
       <p className="mt-1 text-[12px] text-muted">
         三個策略池各用目前測試出來最好的設定；可切換策略池、C 的做法、同風險／原始規模，並勾選要看的步驟。資料 {data.generated}。
       </p>
+
+      {data.proposal && <ProposalCard p={data.proposal} />}
 
       <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1" role="tablist" aria-label="策略池">
         {data.pools.map(p => (
@@ -253,4 +257,33 @@ function Chart({ P, mode, shown, keyOf }: { P: Pool; mode: 'same' | 'raw'; shown
   }, []);
   useEffect(() => { chart.current?.setOption(opt, true); }, [opt]);
   return <div ref={el} className="mt-1 h-[300px] w-full overflow-hidden sm:h-[360px]" />;
+}
+
+/* 跨池穩健方案（提案）：內容全部來自加密資料（research/proposal_build.py），網頁程式只負責排版 */
+function ProposalCard({ p }: { p: Proposal }) {
+  return (
+    <details open className="mt-3 rounded-xl border border-line bg-surface p-3">
+      <summary className="cursor-pointer text-[14px] font-bold text-ink">📋 {p.title}（提案）<span className="ml-2 text-[11px] font-normal text-faint">{p.generated}</span></summary>
+      <p className="mt-2 rounded-lg bg-sunken p-2.5 text-[12.5px] leading-relaxed text-ink">{p.summary}</p>
+      {p.sections.map((s, i) => (
+        <section key={i} className="mt-3">
+          {s.h && <h2 className="text-[13px] font-bold text-ink">{s.h}</h2>}
+          {s.paras?.map((t, j) => <p key={j} className="mt-1 text-[12.5px] leading-relaxed text-muted">{t}</p>)}
+          {s.table && (
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full text-[12px]">
+                <thead><tr className="text-muted">{s.table.head.map((h, j) => <th key={j} className={`whitespace-nowrap py-1 ${j ? 'pl-2 text-right' : 'pr-2 text-left'} font-semibold`}>{h}</th>)}</tr></thead>
+                <tbody>{s.table.rows.map((r, j) => (
+                  <tr key={j} className="border-t border-line">
+                    {r.map((c, k) => <td key={k} className={`py-1.5 tabular-nums ${k ? 'whitespace-nowrap pl-2 text-right text-ink' : 'pr-2 text-muted'}`}>{c}</td>)}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          )}
+          {s.note && <p className="mt-1 text-[11.5px] leading-relaxed text-faint">{s.note}</p>}
+        </section>
+      ))}
+    </details>
+  );
 }
