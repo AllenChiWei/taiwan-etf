@@ -6,7 +6,7 @@ import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { loadV18IfUnlocked, v18Vault, type V18Data } from '../lib/v18';
 import type { EquityData } from '../lib/accountEquity';
-import { EquitySection } from '../components/EquitySection';
+import { equityStats } from '../lib/accountEquity';
 import { QbFlow } from '../components/QbFlow';
 import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { SESSION_HOURS } from '../lib/vault';
@@ -112,6 +112,20 @@ export function MePage() {
             三個策略池（原本／合併／盲測）切換；A 評價前 → B 評價後 → C 自動槓桿（集成／海龜）→ 複利，同風險或原始規模、每年報酬
           </p>
         </Link>
+        <Link to="/EQ" className={card}>
+          <div className="text-sm font-bold text-ink">實盤權益分析（元大期貨）</div>
+          {equity && equityStats(equity.rows) ? (() => {
+            const s = equityStats(equity.rows)!;
+            const last = equity.rows[equity.rows.length - 1];
+            return (
+              <p className="mt-1 text-[12.5px] text-muted">
+                資料截至 {equity.asof}　·　權益 {last.tv.toLocaleString('zh-TW')}　·　累計損益{' '}
+                <span className={s.cum >= 0 ? 'text-up' : 'text-down'}>{s.cum >= 0 ? '+' : '−'}{Math.abs(s.cum).toLocaleString('zh-TW')}</span>
+                {'　·　'}時間加權 <span className={s.twr >= 0 ? 'text-up' : 'text-down'}>{pct(s.twr)}</span>
+              </p>
+            );
+          })() : <p className="mt-1 text-[12.5px] text-muted">月／年損益、同期大盤比較、風險指標</p>}
+        </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
           <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>
@@ -121,7 +135,6 @@ export function MePage() {
           <p className="mt-1 text-[12.5px] text-muted">在籌碼頁：預期波動 ÷ 實際波動、建議履約價（公開頁面）</p>
         </Link>
       </div>
-      {equity && <EquitySection data={equity} />}
       <QbFlow />
       <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼；{SESSION_HOURS} 小時後自動上鎖，需要重新輸入。</p>
     </div>
