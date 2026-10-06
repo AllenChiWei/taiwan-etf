@@ -11,6 +11,7 @@ const REPO = 'allenchiwei/taiwan-etf';
 const BRANCH = 'main';
 const DIR = 'app/public/data/holdings/';
 const API = `https://api.github.com/repos/${REPO}/contents/${DIR}`;
+const RAW = `https://raw.githubusercontent.com/${REPO}/${BRANCH}/${DIR}`;
 
 const b64ToBytes = (s: string) => Uint8Array.from(atob(s.replace(/\s/g, '')), c => c.charCodeAt(0));
 function bytesToB64(b: Uint8Array): string {
@@ -34,6 +35,15 @@ export async function ghRead(name: string, token?: string): Promise<{ bytes: Uin
   return { bytes: b64ToBytes(j.content ?? ''), sha: j.sha };
 }
 
+/** 備援讀取：raw.githubusercontent.com 不算 API 次數（API 未登入每個 IP 每小時只有 60 次，同一個家用網路共用）。
+ *  CDN 最多快取約 5 分鐘，所以只在 API 讀不到時用。沒有這個檔回 null。 */
+export async function rawRead(name: string): Promise<Uint8Array | null> {
+  const res = await fetch(`${RAW}${name}?t=${Date.now()}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`讀取失敗（raw HTTP ${res.status}）`);
+  return new Uint8Array(await res.arrayBuffer());
+}
+
 /** 寫一個檔（不存在就建立）。 */
 export async function ghWrite(name: string, bytes: Uint8Array, token: string, message: string): Promise<void> {
   const cur = await ghRead(name, token);
@@ -47,7 +57,7 @@ export async function ghWrite(name: string, bytes: Uint8Array, token: string, me
 
 function ghError(status: number, what: string): string {
   if (status === 401) return `${what}失敗：權杖無效或已過期（請到「⚙ 同步設定」重新設定）`;
-  if (status === 403) return `${what}失敗：權杖沒有這個倉庫的 Contents 寫入權限，或 GitHub 暫時限制請求次數`;
+  if (status === 403 || status === 429) return `${what}失敗：GitHub 暫時限制請求次數（或權杖沒有 Contents 寫入權限），請過幾分鐘再試`;
   if (status === 409) return `${what}失敗：同時有其他更新，請再按一次`;
   return `${what}失敗（GitHub HTTP ${status}）`;
 }

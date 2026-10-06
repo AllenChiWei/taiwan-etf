@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { Vault, type VaultManifest } from '../lib/vault';
-import { ghRead, ghWrite } from '../lib/ghSync';
+import { ghRead, ghWrite, rawRead } from '../lib/ghSync';
 
 export interface SyncEntry { code: string; shares: number; m?: 'us'; acct?: string }
 interface Payload { v?: number; accounts?: unknown; holdings?: unknown; generated?: string }
@@ -38,22 +38,46 @@ function nowStamp(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/** 私人持股：GitHub 上的最新版優先；讀不到（例如 API 次數用完）就用網站上已部署的那份 */
-async function readRemote(): Promise<Remote | null> {
+/* 2026-10-07 修正：GitHub API 未登入時每個 IP 每小時只有 60 次（同一個家用網路共用），用完時讀不到權杖，
+ * 畫面誤以為「還沒設定」而要求重貼權杖、載入也退回舊版。改成：
+ *   權杖：API → raw.githubusercontent.com（不算 API 次數）→ 網站部署的那份；分清楚「沒有設定」與「暫時讀不到」。
+ *   持股：有權杖就用權杖讀（每小時 5,000 次、一定是最新）；否則 API → raw → 部署版，並標明可能不是最新。 */
+type Src = 'api' | 'raw' | 'site';
+
+async function readRemote(token: string | null): Promise<{ r: Remote | null; src: Src | null }> {
   try {
-    const f = await ghRead('holdings.enc');
-    if (f) return clean(await holdingsVault.decryptJson<Payload>(f.bytes));
+    const f = await ghRead('holdings.enc', token ?? undefined);
+    if (f) return { r: clean(await holdingsVault.decryptJson<Payload>(f.bytes)), src: 'api' };
+  } catch { /* 改用備援 */ }
+  try {
+    const b = await rawRead('holdings.enc');
+    if (b) return { r: clean(await holdingsVault.decryptJson<Payload>(b)), src: 'raw' };
   } catch { /* 改用部署的版本 */ }
-  try { return clean(await holdingsVault.fetchJson<Payload>('holdings.enc')); } catch { return null; }
+  try { return { r: clean(await holdingsVault.fetchJson<Payload>('holdings.enc')), src: 'site' }; } catch { return { r: null, src: null }; }
 }
 
-async function readToken(): Promise<string | null> {
+async function readToken(): Promise<{ token: string | null; state: 'ok' | 'none' | 'error' }> {
+  const pick = async (b: Uint8Array) => {
+    const t = await holdingsVault.decryptJson<{ token?: string }>(b);
+    return typeof t.token === 'string' && t.token ? t.token : null;
+  };
+  let failed = false;
   try {
     const f = await ghRead('token.enc');
-    if (!f) return null;
-    const t = await holdingsVault.decryptJson<{ token?: string }>(f.bytes);
-    return typeof t.token === 'string' && t.token ? t.token : null;
-  } catch { return null; }
+    if (!f) return { token: null, state: 'none' };
+    const t = await pick(f.bytes);
+    if (t) return { token: t, state: 'ok' };
+  } catch { failed = true; }
+  try {
+    const b = await rawRead('token.enc');
+    if (b) { const t = await pick(b); if (t) return { token: t, state: 'ok' }; }
+    else if (!failed) return { token: null, state: 'none' };
+  } catch { failed = true; }
+  try {
+    const t = await holdingsVault.fetchJson<{ token?: string }>('token.enc');
+    if (typeof t.token === 'string' && t.token) return { token: t.token, state: 'ok' };
+  } catch { /* 都讀不到 */ }
+  return { token: null, state: failed ? 'error' : 'none' };
 }
 
 export function HoldingsSync({ entries, accounts, onLoad }: {
@@ -68,6 +92,8 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
   const [pw, setPw] = useState('');
   const [remote, setRemote] = useState<Remote | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [tokenState, setTokenState] = useState<'ok' | 'none' | 'error'>('none');
+  const [src, setSrc] = useState<Src | null>(null);
   const [confirm, setConfirm] = useState<'load' | 'save' | null>(null);
   const [setup, setSetup] = useState(false);
   const [draft, setDraft] = useState('');
@@ -78,10 +104,11 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
 
   const text = JSON.stringify({ v: 1, accounts, holdings: entries });
 
-  const apply = (r: Remote) => {
+  const apply = (r: Remote, s: Src | null = src) => {
     onLoad(r.holdings, r.accounts);
     setSynced(r.generated); setSyncedState(r.generated);
-    setMsg(`已載入私人持股（${r.holdings.length} 檔，更新於 ${r.generated || '—'}）。`);
+    setMsg(`已載入私人持股（${r.holdings.length} 檔，更新於 ${r.generated || '—'}）。`
+      + (s && s !== 'api' ? 'GitHub 暫時限制讀取次數，這次讀到的是備援版本，可能不是最新；過幾分鐘再載入一次較保險。' : ''));
   };
 
   useEffect(() => {
@@ -104,20 +131,23 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
     try {
       if (!(await holdingsVault.unlockTransient(pw, manifest))) { setMsg('密碼不對。'); return; }
       setUnlocked(true); setPw('');
-      const [r, t] = await Promise.all([readRemote(), readToken()]);
-      setRemote(r); setToken(t);
+      const tk = await readToken();
+      const { r, src: s } = await readRemote(tk.token);
+      setRemote(r); setToken(tk.token); setTokenState(tk.state); setSrc(s);
       const what = ask; setAsk(null);
-      if (what) await run(what, r, t);
+      if (what) await run(what, r, tk.token, tk.state, s);
     } finally { setBusy(false); }
   };
 
-  const run = async (what: 'load' | 'save' | 'setup', r: Remote | null = remote, t: string | null = token) => {
+  const run = async (what: 'load' | 'save' | 'setup', r: Remote | null = remote, t: string | null = token,
+                     ts: 'ok' | 'none' | 'error' = tokenState, s: Src | null = src) => {
     if (what === 'setup') { setSetup(v => !v); return; }
     if (what === 'load') {
-      if (!r || !r.holdings.length) { setMsg('私人持股是空的。'); return; }
-      if (entries.length === 0) apply(r); else setConfirm('load');
+      if (!r || !r.holdings.length) { setMsg('私人持股是空的，或暫時讀不到（GitHub 限制讀取次數），請過幾分鐘再試。'); return; }
+      if (entries.length === 0) apply(r, s); else setConfirm('load');
       return;
     }
+    if (!t && ts === 'error') { setMsg('暫時讀不到已存的同步權杖（GitHub 限制讀取次數），請過幾分鐘再按「儲存」；權杖已經設定好，不用重新貼。'); return; }
     if (!t) { setSetup(true); setMsg('第一次儲存前要先設定同步權杖（只要一次）。'); return; }
     setConfirm('save');
   };
@@ -130,7 +160,7 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
       const bytes = await holdingsVault.encryptJson({ v: 1, generated, accounts, holdings: entries });
       await ghWrite('holdings.enc', bytes, token, `資料：我的持股（網站儲存，${entries.length} 檔，已加密）`);
       setSynced(generated); setSyncedState(generated);
-      setRemote({ holdings: [...entries], accounts: [...accounts], generated });
+      setRemote({ holdings: [...entries], accounts: [...accounts], generated }); setSrc('api');
       setMsg(`已儲存到私人持股（${entries.length} 檔）。其他裝置到配息頁按「☁ 載入私人持股」即可。`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
