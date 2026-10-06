@@ -65,7 +65,7 @@ export function PoolBar({ current }: { current: string }) {
   );
 }
 
-function Locked({ vault, title, manifest, onUnlock }: { vault: Vault; title: string; manifest: VaultManifest; onUnlock: () => void }) {
+export function Locked({ vault, title, manifest, onUnlock }: { vault: Vault; title: string; manifest: VaultManifest; onUnlock: () => void }) {
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);

@@ -106,6 +106,12 @@ export function MePage() {
             看板上方可切換策略池（原本 Export／Export＋Activate）{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
           </p>
         </Link>
+        <Link to="/QBF" className={card}>
+          <div className="text-sm font-bold text-ink">QB 流程比較（A → B → C → 複利）</div>
+          <p className="mt-1 text-[12.5px] text-muted">
+            三個策略池（原本／合併／盲測）切換；A 評價前 → B 評價後 → C 自動槓桿（集成／海龜）→ 複利，同風險或原始規模、每年報酬
+          </p>
+        </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
           <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>

@@ -47,6 +47,7 @@ const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
 const QBPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBPage);
 const QBAPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBAPage);
 const QBWPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBWPage);
+const QBFlowPage = lazyRoute(() => import('./routes/QBFlowPage'), m => m.QBFlowPage);
 // 私人入口：v18、QB、對帳單放一頁，密碼同 v18；不放進選單（見 routes/MePage.tsx）
 const MePage = lazyRoute(() => import('./routes/MePage'), m => m.MePage);
 
@@ -186,6 +187,12 @@ const qbwRoute = createRoute({
   component: QBWPage,
 });
 
+const qbfRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/QBF',
+  component: QBFlowPage,
+});
+
 const meRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/me',
@@ -201,7 +208,7 @@ const changelogRoute = createRoute({
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route, qbRoute, qbaRoute, qbwRoute, meRoute]);
+   v18Route, qbRoute, qbaRoute, qbwRoute, qbfRoute, meRoute]);
 
 export const router = createRouter({
   routeTree,
