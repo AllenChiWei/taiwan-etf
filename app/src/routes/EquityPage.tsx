@@ -10,7 +10,7 @@ import { Vault, type VaultManifest } from '../lib/vault';
 import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Locked } from './QBPage';
 import type { EquityData } from '../lib/accountEquity';
-import { curve, days, notes, periods, risk, sliceYear, years, MIN_ANNUAL_DAYS, type BmRow, type Period, type Point, type Risk } from '../lib/equityAnalysis';
+import { curve, days, notes, periods, risk, sliceYear, withNav, years, MIN_ANNUAL_DAYS, type BmRow, type Period, type Point, type Risk } from '../lib/equityAnalysis';
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/equity/`, 'twetf.v18.unlock');
 type Data = EquityData & { bm_asof?: string | null; rows: BmRow[] };
@@ -54,15 +54,16 @@ function seg(active: boolean) {
 }
 
 function Board({ data }: { data: Data }) {
-  const ys = useMemo(() => years(data.rows), [data.rows]);
+  const all = useMemo(() => withNav(data.rows), [data.rows]);
+  const ys = useMemo(() => years(all), [all]);
   const [year, setYear] = useState<string | null>(null);
-  const rows = useMemo(() => sliceYear(data.rows, year), [data.rows, year]);
+  const rows = useMemo(() => sliceYear(all, year), [all, year]);
   const k = useMemo(() => risk(rows), [rows]);
   const c = useMemo(() => curve(rows), [rows]);
   const ds = useMemo(() => days(rows), [rows]);
   const months = useMemo(() => periods(ds, 'M').reverse(), [ds]);
-  const yearly = useMemo(() => periods(days(data.rows), 'Y').reverse(), [data.rows]);
-  const last = data.rows[data.rows.length - 1];
+  const yearly = useMemo(() => periods(days(all), 'Y').reverse(), [all]);
+  const last = all[all.length - 1];
   const thisMonth = months[0];
   if (!k || !last) return <p className="py-16 text-center text-[13px] text-muted">這段期間沒有資料。</p>;
   const scope = year ? `${year} 年` : '全部期間';
@@ -87,7 +88,7 @@ function Board({ data }: { data: Data }) {
       <Verdict k={k} scope={scope} />
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Tile label="權益總值" value={nf.format(last.tv)} sub={`未平倉 ${last.oi} 口　風險指標 ${last.risk}`} />
+        <Tile label="淨值" value={nf.format(last.nav ?? last.tv)} sub={`權益總值 ${nf.format(last.tv)}（含出入金）　未平倉 ${last.oi} 口`} />
         <Tile label={`${scope}損益`} value={money(k.pnl)} cls={tone(k.pnl)} sub={`${k.n} 個交易日`} />
         <Tile label="帳戶報酬（時間加權）" value={pct(k.ret)} cls={tone(k.ret)} sub={`年化 ${pct(k.ann)}${k.n < MIN_ANNUAL_DAYS ? '（僅供參考）' : ''}`} />
         <Tile label="大盤（含息）" value={pct(k.bm)} cls={tone(k.bm)} sub={k.annBm !== null ? `年化 ${pct(k.annBm)}${k.n < MIN_ANNUAL_DAYS ? '（僅供參考）' : ''}` : '加權報酬指數'} />
@@ -135,7 +136,7 @@ function Board({ data }: { data: Data }) {
         <DailyTable ds={ds} />
       </Section>
       <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
-        計算方式：當日損益＝今天權益總值 − 昨天權益總值 − 今天出入金；帳戶報酬＝每天（當日損益 ÷ 昨天權益總值）連乘，出入金不影響。
+        計算方式：淨值＝權益總值 − 從 {all[0].d} 起的累計出入金（同元大的淨值，出入金不會讓它跳動）；當日損益＝今天權益總值 − 昨天權益總值 − 今天出入金；帳戶報酬＝每天（當日損益 ÷ 昨天權益總值）連乘，出入金不影響。
         超額報酬只比大盤已公布的日子。「同一筆錢放大盤」＝每天把昨天的權益總值放在加權報酬指數會賺多少，與你的實際損益同單位比較。
         beta／alpha 用每日報酬回歸；樣本少時波動很大。
       </p>
@@ -308,7 +309,7 @@ function PeriodTable({ ps }: { ps: Period[] }) {
         <thead className="text-muted">
           <tr className="border-b border-line">
             <th className="py-1 text-left font-semibold">期間</th>
-            <th className={th}>期初權益</th><th className={th}>期末權益</th><th className={th}>出入金</th>
+            <th className={th}>期初淨值</th><th className={th}>期末淨值</th><th className={th}>出入金</th>
             <th className={th}>損益</th><th className={th}>帳戶</th><th className={th}>大盤（含息）</th><th className={th}>加權指數</th>
             <th className={th}>超額</th><th className={th}>同資金放大盤</th><th className={th}>最大回撤</th><th className={th}>勝率</th>
           </tr>
@@ -317,8 +318,8 @@ function PeriodTable({ ps }: { ps: Period[] }) {
           {ps.map(p => (
             <tr key={p.key} className="border-b border-line last:border-0">
               <td className="py-1 text-left font-sans text-ink">{p.key}{p.bmPartial ? '＊' : ''}</td>
-              <td className={`${td} text-muted`}>{nf.format(p.startTv)}</td>
-              <td className={`${td} text-ink`}>{nf.format(p.endTv)}</td>
+              <td className={`${td} text-muted`}>{nf.format(p.startNav)}</td>
+              <td className={`${td} text-ink`}>{nf.format(p.endNav)}</td>
               <td className={`${td} text-muted`}>{p.flow ? money(p.flow) : '—'}</td>
               <td className={`${td} ${tone(p.pnl)}`}>{money(p.pnl)}</td>
               <td className={`${td} ${tone(p.ret)}`}>{pct(p.ret)}</td>
@@ -394,7 +395,7 @@ function DailyTable({ ds }: { ds: ReturnType<typeof days> }) {
       <table className="w-full min-w-[560px] text-[12px] tabular-nums">
         <thead className="text-muted">
           <tr className="border-b border-line">
-            <th className="py-1 text-left font-semibold">日期</th><th className={th}>權益總值</th><th className={th}>損益</th>
+            <th className="py-1 text-left font-semibold">日期</th><th className={th}>淨值</th><th className={th}>損益</th>
             <th className={th}>帳戶</th><th className={th}>大盤</th><th className={th}>差</th><th className={th}>出入金</th><th className={th}>未平倉</th>
           </tr>
         </thead>
@@ -402,7 +403,7 @@ function DailyTable({ ds }: { ds: ReturnType<typeof days> }) {
           {shown.map(d => (
             <tr key={d.d} className="border-b border-line last:border-0">
               <td className="py-1 text-left font-sans">{d.d}</td>
-              <td className={`${td} text-ink`}>{nf.format(d.tv)}</td>
+              <td className={`${td} text-ink`}>{nf.format(d.nav)}</td>
               <td className={`${td} ${tone(d.pnl)}`}>{money(d.pnl)}</td>
               <td className={`${td} ${tone(d.ret)}`}>{pct(d.ret, 2)}</td>
               <td className={`${td} ${tone(d.bm)}`}>{pct(d.bm, 2)}</td>

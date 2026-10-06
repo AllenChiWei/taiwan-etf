@@ -119,7 +119,7 @@ export function MePage() {
             const last = equity.rows[equity.rows.length - 1];
             return (
               <p className="mt-1 text-[12.5px] text-muted">
-                資料截至 {equity.asof}　·　權益 {last.tv.toLocaleString('zh-TW')}　·　累計損益{' '}
+                資料截至 {equity.asof}　·　淨值 {(last.tv - equity.rows.slice(1).reduce((a, r) => a + r.flow, 0)).toLocaleString('zh-TW')}　·　累計損益{' '}
                 <span className={s.cum >= 0 ? 'text-up' : 'text-down'}>{s.cum >= 0 ? '+' : '−'}{Math.abs(s.cum).toLocaleString('zh-TW')}</span>
                 {'　·　'}時間加權 <span className={s.twr >= 0 ? 'text-up' : 'text-down'}>{pct(s.twr)}</span>
               </p>

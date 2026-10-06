@@ -60,3 +60,15 @@ test('實盤分析：風險指標與自動觀察', () => {
   assert.ok(notes(k).some(n => n.text.includes('樣本只有')));
   assert.equal(risk([R[0]]), null);
 });
+
+import { withNav } from '../src/lib/equityAnalysis.ts';
+
+test('實盤分析：淨值＝權益總值 − 累計出入金，切年份後仍從第一天累計', () => {
+  const n = withNav(R);
+  assert.deepEqual(n.map(r => r.nav), [1000, 1100, 1045, 1067.9]);   // 01-02 入金 100 不算
+  const y = sliceYear(n, '2026');
+  assert.equal(y[1].nav, 1045);
+  const p = periods(days(y), 'Y')[0];
+  assert.equal(p.startNav, 1100);
+  assert.ok(Math.abs(p.endNav - 1067.9) < 1e-9);
+});

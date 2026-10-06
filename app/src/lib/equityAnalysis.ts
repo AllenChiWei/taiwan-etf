@@ -4,14 +4,25 @@
  *   選某一年時，用前一年最後一天當基準 → 每年從 0 重新算（「每年刷新」）。
  * 帳戶報酬：時間加權（每天 當日損益 ÷ 昨天權益總值 連乘），出入金不影響。
  * 大盤：tri＝加權報酬指數（含息，主要比較）；px＝加權股價指數（不含息）。缺值的日子（還沒公布）不算進大盤。
- * 「同資金放大盤」：每天把昨天的權益總值放在大盤（報酬指數）會賺多少，加總 → 跟實際損益同單位（元）比較。 */
+ * 「同資金放大盤」：每天把昨天的權益總值放在大盤（報酬指數）會賺多少，加總 → 跟實際損益同單位（元）比較。
+ * 淨值（2026-10-06 使用者要求畫面以淨值為主）：權益總值 − 從第一天起的累計出入金（同元大記錄檔的「淨值」），出入金不會讓它跳動。
+ *   要先對完整資料算（withNav），再切年份，累計出入金才會從第一天算起。 */
 
 import type { EquityRow } from './accountEquity.ts';
 
-export interface BmRow extends EquityRow { tri?: number | null; px?: number | null }
+export interface BmRow extends EquityRow { tri?: number | null; px?: number | null; nav?: number }
+
+/** 加上淨值＝權益總值 − 累計出入金（第一天當起點，起點的出入金不算） */
+export function withNav(rows: BmRow[]): BmRow[] {
+  let flows = 0;
+  return rows.map((r, i) => {
+    if (i > 0) flows += r.flow;
+    return { ...r, nav: r.tv - flows };
+  });
+}
 
 export interface Day {
-  d: string; tv: number; prevTv: number; pnl: number; flow: number; oi: number;
+  d: string; tv: number; prevTv: number; nav: number; prevNav: number; pnl: number; flow: number; oi: number;
   ret: number;              // 帳戶當日報酬
   bm: number | null;        // 報酬指數當日報酬
   bmPx: number | null;      // 價格指數當日報酬
@@ -25,7 +36,7 @@ export function days(rows: BmRow[]): Day[] {
     const r = (k: 'tri' | 'px') => (a[k] && b[k] ? (b[k] as number) / (a[k] as number) - 1 : null);
     const bm = r('tri');
     out.push({
-      d: b.d, tv: b.tv, prevTv: a.tv, pnl: b.pnl, flow: b.flow, oi: b.oi,
+      d: b.d, tv: b.tv, prevTv: a.tv, nav: b.nav ?? b.tv, prevNav: a.nav ?? a.tv, pnl: b.pnl, flow: b.flow, oi: b.oi,
       ret: a.tv > 0 ? b.pnl / a.tv : 0, bm, bmPx: r('px'), bmPnl: bm === null ? null : a.tv * bm,
     });
   }
@@ -47,7 +58,7 @@ const compound = (xs: number[]) => xs.reduce((a, x) => a * (1 + x), 1) - 1;
 
 export interface Period {
   key: string; start: string; end: string; n: number;
-  startTv: number; endTv: number; flow: number; pnl: number;
+  startTv: number; endTv: number; startNav: number; endNav: number; flow: number; pnl: number;
   ret: number; bm: number | null; bmPx: number | null; excess: number | null; bmPnl: number | null;
   bmPartial: boolean; winDays: number; mddPct: number;
 }
@@ -61,7 +72,7 @@ function period(key: string, ds: Day[]): Period {
   for (const x of ds) { eq *= 1 + x.ret; peak = Math.max(peak, eq); mdd = Math.min(mdd, eq / peak - 1); }
   return {
     key, start: ds[0].d, end: ds[ds.length - 1].d, n: ds.length,
-    startTv: ds[0].prevTv, endTv: ds[ds.length - 1].tv,
+    startTv: ds[0].prevTv, endTv: ds[ds.length - 1].tv, startNav: ds[0].prevNav, endNav: ds[ds.length - 1].nav,
     flow: ds.reduce((a, x) => a + x.flow, 0), pnl: ds.reduce((a, x) => a + x.pnl, 0),
     ret: compound(ds.map(x => x.ret)), bm, bmPx: withPx.length ? compound(withPx.map(x => x.bmPx as number)) : null,
     excess: bm === null ? null : retCmp - bm,
