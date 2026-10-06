@@ -14,6 +14,10 @@ u"""台股行事曆：除權息預告與股東會日期。
 
 財報與月營收的**法定期限**、期貨結算日不需要抓，前端依規則算（`lib/calendar.ts`）。
 
+「除權」不一定是配股：現金增資的認購權也會讓股票除權（例：2026-10-07 永豐金，無償配股率 0、
+現金增資配股率 0.0433、認購價 35.15）。所以另外帶 cap（現金增資配股率，每股可認購股數）與
+capPx（認購價），前端據此標成「除權（現金增資）」。
+
 ## 刻意沒有的：法說會
 
 官方的「法人說明會一覽表」只在舊版公開資訊觀測站（mopsov.twse.com.tw），它的
@@ -108,6 +112,7 @@ def twse_exdiv():
     i_date, i_code, i_name, i_kind = (f.index(u'除權除息日期'), f.index(u'股票代號'),
                                       f.index(u'名稱'), f.index(u'除權息'))
     i_cash, i_stock = f.index(u'現金股利'), f.index(u'無償配股率')
+    i_cap, i_cap_px = f.index(u'現金增資配股率'), f.index(u'現金增資認購價')
     out = []
     for r in doc.get('data', []):
         day = roc_date(r[i_date])
@@ -115,7 +120,8 @@ def twse_exdiv():
             continue
         out.append({'d': day, 'code': r[i_code].strip(), 'name': r[i_name].strip(),
                     'k': r[i_kind].strip(), 'cash': cash_of(r[i_cash]),
-                    'stock': (num(r[i_stock]) or None), 'm': 'twse'})
+                    'stock': (num(r[i_stock]) or None), 'm': 'twse',
+                    'cap': (num(r[i_cap]) or None), 'capPx': (num(r[i_cap_px]) or None)})
     return out
 
 
@@ -129,7 +135,9 @@ def tpex_exdiv():
         out.append({'d': day, 'code': (r.get('SecuritiesCompanyCode') or '').strip(),
                     'name': (r.get('CompanyName') or '').strip(), 'k': kind,
                     'cash': cash_of(r.get('CashDividend')),
-                    'stock': (num(r.get('StockDividendRatio')) or None), 'm': 'tpex'})
+                    'stock': (num(r.get('StockDividendRatio')) or None), 'm': 'tpex',
+                    'cap': (num(r.get('SubscriptionRatioToNewSharesIssued')) or None),
+                    'capPx': (num(r.get('SubscriptionPricePerShare')) or None)})
     return out
 
 
@@ -162,6 +170,17 @@ def meetings(url, market):
 # 存在 .cache/etf_notices.json（部署流程用 actions/cache 保留），每次只抓新的。
 # 發放日另外從 e添富 dividendList 一次取得，已除息、還沒發錢的也有。
 # www.twse.com.tw 的 robots.txt 只擋 /epaper/ 與 /FTSE/。
+#
+# 上櫃的 ETF（大部分債券 ETF）不在 e添富，要另外看櫃買「ETF 訊息中心」的收益分配公告：
+#   列表 POST https://info.tpex.org.tw/api/etfMaInfo        type=distribution（一次回全部歷史，含 fund 代號）
+#   內文 POST https://info.tpex.org.tw/api/etfMaInfoDetail  （列表的 params 原樣送）→ description
+# 格式與證交所轉載的相同（除息交易日、預估配發金額為新臺幣…元、每受益權單位配發金額）。
+# info.tpex.org.tw 沒有 robots.txt（2026-10-07 查過，轉到首頁）。
+
+TPEX_NOTICE_LIST = 'https://info.tpex.org.tw/api/etfMaInfo'
+TPEX_NOTICE_DETAIL = 'https://info.tpex.org.tw/api/etfMaInfoDetail'
+TPEX_NOTICE_PAGE = 'https://info.tpex.org.tw/ETF/zh/announcement-detail.html?'
+TPEX_MAX_NEW = 150
 
 NOTICE_LIST = ('https://www.twse.com.tw/zh/ETFortune/announcementList'
                '?max=10&offset=%d&type=distribution')
@@ -187,6 +206,45 @@ def fetch_html(url):
     raise last
 
 
+def post_json(url, data):
+    import urllib.parse
+    body = urllib.parse.urlencode(data).encode()
+    req = urllib.request.Request(url, data=body, headers={'User-Agent': UA})
+    last = None
+    for attempt in range(3):
+        try:
+            raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
+            time.sleep(1)
+            return json.loads(raw.decode('utf-8'))
+        except Exception as e:                                # noqa: BLE001
+            last = e
+            time.sleep(5 * (attempt + 1))
+    raise last
+
+
+def tpex_notice_items(cutoff):
+    u"""櫃買 ETF 訊息中心的收益分配公告（公告日 >= cutoff）。"""
+    out = []
+    for x in post_json(TPEX_NOTICE_LIST, {'type': 'distribution'}):
+        params = x.get('params') or ''
+        fund = re.search(r'fund=([0-9A-Z]+)', params)
+        nd = (x.get('date') or '').replace('.', '-')
+        if fund and nd >= cutoff:
+            out.append({'nd': nd, 'u': 'tpex:' + params, 'f': fund.group(1),
+                        't': plain(x.get('subject') or ''), 'params': params})
+    return out
+
+
+def tpex_notice_body(params):
+    import urllib.parse
+    q = dict(urllib.parse.parse_qsl(params))
+    rows = post_json(TPEX_NOTICE_DETAIL, q)
+    if not rows:
+        return ''
+    # 內文用 CRLF 硬換行，數字或「新臺幣」可能被切斷 → 直接接起來
+    return re.sub(r'[\r\n]+', '', rows[0].get('description') or '')
+
+
 def plain(s):
     import html as _html
     return re.sub(r'\s+', ' ', _html.unescape(re.sub(r'<[^>]+>', ' ', s))).strip()
@@ -208,8 +266,8 @@ def parse_notice(title, body):
     pay = re.search(u'收益分配發放日\\s*[:：]\\s*' + ROC_SLASH, body)
     out = {'ex': roc_slash(ex) if ex else None, 'pay': roc_slash(pay) if pay else None,
            'cash': None, 'ck': None}
-    final = re.search(u'每受益權單位配發金額\\s*[:：]\\s*(?:新臺幣)?\\s*([\\d.]+)', body)
-    est = re.search(u'(?:預估|預計)配發金額(?:每受益權單位)?(?:為)?\\s*新臺幣\\s*([\\d.]+)', body)
+    final = re.search(u'每受益權單位配發金額\\s*[:：]\\s*(?:新臺幣)?\\s*(\\d+(?:\\.\\d+)?)', body)   # 金額後面可能直接接句點（「0.0633.」）
+    est = re.search(u'(?:預估|預計)配發金額(?:每受益權單位)?(?:為)?\\s*新臺幣\\s*(\\d+(?:\\.\\d+)?)', body)   # 金額後面可能直接接句點（「0.0633.」）
     if final:
         out['cash'], out['ck'] = float(final.group(1)), 'final'
     elif est:
@@ -243,8 +301,13 @@ def etf_notices(today):
         if items[-1]['nd'] < cutoff:
             break
     items = [x for x in items if x['nd'] >= cutoff and x['f']]
+    try:
+        tp = tpex_notice_items(cutoff)
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  櫃買 ETF 公告列表失敗：%s' % str(e)[:60])
+        tp = []
 
-    fetched = 0
+    fetched = fetched_tp = 0
     for x in items:
         if x['u'] in cache or fetched >= NOTICE_MAX_NEW:
             continue
@@ -258,6 +321,19 @@ def etf_notices(today):
         parsed.update({'code': x['f'], 'nd': x['nd']})
         cache[x['u']] = parsed
         fetched += 1
+    for x in tp:
+        if x['u'] in cache or fetched_tp >= TPEX_MAX_NEW:
+            continue
+        try:
+            body = tpex_notice_body(x['params'])
+        except Exception as e:                                # noqa: BLE001
+            log(u'  櫃買公告內文 %s 失敗：%s' % (x['f'], str(e)[:60]))
+            continue
+        parsed = parse_notice(x['t'], body)
+        parsed.update({'code': x['f'], 'nd': x['nd']})
+        cache[x['u']] = parsed
+        fetched_tp += 1
+    items = items + tp
 
     # 快取只留還用得到的（公告日在 90 天內）
     keep_from = (date.fromisoformat(today) - timedelta(days=90)).isoformat()
@@ -277,11 +353,11 @@ def etf_notices(today):
         cur = best.get(key)
         cand = (rank[v['ck']], v['nd'])
         if cur is None or cand > (rank[cur['ck']], cur['nd']):
-            best[key] = dict(v, u=NOTICE_BASE + u)
+            best[key] = dict(v, u=(TPEX_NOTICE_PAGE + u[5:]) if u.startswith('tpex:') else NOTICE_BASE + u)
     out = [{'code': v['code'], 'ex': v['ex'], 'pay': v.get('pay'), 'cash': v['cash'],
             'ck': v['ck'], 'nd': v['nd'], 'u': v['u']}
            for v in best.values()]
-    log(u'ETF 收益分配公告：%d 則（新抓 %d 則），整理出 %d 檔次' % (len(items), fetched, len(out)))
+    log(u'ETF 收益分配公告：%d 則（新抓 證交所 %d、櫃買 %d 則），整理出 %d 檔次' % (len(items), fetched, fetched_tp, len(out)))
     return sorted(out, key=lambda r: (r['ex'], r['code']))
 
 
@@ -363,7 +439,7 @@ def main():
     doc = {
         'meta': {'updated': today, 'until': until,
                  'source': u'臺灣證券交易所、證券櫃檯買賣中心（除權除息預告表、股東會資料彙總表）；'
-                           u'ETF 收益分配公告與發放日取自證交所 e添富',
+                           u'ETF 收益分配公告取自證交所 e添富與櫃買 ETF 訊息中心，發放日取自 e添富與投信公告',
                  'errors': errors},
         'exdiv': exdiv,
         'meetings': meets,

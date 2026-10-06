@@ -156,3 +156,12 @@ test('只有投信公告、交易所預告表還沒列出的 ETF，兩個分頁�
   const rows = etfExDivMonth('2026-10', null, cal, new Map());
   assert.deepEqual(rows.map(r => [r.code, r.cash, r.ck, r.pay]), [['00985A', 2.15, 'est', '2026-11-13']]);
 });
+
+test('行事曆：現金增資的除權要標成現增，不是配股', () => {
+  const e = exdivEvent({ d: '2026-10-07', code: '2890', name: '永豐金', k: '權', cash: null, stock: null, m: 'twse',
+                         cap: 0.0432954, capPx: 35.15 });
+  assert.equal(e.title, '永豐金 除權（現金增資）');
+  assert.equal(e.detail, '現金增資 每千股認購 43.2954 股・認購價 35.15 元（上市）');
+  const both = exdivEvent({ d: '2026-10-07', code: '1234', name: '某某', k: '權息', cash: 1, stock: 0.05, m: 'tpex', cap: 0.1, capPx: null });
+  assert.equal(both.title, '某某 除權息（配股＋現金增資）');
+});

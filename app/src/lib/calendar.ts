@@ -23,6 +23,9 @@ export interface ExDivRow {
   nu?: string;
   /** 收益分配發放日（ETF，e添富或投信公告） */
   pay?: string | null;
+  /** 現金增資配股率（每股可認購股數）與認購價。除權不一定是配股，現金增資的認購權也會除權（例：2026-10-07 永豐金） */
+  cap?: number | null;
+  capPx?: number | null;
 }
 
 /** 投信的收益分配公告，整理成一檔一個除息日一筆（實際優先於預估）。 */
@@ -134,11 +137,12 @@ export function exdivEvent(r: ExDivRow): CalEvent {
       : r.ck === 'final' ? `現金 ${fmtNum(r.cash)} 元（投信公告）` : `現金 ${fmtNum(r.cash)} 元`);
   }
   if (r.stock) parts.push(`配股率 ${fmtNum(r.stock)}`);
+  if (r.cap) parts.push(`現金增資 每千股認購 ${fmtNum(r.cap * 1000)} 股${r.capPx ? `・認購價 ${fmtNum(r.capPx)} 元` : ''}`);
   if (!parts.length) parts.push(r.k.includes('息') ? '金額待公告' : '');
   if (r.pay) parts.push(`${Number(r.pay.slice(5, 7))}/${Number(r.pay.slice(8, 10))} 發放`);
   return {
     d: r.d, kind: 'exdiv', code: r.code,
-    title: `${r.name} 除${r.k}`,
+    title: `${r.name} 除${r.k}${r.cap ? (r.stock ? '（配股＋現金增資）' : '（現金增資）') : ''}`,
     detail: parts.filter(Boolean).join('・') + `（${r.m === 'twse' ? '上市' : '上櫃'}）`,
   };
 }
