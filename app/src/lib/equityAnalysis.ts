@@ -111,7 +111,7 @@ const downDev = (xs: number[]) => Math.sqrt(xs.reduce((a, x) => a + Math.min(0, 
 export interface Risk {
   n: number; nBm: number;
   ret: number; bm: number | null; excess: number | null;
-  ann: number | null; annBm: number | null;          // 年化（樣本 < 60 天不給）
+  ann: number | null; annBm: number | null;          // 年化（樣本 < MIN_ANNUAL_DAYS 天時仍算出，畫面標「僅供參考」）
   vol: number; volBm: number | null;                 // 年化波動
   sharpe: number | null; sharpeBm: number | null; sortino: number | null; sortinoBm: number | null;
   mddPct: number; mddBm: number | null; mddMoney: number; ddNow: number; ddDays: number;
@@ -120,6 +120,9 @@ export interface Risk {
   beatDays: number | null;                           // 帳戶當日報酬勝過大盤的天數比例
   winRate: number; pf: number | null; avgWin: number; avgLoss: number;
   best: Day | null; worst: Day | null; pnl: number; bmPnl: number | null; top3Share: number | null;
+  // 大盤同一批日子的對照（以報酬率計，大盤沒有金額）
+  winRateBm: number | null; pfBm: number | null; pfRet: number | null; avgUpBm: number | null; avgDownBm: number | null;
+  avgUp: number; avgDown: number; bestBm: Day | null; worstBm: Day | null; ddNowPct: number; ddNowBm: number | null; ddDaysBm: number | null;
 }
 
 export const MIN_ANNUAL_DAYS = 60;
@@ -133,7 +136,7 @@ export function risk(rows: BmRow[]): Risk | null {
   const c = curve(rows);
   const last = c[c.length - 1];
   const bm = both.length ? compound(b) : null;
-  const ann = (x: number, n: number) => (n >= MIN_ANNUAL_DAYS ? (1 + x) ** (252 / n) - 1 : null);
+  const ann = (x: number, n: number) => (n >= 5 ? (1 + x) ** (252 / n) - 1 : null);
   let beta: number | null = null, corr: number | null = null, alpha: number | null = null;
   if (both.length >= 5 && sd(b) > 0) {
     const mr = mean(rb), mb = mean(b);
@@ -172,6 +175,31 @@ export function risk(rows: BmRow[]): Risk | null {
     best: ds.reduce((a, x) => (x.pnl > a.pnl ? x : a)), worst: ds.reduce((a, x) => (x.pnl < a.pnl ? x : a)),
     pnl, bmPnl: both.length ? both.reduce((a, x) => a + (x.bmPnl as number), 0) : null,
     top3Share: pnl > 0 ? top3 / pnl : null,
+    ...versus(ds, both, c),
+  };
+}
+
+function versus(ds: Day[], both: Day[], c: Point[]) {
+  const pf = (xs: number[]) => {
+    const g = xs.filter(x => x > 0).reduce((a, x) => a + x, 0), l = -xs.filter(x => x < 0).reduce((a, x) => a + x, 0);
+    return l > 0 ? g / l : null;
+  };
+  const avg = (xs: number[]) => (xs.length ? mean(xs) : 0);
+  const b = both.map(x => x.bm as number);
+  const last = c[c.length - 1];
+  let ddDaysBm: number | null = null;
+  if (both.length) {
+    ddDaysBm = 0;
+    for (const p of c) if (p.bmDd !== null) ddDaysBm = p.bmDd < 0 ? ddDaysBm + 1 : 0;
+  }
+  return {
+    winRateBm: both.length ? b.filter(x => x > 0).length / both.length : null,
+    pfBm: both.length ? pf(b) : null, pfRet: pf(ds.map(x => x.ret)),
+    avgUpBm: both.length ? avg(b.filter(x => x > 0)) : null, avgDownBm: both.length ? avg(b.filter(x => x < 0)) : null,
+    avgUp: avg(ds.map(x => x.ret).filter(x => x > 0)), avgDown: avg(ds.map(x => x.ret).filter(x => x < 0)),
+    bestBm: both.length ? both.reduce((a, x) => ((x.bm as number) > (a.bm as number) ? x : a)) : null,
+    worstBm: both.length ? both.reduce((a, x) => ((x.bm as number) < (a.bm as number) ? x : a)) : null,
+    ddNowPct: last.accDd, ddNowBm: last.bmDd, ddDaysBm,
   };
 }
 
@@ -183,7 +211,7 @@ const p1 = (v: number) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(1)
 export function notes(k: Risk): Note[] {
   const out: Note[] = [];
   if (k.n < MIN_ANNUAL_DAYS)
-    out.push({ tone: 'info', text: `樣本只有 ${k.n} 個交易日，勝負與比率都還不穩定；年化數字要累積 ${MIN_ANNUAL_DAYS} 天以上才顯示。至少看滿一季、最好一年再下結論。` });
+    out.push({ tone: 'info', text: `樣本只有 ${k.n} 個交易日，勝負與比率都還不穩定；年化數字是用這幾天推算一整年，誤差很大（滿 ${MIN_ANNUAL_DAYS} 天後才比較可信）。至少看滿一季、最好一年再下結論。` });
   if (k.excess !== null)
     out.push(k.excess >= 0
       ? { tone: 'good', text: `同期贏大盤（含息）${p1(k.excess)}：帳戶 ${p1(k.ret)}、大盤 ${p1(k.bm ?? 0)}。` }

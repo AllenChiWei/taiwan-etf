@@ -89,8 +89,8 @@ function Board({ data }: { data: Data }) {
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="權益總值" value={nf.format(last.tv)} sub={`未平倉 ${last.oi} 口　風險指標 ${last.risk}`} />
         <Tile label={`${scope}損益`} value={money(k.pnl)} cls={tone(k.pnl)} sub={`${k.n} 個交易日`} />
-        <Tile label="帳戶報酬（時間加權）" value={pct(k.ret)} cls={tone(k.ret)} sub={k.ann !== null ? `年化 ${pct(k.ann)}` : `年化：滿 ${MIN_ANNUAL_DAYS} 天後顯示`} />
-        <Tile label="大盤（含息）" value={pct(k.bm)} cls={tone(k.bm)} sub={k.annBm !== null ? `年化 ${pct(k.annBm)}` : '加權報酬指數'} />
+        <Tile label="帳戶報酬（時間加權）" value={pct(k.ret)} cls={tone(k.ret)} sub={`年化 ${pct(k.ann)}${k.n < MIN_ANNUAL_DAYS ? '（僅供參考）' : ''}`} />
+        <Tile label="大盤（含息）" value={pct(k.bm)} cls={tone(k.bm)} sub={k.annBm !== null ? `年化 ${pct(k.annBm)}${k.n < MIN_ANNUAL_DAYS ? '（僅供參考）' : ''}` : '加權報酬指數'} />
         <Tile label="超額報酬" value={pct(k.excess)} cls={tone(k.excess)} sub={k.beatDays !== null ? `贏大盤的天數 ${(k.beatDays * 100).toFixed(0)}%` : undefined} />
         <Tile label="同一筆錢放大盤" value={k.bmPnl === null ? '—' : money(k.bmPnl)} cls={tone(k.bmPnl)}
               sub={k.bmPnl === null ? undefined : `你多賺 ${money(k.pnl - k.bmPnl)}`} />
@@ -340,7 +340,7 @@ function PeriodTable({ ps }: { ps: Period[] }) {
 function RiskTable({ k }: { k: Risk }) {
   const rows: [string, string, string, string?][] = [
     ['報酬', pct(k.ret), pct(k.bm)],
-    ['年化報酬', pct(k.ann), pct(k.annBm), k.ann === null ? `滿 ${MIN_ANNUAL_DAYS} 個交易日後顯示` : undefined],
+    ['年化報酬', pct(k.ann), pct(k.annBm), k.n < MIN_ANNUAL_DAYS ? `只有 ${k.n} 天推算一整年，僅供參考（滿 ${MIN_ANNUAL_DAYS} 天較可信）` : undefined],
     ['年化波動', pct(k.vol), pct(k.volBm)],
     ['Sharpe（無風險利率 0）', f2(k.sharpe), f2(k.sharpeBm)],
     ['Sortino', f2(k.sortino), f2(k.sortinoBm)],
@@ -348,15 +348,18 @@ function RiskTable({ k }: { k: Risk }) {
     ['報酬 ÷ 最大回撤', k.mddPct < 0 ? f2(k.ret / -k.mddPct) : '—', k.mddBm && k.mddBm < 0 && k.bm !== null ? f2(k.bm / -k.mddBm) : '—'],
     ['beta（對大盤）', f2(k.beta), '1.00', '1 ＝ 跟大盤同幅度；>1 放大、<0 反向'],
     ['相關係數', f2(k.corr), '1.00'],
-    ['alpha（年化）', pct(k.alpha), '—', '扣掉 beta × 大盤後的超額'],
+    ['alpha（年化）', pct(k.alpha), '0.0%', `扣掉 beta × 大盤後的超額${k.nBm < 40 ? '；樣本少，雜訊大' : ''}`],
     ['上漲捕獲／下跌捕獲', `${f2(k.upCap)}／${f2(k.downCap)}`, '1.00／1.00', '大盤漲（跌）的日子，帳戶平均漲（跌）幾倍'],
-    ['贏大盤的天數', k.beatDays === null ? '—' : `${(k.beatDays * 100).toFixed(0)}%`, '—'],
-    ['勝率（賺錢的天數）', `${(k.winRate * 100).toFixed(0)}%`, '—'],
-    ['獲利因子（總賺 ÷ 總賠）', f2(k.pf), '—'],
-    ['平均賺／平均賠（元）', `${money(k.avgWin)}／${money(k.avgLoss)}`, '—'],
-    ['最好的一天', k.best ? `${money(k.best.pnl)}（${k.best.d.slice(5)}）` : '—', '—'],
-    ['最差的一天', k.worst ? `${money(k.worst.pnl)}（${k.worst.d.slice(5)}）` : '—', '—'],
-    ['目前回撤（元）', money(k.ddNow), '—', k.ddDays ? `已 ${k.ddDays} 個交易日沒創新高` : '目前在高點'],
+    ['贏大盤的天數', k.beatDays === null ? '—' : `${(k.beatDays * 100).toFixed(0)}%`, k.beatDays === null ? '—' : `${(100 - k.beatDays * 100).toFixed(0)}%`, '大盤欄＝大盤贏帳戶的天數'],
+    ['勝率（上漲的天數）', `${(k.winRate * 100).toFixed(0)}%`, k.winRateBm === null ? '—' : `${(k.winRateBm * 100).toFixed(0)}%`],
+    ['獲利因子（總漲 ÷ 總跌，以報酬率）', f2(k.pfRet), f2(k.pfBm), `金額：總賺 ÷ 總賠 ${f2(k.pf)}`],
+    ['平均上漲日／平均下跌日', `${pct(k.avgUp, 2)}／${pct(k.avgDown, 2)}`, k.avgUpBm === null ? '—' : `${pct(k.avgUpBm, 2)}／${pct(k.avgDownBm, 2)}`,
+     `金額：平均賺 ${money(k.avgWin)}／平均賠 ${money(k.avgLoss)}`],
+    ['最好的一天', k.best ? `${pct(k.best.ret, 2)}（${k.best.d.slice(5)}）` : '—', k.bestBm ? `${pct(k.bestBm.bm, 2)}（${k.bestBm.d.slice(5)}）` : '—',
+     k.best ? `金額 ${money(k.best.pnl)}` : undefined],
+    ['最差的一天', k.worst ? `${pct(k.worst.ret, 2)}（${k.worst.d.slice(5)}）` : '—', k.worstBm ? `${pct(k.worstBm.bm, 2)}（${k.worstBm.d.slice(5)}）` : '—',
+     k.worst ? `金額 ${money(k.worst.pnl)}` : undefined],
+    ['目前回撤', pct(k.ddNowPct), pct(k.ddNowBm), `金額 ${money(k.ddNow)}；${k.ddDays ? `帳戶已 ${k.ddDays} 天沒創新高` : '帳戶在高點'}${k.ddDaysBm ? `、大盤已 ${k.ddDaysBm} 天` : k.ddDaysBm === 0 ? '、大盤在高點' : ''}`],
   ];
   return (
     <div className="overflow-x-auto">
