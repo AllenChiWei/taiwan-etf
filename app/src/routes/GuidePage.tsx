@@ -40,12 +40,30 @@ export function GuidePage() {
       const t = document.documentElement.dataset.theme;
       if (t) doc.documentElement.dataset.theme = t; else delete doc.documentElement.dataset.theme;
     };
+    // 目錄連結（#flow 等）在 srcDoc 框架裡會依「網站首頁」的網址解析，點了會把整個網站載進框架（禁用腳本 → 只顯示 noscript 提示）。
+    // 攔下來改成在框架內捲動；外部連結開新分頁。（2026-10-08 使用者回報）
+    const onClick = (e: MouseEvent) => {
+      const doc = frame.current?.contentDocument;
+      const a = (e.target as Element | null)?.closest?.('a');
+      if (!doc || !a) return;
+      const href = a.getAttribute('href') ?? '';
+      e.preventDefault();
+      if (href.startsWith('#')) {
+        const target = doc.getElementById(decodeURIComponent(href.slice(1)));
+        const se = doc.scrollingElement;
+        // 只捲動框架內（scrollIntoView 會連外層網頁一起捲）
+        if (target && se) se.scrollTo({ top: target.getBoundingClientRect().top + se.scrollTop - 8 });
+      } else if (/^https?:/.test(href)) {
+        window.open(href, '_blank', 'noopener');
+      }
+    };
+    const hook = () => { sync(); frame.current?.contentDocument?.addEventListener('click', onClick); };
     const el = frame.current;
-    el?.addEventListener('load', sync);
+    el?.addEventListener('load', hook);
+    hook();
     const mo = new MutationObserver(sync);
     mo.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
-    sync();
-    return () => { el?.removeEventListener('load', sync); mo.disconnect(); };
+    return () => { el?.removeEventListener('load', hook); el?.contentDocument?.removeEventListener('click', onClick); mo.disconnect(); };
   }, [g]);
 
   if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
@@ -58,7 +76,7 @@ export function GuidePage() {
         <h1 className="text-base font-bold text-ink">{g.title}</h1>
         <span className="text-[11.5px] text-faint">更新於 {g.generated}　·　<Link to="/me" className="hover:text-ink">← 我的工具</Link></span>
       </div>
-      <iframe ref={frame} title={g.title} srcDoc={g.html} sandbox="allow-same-origin"
+      <iframe ref={frame} title={g.title} srcDoc={'<base href="about:srcdoc">' + g.html} sandbox="allow-same-origin"
               className="block h-[calc(100dvh-140px)] min-h-[480px] w-full rounded-xl border border-line bg-surface" />
     </div>
   );
