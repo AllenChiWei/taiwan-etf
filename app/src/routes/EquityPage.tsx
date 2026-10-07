@@ -68,6 +68,8 @@ function Board({ data }: { data: Data }) {
   if (!k || !last) return <p className="py-16 text-center text-[13px] text-muted">這段期間沒有資料。</p>;
   const scope = year ? `${year} 年` : '全部期間';
   const bmLag = data.bm_asof && data.bm_asof < data.asof;
+  const estRows = all.filter(r => r.est);
+  const estEnd = estRows.length ? estRows[estRows.length - 1].d : null;
 
   return (
     <div className="mt-4 min-w-0">
@@ -79,6 +81,14 @@ function Board({ data }: { data: Data }) {
         資料 {rows[0].d} ～ {data.asof}　·　大盤＝加權報酬指數（含息）{bmLag ? `，大盤資料到 ${data.bm_asof}（當天收盤稍晚公布）` : ''}
         　·　損益已扣出入金、時間軸同大盤交易日
       </p>
+
+      {estEnd && (
+        <p className="mt-2 rounded-lg bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
+          {all[0].d} ～ {estEnd} 是用元大「歷史平倉損益」往回推算的淨值（之後才有每日權益紀錄）：只有平倉才入帳，
+          抱單期間的漲跌看不到（你的部位平均不到一天就平倉，誤差小）；那段期間的出入金不知道，報酬率以推算淨值為基準，
+          若當時有出入金，報酬率會有誤差，損益金額不受影響。
+        </p>
+      )}
 
       <div className="mt-3 inline-flex flex-wrap gap-1 rounded-xl bg-sunken p-1">
         <button type="button" className={seg(year === null)} onClick={() => setYear(null)}>全部</button>
@@ -402,7 +412,7 @@ function DailyTable({ ds }: { ds: ReturnType<typeof days> }) {
         <tbody className="font-mono">
           {shown.map(d => (
             <tr key={d.d} className="border-b border-line last:border-0">
-              <td className="py-1 text-left font-sans">{d.d}</td>
+              <td className="py-1 text-left font-sans">{d.d}{d.est && <span className="ml-1 text-[10.5px] text-faint">推算</span>}</td>
               <td className={`${td} text-ink`}>{nf.format(d.nav)}</td>
               <td className={`${td} ${tone(d.pnl)}`}>{money(d.pnl)}</td>
               <td className={`${td} ${tone(d.ret)}`}>{pct(d.ret, 2)}</td>

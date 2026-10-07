@@ -10,7 +10,8 @@
 
 import type { EquityRow } from './accountEquity.ts';
 
-export interface BmRow extends EquityRow { tri?: number | null; px?: number | null; nav?: number }
+/** est：記錄開始前、用歷史平倉損益往回推算的日子（equity_export.py backfill，2026-10-07） */
+export interface BmRow extends EquityRow { tri?: number | null; px?: number | null; nav?: number; est?: number }
 
 /** 加上淨值＝權益總值 − 累計出入金（第一天當起點，起點的出入金不算） */
 export function withNav(rows: BmRow[]): BmRow[] {
@@ -22,7 +23,7 @@ export function withNav(rows: BmRow[]): BmRow[] {
 }
 
 export interface Day {
-  d: string; tv: number; prevTv: number; nav: number; prevNav: number; pnl: number; flow: number; oi: number;
+  d: string; tv: number; prevTv: number; nav: number; prevNav: number; pnl: number; flow: number; oi: number; est: boolean;
   ret: number;              // 帳戶當日報酬
   bm: number | null;        // 報酬指數當日報酬
   bmPx: number | null;      // 價格指數當日報酬
@@ -36,7 +37,7 @@ export function days(rows: BmRow[]): Day[] {
     const r = (k: 'tri' | 'px') => (a[k] && b[k] ? (b[k] as number) / (a[k] as number) - 1 : null);
     const bm = r('tri');
     out.push({
-      d: b.d, tv: b.tv, prevTv: a.tv, nav: b.nav ?? b.tv, prevNav: a.nav ?? a.tv, pnl: b.pnl, flow: b.flow, oi: b.oi,
+      d: b.d, tv: b.tv, prevTv: a.tv, nav: b.nav ?? b.tv, prevNav: a.nav ?? a.tv, pnl: b.pnl, flow: b.flow, oi: b.oi, est: !!b.est,
       ret: a.tv > 0 ? b.pnl / a.tv : 0, bm, bmPx: r('px'), bmPnl: bm === null ? null : a.tv * bm,
     });
   }
