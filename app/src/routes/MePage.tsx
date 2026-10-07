@@ -126,6 +126,10 @@ export function MePage() {
             );
           })() : <p className="mt-1 text-[12.5px] text-muted">月／年損益、同期大盤比較、風險指標</p>}
         </Link>
+        <Link to="/QBG" className={card}>
+          <div className="text-sm font-bold text-ink">QB 設定說明書</div>
+          <p className="mt-1 text-[12.5px] text-muted">每個設定欄位的建議值與原因、原始／進階雙專案架構、內建自動槓桿與複利、流程圖與名詞解釋</p>
+        </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
           <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>
