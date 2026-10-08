@@ -18,12 +18,18 @@ u"""台股行事曆：除權息預告與股東會日期。
 現金增資配股率 0.0433、認購價 35.15）。所以另外帶 cap（現金增資配股率，每股可認購股數）與
 capPx（認購價），前端據此標成「除權（現金增資）」。
 
-## 刻意沒有的：法說會
+## 法說會：從重大訊息累積
 
 官方的「法人說明會一覽表」只在舊版公開資訊觀測站（mopsov.twse.com.tw），它的
 robots.txt 是 `User-Agent: * / Disallow: /`（只開放 bingbot）；新版觀測站的同一頁也是
-轉呼叫舊站的 ajax_t100sb02_1。本專案不繞過 robots、不換 host，所以法說會不做。
-2026-09-27 查過。
+轉呼叫舊站的 ajax_t100sb02_1。本專案不繞過 robots、不換 host，所以不抓那一頁。
+
+改用重大訊息：公司召開或受邀參加法說會時，依「重大訊息處理程序」第四條第 12 款
+要發重大訊息，內文格式固定（召開法人說明會之日期／時間／地點／擇要訊息）。
+證交所 openapi t187ap04_L、櫃買 mopsfin_t187ap04_O 就是這份（新聞頁也在用），
+但只給最近一天的重大訊息，所以要**累積**：每次部署把線上已發布的 calendar.json 的
+calls 抓回來，再併入當天的。漏掉某天部署就漏掉那天公告的法說會（多半是當天或幾天後
+召開的），所以這份清單不保證完整。2026-10-08 加入。
 
 ## 日期
 
@@ -55,6 +61,11 @@ TWSE_EXDIV = 'https://www.twse.com.tw/rwd/zh/exRight/TWT48U?response=json'
 TPEX_EXDIV = 'https://www.tpex.org.tw/openapi/v1/tpex_exright_prepost'
 TWSE_MEETING = 'https://openapi.twse.com.tw/v1/opendata/t187ap41_L'
 TPEX_MEETING = 'https://www.tpex.org.tw/openapi/v1/t187ap41_O'
+TWSE_FILINGS = 'https://openapi.twse.com.tw/v1/opendata/t187ap04_L'
+TPEX_FILINGS = 'https://www.tpex.org.tw/openapi/v1/mopsfin_t187ap04_O'
+# 上一次發布的行事曆（法說會要累積）；SITE_URL 可改成別的部署位置
+PUBLISHED = (os.environ.get('SITE_URL') or 'https://allenchiwei.github.io/taiwan-etf/').rstrip('/') \
+    + '/data/calendar.json'
 
 
 def log(m):
@@ -153,6 +164,99 @@ def meetings(url, market):
                     'elect': (r.get(u'是否改選董監') or '').strip() == u'是',
                     'place': (r.get(u'開會地點') or '').strip()[:60], 'm': market})
     return out
+
+
+# ── 法說會（重大訊息第 12 款）─────────────────────────────────────────────
+#
+#     符合條款第四條第XX款：12
+#     1.召開法人說明會之日期：115/10/15          ← 也可能是區間「115/10/13 ~ 115/10/20」（NDR）
+#     2.召開法人說明會之時間：14 時 00 分
+#     3.召開法人說明會之地點：…
+#     4.法人說明會擇要訊息：…
+#     5.其他應敘明事項：…
+
+def _field(row, name):
+    u"""欄位名稱有時帶空白（證交所的「主旨 」），比對時去掉。"""
+    for k, v in row.items():
+        if k.strip() == name:
+            return v
+    return None
+
+
+def _line(body, label):
+    m = re.search(label + u'\\s*[:：]\\s*([^\\r\\n]*)', body)
+    return m.group(1).strip() if m else ''
+
+
+def parse_call(row, market):
+    u"""一則重大訊息 -> 法說會（不是第 12 款或看不懂日期就回 None）。"""
+    if not re.search(u'第\\s*12\\s*款', _field(row, u'符合條款') or ''):
+        return None
+    body = _field(row, u'說明') or ''
+    days = re.findall(ROC_SLASH, _line(body, u'召開法人說明會之日期'))
+    start = roc_slash_t(days[0]) if days else None
+    if not start:
+        return None
+    end = roc_slash_t(days[1]) if len(days) > 1 else None
+    tm = re.match(u'(\\d{1,2})\\s*時\\s*(\\d{1,2})\\s*分', _line(body, u'召開法人說明會之時間'))
+    code = (_field(row, u'公司代號') or _field(row, 'SecuritiesCompanyCode') or '').strip()
+    name = (_field(row, u'公司名稱') or _field(row, 'CompanyName') or '').strip()
+    said = (_field(row, u'發言日期') or '').strip() + (_field(row, u'發言時間') or '').strip().zfill(6)
+    out = {'d': start, 'code': code, 'name': name, 'm': market,
+           't': '%02d:%02d' % (int(tm.group(1)), int(tm.group(2))) if tm else None,
+           'place': plain(_line(body, u'召開法人說明會之地點'))[:60],
+           'topic': plain(_line(body, u'法人說明會擇要訊息') or _field(row, u'主旨') or '')[:120],
+           'said': said}
+    if end and end > start:
+        out['end'] = end
+    return out if code else None
+
+
+def roc_slash_t(t):
+    u"""re.findall 的 (年, 月, 日) -> ISO；不合法回 None。"""
+    try:
+        return date(int(t[0]) + 1911, int(t[1]), int(t[2])).isoformat()
+    except ValueError:
+        return None
+
+
+def earnings_calls(today):
+    u"""上次發布的 calls ＋ 今天的重大訊息。同一家同一天只留最新發言的一則（更正公告會蓋掉舊的）。"""
+    rows, errors = [], []
+    try:
+        req = urllib.request.Request(PUBLISHED, headers={'User-Agent': UA})
+        prev = json.loads(urllib.request.urlopen(req, timeout=TIMEOUT).read().decode('utf-8'))
+        rows += prev.get('calls') or []
+        log(u'上次發布的法說會：%d 筆' % len(prev.get('calls') or []))
+    except Exception as e:                                    # noqa: BLE001
+        errors.append(u'上次發布的法說會：%s' % str(e)[:80])
+        log(u'  上次發布的法說會讀不到（%s），這次只有今天的重大訊息' % str(e)[:60])
+    if os.path.isfile(OUT):                                   # 本機重跑時也接得上
+        try:
+            rows += json.load(io.open(OUT, encoding='utf-8')).get('calls') or []
+        except Exception:                                     # noqa: BLE001
+            pass
+    new = 0
+    for url, market in ((TWSE_FILINGS, 'twse'), (TPEX_FILINGS, 'tpex')):
+        try:
+            for r in fetch_json(url):
+                c = parse_call(r, market)
+                if c:
+                    rows.append(c)
+                    new += 1
+        except Exception as e:                                # noqa: BLE001
+            errors.append(u'重大訊息（%s）：%s' % (market, str(e)[:80]))
+            log(u'  重大訊息 %s 失敗：%s' % (market, str(e)[:60]))
+    best = {}
+    for c in rows:
+        if (c.get('end') or c['d']) < today:
+            continue
+        key = (c['code'], c['d'])
+        if key not in best or c.get('said', '') >= best[key].get('said', ''):
+            best[key] = c
+    out = sorted(best.values(), key=lambda c: (c['d'], c.get('t') or '', c['code']))
+    log(u'法說會：今天的重大訊息 %d 則，合併後 %d 筆' % (new, len(out)))
+    return out, errors
 
 
 # ── ETF 收益分配：投信的公告（比交易所的預告表早有金額）與發放日 ──────────────
@@ -436,13 +540,20 @@ def main():
             filled += 1
     log(u'交易所還沒填金額、用投信公告補上：%d 筆' % filled)
 
+    calls, call_errors = earnings_calls(today)
+    calls = [c for c in calls if c['d'] <= until]
+    errors += call_errors
+
     doc = {
         'meta': {'updated': today, 'until': until,
                  'source': u'臺灣證券交易所、證券櫃檯買賣中心（除權除息預告表、股東會資料彙總表）；'
-                           u'ETF 收益分配公告取自證交所 e添富與櫃買 ETF 訊息中心，發放日取自 e添富與投信公告',
+                           u'ETF 收益分配公告取自證交所 e添富與櫃買 ETF 訊息中心，發放日取自 e添富與投信公告；'
+                           u'法說會取自上市櫃公司重大訊息',
                  'errors': errors},
         'exdiv': exdiv,
         'meetings': meets,
+        # 法說會：重大訊息第 12 款，逐日累積（見檔頭說明）
+        'calls': calls,
         # 前端的 ETF 除息分頁也要：已經除息、還沒發錢的發放日，以及預告表還沒列出的公告
         'pay': pay,
         'notices': notices,

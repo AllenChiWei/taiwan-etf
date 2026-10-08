@@ -18,11 +18,12 @@ import type { EtfDividendData, YieldData } from '../lib/dividend';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { EmptyState } from '../components/EmptyState';
 
-const KINDS: EventKind[] = ['exdiv', 'meeting', 'report', 'revenue', 'settle'];
+const KINDS: EventKind[] = ['exdiv', 'meeting', 'call', 'report', 'revenue', 'settle'];
 
 const KIND_CLASS: Record<EventKind, string> = {
   exdiv: 'bg-accent-soft text-accent',
   meeting: 'bg-sunken text-ink',
+  call: 'bg-sunken text-ink',
   report: 'bg-sunken text-muted',
   revenue: 'bg-sunken text-muted',
   settle: 'bg-sunken text-muted',
@@ -277,7 +278,7 @@ export function CalendarPage() {
         <h1 className="text-lg font-bold text-ink">台股行事曆</h1>
         <p className="text-[12px] text-muted">
           {tab === 'events'
-            ? <>除權息、股東會、財報與月營收期限、期貨結算・{today} 起到 {until}</>
+            ? <>除權息、股東會、法說會、財報與月營收期限、期貨結算・{today} 起到 {until}</>
             : <>每個月哪幾檔 ETF 除息、每股配多少・可切換月份</>}
         </p>
       </div>
@@ -310,7 +311,7 @@ export function CalendarPage() {
 
       {!data && (
         <p className="mt-3 rounded-lg border border-line bg-surface p-3 text-[12.5px] text-muted">
-          這次部署沒有抓到交易所的除權息與股東會資料，下面只列出依規則推算的日子。
+          這次部署沒有抓到交易所的除權息、股東會與法說會資料，下面只列出依規則推算的日子。
         </p>
       )}
 
@@ -365,7 +366,8 @@ export function CalendarPage() {
         除權息與股東會來源：{data?.meta.source ?? '臺灣證券交易所、證券櫃檯買賣中心'}，以公告為準，
         公司可能更改日期。財報與月營收是一般產業的<strong>法定最晚期限</strong>（證券交易法第 36 條），
         公司可以提早、金融保險業另有規定；期貨結算日是依「每月第三個星期三」推算，遇假日順延。
-        法說會日程只在公開資訊觀測站舊版網站，該站禁止程式讀取，所以這裡沒有收錄。
+        法說會取自上市櫃公司的重大訊息（召開或受邀參加法人說明會），從 2026 年 10 月起逐日累積；
+        只收得到公司有發重大訊息的，不是完整的法說會一覽表，時間地點以公司公告為準。
       </p>
       </>)}
     </>

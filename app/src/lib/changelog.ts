@@ -34,6 +34,14 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-10-08',
+    items: [
+      { kind: 'new', to: '/calendar',
+        text: '台股行事曆新增「法說會」：上市櫃公司發重大訊息公告召開或受邀參加的法人說明會，'
+          + '列出日期、時間、地點與主題，可以單獨篩選，也能只看收藏與持股。從今天起逐日累積。' },
+    ],
+  },
+  {
     date: '2026-10-05',
     items: [
       { kind: 'new', to: '/chips',

@@ -38,7 +38,7 @@ Where each field comes from, because it is not one source:
 | 台股績效曲線 | **FinMind** 日收盤 ＋ 公告配息，自己接總報酬（公開資料，不加密） |
 | 美股績效曲線 | **FinMind** `USStockPrice` 的 `Adj_Close`，已含息還原（公開資料，不加密） |
 | 美國總經（`/macro`） | FRED `fredgraph.csv`（**只收美國政府機關的數列**）＋ EIA 原油庫存 —— 部署時產生 |
-| 台股行事曆（`/calendar`） | 證交所 `TWT48U`、櫃買 `tpex_exright_prepost`（除權息預告）、`t187ap41_L/_O`（股東會）；財報期限與結算日依規則算 |
+| 台股行事曆（`/calendar`） | 證交所 `TWT48U`、櫃買 `tpex_exright_prepost`（除權息預告）、`t187ap41_L/_O`（股東會）、重大訊息 `t187ap04_L`／`mopsfin_t187ap04_O` 第 12 款（法說會，**靠上次發布的 calendar.json 逐日累積**）；財報期限與結算日依規則算 |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without

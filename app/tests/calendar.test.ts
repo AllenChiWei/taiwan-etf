@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   thirdWednesday, ruleEvents, allEvents, filterEvents, groupByDate, dayLabel, daysUntil,
-  exdivEvent, etfExDivMonth, shiftMonth, type CalendarData, type EventKind, type EtfInfo,
+  exdivEvent, callEvent, etfExDivMonth, shiftMonth, type CalendarData, type EventKind, type EtfInfo,
 } from '../src/lib/calendar.ts';
 
 test('第三個星期三（期交所月結算日）', () => {
@@ -164,4 +164,24 @@ test('行事曆：現金增資的除權要標成現增，不是配股', () => {
   assert.equal(e.detail, '現金增資 每千股認購 43.2954 股・認購價 35.15 元（上市）');
   const both = exdivEvent({ d: '2026-10-07', code: '1234', name: '某某', k: '權息', cash: 1, stock: 0.05, m: 'tpex', cap: 0.1, capPx: null });
   assert.equal(both.title, '某某 除權息（配股＋現金增資）');
+});
+
+test('法說會：時間、地點、擇要；線上的不重複寫地點；NDR 已開始的放在今天', () => {
+  const e = callEvent({ d: '2026-10-15', code: '1540', name: '喬福', m: 'twse', t: '14:00',
+    place: '台北市信義區', topic: '營運及財務狀況' });
+  assert.equal(e.kind, 'call');
+  assert.equal(e.title, '喬福 法說會');
+  assert.equal(e.detail, '14:00・台北市信義區・營運及財務狀況');
+  const online = callEvent({ d: '2026-10-27', code: '2337', name: '旺宏', m: 'twse', t: '16:00',
+    place: '線上法人說明會', topic: '第三季營運結果' });
+  assert.equal(online.title, '旺宏 法說會（線上）');
+  assert.equal(online.detail, '16:00・第三季營運結果');
+
+  const data: CalendarData = { ...DATA, calls: [
+    { d: '2026-09-25', end: '2026-10-02', code: '7769', name: '鴻勁', m: 'twse', t: null, place: '美國', topic: 'NDR' },
+    { d: '2026-09-20', code: '1111', name: '已過', m: 'twse', t: null, place: '', topic: '' },
+  ] };
+  const ev = allEvents(data, '2026-09-27', '2026-10-31').filter(x => x.kind === 'call');
+  assert.deepEqual(ev.map(x => `${x.d} ${x.code}`), ['2026-09-27 7769']);
+  assert.equal(ev[0].detail, '9/25～10/2・美國・NDR');
 });

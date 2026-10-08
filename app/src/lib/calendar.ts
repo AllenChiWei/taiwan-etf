@@ -10,7 +10,7 @@
  * 日期一律是 'YYYY-MM-DD' 字串，比較用字典序，不經過時區換算。
  */
 
-export type EventKind = 'exdiv' | 'meeting' | 'report' | 'revenue' | 'settle';
+export type EventKind = 'exdiv' | 'meeting' | 'call' | 'report' | 'revenue' | 'settle';
 
 export interface ExDivRow {
   d: string; code: string; name: string;
@@ -50,6 +50,19 @@ export interface MeetingRow {
   elect: boolean; place: string; m: 'twse' | 'tpex';
 }
 
+/** 法說會：上市櫃公司重大訊息第 12 款（召開或受邀參加法人說明會），逐日累積。 */
+export interface CallRow {
+  d: string;
+  /** 多天的（例如海外 NDR）才有：最後一天 */
+  end?: string;
+  code: string; name: string; m: 'twse' | 'tpex';
+  /** 'HH:MM'；公告沒寫就是 null */
+  t: string | null;
+  place: string;
+  /** 擇要訊息 */
+  topic: string;
+}
+
 export interface CalendarData {
   meta: { updated: string; until: string; source: string; errors: string[] };
   exdiv: ExDivRow[];
@@ -57,6 +70,8 @@ export interface CalendarData {
   /** '代號|除息日' -> 發放日（e添富，含已除息還沒發錢的） */
   pay?: Record<string, string>;
   notices?: NoticeRow[];
+  /** 舊版的 calendar.json 沒有這個欄位 */
+  calls?: CallRow[];
 }
 
 export interface CalEvent {
@@ -68,7 +83,7 @@ export interface CalEvent {
 }
 
 export const KIND_LABEL: Record<EventKind, string> = {
-  exdiv: '除權息', meeting: '股東會', report: '財報期限', revenue: '月營收期限', settle: '期貨結算',
+  exdiv: '除權息', meeting: '股東會', call: '法說會', report: '財報期限', revenue: '月營收期限', settle: '期貨結算',
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -155,6 +170,18 @@ export function meetingEvent(r: MeetingRow): CalEvent {
   };
 }
 
+const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+
+export function callEvent(r: CallRow): CalEvent {
+  const online = /線上|視訊|網路|webcast|online/i.test(r.place);
+  return {
+    d: r.d, kind: 'call', code: r.code,
+    title: `${r.name} 法說會${online ? '（線上）' : ''}`,
+    detail: [r.end ? `${md(r.d)}～${md(r.end)}` : '', r.t ?? '', online ? '' : r.place, r.topic]
+      .filter(Boolean).join('・'),
+  };
+}
+
 /** 合併所有事件並依日期排序（同一天：公告事件在前、規則事件在後，再依代號）。 */
 export function allEvents(data: CalendarData | null, from: string, to: string): CalEvent[] {
   const list: CalEvent[] = [];
@@ -171,6 +198,12 @@ export function allEvents(data: CalendarData | null, from: string, to: string): 
       }));
     }
     for (const r of data.meetings) list.push(meetingEvent(r));
+    for (const r of data.calls ?? []) {
+      // 多天的（NDR）已經開始的話，放在今天（區間起點）才看得到
+      const e = callEvent(r);
+      if (r.d < from && r.end && r.end >= from) e.d = from;
+      list.push(e);
+    }
   }
   list.push(...ruleEvents(from, to));
   const rank = (e: CalEvent) => (e.code ? 0 : 1);
