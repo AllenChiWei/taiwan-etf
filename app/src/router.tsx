@@ -11,6 +11,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  redirect,
 } from '@tanstack/react-router';
 
 import { AppShell } from './components/AppShell';
@@ -43,14 +44,14 @@ const DividendPage = lazyRoute(
 const FuturesPage = lazyRoute(() => import('./routes/FuturesPage'), m => m.FuturesPage);
 // v18 策略頁：獨立密碼、資料在本機加密後才上傳；不放進上方選單（見 routes/V18Page.tsx）
 const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
-// QB 策略層評價看板：與 v18 共用密碼與解鎖工作階段；不放進選單（見 routes/QBPage.tsx）
+// QT 策略層評價看板：與 v18 共用密碼與解鎖工作階段；不放進選單（見 routes/QBPage.tsx）
 const QBPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBPage);
 const QBAPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBAPage);
 const QBWPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBWPage);
 const QBFlowPage = lazyRoute(() => import('./routes/QBFlowPage'), m => m.QBFlowPage);
 const EquityPage = lazyRoute(() => import('./routes/EquityPage'), m => m.EquityPage);
 const GuidePage = lazyRoute(() => import('./routes/GuidePage'), m => m.GuidePage);
-// 私人入口：v18、QB、對帳單放一頁，密碼同 v18；不放進選單（見 routes/MePage.tsx）
+// 私人入口：v18、QT、對帳單放一頁，密碼同 v18；不放進選單（見 routes/MePage.tsx）
 const MePage = lazyRoute(() => import('./routes/MePage'), m => m.MePage);
 
 export interface ListSearch {
@@ -173,31 +174,31 @@ const v18Route = createRoute({
 
 const qbRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/QB',
+  path: '/QT',
   component: QBPage,
 });
 
 const qbaRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/QBA',
+  path: '/QTA',
   component: QBAPage,
 });
 
 const qbwRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/QBW',
+  path: '/QTW',
   component: QBWPage,
 });
 
 const qbfRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/QBF',
+  path: '/QTF',
   component: QBFlowPage,
 });
 
 const guideRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/QBG',
+  path: '/QTG',
   component: GuidePage,
 });
 
@@ -219,10 +220,18 @@ const changelogRoute = createRoute({
   component: ChangelogPage,
 });
 
+// 2026-10-09 改名 QuantTrader（QT）：舊網址 #/QB、#/QBA、#/QBW、#/QBF、#/QBG 轉到新網址，書籤照樣能用
+const OLD_QB = [['/QB', '/QT'], ['/QBA', '/QTA'], ['/QBW', '/QTW'], ['/QBF', '/QTF'], ['/QBG', '/QTG']] as const;
+const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
+  getParentRoute: () => rootRoute,
+  path: from,
+  beforeLoad: () => { throw redirect({ to, replace: true }); },
+}));
+
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route, qbRoute, qbaRoute, qbwRoute, qbfRoute, eqRoute, guideRoute, meRoute]);
+   v18Route, qbRoute, qbaRoute, qbwRoute, qbfRoute, eqRoute, guideRoute, meRoute, ...oldQbRoutes]);
 
 export const router = createRouter({
   routeTree,

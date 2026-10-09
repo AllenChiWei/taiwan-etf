@@ -247,6 +247,6 @@ export function notes(k: Risk): Note[] {
   if (k.top3Share !== null && k.top3Share > 0.6)
     out.push({ tone: 'info', text: `獲利最多的 3 天佔總損益 ${(k.top3Share * 100).toFixed(0)}%：績效集中在少數日子，錯過這幾天結果會差很多 → 程式單要穩定在場，避免手動停機。` });
   if (k.ddDays >= 20)
-    out.push({ tone: 'warn', text: `目前已連續 ${k.ddDays} 個交易日沒創新高（回撤 ${Math.round(k.ddNow).toLocaleString('zh-TW')} 元），可對照 QB 回測的平均回撤期間，判斷是否超出正常範圍。` });
+    out.push({ tone: 'warn', text: `目前已連續 ${k.ddDays} 個交易日沒創新高（回撤 ${Math.round(k.ddNow).toLocaleString('zh-TW')} 元），可對照 QT 回測的平均回撤期間，判斷是否超出正常範圍。` });
   return out;
 }

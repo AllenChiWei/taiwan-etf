@@ -29,12 +29,12 @@ const TABS = [
   { to: '/poker', label: '撲克' },
   { to: '/changelog', label: '更新' },
   { to: '/about', label: '說明' },
-  // v18、QB 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口
+  // v18、QT 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口
   { to: '/me', label: '🔒 私人' },
 ] as const;
 
 /** 從私人入口點進去的頁面，選單上仍標示在「私人」 */
-const PRIVATE = new Set(['/me', '/v18', '/QB', '/QBA', '/QBW', '/QBF', '/EQ', '/QBG']);
+const PRIVATE = new Set(['/me', '/v18', '/QT', '/QTA', '/QTW', '/QTF', '/EQ', '/QTG']);
 
 export function AppShell() {
   const state = useDataset();

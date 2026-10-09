@@ -1,4 +1,4 @@
-/* 私人入口（#/me）：v18、QB 看板、對帳單分析放在同一頁。密碼與 v18／QB 相同（共用解鎖工作階段）。
+/* 私人入口（#/me）：v18、QT 看板、對帳單分析放在同一頁。密碼與 v18／QT 相同（共用解鎖工作階段）。
  * 上方選單只有「🔒 私人」一個入口（2026-10-05 使用者要求看得到），不寫進更新日誌。頁面本身只是連結；各頁的資料都在本機加密後才上傳。 */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -68,7 +68,7 @@ export function MePage() {
               if (ok) await loadAll(); else setErr('密碼不正確');
             }}>
         <h1 className="text-sm font-bold text-ink">我的工具</h1>
-        <p className="mt-1 text-[12px] text-muted">這一頁需要密碼（與 v18、QB 相同）。</p>
+        <p className="mt-1 text-[12px] text-muted">這一頁需要密碼（與 v18、QT 相同）。</p>
         <input ref={ref} type="password" value={pw} onChange={e => setPw(e.target.value)} autoComplete="current-password"
                className="mt-3 h-10 w-full rounded-lg border border-line bg-bg px-3 text-[14px] text-ink" placeholder="密碼" />
         {err && <p className="mt-2 text-[12px] text-down">{err}</p>}
@@ -99,15 +99,15 @@ export function MePage() {
             </p>
           ) : <p className="mt-1 text-[12.5px] text-muted">績效、持股、選股名單</p>}
         </Link>
-        <Link to="/QB" className={card}>
-          <div className="text-sm font-bold text-ink">QB 策略層評價看板</div>
+        <Link to="/QT" className={card}>
+          <div className="text-sm font-bold text-ink">QT 策略層評價看板</div>
           <p className="mt-1 text-[12.5px] text-muted">
-            A → B → C（評價前、QB 評價後、自動槓桿）比較、每年／每月明細、單一策略曲線、v18＋QB 組合；
+            A → B → C（評價前、QT 評價後、自動槓桿）比較、每年／每月明細、單一策略曲線、v18＋QT 組合；
             看板上方可切換策略池（原本 Export／Export＋Activate）{qb?.updated ? `　·　資料 ${qb.updated}` : ''}
           </p>
         </Link>
-        <Link to="/QBF" className={card}>
-          <div className="text-sm font-bold text-ink">QB 流程比較（A → B → C → 複利）</div>
+        <Link to="/QTF" className={card}>
+          <div className="text-sm font-bold text-ink">QT 流程比較（A → B → C → 複利）</div>
           <p className="mt-1 text-[12.5px] text-muted">
             三個策略池（原本／合併／盲測）切換；A 評價前 → B 評價後 → C 自動槓桿（集成／海龜）→ 複利，同風險或原始規模、每年報酬
           </p>
@@ -126,8 +126,8 @@ export function MePage() {
             );
           })() : <p className="mt-1 text-[12.5px] text-muted">月／年損益、同期大盤比較、風險指標</p>}
         </Link>
-        <Link to="/QBG" className={card}>
-          <div className="text-sm font-bold text-ink">QB 設定說明書</div>
+        <Link to="/QTG" className={card}>
+          <div className="text-sm font-bold text-ink">QT 設定說明書</div>
           <p className="mt-1 text-[12.5px] text-muted">每個設定欄位的建議值與原因、原始／進階雙專案架構、內建自動槓桿與複利、流程圖與名詞解釋</p>
         </Link>
         <Link to="/futures" className={card}>
@@ -140,7 +140,7 @@ export function MePage() {
         </Link>
       </div>
       <QbFlow />
-      <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QB 也不用再輸入密碼；{SESSION_HOURS} 小時後自動上鎖，需要重新輸入。</p>
+      <p className="mt-3 text-[11.5px] text-faint">解鎖一次後 v18、QT 也不用再輸入密碼；{SESSION_HOURS} 小時後自動上鎖，需要重新輸入。</p>
     </div>
   );
 }

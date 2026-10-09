@@ -17,7 +17,7 @@ export interface VaultManifest {
 
 interface StoredSession { key: string; salt: string; expires: number }
 
-/** 私人頁（v18、QB、實盤權益）解鎖最多維持幾小時（2026-10-05 使用者要求 6 小時就要重新輸入；不論 manifest 的 ttlHours 設多少） */
+/** 私人頁（v18、QT、實盤權益）解鎖最多維持幾小時（2026-10-05 使用者要求 6 小時就要重新輸入；不論 manifest 的 ttlHours 設多少） */
 export const SESSION_HOURS = 6;
 const SESSION_MS = SESSION_HOURS * 3600_000;
 

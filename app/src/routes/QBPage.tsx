@@ -1,4 +1,4 @@
-/* QB 策略層評價看板（#/QB，與 v18 共用同一組密碼）。
+/* QT 策略層評價看板（#/QT，與 v18 共用同一組密碼）。
  *
  * 資料由使用者自己的電腦產生（D:\ai\QuantBrainsAIO\Release\_rebuild\research\qb_dashboard.py），
  * qb_publish.py 用 v18 的同一個 salt 與密碼加密後才推上來；網站只拿得到密文。
@@ -6,7 +6,7 @@
  * 看板本體在 lib/qbDashboard.ts（本機 HTML 也用同一份），ECharts 只在這一頁才載入。
  * 入口在上方選單「🔒 私人」（#/me）。
  *
- * 2026-10-05：同一個元件也用在 #/QBA —— Export 第一層＋Activate 合併的獨立版本（資料在 data/qba/，
+ * 2026-10-05：同一個元件也用在 #/QTA —— Export 第一層＋Activate 合併的獨立版本（資料在 data/qba/，
  * 由 QB_EXPORT_DIR／QB_OUT_DIR 切換後的 qb_dashboard.py 產生），兩份資料完全分開。 */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -19,9 +19,9 @@ interface Variant { dir: string; title: string; note?: string }
 /* 策略池切換列：同一套看板、不同策略池。切換時 A、B、C、期間、分頁沿用（sessionStorage），方便同設定對照。
  * 之後網路策略盲測有資料，就在 POOLS 加一列（dir 對應 data/<dir>/，再加路由）。 */
 const POOLS: Array<{ dir: string; to: string | null; label: string; short: string; hint: string }> = [
-  { dir: 'qb', to: '/QB', label: '原本 Export', short: '原本', hint: 'Export 50 個' },
-  { dir: 'qba', to: '/QBA', label: 'Export＋Activate', short: '合併', hint: '＋Activate 76 個' },
-  { dir: 'qbw', to: '/QBW', label: '網路策略盲測', short: '盲測', hint: '網路 30 個' },
+  { dir: 'qb', to: '/QT', label: '原本 Export', short: '原本', hint: 'Export 50 個' },
+  { dir: 'qba', to: '/QTA', label: 'Export＋Activate', short: '合併', hint: '＋Activate 76 個' },
+  { dir: 'qbw', to: '/QTW', label: '網路策略盲測', short: '盲測', hint: '網路 30 個' },
 ];
 const SHARED = 'qbd.shared-state';
 function readShared(): Record<string, unknown> {
@@ -133,7 +133,7 @@ function QbBoard({ v }: { v: Variant }) {
       if (cancelled || !host.current) return;
       unmount = mod.mountQbDashboard(host.current, data, echarts,
         (key: string) => vault.fetchJson<number[][]>(`w_${key}.enc`),
-        // v18 ＋ QB 組合（另一檔；舊資料沒有這檔就不顯示該區塊）
+        // v18 ＋ QT 組合（另一檔；舊資料沒有這檔就不顯示該區塊）
         () => vault.fetchJson<unknown>('blend.enc').catch(() => null),
         { title: v.title, note: v.note, initState: readShared(), onState: writeShared,
           // 自動槓桿研究結論（lev_summary.py；舊資料沒有就不顯示）
@@ -162,24 +162,24 @@ function QbBoard({ v }: { v: Variant }) {
   );
 }
 
-const QB: Variant = { dir: 'qb', title: 'QB 策略層評價看板' };
+const QT: Variant = { dir: 'qb', title: 'QT 策略層評價看板' };
 const QBA: Variant = {
   dir: 'qba',
-  title: 'QB 策略層評價看板（Export＋Activate 合併版）',
+  title: 'QT 策略層評價看板（Export＋Activate 合併版）',
   note: '資料：<b>Export 第一層＋Export\\Activate 的策略合在一起</b>（每個策略拆成多方 _L、空方 _S），'
-    + '與 #/QB（只有 Export 第一層、不含 Activate）是兩份獨立的回測，可以對照看加入 Activate 後的差異。'
+    + '與 #/QT（只有 Export 第一層、不含 Activate）是兩份獨立的回測，可以對照看加入 Activate 後的差異。'
     + '<b>注意：Activate 是看過績效之後才挑出來的，含 Activate 的結果會比實際樂觀（選擇偏誤）</b>。'
-    + '分數只用前一天收盤以前的資料；「QB 序位」「QB 分多空」照複製版 QB 規則逐日模擬。',
+    + '分數只用前一天收盤以前的資料；「QT 序位」「QT 分多空」照 QT 規則逐日模擬。',
 };
 
 const QBW: Variant = {
   dir: 'qbw',
-  title: 'QB 策略層評價看板（網路策略盲測）',
+  title: 'QT 策略層評價看板（網路策略盲測）',
   note: '資料：<b>wenschair.blogspot.com 的 30 個台指期策略</b>（原文參數、不最佳化、<b>未經 Pass</b>），用台指期還原 1 分 K（2013/12～2026/10，含夜盤）'
     + '以模擬 MultiCharts 的引擎重跑：每邊 500 元、滑價 0、口數照 GetRPASharesFC(2000 萬, 5, 30, ATR)。'
-    + '用途是盲測：看兩個真實池得到的 QB 設定，換成完全沒看過績效的策略是否仍然有效 —— 結論見「盲測驗證」分頁。',
+    + '用途是盲測：看兩個真實池得到的 QT 設定，換成完全沒看過績效的策略是否仍然有效 —— 結論見「盲測驗證」分頁。',
 };
 
-export function QBPage() { return <QbBoard key="qb" v={QB} />; }
+export function QBPage() { return <QbBoard key="qb" v={QT} />; }
 export function QBAPage() { return <QbBoard key="qba" v={QBA} />; }
 export function QBWPage() { return <QbBoard key="qbw" v={QBW} />; }

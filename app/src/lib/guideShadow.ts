@@ -1,4 +1,4 @@
-/* QB 設定說明書（#/QBG）放進 Shadow DOM 前的轉換：說明書是獨立網頁，樣式用 :root／html／body，
+/* QT 設定說明書（#/QTG）放進 Shadow DOM 前的轉換：說明書是獨立網頁，樣式用 :root／html／body，
  * Shadow DOM 裡要改成 :host 與 .gb-body。純函式，測試在 tests/guideShadow.test.ts。 */
 
 /** 說明書 HTML → 可放進 Shadow DOM 的內容（樣式改寫成 :host 版本） */

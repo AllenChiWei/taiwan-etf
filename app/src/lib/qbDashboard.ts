@@ -1,9 +1,9 @@
 // @ts-nocheck
-/* QB 策略層評價看板（本機 QB_Report\qb_dashboard.html 與網站 #/QB 共用這一份）。
+/* QT 策略層評價看板（本機 QB_Report\qb_dashboard.html 與網站 #/QT 共用這一份）。
  *
  * mountQbDashboard(root, data, echarts, loadWeek)：
  *   data      qb_dashboard.py 產生的主資料（設定清單、組合日損益、各策略月損益、各策略每週評價前損益…）
- *   echarts   ECharts 模組（網站：npm 打包、只在 QB 頁載入；本機：CDN 的全域 echarts）
+ *   echarts   ECharts 模組（網站：npm 打包、只在 QT 頁載入；本機：CDN 的全域 echarts）
  *   loadWeek  (設定代號) => Promise<number[][]>：該設定下各策略的每週損益（千元），點到才載入
  * 回傳 unmount()。
  *
@@ -96,11 +96,11 @@ const CSS = `
 `;
 
 const HTML = `
-<h1 data-id="title">QB 策略層評價看板</h1>
+<h1 data-id="title">QT 策略層評價看板</h1>
 <div class="sub" data-id="meta"></div>
 <div class="note" data-id="srcNote">資料：Export\\*.csv（每個策略拆成多方 _L、空方 _S；<b>Activate\\ 未使用</b>，避免事後挑選的偏差）。
-  所有分數只用「前一天收盤以前」的資料。「QB 序位」「QB 分多空」照複製版 QB 規則逐日模擬（名次、名額、部位歸零才出、取整）；
-  沒有計入 QB 專案層的動能配置上限。</div>
+  所有分數只用「前一天收盤以前」的資料。「QT 序位」「QT 分多空」照 QT 規則逐日模擬（名次、名額、部位歸零才出、取整）；
+  沒有計入 QT 專案層的動能配置上限。</div>
 <div class="filters">
   <label><span class="dot" style="background:var(--a)"></span>A<select data-id="selA"></select></label>
   <label><span class="dot" style="background:var(--b)"></span>B<select data-id="selB"></select></label>
@@ -137,7 +137,7 @@ const HTML = `
     <h2 class="mt">每個策略每月損益</h2>
     <div class="legend-row"><label>年度 <select data-id="selMYear"></select></label><span>顯示方式同上（評價前／B 評價後／B − 評價前）</span></div>
     <div class="tbl-wrap"><table class="yr" data-id="tStratMonth"></table></div>
-    <div class="note">策略加總與上方組合數字可能差幾萬：QB 序位設定的組合損益含取整後的實際口數，策略明細用「動能倍數 × 原始損益」估算。</div>
+    <div class="note">策略加總與上方組合數字可能差幾萬：QT 序位設定的組合損益含取整後的實際口數，策略明細用「動能倍數 × 原始損益」估算。</div>
   </div>
 </div>
 
@@ -176,14 +176,14 @@ const HTML = `
     <div class="tbl-wrap"><table class="val" data-id="tLev7Top"></table></div>
   </div>
   <div class="card mt" data-id="levResCard" hidden>
-    <h2>研究結論：哪一類自動槓桿在兩種 QB 都有效</h2>
+    <h2>研究結論：哪一類自動槓桿在兩種 QT 都有效</h2>
     <div class="note" data-id="levResNote"></div>
     <div class="legend-row"><span>篩選 <span class="seg" data-id="segLevRes"></span></span><span>點欄位名稱排序</span></div>
     <div class="tbl-wrap"><table data-id="tLevRes"></table></div>
     <ul class="note mt" data-id="levResDefs" style="padding-left:18px;margin:6px 0 0"></ul>
   </div>
   <div class="card mt" data-id="cmpCard" hidden>
-    <h2>複利方式比較（進階篇[2][3][4]、QB「實際操作資金步進調整」）</h2>
+    <h2>複利方式比較（進階篇[2][3][4]、QT「實際操作資金步進調整」）</h2>
     <div class="note" data-id="cmpNote"></div>
     <div class="legend-row"><span>情境 <span class="seg" data-id="segCmpScen"></span></span><span>對象 <span class="seg" data-id="segCmpSet"></span></span></div>
     <div class="tbl-wrap"><table data-id="tCmp"></table></div>
@@ -201,7 +201,7 @@ const HTML = `
     </div>
     <div class="note" data-id="stratNote"></div>
     <div data-id="cStrat" class="chart"></div>
-    <div class="note">B 的動能倍數（每月平均；0＝關閉，沒在 QB 訊號列表裡）</div>
+    <div class="note">B 的動能倍數（每月平均；0＝關閉，沒在 QT 訊號列表裡）</div>
     <div data-id="cStratW" class="chart short"></div>
   </div>
   <div class="card mt">
@@ -224,15 +224,15 @@ const HTML = `
 <div data-tab="cfg" hidden>
   <div class="card verdict" data-id="verdict"></div>
   <div class="card mt">
-    <h2>QB 序位 × Sortino 回溯期（所選期間）</h2>
+    <h2>QT 序位 × Sortino 回溯期（所選期間）</h2>
     <div class="note">每格：Sharpe ／ 淨利÷回撤 ／ 虧損月比例。紅字＝比評價前好、綠字＝比評價前差（台股慣例）。點格子設為 B。
       「門檻」＝最小動能門檻（分數 &gt; 0 才做）；「前 N」＝單一分類，策略有部位、名次 ≤ N、列表有空位就進入，部位歸零才移出。</div>
     <div class="tbl-wrap"><table data-id="tMatrix"></table></div>
-    <h2 class="mt">QB 分多空（多方、空方兩個策略分類，各自序位）</h2>
-    <div class="note">_L 策略放「多方」分類、_S 放「空方」分類，各自設序位 N（複製版 QB 已支援，不用改程式）。</div>
+    <h2 class="mt">QT 分多空（多方、空方兩個策略分類，各自序位）</h2>
+    <div class="note">_L 策略放「多方」分類、_S 放「空方」分類，各自設序位 N（QT 已支援，不用改程式）。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLS"></table></div>
-    <h2 class="mt">QB 分多空：多方、空方不同序位</h2>
-    <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（複製版 QB 每個分類可各設序位）。點格子設為 B。</div>
+    <h2 class="mt">QT 分多空：多方、空方不同序位</h2>
+    <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（QT 每個分類可各設序位）。點格子設為 B。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLSA"></table></div>
   </div>
   <div class="card mt">
@@ -267,17 +267,17 @@ const HTML = `
 
 <div data-tab="blend" hidden>
   <div class="card" data-id="blendCard">
-    <h2>v18 ＋ QB 組合（資金層級）</h2>
+    <h2>v18 ＋ QT 組合（資金層級）</h2>
     <div class="note" data-id="blendNote"></div>
-    <div class="legend-row"><span>QB 用 <span class="seg" data-id="segBlend"></span></span></div>
+    <div class="legend-row"><span>QT 用 <span class="seg" data-id="segBlend"></span></span></div>
     <div class="tbl-wrap"><table data-id="tBlend"></table></div>
     <div class="note mt">組合權益（對數刻度，起點 = 1）</div>
     <div data-id="cBlend" class="chart"></div>
     <h2 class="mt">資金配置計算器</h2>
-    <div class="note">依「兩邊年化波動的比例」算出 QB 專案的動能轉換率與大約口數（QB 為上面所選的設定）。</div>
+    <div class="note">依「兩邊年化波動的比例」算出 QT 專案的動能轉換率與大約口數（QT 為上面所選的設定）。</div>
     <div class="legend-row">
       <span>v18 資金 <input type="number" data-id="inV18" value="10000000" step="1000000"></span>
-      <span>QB 專案資金 <input type="number" data-id="inQB" value="10000000" step="1000000"></span>
+      <span>QT 專案資金 <input type="number" data-id="inQB" value="10000000" step="1000000"></span>
       <span>v18 佔波動 <select data-id="inW"><option value="0.8">80%</option><option value="0.7">70%</option>
         <option value="0.6">60%</option><option value="0.5" selected>50%</option><option value="0.4">40%</option></select></span>
     </div>
@@ -293,11 +293,11 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   root.innerHTML = HTML;
   root.prepend(style);
   const $ = id => root.querySelector(`[data-id="${id}"]`);
-  // 同一份看板也給 Activate 版（#/QBA）用：標題與資料說明可以換
+  // 同一份看板也給 Activate 版（#/QTA）用：標題與資料說明可以換
   if (opts.title) $('title').textContent = opts.title;
   if (opts.note) $('srcNote').innerHTML = opts.note;
   const cfgByKey = Object.fromEntries(D.configs.map(c => [c.key, c]));
-  const KIND = { baseline: '評價前', x1: 'X1 設定', qb: 'QB 設定', theory: '理論（QB 未支援）' };
+  const KIND = { baseline: '評價前', x1: 'X1 設定', qb: 'QT 設定', theory: '理論（QT 未支援）' };
   const C = { a: '#2a78d6', b: '#eb6834', c: '#4a3aa7', up: '#c9302c', down: '#1f8a3b', ink2: '#52514e', ink3: '#85847e',
               line: '#e2e1dc', surface: '#fcfcfb', before: '#85847e' };
   const fmtW = v => v == null || !isFinite(v) ? '—' : (Math.round(v / 1e4) || 0).toLocaleString('zh-TW');   // || 0：不顯示「-0」
@@ -318,13 +318,13 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const sel = $(id);
     const groups = {};
     for (const c of D.configs) {
-      const g = c.key.startsWith('GATE') ? 'QB 序位（單一分類）' : c.key.startsWith('LSA') ? 'QB 分多空（多空不同序位）' : c.key.startsWith('LS') ? 'QB 分多空序位'
-        : c.key.startsWith('CUT') ? 'QB 最小動能門檻' : KIND[c.kind];
+      const g = c.key.startsWith('GATE') ? 'QT 序位（單一分類）' : c.key.startsWith('LSA') ? 'QT 分多空（多空不同序位）' : c.key.startsWith('LS') ? 'QT 分多空序位'
+        : c.key.startsWith('CUT') ? 'QT 最小動能門檻' : KIND[c.kind];
       if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; sel.appendChild(groups[g]); }
       groups[g].appendChild(new Option(c.name, c.key));
     }
   }
-  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['val', '盲測驗證'], ['blend', 'v18＋QB']];
+  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['val', '盲測驗證'], ['blend', 'v18＋QT']];
   function showTab(t) {
     state.tab = t;
     root.querySelectorAll('[data-tab]').forEach(el => { el.hidden = el.dataset.tab !== t; });
@@ -831,7 +831,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     renderStratTableHighlight();
   }
 
-  // ── v18 ＋ QB 組合（資料另外一檔，載得到才顯示）──
+  // ── v18 ＋ QT 組合（資料另外一檔，載得到才顯示）──
   let B = null, blendKey = 'LS15_250';
   function renderBlend() {
     if (!B) return;
@@ -843,18 +843,18 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       b.onclick = () => { blendKey = k; renderBlend(); };
     });
     $('blendNote').textContent = `v18 與 ${B.qb_labels?.[blendKey] || blendKey} 的日報酬相關 ${d.corr.toFixed(2)}、月報酬相關 ${d.monthly_corr.toFixed(2)}。` +
-      `比例是「波動度」的比例（QB 已縮放成與 v18 同波動），每日再平衡。${B.note}（產生於 ${B.generated}）`;
+      `比例是「波動度」的比例（QT 已縮放成與 v18 同波動），每日再平衡。${B.note}（產生於 ${B.generated}）`;
     // 比例的鍵是 Python 寫出的字串（"1.0"、"0.8"…），用原字串查、用數值排序
     const ws = Object.keys(d.results).sort((a, b) => +b - +a);
     const cell = r => `${r.cagr}% ／ ${r.mdd}% ／ <b>${r.calmar}</b>`;
     $('tBlend').innerHTML = `<thead><tr><th>v18 比例</th><th>2012–2017 年化／MDD／Calmar</th><th>2018–2026 年化／MDD／Calmar</th>
       <th>全期 年化／MDD／Calmar</th><th>Sharpe</th></tr></thead><tbody>${ws.map(w => {
         const r = d.results[w], x = +w;
-        const lab = x === 1 ? '只做 v18' : x === 0 ? '只做 QB' : `v18 ${Math.round(x * 100)}%＋QB ${Math.round((1 - x) * 100)}%`;
+        const lab = x === 1 ? '只做 v18' : x === 0 ? '只做 QT' : `v18 ${Math.round(x * 100)}%＋QT ${Math.round((1 - x) * 100)}%`;
         return `<tr class="${x === 0.5 ? 'best' : ''}"><td>${lab}</td><td>${cell(r['前半'])}</td><td>${cell(r['後半'])}</td><td>${cell(r['全期'])}</td><td>${r['全期'].sharpe}</td></tr>`;
       }).join('')}</tbody>`;
     const cols = { 1: '#85847e', 0.8: C.a, 0.5: C.b, 0: '#4a3aa7' };
-    const names = { 1: '只做 v18', 0.8: 'v18 80%＋QB 20%', 0.5: 'v18 50%＋QB 50%', 0: '只做 QB' };
+    const names = { 1: '只做 v18', 0.8: 'v18 80%＋QT 20%', 0.5: 'v18 50%＋QT 50%', 0: '只做 QT' };
     chart('cBlend').setOption({ animation: false, grid: { left: 54, right: 14, top: 28, bottom: 52 }, legend,
       tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
       xAxis: { type: 'category', data: d.weeks, ...axisCommon, splitLine: { show: false } },
@@ -865,23 +865,23 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     renderCalc();
   }
   function renderCalc() {
-    if (!B || !B.sizing) { $('calcOut').innerHTML = '<span class="note">（缺 QB 基準數字）</span>'; return; }
+    if (!B || !B.sizing) { $('calcOut').innerHTML = '<span class="note">（缺 QT 基準數字）</span>'; return; }
     const sz = B.sizing;
     const V = +$('inV18').value || 0, Q = +$('inQB').value || 0, w = +$('inW').value;
-    const target = V * B.v18_ann_vol * (1 - w) / w;               // QB 年化損益波動目標（元）
-    const K = target / sz.qb_k1_ann_vol;                          // QB 規模倍數（K = 資金 × 轉換率 ÷ 1 億）
+    const target = V * B.v18_ann_vol * (1 - w) / w;               // QT 年化損益波動目標（元）
+    const K = target / sz.qb_k1_ann_vol;                          // QT 規模倍數（K = 資金 × 轉換率 ÷ 1 億）
     const conv = Q > 0 ? K * 1e8 / Q : NaN;
     const n = v => v.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
     const p95 = Math.ceil(K * sz.qb_k1_pos_p95_last250);
     $('calcOut').innerHTML = `
       <div>v18 年化波動 <b>${(B.v18_ann_vol * 100).toFixed(1)}%</b> → v18 年化損益波動約 <b>${n(V * B.v18_ann_vol)}</b> 元</div>
-      <div>QB 年化損益波動目標 <b>${n(target)}</b> 元（v18 的 ${((1 - w) / w).toFixed(2)} 倍）</div>
-      <div>QB 規模倍數 K ＝ <b>${K.toFixed(4)}</b></div>
-      <div>QB 專案「動能轉換率」設 <b>${isFinite(conv) ? conv.toFixed(3) : '—'}</b>（%；專案資金 ${n(Q)} 元）</div>
+      <div>QT 年化損益波動目標 <b>${n(target)}</b> 元（v18 的 ${((1 - w) / w).toFixed(2)} 倍）</div>
+      <div>QT 規模倍數 K ＝ <b>${K.toFixed(4)}</b></div>
+      <div>QT 專案「動能轉換率」設 <b>${isFinite(conv) ? conv.toFixed(3) : '—'}</b>（%；專案資金 ${n(Q)} 元）</div>
       <div>平均部位約 <b>${(K * sz.qb_k1_pos_mean).toFixed(1)}</b> 口${sz.contract}；近一年 95% 時間 ≤ <b>${p95}</b> 口</div>
       <div>保證金估計（${p95} 口 × ${n(sz.margin_per_contract_est)}）約 <b>${n(p95 * sz.margin_per_contract_est)}</b> 元</div>
-      <div class="note" style="grid-column:1/-1">${sz.margin_note}。口數小於 5 時取整影響大，可考慮在 QB 商品設定「大轉小」改用小台（×4 口）。
-        回測的 QB 是樣本內，建議先用計算結果的一半上線。</div>`;
+      <div class="note" style="grid-column:1/-1">${sz.margin_note}。口數小於 5 時取整影響大，可考慮在 QT 商品設定「大轉小」改用小台（×4 口）。
+        回測的 QT 是樣本內，建議先用計算結果的一半上線。</div>`;
   }
   for (const id of ['inV18', 'inQB', 'inW']) $(id).addEventListener('input', renderCalc);
   if (loadBlend) {
@@ -912,7 +912,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const ca = cfgByKey[state.a], cb = cfgByKey[state.b];
     $('sideNote').innerHTML = `A＝${ca.name}；B＝${cb.name}；C＝B＋${levByKey[state.c].name}。期間：${state.period}。`
       + `多方＝所有 _L 策略、空方＝所有 _S 策略（${D.strategies.filter(x => x.endsWith('_L')).length} 個／${D.strategies.filter(x => x.endsWith('_S')).length} 個）。`
-      + `損益＝動能 × 策略損益；QB 序位設定的組合另有取整差異，兩邊加總與上方組合數字可能差一點。`;
+      + `損益＝動能 × 策略損益；QT 序位設定的組合另有取整差異，兩邊加總與上方組合數字可能差一點。`;
     const rows = [['淨利（萬）', 'net', fmtW], ['最大回撤（萬）', 'mdd', fmtW], ['淨利 / 回撤', 'nd', fmt1], ['Sharpe', 'sharpe', fmt2], ['虧損月比例', 'loseM', pct0]];
     $('tSideKpi').innerHTML = `<thead><tr><th>指標</th><th style="color:${C.a}">A 多</th><th style="color:${C.b}">B 多</th><th style="color:${C.c}">C 多</th>
         <th class="gap" style="color:${C.a}">A 空</th><th style="color:${C.b}">B 空</th><th style="color:${C.c}">C 空</th></tr></thead>
@@ -979,7 +979,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網；<b>短期煞車</b>＝急跌、連虧、波動突升。`
       + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩，目前指標（慢速恢復 0.20）綜合最平衡；短期煞車與市場狀態類在兩池都沒有穩定改善。`
       + `回撤門檻以參考帳戶「至今年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；只用前一天收盤以前的資料。`
-      + `<b>判讀：要 #/QB、#/QBA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
+      + `<b>判讀：要 #/QT、#/QTA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
     const [i0, i1] = idxRange();
     chart('cLevL').setOption({ animation: false, grid: { left: 54, right: 14, top: 10, bottom: 24 },
       tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
@@ -987,7 +987,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       series: [{ ...lineSeries(levByKey[state.c].name, levOf(state.b, state.c).lev.slice(i0, i1), C.c, 1.5), step: 'end', sampling: undefined }] }, true);
   }
 
-  // 換策略池（#/QB ↔ #/QBA）時沿用 A、B、C、期間、分頁：QBPage 傳入上次的選擇，每次重畫回存
+  // 換策略池（#/QT ↔ #/QTA）時沿用 A、B、C、期間、分頁：QBPage 傳入上次的選擇，每次重畫回存
   const init = opts.initState || {};
   if (cfgByKey[init.a]) state.a = init.a;
   if (cfgByKey[init.b]) state.b = init.b;
@@ -1005,7 +1005,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const c = LR.current;
     $('levResNote').innerHTML = `三輪研究共 ${LR.families.reduce((t, f) => t + f.n, 0)} 組參數。目前使用：<b>${c.name}</b> —
       改善 原本 Export ${(c.g0 * 100).toFixed(1)}%、Export＋Activate ${(c.g1 * 100).toFixed(1)}%，3 年視窗勝率 ${(c.win0 * 100).toFixed(0)}%／${(c.win1 * 100).toFixed(0)}%，平均槓桿 ${c.avg}。
-      <b>結論：只有「拉回減碼」類在兩種 QB 穩定有效；短期煞車、市場狀態、拉回加碼、QB inc 都沒有幫助或變差。</b>（產生於 ${LR.generated}）`;
+      <b>結論：只有「拉回減碼」類在兩種 QT 穩定有效；短期煞車、市場狀態、拉回加碼、QT inc 都沒有幫助或變差。</b>（產生於 ${LR.generated}）`;
     seg($('segLevRes'), [['all', '全部'], ['good', '有效'], ['bad', '無效／變差']], () => lrFilter, v => { lrFilter = v; renderLevRes(); });
     $('segLevRes').querySelectorAll('button').forEach((b, i) => { b.onclick = () => { lrFilter = ['all', 'good', 'bad'][i]; renderLevRes(); }; });
     let rows = LR.families.slice();

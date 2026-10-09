@@ -1,7 +1,7 @@
-/* QB 流程比較（#/QBF，私人頁，密碼同 v18）：三個策略池 × A → B → C → 複利（2026-10-06 使用者要求）。
+/* QT 流程比較（#/QTF，私人頁，密碼同 v18）：三個策略池 × A → B → C → 複利（2026-10-06 使用者要求）。
  *
  * 資料：research/flow_export.py → data/qbflow/flow.enc（v18 同密碼加密）。
- *   A 評價前（等權）、B 分多空序位 15＋Sortino 250、C 自動槓桿（集成／慢速恢復海龜可切換）、複利（C＋QB 步進 10%）。
+ *   A 評價前（等權）、B 分多空序位 15＋Sortino 250、C 自動槓桿（集成／慢速恢復海龜可切換）、複利（C＋QT 步進 10%）。
  *   同風險：本金 2,800 萬，各自縮放到全期最大回撤＝本金 20%；原始規模：回測口數（K＝1）的累積損益（複利不適用）。
  * 版面（手機）：圖表 tooltip confine、容器 overflow 隱藏；表格放在 overflow-x-auto 的框裡（見記憶 taiwanetf-mobile-layout）。 */
 
@@ -19,7 +19,7 @@ interface Pool {
   same: Record<string, Money>; raw: Record<string, Raw>;
   series_same: Record<string, number[]>; series_raw: Record<string, number[]>;
   wins: Record<string, number | null>; avg_lev: Record<string, number>;
-  /** 實際規模（本金 2,800 萬、約 30 口小台、照 QB 取整）：B、C_*、K_*（真正複利）、M（大盤含息）；lots＝期末口數倍數 */
+  /** 實際規模（本金 2,800 萬、約 30 口小台、照 QT 取整）：B、C_*、K_*（真正複利）、M（大盤含息）；lots＝期末口數倍數 */
   real?: { stats: Record<string, Money>; series: Record<string, number[]>; lots: Record<string, number> };
 }
 interface PropSection { h: string; paras?: string[]; table?: { head: string[]; rows: string[][] }; note?: string }
@@ -61,7 +61,7 @@ export function QBFlowPage() {
 
   if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
   if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有資料。</p>;
-  if (state === 'locked' && manifest) return <Locked vault={vault} title="QB 流程比較" manifest={manifest} onUnlock={load} />;
+  if (state === 'locked' && manifest) return <Locked vault={vault} title="QT 流程比較" manifest={manifest} onUnlock={load} />;
   if (state === 'error' || !data) return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
   const P = data.pools.find(p => p.key === pool) ?? data.pools[0];
   return <Board data={data} P={P} pool={pool} setPool={setPool} mode={mode} setMode={setMode} cv={cv} setCv={setCv} on={on} setOn={setOn} />;
@@ -84,7 +84,7 @@ function Board({ data, P, pool, setPool, mode: mode0, setMode, cv, setCv, on, se
 
   return (
     <div className="mt-4 overflow-x-clip">
-      <h1 className="text-base font-bold text-ink">QB 流程比較：A → B → C → 複利</h1>
+      <h1 className="text-base font-bold text-ink">QT 流程比較：A → B → C → 複利</h1>
       <p className="mt-1 text-[12px] text-muted">
         四個策略池各用目前測試出來最好的設定；可切換策略池、C 的做法、實際規模／同風險／原始規模，並勾選要看的步驟。資料 {data.generated}。
       </p>
@@ -145,18 +145,18 @@ function Board({ data, P, pool, setPool, mode: mode0, setMode, cv, setCv, on, se
       </div>
 
       <ul className="mt-3 list-disc space-y-1 pl-5 text-[11.5px] leading-relaxed text-muted">
-        <li><b>A</b> 評價前：所有策略（多空分拆）等權。<b>B</b> 評價後：QB 分多空各序位 15、X1_v3 Sortino 250（目前 QB 設定，照複製版 QB 規則逐日模擬）。</li>
+        <li><b>A</b> 評價前：所有策略（多空分拆）等權。<b>B</b> 評價後：QT 分多空各序位 15、X1_v3 Sortino 250（目前 QT 設定，照 QT 規則逐日模擬）。</li>
         <li><b>C</b> 自動槓桿（總帳戶動能轉換率每天調整，只用前一天收盤以前的 B 權益，已扣調整成本）：
           集成＝慢速恢復海龜＋20 日波動目標＋3 日急跌煞車三者平均，三個策略池都穩健（建議）；慢速恢復海龜＝目前的 MC 指標。
           平均槓桿：{Object.entries(P.avg_lev).map(([k, v]) => `${k === 'ens' ? '集成' : '海龜'} ${v.toFixed(2)}`).join('、')}。</li>
         <li><b>複利</b>（2026-10-07 改）：口數跟著權益等比例放大、當天生效＝集成指標把動能轉換率乘上（目前權益÷起始本金），不設上限。
-          獲利越多打越多口，淨利會衝高，報酬率也不會被稀釋。不用 QB 內建的「實際操作資金步進調整」：它要等訊號列表清空才加碼，很少生效，而且回撤反而較大。
+          獲利越多打越多口，淨利會衝高，報酬率也不會被稀釋。不用 QT 內建的「實際操作資金步進調整」：它要等訊號列表清空才加碼，很少生效，而且回撤反而較大。
           {P.real && <>期末口數約為起始的 {P.real.lots[`K_${cv}`]} 倍，實際會受流動性、滑價與保證金限制。</>}</li>
-        <li><b>實際規模</b>：本金 2,800 萬、約 30 口小台（K＝0.05），照 QB 規則無條件捨去取整；B、C 口數固定，年報酬＝當年損益÷本金（不被累積的權益稀釋）；
+        <li><b>實際規模</b>：本金 2,800 萬、約 30 口小台（K＝0.05），照 QT 規則無條件捨去取整；B、C 口數固定，年報酬＝當年損益÷本金（不被累積的權益稀釋）；
           <b>大盤（含息）</b>＝同一筆本金買進加權報酬指數持有。</li>
         <li><b>同風險</b>：本金 {(data.capital / 1e4).toLocaleString('zh-TW')} 萬，A／B／C 各自縮放到全期最大回撤＝本金 {(data.target_mdd * 100).toFixed(0)}%，所以淨利、年化（單利）可以直接比；
           複利從 C 的規模起算。<b>原始規模</b>：回測口數（K＝1）的累積損益，看的是實際曲線形狀與淨利／回撤比。</li>
-        <li>3 年勝率：每季起算一個 3 年視窗，這一步的淨利／回撤勝過上一步的比例。回測滑價 0；實盤另有滑價與 QB 調整口數的手續費。</li>
+        <li>3 年勝率：每季起算一個 3 年視窗，這一步的淨利／回撤勝過上一步的比例。回測滑價 0；實盤另有滑價與 QT 調整口數的手續費。</li>
       </ul>
     </div>
   );

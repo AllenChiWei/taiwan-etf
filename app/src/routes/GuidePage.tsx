@@ -1,4 +1,4 @@
-/* QB 設定說明書（#/QBG，私人頁，密碼同 v18；2026-10-08 使用者要求放到網站私人區）。
+/* QT 設定說明書（#/QTG，私人頁，密碼同 v18；2026-10-08 使用者要求放到網站私人區）。
  * 內容是 D:\ai\QuantBrainsAIO\Release\_rebuild\QB_GuideBook.html，由 DashBoard_AI\guide_export.py 加密成 data/guide/guide.enc。
  *
  * 顯示方式（2026-10-08 改）：原本用 iframe srcDoc，但有些瀏覽器（手機）會把整個網站載進框架，只看到 noscript 提示。
@@ -62,7 +62,7 @@ export function GuidePage() {
 
   if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
   if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有說明書資料。</p>;
-  if (state === 'locked' && manifest) return <Locked vault={vault} title="QB 設定說明書" manifest={manifest} onUnlock={load} />;
+  if (state === 'locked' && manifest) return <Locked vault={vault} title="QT 設定說明書" manifest={manifest} onUnlock={load} />;
   if (state === 'error' || !g) return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
   return (
     <div className="mt-3 min-w-0">
