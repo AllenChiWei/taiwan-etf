@@ -479,9 +479,26 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     };
   }
   const ensemble = (...fs) => x => { const ls = fs.map(f => f(x)); return x.map((_, i) => ls.reduce((t, l) => t + l[i], 0) / ls.length); };
+  // 2026-10-13：帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場凍結 7 天），依實際帳戶權益（本金 2,800 萬、K 0.05≈30 口小台），同 qb_breaker_test／QT 內建
+  function breakerMult(x, base, k = 0.05, c0 = 28e6) {
+    const out = new Array(x.length).fill(1);
+    let mult = 1, eq = c0, peak = c0, freeze = 0;
+    for (let t = 0; t < x.length; t++) {
+      out[t] = mult;
+      eq += k * base[t] * mult * x[t];
+      peak = Math.max(peak, eq);
+      const dd = (peak - eq) / peak;
+      if (freeze > 0) { freeze--; mult = freeze > 0 ? 0 : 0.25; continue; }
+      if (dd >= 0.15) { mult = 0; freeze = 7; continue; }
+      mult = dd >= 0.10 ? 0.25 : dd >= 0.05 ? 0.5 : 1;
+    }
+    return out;
+  }
+  const ensFinal = ensemble(turtle(0.15, 0.25, 0.03), volTargetMed(40), crashBrake(3, 2.5, 0.5));
   const LEV = [
-    ['ens', '定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）',
-      ensemble(turtle(0.15, 0.25, 0.03), volTargetMed(40), crashBrake(3, 2.5, 0.5))],
+    ['ensBrk', '定案集成＋帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場 7 天；照實盤規模 2,800 萬／約 30 口小台，請關閉「同曝險」看）',
+      x => { const base = ensFinal(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
+    ['ens', '定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
@@ -1001,7 +1018,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('levNote').innerHTML = `B＝<b>${cfgByKey[state.b].name}</b>，期間：${state.period}。每列＝把該方法套在 B 上的結果；<b>點任一列就設為上方的 C</b>，點欄位名稱排序。`
       + `「比 B」＝淨利/回撤相對 B（關閉）的變化；淨利/回撤與 Sharpe 不受槓桿大小影響，淨利與回撤會隨平均槓桿縮放。`
       + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網；<b>短期煞車</b>＝急跌、連虧、波動突升。`
-      + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩，目前指標（慢速恢復 0.20）綜合最平衡；短期煞車與市場狀態類在兩池都沒有穩定改善。`
+      + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩，10/09 定案改用「集成」（慢恢復 0.15／0.25／+0.03＋波動 40＋急跌 2.5σ，QT 內建，C 預設）；短期煞車與市場狀態類在兩池都沒有穩定改善。`
       + `回撤門檻以參考帳戶「至今年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；只用前一天收盤以前的資料。`
       + `<b>判讀：要 #/QT、#/QTA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
     const [i0, i1] = idxRange();
@@ -1122,13 +1139,13 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     }).join('');
     const pc = v => `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</span>`;
     const G = p => V.res[p].cgrid;
-    html += `<div class="note mt"><b>⑦ 慢速恢復海龜（C）參數網格：步階 0.15～0.30 × 每階減 10～30% × 每天恢復 0.01～0.05，共 36 組，相對 B 的淨利/回撤</b></div>
+    html += `<div class="note mt"><b>⑦ 定案集成（C）的海龜參數網格：步階 0.10～0.25 × 每階減 15～35% × 每天恢復 0.01～0.05（波動 40、急跌 2.5σ 固定），共 36 組，相對 B 的淨利/回撤</b></div>
       <div class="tbl-wrap"><table class="val"><thead><tr><th>項目</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead><tbody>
       <tr><td>全期、前半、後半都改善的組數比例</td>${P.map(p => `<td><b>${(G(p).ok * 100).toFixed(0)}%</b></td>`).join('')}</tr>
       <tr><td>改善中位數</td>${P.map(p => `<td>${pc(G(p).med)}</td>`).join('')}</tr>
-      <tr><td>現行參數（0.20／20%／+0.03）全期</td>${P.map(p => `<td>${pc(G(p).cur)}</td>`).join('')}</tr>
-      <tr><td>現行參數 前半／後半</td>${P.map(p => `<td>${pc(G(p).cur1)}<br>${pc(G(p).cur2)}</td>`).join('')}</tr>
-      <tr><td>現行參數在 36 組中的名次</td>${P.map(p => `<td>${G(p).rank}</td>`).join('')}</tr></tbody></table></div>`;
+      <tr><td>定案（0.15／0.25／+0.03）全期</td>${P.map(p => `<td>${pc(G(p).cur)}</td>`).join('')}</tr>
+      <tr><td>定案 前半／後半</td>${P.map(p => `<td>${pc(G(p).cur1)}<br>${pc(G(p).cur2)}</td>`).join('')}</tr>
+      <tr><td>定案在 36 組中的名次</td>${P.map(p => `<td>${G(p).rank}</td>`).join('')}</tr></tbody></table></div>`;
     $('valSecs').innerHTML = html;
     seg2($('segValCS'), [['B', 'B 評價後'], ['C', 'C 自動槓桿']], () => valCS, v => { valCS = v; });
     const CM = [['calmar', 'Calmar'], ['cagr', '年化'], ['mdd_pct', '回撤%'], ['mult', '倍數'], ['worst_y', '最差年']];
