@@ -306,7 +306,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
   // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
   const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
-  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'slow', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
+  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'ens', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
   // w_<設定>：舊格式＝各策略每週損益陣列；新格式（10/05）＝{ w: 每週陣列, dL: 多方每日損益, dS: 空方每日損益 }
@@ -457,9 +457,33 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       for (let i = n + 1; i < x.length; i++) { const s = sdOf(x.slice(i - n, i)); if (!(s > 0)) continue; sum += s; cnt++; lev[i] = Math.min(1.5, Math.max(0.5, (sum / cnt) / s)); }
       return lev; };
   }
+  // 2026-10-13：定案集成（與 QT 內建、research lev7_robust.ensemble 同算法）：波動目標用「n 日標準差的歷史中位數 ÷ 今天的 n 日標準差」
+  function volTargetMed(n, lo = 0.5, hi = 1.5) {
+    return x => {
+      const T = x.length, raw = new Array(T).fill(1), hist = [];
+      let c1 = 0, c2 = 0;
+      for (let t = 0; t < T; t++) {
+        c1 += x[t]; c2 += x[t] * x[t];
+        const cnt = t + 1, cv = cnt > 1 ? Math.sqrt(Math.max(0, (c2 - c1 * c1 / cnt) / (cnt - 1))) : 0;
+        if (t < n - 1) continue;
+        const s = sdOf(x.slice(t - n + 1, t + 1));
+        let lo2 = 0, hi2 = hist.length;
+        while (lo2 < hi2) { const m = (lo2 + hi2) >> 1; if (hist[m] < s) lo2 = m + 1; else hi2 = m; }
+        hist.splice(lo2, 0, s);
+        // 同 pandas expanding(min_periods=n).median()：累積滿 n 個標準差才有中位數
+        if (hist.length < n || !(cnt >= 60 && cv > 0)) continue;
+        const L = hist.length, med = L % 2 ? hist[(L - 1) >> 1] : (hist[L / 2 - 1] + hist[L / 2]) / 2;
+        raw[t] = s > 0 ? Math.min(hi, Math.max(lo, med / s)) : (med > 0 ? hi : 1);
+      }
+      return [1, ...raw.slice(0, T - 1)];
+    };
+  }
+  const ensemble = (...fs) => x => { const ls = fs.map(f => f(x)); return x.map((_, i) => ls.reduce((t, l) => t + l[i], 0) / ls.length); };
   const LEV = [
+    ['ens', '定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）',
+      ensemble(turtle(0.15, 0.25, 0.03), volTargetMed(40), crashBrake(3, 2.5, 0.5))],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
-    ['slow', '拉回減碼｜慢速恢復海龜（MultiCharts 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
+    ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
     ['t10', '拉回減碼｜海龜（一階 0.10、縮 10%、立刻恢復）', turtle(0.10, 0.10)],
