@@ -23,6 +23,11 @@ PREV = sys.argv[2] if len(sys.argv) > 2 else None
 
 # A legitimate delisting or two is normal; losing 5% of the table in one run is a broken scrape.
 DROP_TOLERANCE = 0.05
+# 一次最多放行幾檔消失（當作下市，只警告）。原本任何一檔消失都判失敗，和上面那句註解不一致：
+# 2026-10-08 起 00793B 群益AAA-A醫療債 下市（交易所名單與櫃買行情都沒有了），之後每天台股清單都被擋，
+# 網站日期停在 10/07。名單是 fetch_universe.py 向交易所要的、還在交易的代號會被價格檢查補回來，
+# 所以少一兩檔是真的下市；更多就當作抓取壞掉，仍然失敗。
+MAX_DELIST = 2
 
 # act 是後來才加的欄位，而 build_data.py 是逐欄組出 JSON 的 —— 它漏了一行，
 # 重建出來的整份資料就沒有這個欄位，而這裡當時沒有檢查，所以驗證器放它過去，
@@ -177,8 +182,11 @@ if PREV and os.path.exists(PREV):
     cmap = dict((e['code'], e) for e in etfs)
 
     gone = sorted(set(pmap) - set(cmap))
-    if gone:
-        fail('%d row(s) disappeared: %s' % (len(gone), ', '.join(gone)))
+    if len(gone) > MAX_DELIST:
+        fail('%d row(s) disappeared: %s (more than %d at once looks like a broken scrape)'
+             % (len(gone), ', '.join(gone), MAX_DELIST))
+    elif gone:
+        warn('%d row(s) delisted: %s' % (len(gone), ', '.join(gone)))
 
     added = sorted(set(cmap) - set(pmap))
     if added:

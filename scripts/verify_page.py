@@ -179,9 +179,12 @@ if PREV:
              if k in now_sec and prev_sec[k] != now_sec[k]]
     print('\nvs previous: +%d added, -%d dropped, %d changed, %d moved section'
           % (len(added), len(dropped), len(changed), len(moved)))
-    if dropped:
-        fails.append('rows disappeared: %s (a listed ETF should never vanish - '
-                     'if it really delisted, say so explicitly)' % dropped)
+    # 2026-10-13：一次消失 1～2 檔當作下市只警告（同 verify_data.py 的 MAX_DELIST）。原本任何一檔消失都失敗，
+    # 00793B 下市後台股清單從 10/08 起每天被擋。名單來自交易所、還在交易的會被價格檢查補回，更多檔才當作抓取壞掉。
+    if len(dropped) > 2:
+        fails.append('rows disappeared: %s (more than 2 at once looks like a broken scrape)' % dropped)
+    elif dropped:
+        print('  DELISTED %s' % ', '.join(dropped))
     for k, a, b in changed:
         print(u'  CHANGED %s  %s -> %s' % (k, a, b))
     for k, a, b in moved:
