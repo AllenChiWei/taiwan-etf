@@ -516,17 +516,17 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     return { pnl: cg.map((v, i) => v * lv[i]), lev: mixLev(xl, xs, lv, lv.map((v, i) => v * g[i])) };
   }
   const LEV = [
-    ['ensBrk', '定案集成＋帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場 7 天；照實盤規模 2,800 萬／約 30 口小台，請關閉「同曝險」看）',
+    ['ensBrk', '原定案集成＋帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場 7 天；照實盤規模 2,800 萬／約 30 口小台，請關閉「同曝險」看）',
       x => { const base = ensFinal(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['ens', '原定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
     ['gateSlowBrk', '空方績效開關＋慢速恢復海龜 0.10＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => {
       const g = sideGate(xs), cg = xl.map((v, i) => v + xs[i] * g[i]), lv = turtle(0.10, 0.20, 0.03)(cg);
       return withBrk(cg.map((v, i) => v * lv[i]), mixLev(xl, xs, lv, lv.map((v, i) => v * g[i]))); }],
-    ['gateBrk', '空方績效開關＋定案集成＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => { const r = gateC(xl, xs); return withBrk(r.pnl, r.lev); }],
-    ['gate', '空方績效開關＋定案集成（空方近 250 天賠錢 → 空方 0.25 倍；只適用「分多空」的 B）', null, gateC],
-    ['splitBrk', '多空分開走 C＋熔斷（多方、空方各自定案集成後相加，熔斷看總帳戶；只適用「分多空」的 B）', null, (xl, xs) => { const r = splitC(xl, xs); return withBrk(r.pnl, r.lev); }],
-    ['split', '多空分開走 C（多方、空方各自定案集成後相加；只適用「分多空」的 B）', null, splitC],
+    ['gateBrk', '空方績效開關＋原定案集成＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => { const r = gateC(xl, xs); return withBrk(r.pnl, r.lev); }],
+    ['gate', '空方績效開關＋原定案集成（空方近 250 天賠錢 → 空方 0.25 倍；只適用「分多空」的 B）', null, gateC],
+    ['splitBrk', '多空分開走 C＋熔斷（多方、空方各自原定案集成後相加，熔斷看總帳戶；只適用「分多空」的 B）', null, (xl, xs) => { const r = splitC(xl, xs); return withBrk(r.pnl, r.lev); }],
+    ['split', '多空分開走 C（多方、空方各自原定案集成後相加；只適用「分多空」的 B）', null, splitC],
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     // 2026-10-13 使用者：慢速海龜 0.10 加熔斷（熔斷照實盤規模 2,800 萬、K 0.05，請關閉「同曝險」看）
@@ -1069,7 +1069,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('levNote').innerHTML = `B＝<b>${cfgByKey[state.b].name}</b>，期間：${state.period}。每列＝把該方法套在 B 上的結果；<b>點任一列就設為上方的 C</b>，點欄位名稱排序。`
       + `「比 B」＝淨利/回撤相對 B（關閉）的變化；淨利/回撤與 Sharpe 不受槓桿大小影響，淨利與回撤會隨平均槓桿縮放。`
       + `分類：<b>拉回減碼</b>＝回撤時縮小部位（海龜）；<b>上漲加碼</b>＝接近新高時放大；<b>拉回加碼</b>＝回撤時放大（攤平）；<b>權益曲線</b>＝均線／通道濾網；<b>短期煞車</b>＝急跌、連虧、波動突升。`
-      + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩，10/09 定案改用「集成」（慢恢復 0.15／0.25／+0.03＋波動 40＋急跌 2.5σ，QT 內建，C 預設）；短期煞車與市場狀態類在兩池都沒有穩定改善。`
+      + `研究結論（lev3／lev5_study，兩池 × 前後半都改善才算數）：拉回減碼類最穩；2026-10-13 定案 C 改為「慢速恢復海龜 0.10／0.20／+0.03＋帳戶回撤熔斷」（QT 使用中、C 預設；五池中四池勝過原定案集成、參數鄰近穩健、扣成本後仍較好），原定案集成保留對照；短期煞車與市場狀態類在兩池都沒有穩定改善。`
       + `回撤門檻以參考帳戶「至今年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；只用前一天收盤以前的資料。`
       + `<b>判讀：要 #/QT、#/QTA 兩個策略池、前後半都變好，且鄰近參數也變好才算數</b>（研究見 research\\lev3_study.py：慢速恢復海龜整族最穩）。`;
     const [i0, i1] = idxRange();
@@ -1190,11 +1190,11 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     }).join('');
     const pc = v => `<span class="${v > 0.005 ? 'pos' : v < -0.005 ? 'neg' : ''}">${v >= 0 ? '+' : ''}${(v * 100).toFixed(1)}%</span>`;
     const G = p => V.res[p].cgrid;
-    html += `<div class="note mt"><b>⑦ 定案集成（C）的海龜參數網格：步階 0.10～0.25 × 每階減 15～35% × 每天恢復 0.01～0.05（波動 40、急跌 2.5σ 固定），共 36 組，相對 B 的淨利/回撤</b></div>
+    html += `<div class="note mt"><b>⑦ 定案 C（慢速恢復海龜）的參數網格：步階 0.08～0.15 × 每階減 15～25% × 每天恢復 0.01～0.05（不含熔斷），共 36 組，相對 B 的淨利/回撤</b></div>
       <div class="tbl-wrap"><table class="val"><thead><tr><th>項目</th>${P.map(p => `<th>${hd(p)}</th>`).join('')}</tr></thead><tbody>
       <tr><td>全期、前半、後半都改善的組數比例</td>${P.map(p => `<td><b>${(G(p).ok * 100).toFixed(0)}%</b></td>`).join('')}</tr>
       <tr><td>改善中位數</td>${P.map(p => `<td>${pc(G(p).med)}</td>`).join('')}</tr>
-      <tr><td>定案（0.15／0.25／+0.03）全期</td>${P.map(p => `<td>${pc(G(p).cur)}</td>`).join('')}</tr>
+      <tr><td>定案（0.10／0.20／+0.03）全期</td>${P.map(p => `<td>${pc(G(p).cur)}</td>`).join('')}</tr>
       <tr><td>定案 前半／後半</td>${P.map(p => `<td>${pc(G(p).cur1)}<br>${pc(G(p).cur2)}</td>`).join('')}</tr>
       <tr><td>定案在 36 組中的名次</td>${P.map(p => `<td>${G(p).rank}</td>`).join('')}</tr></tbody></table></div>`;
     $('valSecs').innerHTML = html;

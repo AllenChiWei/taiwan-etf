@@ -1,7 +1,7 @@
 /* QT 流程比較（#/QTF，私人頁，密碼同 v18）：三個策略池 × A → B → C → 複利（2026-10-06 使用者要求）。
  *
  * 資料：research/flow_export.py → data/qbflow/flow.enc（v18 同密碼加密）。
- *   A 評價前（等權）、B 分多空序位 15＋Sortino 250＋Mod_Risk 3、C 定案集成自動槓桿（可切換舊海龜）、複利（C＋QT 步進 10%）。
+ *   A 評價前（等權）、B 分多空序位 15＋Sortino 250＋Mod_Risk 3、C 定案 C（慢速海龜 0.10＋熔斷，可切換原定案集成、舊海龜）、複利（C＋QT 步進 10%）。
  *   同風險：本金 2,800 萬，各自縮放到全期最大回撤＝本金 20%；原始規模：回測口數（K＝1）的累積損益（複利不適用）。
  * 版面（手機）：圖表 tooltip confine、容器 overflow 隱藏；表格放在 overflow-x-auto 的框裡（見記憶 taiwanetf-mobile-layout）。 */
 
@@ -43,7 +43,7 @@ export function QBFlowPage() {
   const [msg, setMsg] = useState('');
   const [pool, setPool] = useState('qb');
   const [mode, setMode] = useState<Mode>('real');
-  const [cv, setCv] = useState('ens');
+  const [cv, setCv] = useState('slowbrk');   // 2026-10-13 定案 C＝慢速海龜 0.10＋熔斷
   const [on, setOn] = useState<Record<StageKey, boolean>>({ A: true, B: true, C: true, K: true, M: true });
 
   const load = async () => {
@@ -147,8 +147,8 @@ function Board({ data, P, pool, setPool, mode: mode0, setMode, cv, setCv, on, se
       <ul className="mt-3 list-disc space-y-1 pl-5 text-[11.5px] leading-relaxed text-muted">
         <li><b>A</b> 評價前：所有策略（多空分拆）等權。<b>B</b> 評價後：QT 分多空各序位 15、X1_v3 Sortino 250＋Mod_Risk 3（10/09 定案，三個策略池統一，照 QT 規則逐日模擬）。</li>
         <li><b>C</b> 自動槓桿（總帳戶動能轉換率每天調整，只用前一天收盤以前的 B 權益，已扣調整成本）：
-          集成＝10/09 定案：慢速恢復海龜 0.15／0.25／+0.03＋40 日波動目標＋3 日急跌 2.5σ 三者平均（QT 內建，三個策略池統一）；慢速恢復海龜 0.20＝舊 MC 指標，僅供對照。
-          平均槓桿：{Object.entries(P.avg_lev).map(([k, v]) => `${({ ens: '定案集成', ensbrk: '集成＋熔斷', turtle: '舊海龜' } as Record<string, string>)[k] ?? k} ${v.toFixed(2)}`).join('、')}。</li>
+          定案 C（2026-10-13，QT 使用中）：慢速恢復海龜 0.10／0.20／+0.03＋帳戶回撤熔斷；原定案集成（海龜 0.15／0.25＋波動目標＋急跌煞車）與舊 MC 指標海龜 0.20 僅供對照。
+          平均槓桿：{Object.entries(P.avg_lev).map(([k, v]) => `${({ slowbrk: '定案 C', slow: '海龜 0.10', ens: '原定案集成', ensbrk: '集成＋熔斷', turtle: '舊海龜' } as Record<string, string>)[k] ?? k} ${v.toFixed(2)}`).join('、')}。</li>
         <li><b>複利</b>（2026-10-07 改）：口數跟著權益等比例放大、當天生效＝集成指標把動能轉換率乘上（目前權益÷起始本金），不設上限。
           獲利越多打越多口，淨利會衝高，報酬率也不會被稀釋。不用 QT 內建的「實際操作資金步進調整」：它要等訊號列表清空才加碼，很少生效，而且回撤反而較大。
           {P.real && <>期末口數約為起始的 {P.real.lots[`K_${cv}`]} 倍，實際會受流動性、滑價與保證金限制。</>}</li>
