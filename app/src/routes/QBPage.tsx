@@ -22,6 +22,9 @@ const POOLS: Array<{ dir: string; to: string | null; label: string; short: strin
   { dir: 'qb', to: '/QT', label: '原本 Export', short: '原本', hint: 'Export 50 個' },
   { dir: 'qba', to: '/QTA', label: 'Export＋Activate', short: '合併', hint: '＋Activate 76 個' },
   { dir: 'qbw', to: '/QTW', label: '網路策略盲測', short: '盲測', hint: '網路 30 個' },
+  // 2026-10-13：補齊五個標準策略池（研究 research/qb_resid_test.py 的 POOLS）
+  { dir: 'qbv', to: '/QTV', label: 'Activate', short: 'Activate', hint: '只有 Activate' },
+  { dir: 'qbx', to: '/QTX', label: '全部（三者合併）', short: '全部', hint: 'Export＋Activate＋網路' },
 ];
 const SHARED = 'qbd.shared-state';
 function readShared(): Record<string, unknown> {
@@ -32,7 +35,7 @@ function writeShared(s: Record<string, unknown>) {
 }
 
 export function PoolBar({ current }: { current: string }) {
-  // 三等分的切換鈕：手機用短名稱（原本／合併／盲測），寬螢幕顯示完整名稱；下面一行小字是策略數
+  // 五等分的切換鈕：手機用短名稱（原本／合併／盲測／Activate／全部），寬螢幕顯示完整名稱；下面一行小字是策略池內容
   const cell = 'flex min-h-[52px] flex-col items-center justify-center rounded-lg px-1.5 py-1 text-center';
   return (
     <div className="mb-3">
@@ -40,7 +43,7 @@ export function PoolBar({ current }: { current: string }) {
         <span className="text-[12.5px] font-semibold text-muted">策略池</span>
         <span className="text-[11px] text-faint">切換時沿用目前的 A、B、C 與期間</span>
       </div>
-      <div className="grid grid-cols-3 gap-1 rounded-xl border border-line bg-sunken p-1" role="tablist" aria-label="策略池">
+      <div className="grid grid-cols-5 gap-1 rounded-xl border border-line bg-sunken p-1" role="tablist" aria-label="策略池">
         {POOLS.map(p => {
           const name = (
             <span className="text-[13.5px] font-semibold leading-tight">
@@ -180,6 +183,22 @@ const QBW: Variant = {
     + '用途是盲測：看兩個真實池得到的 QT 設定，換成完全沒看過績效的策略是否仍然有效 —— 結論見「盲測驗證」分頁。',
 };
 
+const QBV: Variant = {
+  dir: 'qbv',
+  title: 'QT 策略層評價看板（只有 Activate）',
+  note: '資料：<b>只有 Export\\Activate 的策略</b>（每個策略拆成多方 _L、空方 _S），不含 Export 第一層。'
+    + '<b>Activate 是看過績效之後才挑出來的，結果會比實際樂觀（選擇偏誤）</b>，用來對照，不是主要依據。',
+};
+
+const QBX: Variant = {
+  dir: 'qbx',
+  title: 'QT 策略層評價看板（全部：Export＋Activate＋網路盲測）',
+  note: '資料：<b>Export 第一層、Export\\Activate、網路策略盲測三者合在一起</b>（每個策略拆成多方 _L、空方 _S）。'
+    + '策略最多、涵蓋最廣，用來看設定在大池子裡是否仍然成立；網路策略 2013/12 才開始，之前只有 Export 的策略。',
+};
+
 export function QBPage() { return <QbBoard key="qb" v={QT} />; }
+export function QBVPage() { return <QbBoard key="qbv" v={QBV} />; }
+export function QBXPage() { return <QbBoard key="qbx" v={QBX} />; }
 export function QBAPage() { return <QbBoard key="qba" v={QBA} />; }
 export function QBWPage() { return <QbBoard key="qbw" v={QBW} />; }

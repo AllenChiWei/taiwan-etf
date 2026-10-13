@@ -48,6 +48,8 @@ const V18Page = lazyRoute(() => import('./routes/V18Page'), m => m.V18Page);
 const QBPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBPage);
 const QBAPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBAPage);
 const QBWPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBWPage);
+const QBVPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBVPage);
+const QBXPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBXPage);
 const QBFlowPage = lazyRoute(() => import('./routes/QBFlowPage'), m => m.QBFlowPage);
 const EquityPage = lazyRoute(() => import('./routes/EquityPage'), m => m.EquityPage);
 const GuidePage = lazyRoute(() => import('./routes/GuidePage'), m => m.GuidePage);
@@ -190,6 +192,19 @@ const qbwRoute = createRoute({
   component: QBWPage,
 });
 
+// 2026-10-13：五個標準策略池補齊（只有 Activate、全部）
+const qbvRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/QTV',
+  component: QBVPage,
+});
+
+const qbxRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/QTX',
+  component: QBXPage,
+});
+
 const qbfRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/QTF',
@@ -231,7 +246,7 @@ const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route, qbRoute, qbaRoute, qbwRoute, qbfRoute, eqRoute, guideRoute, meRoute, ...oldQbRoutes]);
+   v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, guideRoute, meRoute, ...oldQbRoutes]);
 
 export const router = createRouter({
   routeTree,
