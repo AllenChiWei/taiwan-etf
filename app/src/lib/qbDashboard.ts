@@ -520,6 +520,9 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       x => { const base = ensFinal(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['ens', '原定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
+    ['gateSlowBrk', '空方績效開關＋慢速恢復海龜 0.10＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => {
+      const g = sideGate(xs), cg = xl.map((v, i) => v + xs[i] * g[i]), lv = turtle(0.10, 0.20, 0.03)(cg);
+      return withBrk(cg.map((v, i) => v * lv[i]), mixLev(xl, xs, lv, lv.map((v, i) => v * g[i]))); }],
     ['gateBrk', '空方績效開關＋定案集成＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => { const r = gateC(xl, xs); return withBrk(r.pnl, r.lev); }],
     ['gate', '空方績效開關＋定案集成（空方近 250 天賠錢 → 空方 0.25 倍；只適用「分多空」的 B）', null, gateC],
     ['splitBrk', '多空分開走 C＋熔斷（多方、空方各自定案集成後相加，熔斷看總帳戶；只適用「分多空」的 B）', null, (xl, xs) => { const r = splitC(xl, xs); return withBrk(r.pnl, r.lev); }],
