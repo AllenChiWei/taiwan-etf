@@ -309,7 +309,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
   // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
   const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
-  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'ens', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
+  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'slow10Brk', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
   // w_<設定>：舊格式＝各策略每週損益陣列；新格式（10/05）＝{ w: 每週陣列, dL: 多方每日損益, dS: 空方每日損益 }
@@ -518,7 +518,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const LEV = [
     ['ensBrk', '定案集成＋帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場 7 天；照實盤規模 2,800 萬／約 30 口小台，請關閉「同曝險」看）',
       x => { const base = ensFinal(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
-    ['ens', '定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
+    ['ens', '原定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
     ['gateBrk', '空方績效開關＋定案集成＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => { const r = gateC(xl, xs); return withBrk(r.pnl, r.lev); }],
     ['gate', '空方績效開關＋定案集成（空方近 250 天賠錢 → 空方 0.25 倍；只適用「分多空」的 B）', null, gateC],
@@ -527,7 +527,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     // 2026-10-13 使用者：慢速海龜 0.10 加熔斷（熔斷照實盤規模 2,800 萬、K 0.05，請關閉「同曝險」看）
-    ['slow10Brk', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）＋帳戶回撤熔斷（請關閉「同曝險」看）',
+    ['slow10Brk', '★ QT 使用中｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）＋帳戶回撤熔斷（2026-10-13 選定；請關閉「同曝險」看）',
       x => { const base = turtle(0.10, 0.20, 0.03)(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
     ['t10', '拉回減碼｜海龜（一階 0.10、縮 10%、立刻恢復）', turtle(0.10, 0.10)],
