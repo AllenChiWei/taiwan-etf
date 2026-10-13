@@ -232,7 +232,7 @@ const HTML = `
     <div class="note">_L 策略放「多方」分類、_S 放「空方」分類，各自設序位 N（QT 已支援，不用改程式）。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLS"></table></div>
     <h2 class="mt">QT 分多空：多方、空方不同序位</h2>
-    <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（QT 每個分類可各設序位）。點格子設為 B。</div>
+    <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（QT 每個分類可各設序位）。第二列另外加「空方最小動能 0.75」（空方策略動能低於 0.75 不進列表）。點格子設為 B，C 會跟著用這個 B 重算。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLSA"></table></div>
   </div>
   <div class="card mt">
@@ -318,7 +318,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const sel = $(id);
     const groups = {};
     for (const c of D.configs) {
-      const g = c.key.startsWith('GATE') ? 'QT 序位（單一分類）' : c.key.startsWith('LSA') ? 'QT 分多空（多空不同序位）' : c.key.startsWith('LS') ? 'QT 分多空序位'
+      const g = c.key.startsWith('GATE') ? 'QT 序位（單一分類）' : c.key.startsWith('LSA') ? 'QT 分多空（多空不同序位）' : c.key.startsWith('LSM') ? 'QT 分多空＋空方最小動能 0.75' : c.key.startsWith('LS') ? 'QT 分多空序位'
         : c.key.startsWith('CUT') ? 'QT 最小動能門檻' : KIND[c.kind];
       if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; sel.appendChild(groups[g]); }
       groups[g].appendChild(new Option(c.name, c.key));
@@ -800,14 +800,20 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('tMatrix').innerHTML = `<thead><tr><th>Sortino 回溯</th><th>X1_v2 倍數</th><th>門檻</th>${tops.map(n => `<th>前 ${n}</th>`).join('')}</tr></thead>
       <tbody><tr><td>評價前</td><td colspan="${tops.length + 2}" style="text-align:left">${fmt2(base.sharpe)} ／ ${fmt1(base.nd)} ／ ${pct0(base.loseM)}（對照基準）</td></tr>
       ${looks.map(L => `<tr><td>${L} 天${L === 250 ? '<span class="tag">現行</span>' : ''}</td>${cell('X1V2_' + L)}${cell('CUT_' + L)}${tops.map(n => cell(`GATE${n}_${L}`)).join('')}</tr>`).join('')}</tbody>`;
-    const ls = D.configs.filter(c => c.key.startsWith('LS') && !c.key.startsWith('LSA'));
+    const ls = D.configs.filter(c => /^LS\d+_\d+$/.test(c.key));          // 只取「各序位 N」（LSA／LSM／LSQ 另列）
     const lsLooks = [...new Set(ls.map(c => +c.key.split('_')[1]))];
     const lsTops = [...new Set(ls.map(c => +c.key.slice(2).split('_')[0]))].sort((a, b) => a - b);
     $('tMatrixLS').innerHTML = `<thead><tr><th>Sortino 回溯</th>${lsTops.map(n => `<th>各前 ${n}</th>`).join('')}</tr></thead>
       <tbody>${lsLooks.map(L => `<tr><td>${L} 天</td>${lsTops.map(n => cell(`LS${n}_${L}`)).join('')}</tr>`).join('')}</tbody>`;
-    const asym = D.configs.filter(c => c.key.startsWith('LSA'));
-    $('tMatrixLSA').innerHTML = asym.length ? `<thead><tr><th>Sortino 回溯</th>${asym.map(c => { const [a, b] = c.key.slice(3).split('_')[0].split('x');
-        return `<th>多 ${a}／空 ${b}</th>`; }).join('')}</tr></thead><tbody><tr><td>250 天</td>${asym.map(c => cell(c.key)).join('')}</tr></tbody>`
+    // 2026-10-13：多空不同序位＋第二列「空方最小動能 0.75」（LSM，同序位時第一列取各序位 N）
+    const pairOf = k => k.slice(3).split('_')[0].split('x').map(Number);
+    const pairs = [...new Map([...D.configs.filter(c => c.key.startsWith('LSA') || c.key.startsWith('LSM')).map(c => pairOf(c.key))]
+      .map(([a, b]) => [`${a}x${b}`, [a, b]])).values()].sort((x, y) => x[0] - y[0] || y[1] - x[1]);
+    const lsaKey = ([a, b]) => a === b ? `LS${a}_250` : `LSA${a}x${b}_250`;
+    const hasLsm = D.configs.some(c => c.key.startsWith('LSM'));
+    $('tMatrixLSA').innerHTML = pairs.length ? `<thead><tr><th>Sortino 250</th>${pairs.map(([a, b]) => `<th>多 ${a}／空 ${b}</th>`).join('')}</tr></thead>`
+        + `<tbody><tr><td>空方不設門檻</td>${pairs.map(p => cell(lsaKey(p))).join('')}</tr>`
+        + (hasLsm ? `<tr><td>空方最小動能 0.75</td>${pairs.map(([a, b]) => cell(`LSM${a}x${b}_250`)).join('')}</tr>` : '') + '</tbody>'
       : '<tbody><tr><td class="note">（這份資料還沒有多空不同序位的設定）</td></tr></tbody>';
     for (const t of ['tMatrix', 'tMatrixLS', 'tMatrixLSA'])
       $(t).querySelectorAll('td[data-k]').forEach(td => td.onclick = () => { state.b = td.dataset.k; render(); });
