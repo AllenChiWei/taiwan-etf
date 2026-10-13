@@ -29,8 +29,8 @@ interface Flow { generated: string; capital: number; target_mdd: number; c_varia
 const vault = new Vault(`${import.meta.env.BASE_URL}data/qbflow/`, 'twetf.v18.unlock');
 const COLORS: Record<StageKey, string> = { A: '#85847e', B: '#2a78d6', C: '#eb6834', K: '#4a3aa7', M: '#9a9a94' };
 const LABEL: Record<StageKey, string> = { A: 'A 評價前', B: 'B 評價後', C: 'C 自動槓桿', K: '複利', M: '大盤（含息）' };
-const SHORT: Record<string, string> = { qb: '原本', qba: '合併', qbw: '盲測', qbv: 'Activate' };
-const POOL_HINT: Record<string, string> = { qb: 'Export', qba: '＋Activate', qbw: '網路 50 個', qbv: '只有 Activate' };
+const SHORT: Record<string, string> = { qb: '原本', qba: '合併', qbw: '盲測', qbv: 'Activate', qbx: '全部' };
+const POOL_HINT: Record<string, string> = { qb: 'Export', qba: '＋Activate', qbw: '網路 50 個', qbv: '只有 Activate', qbx: '三者合併' };
 
 const w = (v: number) => Math.round(v / 1e4).toLocaleString('zh-TW');
 const p1 = (v: number) => `${(v * 100).toFixed(1)}%`;
