@@ -234,6 +234,9 @@ const HTML = `
     <h2 class="mt">QT 分多空：多方、空方不同序位</h2>
     <div class="note">空方策略比較少、績效也較差 → 空方序位設小一點，讓排序篩選對空方也有作用（QT 每個分類可各設序位）。第二列另外加「空方最小動能 0.75」（空方策略動能低於 0.75 不進列表）。點格子設為 B，C 會跟著用這個 B 重算。</div>
     <div class="tbl-wrap"><table data-id="tMatrixLSA"></table></div>
+    <h2 class="mt">QT 分多空：序位依策略池比例</h2>
+    <div class="note">各策略池的多空策略數不同，序位改用比例：多方序位＝多方策略數 × 比例（四捨五入），空方同理；括號是本池實際序位。點格子設為 B。</div>
+    <div class="tbl-wrap"><table data-id="tMatrixLSP"></table></div>
   </div>
   <div class="card mt">
     <h2>所有設定比較</h2>
@@ -318,7 +321,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const sel = $(id);
     const groups = {};
     for (const c of D.configs) {
-      const g = c.key.startsWith('GATE') ? 'QT 序位（單一分類）' : c.key.startsWith('LSA') ? 'QT 分多空（多空不同序位）' : c.key.startsWith('LSM') ? 'QT 分多空＋空方最小動能 0.75' : c.key.startsWith('LS') ? 'QT 分多空序位'
+      const g = c.key.startsWith('GATE') ? 'QT 序位（單一分類）' : c.key.startsWith('LSA') ? 'QT 分多空（多空不同序位）' : c.key.startsWith('LSM') ? 'QT 分多空＋空方最小動能 0.75' : c.key.startsWith('LSP') ? 'QT 分多空（序位依策略池比例）' : c.key.startsWith('LS') ? 'QT 分多空序位'
         : c.key.startsWith('CUT') ? 'QT 最小動能門檻' : KIND[c.kind];
       if (!groups[g]) { groups[g] = document.createElement('optgroup'); groups[g].label = g; sel.appendChild(groups[g]); }
       groups[g].appendChild(new Option(c.name, c.key));
@@ -815,7 +818,12 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
         + `<tbody><tr><td>空方不設門檻</td>${pairs.map(p => cell(lsaKey(p))).join('')}</tr>`
         + (hasLsm ? `<tr><td>空方最小動能 0.75</td>${pairs.map(([a, b]) => cell(`LSM${a}x${b}_250`)).join('')}</tr>` : '') + '</tbody>'
       : '<tbody><tr><td class="note">（這份資料還沒有多空不同序位的設定）</td></tr></tbody>';
-    for (const t of ['tMatrix', 'tMatrixLS', 'tMatrixLSA'])
+    const prop = D.configs.filter(c => c.key.startsWith('LSP'));
+    $('tMatrixLSP').innerHTML = prop.length ? `<thead><tr><th>Sortino 250</th>${prop.map(c => { const [a, b] = c.key.slice(3).split('_')[0].split('x');
+        const rk = (c.name.match(/序位 (多 \d+／空 \d+)/) || [])[1] || ''; return `<th>多 ${a}%／空 ${b}%<br><span class="note">${rk}</span></th>`; }).join('')}</tr></thead>`
+        + `<tbody><tr><td>依比例</td>${prop.map(c => cell(c.key)).join('')}</tr></tbody>`
+      : '<tbody><tr><td class="note">（這份資料還沒有依比例的序位設定）</td></tr></tbody>';
+    for (const t of ['tMatrix', 'tMatrixLS', 'tMatrixLSA', 'tMatrixLSP'])
       $(t).querySelectorAll('td[data-k]').forEach(td => td.onclick = () => { state.b = td.dataset.k; render(); });
   }
 
