@@ -498,11 +498,32 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     return out;
   }
   const ensFinal = ensemble(turtle(0.15, 0.25, 0.03), volTargetMed(40), crashBrake(3, 2.5, 0.5));
+  // 2026-10-13：多空分邊的 C（需要 base.json 的 sides：同一個 B 只有多方／只有空方的每日損益）
+  // 空方績效開關：到前一天收盤為止的近 n 天損益 < 0 → 這一側只做 g 倍（同 research/qb_side_split.py）
+  const sideGate = (x, g = 0.25, n = 250) => {
+    const cs = [0]; x.forEach((v, i) => cs.push(cs[i] + v));
+    return x.map((_, t) => (t >= n && cs[t] - cs[Math.max(0, t - n)] < 0 ? g : 1));
+  };
+  const withBrk = (y, lev) => { const m = breakerMult(y, y.map(() => 1)); return { pnl: y.map((v, i) => v * m[i]), lev: lev.map((v, i) => v * m[i]) }; };
+  // 有效槓桿（顯示用）：兩側依部位大小加權
+  const mixLev = (xl, xs, ll, ls) => xl.map((_, i) => { const a = Math.abs(xl[i]), b = Math.abs(xs[i]); return a + b > 0 ? (a * ll[i] + b * ls[i]) / (a + b) : (ll[i] + ls[i]) / 2; });
+  function splitC(xl, xs) {
+    const ll = ensFinal(xl), ls = ensFinal(xs);
+    return { pnl: xl.map((v, i) => v * ll[i] + xs[i] * ls[i]), lev: mixLev(xl, xs, ll, ls) };
+  }
+  function gateC(xl, xs) {
+    const g = sideGate(xs), cg = xl.map((v, i) => v + xs[i] * g[i]), lv = ensFinal(cg);
+    return { pnl: cg.map((v, i) => v * lv[i]), lev: mixLev(xl, xs, lv, lv.map((v, i) => v * g[i])) };
+  }
   const LEV = [
     ['ensBrk', '定案集成＋帳戶回撤熔斷（5%→0.5、10%→0.25、15%→出場 7 天；照實盤規模 2,800 萬／約 30 口小台，請關閉「同曝險」看）',
       x => { const base = ensFinal(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['ens', '定案｜集成（慢速恢復海龜 0.15／0.25／+0.03＋波動目標 40 日＋急跌 3 日 2.5σ，三者平均；QT 內建）', ensFinal],
     ['off', '關閉（C＝B）', x => x.map(() => 1)],
+    ['gateBrk', '空方績效開關＋定案集成＋熔斷（空方近 250 天賠錢 → 空方 0.25 倍，再合併走 C；只適用「分多空」的 B）', null, (xl, xs) => { const r = gateC(xl, xs); return withBrk(r.pnl, r.lev); }],
+    ['gate', '空方績效開關＋定案集成（空方近 250 天賠錢 → 空方 0.25 倍；只適用「分多空」的 B）', null, gateC],
+    ['splitBrk', '多空分開走 C＋熔斷（多方、空方各自定案集成後相加，熔斷看總帳戶；只適用「分多空」的 B）', null, (xl, xs) => { const r = splitC(xl, xs); return withBrk(r.pnl, r.lev); }],
+    ['split', '多空分開走 C（多方、空方各自定案集成後相加；只適用「分多空」的 B）', null, splitC],
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
@@ -530,11 +551,20 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     ['vol', '波動目標｜20 日（0.5～1.5 倍）', volTarget(20)],
     ['brk', '熔斷｜回撤 ≥ 0.5 年化波動停止，≤ 0.25 恢復', breaker(0.5, 0.25)],
   ];
-  const levByKey = Object.fromEntries(LEV.map(([k, n, f]) => [k, { name: n, f }]));
+  const levByKey = Object.fromEntries(LEV.map(([k, n, f, sf]) => [k, { name: n, f, sf }]));
   const levCache = {};
   function levOf(key, method) {                       // 全期（含暖機前的歷史）算好再切期間
     const k = state.scaled ? cfgByKey[key].scale : 1, ck = key + '|' + k + '|' + method;
-    if (!levCache[ck]) { const full = D.daily[key].map(v => v * k); const lv = levByKey[method].f(full); levCache[ck] = { pnl: full.map((v, i) => v * lv[i]), lev: lv }; }
+    if (!levCache[ck]) {
+      const e = levByKey[method], sd = D.sides && D.sides[key];
+      if (e.sf && sd) levCache[ck] = e.sf(sd.L.map(v => v * k), sd.S.map(v => v * k));
+      else {
+        // 分邊的方法遇到沒有分邊資料的 B（單一分類、X1 等）→ 改用定案集成（加熔斷的就加熔斷）
+        const f = e.f || (method.endsWith('Brk') ? levByKey.ensBrk.f : ensFinal);
+        const full = D.daily[key].map(v => v * k), lv = f(full);
+        levCache[ck] = { pnl: full.map((v, i) => v * lv[i]), lev: lv, fallback: !!e.sf };
+      }
+    }
     return levCache[ck];
   }
   function seriesC(key, method = state.c) { const [i0, i1] = idxRange(); return levOf(key, method).pnl.slice(i0, i1); }
@@ -630,7 +660,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
 
     const lc = levOf(state.b, state.c).lev, [li0, li1] = idxRange(), lseg = lc.slice(li0, li1);
     $('kpiNote').innerHTML = `<span style="color:${C.a}">A</span>＝${ca.name}；<span style="color:${C.b}">B</span>＝${cb.name}（${cb.desc}）；`
-      + `<span style="color:${C.c}">C</span>＝B＋${levByKey[state.c].name}（所選期間平均槓桿 ${(lseg.reduce((t, v) => t + v, 0) / lseg.length).toFixed(2)} 倍；`
+      + `<span style="color:${C.c}">C</span>＝B＋${levByKey[state.c].name}${levOf(state.b, state.c).fallback ? '<b>（這個 B 不是分多空，沒有多空分邊資料，改用定案集成計算）</b>' : ''}（所選期間平均槓桿 ${(lseg.reduce((t, v) => t + v, 0) / lseg.length).toFixed(2)} 倍；`
       + `在「自動槓桿」分頁點任一方法就會換成 C）。${state.scaled ? '同曝險：部位已調整成與評價前相同的平均在場倍數。' : '原始部位，不調整。'}`;
     const kp = [['淨利（萬）', A.net, B.net, Cm.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, Cm.mdd, fmtW, false],
                 ['淨利 / 回撤', A.nd, B.nd, Cm.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, Cm.sharpe, fmt2, true],
