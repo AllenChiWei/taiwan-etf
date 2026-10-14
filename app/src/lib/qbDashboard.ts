@@ -294,7 +294,7 @@ const HTML = `
     <div class="note" data-id="qtMeta"></div>
     <ul class="note val-notes" data-id="qtNotes"></ul>
     <div class="legend-row"><span>帳戶 <span class="seg" data-id="segQtAcct"></span></span></div>
-    <div class="note">顏色＝和 ★ 定版（2026-10-14，QT 使用中）比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
+    <div class="note">顏色＝和 ★ 實盤定案（B 轉換率 1.5，QT 2026.10.14.1）比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
     <div class="tbl-wrap"><table class="val" data-id="tQt"></table></div>
     <div class="note mt">權益（對數刻度，起點＝本金 1 倍）</div>
     <div data-id="cQt" class="chart"></div>
@@ -561,7 +561,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     // 2026-10-13 使用者：慢速海龜 0.10 加熔斷（熔斷照實盤規模 2,800 萬、K 0.05，請關閉「同曝險」看）
-    ['scaleC', '★ QT 使用中（2026-10-14 定版）｜慢速海龜 0.10 × C 複利（倍數變動超過 10% 才調整）× 熔斷 8%→0.5、12%→0.25、不出場（照實盤規模；網站沒有 290 口上限，部位很大時會高估；請關閉「同曝險」看）',
+    ['scaleC', '2026-10-14 定版（研究規模 K 0.05）｜慢速海龜 0.10 × C 複利（倍數變動超過 10% 才調整）× 熔斷 8%→0.5、12%→0.25、不出場（網站沒有口數與成本、沒有 290 口上限；實盤是 B 轉換率 1.5 版，精確結果看「QT 重播」分頁；請關閉「同曝險」看）',
       x => { const base = turtle(0.10, 0.20, 0.03)(x), m = scaleMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['slow10Brk', '原定案（2026-10-13）｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）＋帳戶回撤熔斷 5/10/15 出場（不複利；請關閉「同曝險」看）',
       x => { const base = turtle(0.10, 0.20, 0.03)(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
@@ -1275,7 +1275,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   }
   // ── QT 引擎重播：B 資金方式（不複利／① 原廠步進／② QT 複利）× C 槓桿（qt_replay_web.py → qtreplay.enc）──
   let QR = null, qrAcct = 'C';
-  const qrPick = new Set(['final', 'l1', 'b15l1', 's20']);
+  const qrPick = new Set(['final', 'r15nc', 'r15p', 'final018']);
   function renderQt() {
     if (!QR) return;
     $('qtMeta').innerHTML = `${QR.pool}：${QR.n} 條策略，${QR.frm} ～ ${QR.to}；本金 ${(QR.capital / 1e4).toLocaleString('zh-TW')} 萬。產生於 ${QR.generated}。`;
@@ -1293,7 +1293,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const f2 = v => v == null ? '—' : v.toFixed(2);
     const cols = [['final', '最終權益', v => (v / 1e8).toFixed(2) + ' 億', 1], ['cagr', '年化', v => v.toFixed(1) + '%', 1],
       ['mdd_amt', '最大回撤', v => Math.round(v / 1e4).toLocaleString('zh-TW') + ' 萬', -1], ['mdd_pct', '回撤%', v => v.toFixed(1) + '%', -1],
-      ['nd', '淨利÷回撤', f2, 1], ['nd_cost', '扣成本', f2, 1], ['nd1', '前半', f2, 1], ['nd2', '後半', f2, 1],
+      ['nd', '淨利÷回撤', f2, 1], ['nd_cost', '未扣成本', f2, 0], ['nd1', '前半', f2, 1], ['nd2', '後半', f2, 1],
       ['lots', '平均口數', v => v.toFixed(1), 0], ['lots_last', '近一年口數', v => v.toFixed(1), 0], ['max_lots', '最大口數', v => v > 100 ? `<b class="neg">⚠ ${v}</b>` : String(v), 0]];
     if (A === 'C') cols.push(['exits', '熔斷出場', v => v + ' 次', -1], ['brk_days', '熔斷減碼天數', v => v.toFixed(1) + '%', 0]);
     else cols.push(['mult', '平均複利倍數', v => v.toFixed(2), 0]);
