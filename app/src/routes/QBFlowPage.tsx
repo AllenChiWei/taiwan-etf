@@ -43,7 +43,7 @@ export function QBFlowPage() {
   const [msg, setMsg] = useState('');
   const [pool, setPool] = useState('qb');
   const [mode, setMode] = useState<Mode>('real');
-  const [cv, setCv] = useState('slowbrk');   // 2026-10-13 定案 C＝慢速海龜 0.10＋熔斷
+  const [cv, setCv] = useState('scale');   // 2026-10-14 定版 C＝慢速海龜 0.10 × C 複利（門檻 10%）× 熔斷 8／12
   const [on, setOn] = useState<Record<StageKey, boolean>>({ A: true, B: true, C: true, K: true, M: true });
 
   const load = async () => {
@@ -64,7 +64,9 @@ export function QBFlowPage() {
   if (state === 'locked' && manifest) return <Locked vault={vault} title="QT 流程比較" manifest={manifest} onUnlock={load} />;
   if (state === 'error' || !data) return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
   const P = data.pools.find(p => p.key === pool) ?? data.pools[0];
-  return <Board data={data} P={P} pool={pool} setPool={setPool} mode={mode} setMode={setMode} cv={cv} setCv={setCv} on={on} setOn={setOn} />;
+  // 舊資料沒有所選的 C（例如定版 scale 推上去之前）→ 改用資料裡的第一個
+  const cvOk = data.c_variants[cv] ? cv : Object.keys(data.c_variants)[0];
+  return <Board data={data} P={P} pool={pool} setPool={setPool} mode={mode} setMode={setMode} cv={cvOk} setCv={setCv} on={on} setOn={setOn} />;
 }
 
 function seg(active: boolean) {
@@ -148,7 +150,7 @@ function Board({ data, P, pool, setPool, mode: mode0, setMode, cv, setCv, on, se
         <li><b>A</b> 評價前：所有策略（多空分拆）等權。<b>B</b> 評價後：QT 分多空各序位 15、X1_v3 Sortino 250＋Mod_Risk 3（10/09 定案，三個策略池統一，照 QT 規則逐日模擬）。</li>
         <li><b>C</b> 自動槓桿（總帳戶動能轉換率每天調整，只用前一天收盤以前的 B 權益，已扣調整成本）：
           定案 C（2026-10-13，QT 使用中）：慢速恢復海龜 0.10／0.20／+0.03＋帳戶回撤熔斷；原定案集成（海龜 0.15／0.25＋波動目標＋急跌煞車）與舊 MC 指標海龜 0.20 僅供對照。
-          平均槓桿：{Object.entries(P.avg_lev).map(([k, v]) => `${({ slowbrk: '定案 C', slow: '海龜 0.10', ens: '原定案集成', ensbrk: '集成＋熔斷', turtle: '舊海龜' } as Record<string, string>)[k] ?? k} ${v.toFixed(2)}`).join('、')}。</li>
+          平均槓桿：{Object.entries(P.avg_lev).map(([k, v]) => `${({ scale: '定版 C', slowbrk: '原定案 C', slow: '海龜 0.10', ens: '原定案集成', ensbrk: '集成＋熔斷', turtle: '舊海龜' } as Record<string, string>)[k] ?? k} ${v.toFixed(2)}`).join('、')}。</li>
         <li><b>複利</b>（2026-10-07 改）：口數跟著權益等比例放大、當天生效＝集成指標把動能轉換率乘上（目前權益÷起始本金），不設上限。
           獲利越多打越多口，淨利會衝高，報酬率也不會被稀釋。不用 QT 內建的「實際操作資金步進調整」：它要等訊號列表清空才加碼，很少生效，而且回撤反而較大。
           {P.real && <>期末口數約為起始的 {P.real.lots[`K_${cv}`]} 倍，實際會受流動性、滑價與保證金限制。</>}</li>

@@ -294,7 +294,7 @@ const HTML = `
     <div class="note" data-id="qtMeta"></div>
     <ul class="note val-notes" data-id="qtNotes"></ul>
     <div class="legend-row"><span>帳戶 <span class="seg" data-id="segQtAcct"></span></span></div>
-    <div class="note">顏色＝和 ★ 現行定案比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
+    <div class="note">顏色＝和 ★ 定版（2026-10-14，QT 使用中）比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
     <div class="tbl-wrap"><table class="val" data-id="tQt"></table></div>
     <div class="note mt">權益（對數刻度，起點＝本金 1 倍）</div>
     <div data-id="cQt" class="chart"></div>
@@ -322,7 +322,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
   // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
   const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
-  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'slow10Brk', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
+  const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'scaleC', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
   const PERIODS = ['全期', '近5年', '近2年', '近1年'];
   const weekCache = {};
   // w_<設定>：舊格式＝各策略每週損益陣列；新格式（10/05）＝{ w: 每週陣列, dL: 多方每日損益, dS: 空方每日損益 }
@@ -510,6 +510,24 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     }
     return out;
   }
+  // 2026-10-14 定版「穩定放大部位」：複利倍數（C 權益 ÷ 本金，變動超過 10% 才換）× 熔斷（8%→0.5、12%→0.25、不出場、回升緩衝 3%）
+  // 依實際帳戶權益（本金 2,800 萬、K 0.05）；同 research/final_lev.scale_mult。網站沒有每日口數，290 口容量上限無法模擬
+  function scaleMult(x, base, k = 0.05, c0 = 28e6, band = 0.10, hyst = 0.03) {
+    const out = new Array(x.length).fill(1);
+    let comp = 1, brk = 1, eq = c0, peak = c0;
+    for (let t = 0; t < x.length; t++) {
+      out[t] = comp * brk;
+      eq += k * base[t] * comp * brk * x[t];
+      peak = Math.max(peak, eq);
+      const dd = (peak - eq) / peak;
+      let raw = dd >= 0.12 ? 0.25 : dd >= 0.08 ? 0.5 : 1;
+      if (raw > brk && ((brk === 0.5 && dd > 0.08 - hyst) || (brk === 0.25 && dd > 0.12 - hyst))) raw = brk;
+      brk = raw;
+      const tgt = Math.max(0, eq / c0);
+      if (Math.abs(tgt - comp) > band * comp) comp = tgt;
+    }
+    return out;
+  }
   const ensFinal = ensemble(turtle(0.15, 0.25, 0.03), volTargetMed(40), crashBrake(3, 2.5, 0.5));
   // 2026-10-13：多空分邊的 C（需要 base.json 的 sides：同一個 B 只有多方／只有空方的每日損益）
   // 空方績效開關：到前一天收盤為止的近 n 天損益 < 0 → 這一側只做 g 倍（同 research/qb_side_split.py）
@@ -543,7 +561,9 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     ['slow', '拉回減碼｜慢速恢復海龜（舊 MC 指標版：一階 0.20、縮 20%、每日 +0.03）', turtle(0.20, 0.20, 0.03)],
     ['slow10', '拉回減碼｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）', turtle(0.10, 0.20, 0.03)],
     // 2026-10-13 使用者：慢速海龜 0.10 加熔斷（熔斷照實盤規模 2,800 萬、K 0.05，請關閉「同曝險」看）
-    ['slow10Brk', '★ QT 使用中｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）＋帳戶回撤熔斷（2026-10-13 選定；請關閉「同曝險」看）',
+    ['scaleC', '★ QT 使用中（2026-10-14 定版）｜慢速海龜 0.10 × C 複利（倍數變動超過 10% 才調整）× 熔斷 8%→0.5、12%→0.25、不出場（照實盤規模；網站沒有 290 口上限，部位很大時會高估；請關閉「同曝險」看）',
+      x => { const base = turtle(0.10, 0.20, 0.03)(x), m = scaleMult(x, base); return base.map((v, i) => v * m[i]); }],
+    ['slow10Brk', '原定案（2026-10-13）｜慢速恢復海龜（一階 0.10、縮 20%、每日 +0.03）＋帳戶回撤熔斷 5/10/15 出場（不複利；請關閉「同曝險」看）',
       x => { const base = turtle(0.10, 0.20, 0.03)(x), m = breakerMult(x, base); return base.map((v, i) => v * m[i]); }],
     ['t25', '拉回減碼｜海龜（舊版指標：一階 0.25、縮 10%、立刻恢復）', turtle(0.25, 0.10)],
     ['t10', '拉回減碼｜海龜（一階 0.10、縮 10%、立刻恢復）', turtle(0.10, 0.10)],
@@ -1255,7 +1275,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   }
   // ── QT 引擎重播：B 資金方式（不複利／① 原廠步進／② QT 複利）× C 槓桿（qt_replay_web.py → qtreplay.enc）──
   let QR = null, qrAcct = 'C';
-  const qrPick = new Set(['l1', 'l15', 'l2', 's20', 'b15l1', 'b15l15', 'b15l2']);
+  const qrPick = new Set(['final', 'l1', 'b15l1', 's20']);
   function renderQt() {
     if (!QR) return;
     $('qtMeta').innerHTML = `${QR.pool}：${QR.n} 條策略，${QR.frm} ～ ${QR.to}；本金 ${(QR.capital / 1e4).toLocaleString('zh-TW')} 萬。產生於 ${QR.generated}。`;
