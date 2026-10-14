@@ -320,6 +320,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   const fmt2 = v => v == null || !isFinite(v) ? '—' : v.toFixed(2);
   const fmt1 = v => v == null || !isFinite(v) ? '—' : v.toFixed(1);
   const pct0 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(0) + '%';
+  const pct1 = v => v == null || !isFinite(v) ? '—' : (v * 100).toFixed(1) + '%';
   // 預設 B：使用者定案的設定（10/05：分多空各序位 15、Sortino 250），沒有就退回其他
   const defB = ['LS15_250', 'LS10_500', 'GATE15_250'].find(k => cfgByKey[k]) ?? D.configs[1].key;
   const state = { a: 'EQ', b: defB, period: '全期', scaled: false, heat: 'before', strat: 0, ymode: 'b', c: 'scaleC', tab: 'year', myear: D.months[D.months.length - 1].slice(0, 4) };
@@ -401,7 +402,22 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const mv = [...mon.values()].filter(v => v !== 0);
     return { net: eq, mdd, nd: mdd > 0 ? eq / mdd : null, sharpe: sd > 0 ? mean / sd * Math.sqrt(252) : null,
              loseM: mv.length ? mv.filter(v => v < 0).length / mv.length : null,
-             worstM: mv.length ? Math.min(...mv) : null, cum, dd, mon };
+             worstM: mv.length ? Math.min(...mv) : null, cum, dd, mon, ...acctMetrics(x, dates) };
+  }
+  // 2026-10-14：帳戶層指標（本金 2,800 萬、規模 K 0.05，權益＝本金＋K×累計損益）。評估複利要看這些：
+  // 金額型的淨利÷回撤、Sharpe 會因為後期部位變大而必然變差，回撤%／年化／年化÷回撤%／報酬率 Sharpe 才公平
+  function acctMetrics(x, dates, k = 0.05, c0 = 28e6) {
+    let eq = c0, peak = c0, mddPct = 0, s = 0, s2 = 0, n = 0;
+    for (const v of x) {
+      const r = eq > 0 ? k * v / eq : 0;
+      eq += k * v; peak = Math.max(peak, eq);
+      mddPct = Math.max(mddPct, peak > 0 ? (peak - eq) / peak : 0);
+      s += r; s2 += r * r; n++;
+    }
+    const yrs = dates.length > 1 ? (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / (365.25 * 864e5) : 0;
+    const cagr = yrs > 0 && eq > 0 ? Math.pow(eq / c0, 1 / yrs) - 1 : null;
+    const mean = n ? s / n : 0, sd = n > 1 ? Math.sqrt(Math.max(0, (s2 - n * mean * mean) / (n - 1))) : 0;
+    return { cagr, mddPct, mar: cagr != null && mddPct > 0 ? cagr / mddPct : null, sharpeR: sd > 0 ? mean / sd * Math.sqrt(252) : null };
   }
   // ── C＝B 再套用總帳戶自動槓桿（Level-2）。全部在瀏覽器即時算，所以任何 B 都能套任何方法。──
   // 參考帳戶＝B 的權益（槓桿 1 倍）；回撤門檻以「參考帳戶至今的年化波動」為單位（0.25 ≈ 年化波動 20% 時的 5%）；
@@ -700,10 +716,14 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const lc = levOf(state.b, state.c).lev, [li0, li1] = idxRange(), lseg = lc.slice(li0, li1);
     $('kpiNote').innerHTML = `<span style="color:${C.a}">A</span>＝${ca.name}；<span style="color:${C.b}">B</span>＝${cb.name}（${cb.desc}）；`
       + `<span style="color:${C.c}">C</span>＝B＋${levByKey[state.c].name}${levOf(state.b, state.c).fallback ? '<b>（這個 B 不是分多空，沒有多空分邊資料，改用定案集成計算）</b>' : ''}（所選期間平均槓桿 ${(lseg.reduce((t, v) => t + v, 0) / lseg.length).toFixed(2)} 倍；`
-      + `在「自動槓桿」分頁點任一方法就會換成 C）。${state.scaled ? '同曝險：部位已調整成與評價前相同的平均在場倍數。' : '原始部位，不調整。'}`;
+      + `在「自動槓桿」分頁點任一方法就會換成 C）。${state.scaled ? '同曝險：部位乘上一個固定倍數，讓平均在場倍數與評價前相同（不是複利）。' : '原始部位，不調整。'}`
+      + `<br>帳戶層四列以本金 2,800 萬、規模 K 0.05 計算；<b>比較複利（定版 C）要看帳戶年化、回撤%、年化÷回撤%、報酬率 Sharpe</b>，金額型的淨利÷回撤與 Sharpe 會因後期部位變大而必然變差。網站沒有扣交易成本與 290 口上限，實盤規模（B 轉換率 1.5）的精確結果看「QT 重播」分頁。`;
     const kp = [['淨利（萬）', A.net, B.net, Cm.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, Cm.mdd, fmtW, false],
                 ['淨利 / 回撤', A.nd, B.nd, Cm.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, Cm.sharpe, fmt2, true],
-                ['虧損月比例', A.loseM, B.loseM, Cm.loseM, pct0, false], ['最差單月（萬）', A.worstM, B.worstM, Cm.worstM, fmtW, true]];
+                ['虧損月比例', A.loseM, B.loseM, Cm.loseM, pct0, false], ['最差單月（萬）', A.worstM, B.worstM, Cm.worstM, fmtW, true],
+                // 2026-10-14 帳戶層（本金 2,800 萬、K 0.05）：評估複利用這幾列
+                ['帳戶年化', A.cagr, B.cagr, Cm.cagr, pct1, true], ['帳戶最大回撤%', A.mddPct, B.mddPct, Cm.mddPct, pct1, false],
+                ['年化 ÷ 回撤%', A.mar, B.mar, Cm.mar, fmt2, true], ['Sharpe（報酬率）', A.sharpeR, B.sharpeR, Cm.sharpeR, fmt2, true]];
     const delta = (x, y, hib) => {
       const diff = (y ?? 0) - (x ?? 0);
       if (x == null || y == null || Math.abs(diff) < 1e-9) return '<td class="d same">相同</td>';
