@@ -1274,7 +1274,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const cols = [['final', '最終權益', v => (v / 1e8).toFixed(2) + ' 億', 1], ['cagr', '年化', v => v.toFixed(1) + '%', 1],
       ['mdd_amt', '最大回撤', v => Math.round(v / 1e4).toLocaleString('zh-TW') + ' 萬', -1], ['mdd_pct', '回撤%', v => v.toFixed(1) + '%', -1],
       ['nd', '淨利÷回撤', f2, 1], ['nd_cost', '扣成本', f2, 1], ['nd1', '前半', f2, 1], ['nd2', '後半', f2, 1],
-      ['lots', '平均口數', v => v.toFixed(1), 0], ['lots_last', '近一年口數', v => v.toFixed(1), 0], ['max_lots', '最大口數', v => String(v), 0]];
+      ['lots', '平均口數', v => v.toFixed(1), 0], ['lots_last', '近一年口數', v => v.toFixed(1), 0], ['max_lots', '最大口數', v => v > 100 ? `<b class="neg">⚠ ${v}</b>` : String(v), 0]];
     if (A === 'C') cols.push(['exits', '熔斷出場', v => v + ' 次', -1], ['brk_days', '熔斷減碼天數', v => v.toFixed(1) + '%', 0]);
     else cols.push(['mult', '平均複利倍數', v => v.toFixed(2), 0]);
     let html = `<thead><tr><th>設定</th><th>圖</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>`;
