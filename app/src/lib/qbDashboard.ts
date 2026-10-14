@@ -294,7 +294,7 @@ const HTML = `
     <div class="note" data-id="qtMeta"></div>
     <ul class="note val-notes" data-id="qtNotes"></ul>
     <div class="legend-row"><span>帳戶 <span class="seg" data-id="segQtAcct"></span></span></div>
-    <div class="note">顏色＝和 ★ 實盤定案（B 轉換率 1.5，QT 2026.10.14.1）比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
+    <div class="note">顏色＝和 ★ 實盤定案（B 轉換率 1.5，QT 2026.10.14.1）比較（紅＝較好、綠＝較差）。<b>判斷好壞看「年化÷回撤%（MAR）」，再看後半 MAR 是否也較好</b>（實盤會經歷的是部位已經長大的後段）；金額型的淨利÷回撤對複利不公平，只當參考。勾選的列會畫在下方權益圖。</div>
     <div class="tbl-wrap"><table class="val" data-id="tQt"></table></div>
     <div class="note mt">權益（對數刻度，起點＝本金 1 倍）</div>
     <div data-id="cQt" class="chart"></div>
@@ -920,7 +920,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   let cfgSort = { col: 'nd', dir: -1 };
   function renderCfgTable(all, base) {
     const cols = [['name', '設定'], ['kind', '類型'], ['net', '淨利(萬)'], ['mdd', '最大回撤(萬)'], ['nd', '淨利/回撤'],
-                  ['sharpe', 'Sharpe'], ['loseM', '虧損月'], ['worstM', '最差月(萬)'], ['scale', '同曝險倍數']];
+                  ['sharpe', 'Sharpe'], ['mar', '年化÷回撤%'], ['loseM', '虧損月'], ['worstM', '最差月(萬)'], ['scale', '同曝險倍數']];
     const rows = all.map(r => ({ key: r.c.key, name: r.c.name, kind: KIND[r.c.kind], scale: r.c.scale, ...r.m }));
     rows.sort((x, y) => { const a = x[cfgSort.col], b = y[cfgSort.col];
       return typeof a === 'string' ? a.localeCompare(b) * cfgSort.dir : ((a ?? -1e18) - (b ?? -1e18)) * cfgSort.dir; });
@@ -933,6 +933,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       if (c === 'scale') return v.toFixed(2);
       if (c === 'nd') return `<span class="${v > base.nd ? 'pos' : v < base.nd ? 'neg' : ''}">${fmt1(v)}</span>`;
       if (c === 'sharpe') return `<span class="${v > base.sharpe ? 'pos' : v < base.sharpe ? 'neg' : ''}">${fmt2(v)}</span>`;
+      if (c === 'mar') return `<span class="${v > base.mar ? 'pos' : v < base.mar ? 'neg' : ''}">${fmt2(v)}</span>`;
       return v;
     };
     $('tCfg').innerHTML = `<thead><tr>${cols.map(([c, l]) => `<th data-c="${c}">${l}${cfgSort.col === c ? (cfgSort.dir < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('')}</tr></thead>
@@ -1313,9 +1314,11 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const f2 = v => v == null ? '—' : v.toFixed(2);
     const cols = [['final', '最終權益', v => (v / 1e8).toFixed(2) + ' 億', 1], ['cagr', '年化', v => v.toFixed(1) + '%', 1],
       ['mdd_amt', '最大回撤', v => Math.round(v / 1e4).toLocaleString('zh-TW') + ' 萬', -1], ['mdd_pct', '回撤%', v => v.toFixed(1) + '%', -1],
-      ['nd', '淨利÷回撤', f2, 1], ['nd_cost', '未扣成本', f2, 0], ['nd1', '前半', f2, 1], ['nd2', '後半', f2, 1],
+      // 2026-10-15：主指標改 MAR（年化÷回撤%）；複利會讓金額型的淨利÷回撤必然變差，前半／後半也用 MAR
+      ['mar', '年化÷回撤%（MAR）', f2, 1], ['mar1', '前半 MAR', f2, 1], ['mar2', '後半 MAR', f2, 1],
+      ['nd', '淨利÷回撤（金額）', f2, 0],
       ['lots', '平均口數', v => v.toFixed(1), 0], ['lots_last', '近一年口數', v => v.toFixed(1), 0], ['max_lots', '最大口數', v => v > 100 ? `<b class="neg">⚠ ${v}</b>` : String(v), 0]];
-    if (A === 'C') cols.push(['exits', '熔斷出場', v => v + ' 次', -1], ['brk_days', '熔斷減碼天數', v => v.toFixed(1) + '%', 0]);
+    if (A === 'C') cols.push(['brk_sw', '熔斷切換', v => v == null ? '—' : v + ' 次', -1], ['brk_days', '熔斷減碼天數', v => v.toFixed(1) + '%', 0]);
     else cols.push(['mult', '平均複利倍數', v => v.toFixed(2), 0]);
     let html = `<thead><tr><th>設定</th><th>圖</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>`;
     let grp = null;
@@ -1325,7 +1328,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       html += `<tr${r.key === QR.base ? ' class="cur"' : ''}><td>${r.name}</td>`
         + `<td><input type="checkbox" data-k="${r.key}"${qrPick.has(r.key) ? ' checked' : ''}></td>`
         + cols.map(([k, , fm, dir]) => { const v = s[k]; const c = dir ? cls(v, base[k], dir > 0) : '';
-            return `<td>${k === 'nd' ? `<b class="${c}">${fm(v)}</b>` : `<span class="${c}">${fm(v)}</span>`}</td>`; }).join('') + '</tr>';
+            return `<td>${k === 'mar' ? `<b class="${c}">${fm(v)}</b>` : `<span class="${c}">${fm(v)}</span>`}</td>`; }).join('') + '</tr>';
     }
     $('tQt').innerHTML = html + '</tbody>';
     $('tQt').querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
