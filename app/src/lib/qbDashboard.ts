@@ -287,6 +287,19 @@ const HTML = `
     <div class="calc" data-id="calcOut"></div>
   </div>
 </div>
+
+<div data-tab="qt" hidden>
+  <div class="card">
+    <h2>QT 引擎重播：B 的資金方式 × C 的槓桿（參考用，不是定案）</h2>
+    <div class="note" data-id="qtMeta"></div>
+    <ul class="note val-notes" data-id="qtNotes"></ul>
+    <div class="legend-row"><span>帳戶 <span class="seg" data-id="segQtAcct"></span></span></div>
+    <div class="note">顏色＝和 ★ 現行定案比較（紅＝較好、綠＝較差）。勾選的列會畫在下方權益圖。</div>
+    <div class="tbl-wrap"><table class="val" data-id="tQt"></table></div>
+    <div class="note mt">權益（對數刻度，起點＝本金 1 倍）</div>
+    <div data-id="cQt" class="chart"></div>
+  </div>
+</div>
 `;
 
 export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {}) {
@@ -327,7 +340,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
       groups[g].appendChild(new Option(c.name, c.key));
     }
   }
-  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['val', '盲測驗證'], ['blend', 'v18＋QT']];
+  const TABS = [['year', '年度／月度'], ['side', '多空'], ['lev', '自動槓桿'], ['strat', '策略明細'], ['cfg', '設定比較'], ['val', '盲測驗證'], ['blend', 'v18＋QT'], ['qt', 'QT 重播']];
   function showTab(t) {
     state.tab = t;
     root.querySelectorAll('[data-tab]').forEach(el => { el.hidden = el.dataset.tab !== t; });
@@ -338,7 +351,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
   for (const [t, label] of TABS) {
     const b = document.createElement('button');
     b.type = 'button'; b.dataset.t = t; b.textContent = label; b.setAttribute('role', 'tab');
-    if (t === 'blend' || t === 'val') b.hidden = true;
+    if (t === 'blend' || t === 'val' || t === 'qt') b.hidden = true;
     b.onclick = () => showTab(t);
     $('tabs').appendChild(b);
   }
@@ -1239,6 +1252,61 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('tLev7Top').innerHTML = t.length ? `<thead><tr><th>參數</th><th>原本</th><th>合併</th><th>盲測</th><th>最差段</th></tr></thead>
       <tbody>${t.map(r => `<tr><td>${r.label}</td>${[0, 1, 2].map(k => `<td>${pc(r[`g${k}_nd`])}<br><span class="note">${pc(r[`g${k}_nd1`])}／${pc(r[`g${k}_nd2`])}</span></td>`).join('')}
         <td>${pc(r.worst6)}</td></tr>`).join('')}</tbody>` : '<tbody><tr><td>沒有任何參數在六段全部改善。</td></tr></tbody>';
+  }
+  // ── QT 引擎重播：B 資金方式（不複利／① 原廠步進／② QT 複利）× C 槓桿（qt_replay_web.py → qtreplay.enc）──
+  let QR = null, qrAcct = 'C';
+  const qrPick = new Set(['l1', 'l15', 'l2', 's20', 'b15l1', 'b15l15', 'b15l2']);
+  function renderQt() {
+    if (!QR) return;
+    $('qtMeta').innerHTML = `${QR.pool}：${QR.n} 條策略，${QR.frm} ～ ${QR.to}；本金 ${(QR.capital / 1e4).toLocaleString('zh-TW')} 萬。產生於 ${QR.generated}。`;
+    $('qtNotes').innerHTML = QR.notes.map(n => `<li>${n}</li>`).join('');
+    $('segQtAcct').innerHTML = '';
+    for (const [v, label] of [['B', 'B（原始專案）'], ['C', 'C（實際下單）']]) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.textContent = label; b.setAttribute('aria-pressed', String(qrAcct === v));
+      b.onclick = () => { if (qrAcct !== v) { qrAcct = v; renderQt(); } };
+      $('segQtAcct').appendChild(b);
+    }
+    const A = qrAcct;
+    const base = QR.rows.find(r => r.key === QR.base)[A];
+    const cls = (v, b, hib = true) => v == null || b == null || Math.abs(v - b) < 1e-9 ? '' : (hib ? v > b : v < b) ? 'pos' : 'neg';
+    const f2 = v => v == null ? '—' : v.toFixed(2);
+    const cols = [['final', '最終權益', v => (v / 1e8).toFixed(2) + ' 億', 1], ['cagr', '年化', v => v.toFixed(1) + '%', 1],
+      ['mdd_amt', '最大回撤', v => Math.round(v / 1e4).toLocaleString('zh-TW') + ' 萬', -1], ['mdd_pct', '回撤%', v => v.toFixed(1) + '%', -1],
+      ['nd', '淨利÷回撤', f2, 1], ['nd_cost', '扣成本', f2, 1], ['nd1', '前半', f2, 1], ['nd2', '後半', f2, 1],
+      ['lots', '平均口數', v => v.toFixed(1), 0], ['lots_last', '近一年口數', v => v.toFixed(1), 0], ['max_lots', '最大口數', v => String(v), 0]];
+    if (A === 'C') cols.push(['exits', '熔斷出場', v => v + ' 次', -1], ['brk_days', '熔斷減碼天數', v => v.toFixed(1) + '%', 0]);
+    else cols.push(['mult', '平均複利倍數', v => v.toFixed(2), 0]);
+    let html = `<thead><tr><th>設定</th><th>圖</th>${cols.map(c => `<th>${c[1]}</th>`).join('')}</tr></thead><tbody>`;
+    let grp = null;
+    for (const r of QR.rows) {
+      if (r.group !== grp) { grp = r.group; html += `<tr><td colspan="${cols.length + 2}"><b>${grp}</b></td></tr>`; }
+      const s = r[A];
+      html += `<tr${r.key === QR.base ? ' class="cur"' : ''}><td>${r.name}</td>`
+        + `<td><input type="checkbox" data-k="${r.key}"${qrPick.has(r.key) ? ' checked' : ''}></td>`
+        + cols.map(([k, , fm, dir]) => { const v = s[k]; const c = dir ? cls(v, base[k], dir > 0) : '';
+            return `<td>${k === 'nd' ? `<b class="${c}">${fm(v)}</b>` : `<span class="${c}">${fm(v)}</span>`}</td>`; }).join('') + '</tr>';
+    }
+    $('tQt').innerHTML = html + '</tbody>';
+    $('tQt').querySelectorAll('input[type=checkbox]').forEach(cb => cb.onchange = () => {
+      cb.checked ? qrPick.add(cb.dataset.k) : qrPick.delete(cb.dataset.k); drawQt(); });
+    drawQt();
+  }
+  function drawQt() {
+    const pal = ['#85847e', '#2a78d6', '#1c5cab', '#86b6ef', '#eb6834', '#4a3aa7', '#9085e9', '#c9c3f5', '#d4a017', '#2f9e44', '#c2255c', '#5f3dc4'];
+    const rows = QR.rows.filter(r => qrPick.has(r.key));
+    chart('cQt').setOption({ animation: false, grid: { left: 54, right: 14, top: 40, bottom: 52 }, legend: { ...legend, type: 'scroll' },
+      tooltip: { ...tooltipCommon, trigger: 'axis', valueFormatter: v => (+v).toFixed(2) + ' 倍' },
+      xAxis: { type: 'category', data: QR.weeks, ...axisCommon, splitLine: { show: false } },
+      yAxis: { type: 'log', min: 'dataMin', ...axisCommon, axisLabel: { ...axisCommon.axisLabel, formatter: v => (+v).toFixed(1) + '×' } },
+      dataZoom: [{ type: 'inside' }, { type: 'slider', height: 16, bottom: 8, borderColor: C.line }],
+      series: rows.map(r => lineSeries(narrow() ? String(QR.rows.indexOf(r) + 1) : r.name, QR.series[r.key][qrAcct],
+        pal[QR.rows.indexOf(r) % pal.length], r.key === QR.base ? 2.5 : 1.5)) }, true);
+  }
+  if (opts.loadQtReplay) {
+    Promise.resolve(opts.loadQtReplay()).then(v => {
+      if (v && v.rows) { QR = v; $('tabs').querySelector('[data-t="qt"]').hidden = false; renderQt(); }
+    }).catch(() => {});
   }
   if (opts.loadLev7) {
     Promise.resolve(opts.loadLev7()).then(v => { if (v && v.families) { L7 = v; renderLev7(); } }).catch(() => {});

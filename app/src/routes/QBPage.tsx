@@ -144,7 +144,9 @@ function QbBoard({ v }: { v: Variant }) {
           // 三池設定驗證（blind_validate.py；舊資料沒有就不顯示「盲測驗證」分頁）
           loadValidate: () => vault.fetchJson<unknown>('validate.enc').catch(() => null),
           // 自動槓桿第四輪：三池穩健度（lev7_robust.py）
-          loadLev7: () => vault.fetchJson<unknown>('lev7.enc').catch(() => null) });
+          loadLev7: () => vault.fetchJson<unknown>('lev7.enc').catch(() => null),
+          // QT 引擎重播：B 資金方式 × C 槓桿（qt_replay_web.py；沒有這檔就不顯示「QT 重播」分頁）
+          loadQtReplay: () => vault.fetchJson<unknown>('qtreplay.enc').catch(() => null) });
     }).catch(e => { setMsg(String(e)); setState('error'); });
     return () => { cancelled = true; unmount?.(); };
   }, [state, data, vault, v]);
