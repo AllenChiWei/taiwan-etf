@@ -441,7 +441,18 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.deployment.outputs.page_url || steps.deployment_retry.outputs.page_url }}
     steps:
+      # 2026-10-16：10-15 每日更新的這一步等 Pages 回應超過預設 10 分鐘，
+      # 「Timeout reached, aborting!」→ 儲存庫有新資料、網站停在前一天。
+      # 逾時拉長到 30 分鐘；第一次失敗再重試一次（同一份產物）。
       - id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+        with:
+          timeout: 1800000
+      - id: deployment_retry
+        if: ${{ steps.deployment.outcome == 'failure' }}
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 1800000
