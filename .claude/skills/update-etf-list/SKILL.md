@@ -184,5 +184,8 @@ diff "$WORK/test.html" "$PAGE"          # expect no output
   `certifi` and falls back to unverified TLS for that host (public read-only open data).
 - FinMind works tokenless at 300 req/hr. `$FINMIND_TOKEN` raises it to 600 but is not needed.
 - Keep counts in [CLAUDE.md](../../../CLAUDE.md) in sync after a run that changes totals.
+- This skill covers the ETF list (`tw` block) only. The other daily blocks — 主動式換股 (`hold`, incl. valuation,
+  換股成效 and the 持股損益 book since 2026-10-26), 前十大, 配息, 價平和, 個股財報… — are documented per block in
+  CLAUDE.md (the 九個區塊 table and each block's own section).
 - The React app reads `etfs.json` at runtime, so a data-only change needs no rebuild —
   but the deploy workflow still has to run for the new file to reach the CDN.

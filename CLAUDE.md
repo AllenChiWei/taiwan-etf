@@ -151,7 +151,7 @@ deploy workflow.
 | 週選價平和 | `atm` | `atm.json` | 期交所 |
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
-| 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信投信官網 |
+| 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信／群益／元大／凱基／野村投信官網＋證交所 `MI_INDEX`／櫃買 `afterTrading/otc`（估值與持股損益用的均價） |
 | 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
 | 個股配息 | `sdiv` | `stock_dividends.json` | 證交所／櫃買＋FinMind |
 
