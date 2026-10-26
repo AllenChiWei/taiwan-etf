@@ -1,7 +1,7 @@
 /* 根路由元件：載入資料、畫頁首／頁尾，把 <Outlet /> 交給各分頁。
    資料在這一層載入，分頁切換才不會重抓。 */
 
-import { Suspense, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { Link, Outlet, useRouterState } from '@tanstack/react-router';
 import { useDataset } from '../hooks/useDataset';
 import { useFavorites } from '../hooks/useFavorites';
@@ -13,6 +13,7 @@ import { metaLine } from '../lib/format';
 import { EmptyState } from './EmptyState';
 import { ScrollTopButton } from './ScrollTopButton';
 import { StaleBanner } from './StaleBanner';
+import { CommandPalette } from './CommandPalette';
 
 const TABS = [
   { to: '/', label: '台股' },
@@ -51,12 +52,26 @@ export function AppShell() {
 
   const meta = state.status === 'ready' ? state.data.meta : null;
 
+  // 2026-10-26 全站快速搜尋：Ctrl＋K／⌘K 隨時叫出；「/」只在沒有正在輸入的時候
+  const [cmdk, setCmdk] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName));
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setCmdk(v => !v); }
+      else if (e.key === '/' && !typing) { e.preventDefault(); setCmdk(true); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   return (
     <div className="min-h-screen">
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:z-50
                                  focus:bg-accent focus:px-4 focus:py-2 focus:text-accent-ink">
         跳至主要內容
       </a>
+      <CommandPalette open={cmdk} onClose={() => setCmdk(false)}
+                      etfs={state.status === 'ready' ? state.data.etfs : []} />
 
       <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
         <div className="mx-auto flex w-full max-w-6xl items-start justify-between gap-3 px-3 pt-4 pb-3 sm:px-4">
@@ -66,6 +81,19 @@ export function AppShell() {
               {meta ? metaLine(meta.source, meta.updated, meta.snapshot, meta.yieldAsof) : '載入中…'}
             </p>
           </div>
+          <div className="flex shrink-0 gap-1.5">
+          <button
+            type="button"
+            onClick={() => setCmdk(true)}
+            aria-label="快速搜尋（Ctrl＋K）"
+            title="快速搜尋（Ctrl＋K）"
+            className="flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-line px-2.5
+                       text-[13px] text-muted hover:bg-hover hover:text-ink"
+          >
+            <span aria-hidden className="text-base">⌕</span>
+            <span className="hidden sm:inline">搜尋</span>
+            <kbd className="hidden rounded border border-line px-1 text-[10px] text-faint sm:inline">Ctrl K</kbd>
+          </button>
           <button
             type="button"
             onClick={theme.toggle}
@@ -76,6 +104,7 @@ export function AppShell() {
           >
             {theme.isDark ? '☀' : '☾'}
           </button>
+          </div>
         </div>
 
         <nav aria-label="主要導覽" className="mx-auto flex w-full max-w-6xl flex-wrap gap-0.5 px-3 sm:flex-nowrap sm:gap-1 sm:px-4">
