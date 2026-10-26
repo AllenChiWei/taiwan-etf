@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { fetchActive } from '../api/extras';
 import {
   KIND_LABEL, groupChanges, latestChange, netChange, consensus, sharesLabel, aggregateTop,
+  afterReturn, scorecard, bookSummary,
   type ActiveData, type ChangeDay, type ChangeItem, type ChangeKind,
 } from '../lib/active';
 
@@ -20,6 +21,26 @@ const KIND_TONE: Record<ChangeKind, string> = {
   new: 'bg-up text-white', add: 'text-up', out: 'bg-down text-white', cut: 'text-down',
 };
 const KIND_ORDER: ChangeKind[] = ['new', 'add', 'cut', 'out'];
+type Last = ActiveData['last'];
+
+/** 金額（元）→「1.23 億」；紅漲綠跌 */
+const yi = (v: number) => `${nf2.format(v / 1e8)} 億`;
+const tone = (v: number | null | undefined) => (v == null || v === 0 ? 'text-muted' : v > 0 ? 'text-up' : 'text-down');
+const pctTxt = (v: number) => `${v > 0 ? '+' : ''}${nf1.format(v * 100)}%`;
+
+/** 2026-10-26：當天買進／賣出估值與淨額（股數變化 × 當日均價） */
+function Valuation({ day }: { day: ChangeDay }) {
+  if (!day.v) return null;
+  const [b, s] = day.v;
+  return (
+    <span className="text-[11.5px]">
+      <span className="text-faint">估值 </span>
+      <span className="text-up">買 {yi(b)}</span><span className="text-faint"> · </span>
+      <span className="text-down">賣 {yi(s)}</span><span className="text-faint"> · 淨 </span>
+      <span className={`font-semibold ${tone(b - s)}`}>{b - s > 0 ? '+' : ''}{yi(b - s)}</span>
+    </span>
+  );
+}
 
 function Chip({ active, onClick, children }: {
   active: boolean; onClick: () => void; children: React.ReactNode;
@@ -33,9 +54,10 @@ function Chip({ active, onClick, children }: {
   );
 }
 
-function ChangeRow({ it, day, kind }: { it: ChangeItem; day: ChangeDay; kind: ChangeKind }) {
+function ChangeRow({ it, day, kind, last }: { it: ChangeItem; day: ChangeDay; kind: ChangeKind; last: Last }) {
   const [code, name, a, b, w] = it;
   const pct = netChange(it, day.f);
+  const after = afterReturn(it, last);
   return (
     <li className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1 last:border-0">
       <span className="min-w-0 truncate text-[13px] text-ink">
@@ -50,12 +72,15 @@ function ChangeRow({ it, day, kind }: { it: ChangeItem; day: ChangeDay; kind: Ch
             <span className="ml-1.5 text-faint">{sharesLabel(code, a, name)}→{sharesLabel(code, b, name).replace(/ .*/, '')}</span>
           </>
         )}
+        {after != null && (
+          <span className={`ml-1.5 ${tone(after)}`} title="換股當天均價到最新收盤的漲跌">之後 {pctTxt(after)}</span>
+        )}
       </span>
     </li>
   );
 }
 
-function DayDetail({ day }: { day: ChangeDay }) {
+function DayDetail({ day, last }: { day: ChangeDay; last: Last }) {
   const groups = groupChanges(day);
   if (day.items.length === 0) {
     return <p className="mt-1 text-[12.5px] text-muted">這天沒有換股（只有資金進出造成的同比例增減）。</p>;
@@ -72,7 +97,7 @@ function DayDetail({ day }: { day: ChangeDay }) {
             <span className="text-[11px] text-faint">{groups[k].length} 檔</span>
           </div>
           <ul className="mt-1">
-            {groups[k].slice(0, 12).map(it => <ChangeRow key={it[0]} it={it} day={day} kind={k} />)}
+            {groups[k].slice(0, 12).map(it => <ChangeRow key={it[0]} it={it} day={day} kind={k} last={last} />)}
           </ul>
           {groups[k].length > 12 && (
             <p className="mt-1 text-[11px] text-faint">另有 {groups[k].length - 12} 檔</p>
@@ -111,6 +136,8 @@ export function ActiveHoldings() {
   const last = latestChange(etf);
   const history = [...etf.changes].reverse().slice(0, 15);
   const holdings = showAll ? etf.holdings : etf.holdings.slice(0, 15);
+  const sc = scorecard(etf, data.last);
+  const bk = bookSummary(etf, data.last);
 
   return (
     <div className="pt-4">
@@ -203,8 +230,77 @@ export function ActiveHoldings() {
                 </span>
               )}
             </div>
-            <DayDetail day={last} />
+            {last.v && <div className="mt-0.5"><Valuation day={last} /></div>}
+            <DayDetail day={last} last={data.last} />
           </>
+        )}
+
+        {(sc.buy.n > 0 || sc.sell.n > 0) && (
+          <div className="mt-4 rounded-lg border border-line bg-bg p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <h3 className="text-[13px] font-bold text-ink">換股成效</h3>
+              <span className="text-[11px] text-faint">{sc.from} ～ {sc.to} 的換股，算到 {data.last?.d} 收盤</span>
+            </div>
+            <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <div>
+                <p className="text-[11.5px] text-muted">買進（新增＋加碼）之後</p>
+                <p className={`font-mono text-[18px] font-bold tabular-nums ${tone(sc.buy.ret)}`}>{sc.buy.ret == null ? '—' : pctTxt(sc.buy.ret)}</p>
+                <p className="text-[10.5px] text-faint">{sc.buy.n} 筆 · 估值 {yi(sc.buy.value)}</p>
+              </div>
+              <div>
+                <p className="text-[11.5px] text-muted">賣出（剔除＋減碼）之後</p>
+                <p className={`font-mono text-[18px] font-bold tabular-nums ${tone(sc.sell.ret)}`}>{sc.sell.ret == null ? '—' : pctTxt(sc.sell.ret)}</p>
+                <p className="text-[10.5px] text-faint">{sc.sell.n} 筆 · 估值 {yi(sc.sell.value)}</p>
+              </div>
+            </div>
+            <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+              每筆換股從當天均價算到最新收盤，用金額加權。買進之後漲＝買對了；賣出之後還在漲＝賣早了。
+              張數變化可能含申購贖回，海外股票與期貨不算。
+            </p>
+          </div>
+        )}
+
+        {bk && (
+          <div className="mt-3 rounded-lg border border-line bg-bg p-3">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <h3 className="text-[13px] font-bold text-ink">持股損益</h3>
+              <span className="text-[11px] text-faint">{bk.since} 起算（成本＝當天收盤）→ {bk.asof}</span>
+            </div>
+            {bk.since === bk.asof ? (
+              <p className="mt-1 text-[12px] text-muted">從 {bk.since} 開始記帳，之後每天依換股（當日均價）累積成本與損益。</p>
+            ) : (
+              <>
+                <div className="mt-1.5 grid grid-cols-3 gap-2">
+                  <div>
+                    <p className="text-[11.5px] text-muted">未實現</p>
+                    <p className={`font-mono text-[15px] font-bold tabular-nums ${tone(bk.unreal)}`}>{yi(bk.unreal)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11.5px] text-muted">已實現</p>
+                    <p className={`font-mono text-[15px] font-bold tabular-nums ${tone(bk.real)}`}>{yi(bk.real)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[11.5px] text-muted">合計 ÷ 成本</p>
+                    <p className={`font-mono text-[15px] font-bold tabular-nums ${tone(bk.pct)}`}>{pctTxt(bk.pct)}</p>
+                  </div>
+                </div>
+                <ul className="mt-1.5">
+                  {bk.rows.slice(0, 8).map(r => (
+                    <li key={r.code} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1 last:border-0">
+                      <span className="min-w-0 truncate text-[12.5px] text-ink">
+                        <span className="font-mono text-[11.5px] text-muted">{r.code}</span> {r.name}
+                      </span>
+                      <span className={`font-mono text-[12px] tabular-nums ${tone(r.unreal + r.real)}`}>{yi(r.unreal + r.real)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+            <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+              移動平均成本：加碼的成本＝股數 × 當日均價，減碼依平均成本算已實現。起算前沒有完整的每日持股，不往前回推；
+              估算值，不是投信的帳面損益（不含現金、費用、配息，海外股票與期貨不算）。
+            </p>
+          </div>
         )}
 
         <h3 className="mt-4 text-[13px] font-bold text-ink">近期換股紀錄</h3>
@@ -225,10 +321,15 @@ export function ActiveHoldings() {
                       </span>
                     ))}
                     {day.items.length === 0 && <span className="text-faint">沒有換股</span>}
+                    {day.v && (day.v[0] || day.v[1]) ? (
+                      <span className={`ml-2 font-mono ${tone(day.v[0] - day.v[1])}`}>
+                        淨 {day.v[0] - day.v[1] > 0 ? '+' : ''}{yi(day.v[0] - day.v[1])}
+                      </span>
+                    ) : null}
                     <span className="ml-2 text-faint">{open ? '▲' : '▼'}</span>
                   </span>
                 </button>
-                {open && <div className="pb-2"><DayDetail day={day} /></div>}
+                {open && <div className="pb-2">{day.v && <Valuation day={day} />}<DayDetail day={day} last={data.last} /></div>}
               </li>
             );
           })}

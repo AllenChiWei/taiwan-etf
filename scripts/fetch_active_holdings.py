@@ -85,6 +85,13 @@ KEEP_CHANGES = 60
 # 扣掉資金進出之後，股數偏離小於這個比例視為沒變（見 diff）
 MIN_CHANGE = 0.005
 
+# 2026-10-26 站主要求（參考籌碼小宇）：換股估值、換股後漲跌、持股損益。價格用證交所／櫃買的每日收盤行情
+# （fetch_chips.py 估算法人金額用的同一組端點）：均價 = 成交金額 ÷ 成交股數，比收盤價接近實際成交，但仍是估算。
+TWSE_PX = 'https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX?date=%s&type=ALL&response=json'
+TPEX_PX = 'https://www.tpex.org.tw/www/zh-tw/afterTrading/otc?date=%s&type=EW&response=json'
+PX_DELAY = 3.0                 # 證交所查太快會回 307 然後擋一陣子（AGENTS.md），寧可慢
+MAX_PX_DAYS = 70               # 一次最多補幾天的價格（第一次要補近 60 次換股的日子）
+
 # 站主指定的幾檔（2026-09-23）。市值前五另外每天算，兩者合起來、依代號排序。
 PICKED = ['00981A', '00988A', '00409A', '00411A', '00406A', '00991A', '00400A', '00992A']
 TOP_N = 10
@@ -480,6 +487,174 @@ def diff(prev, cur):
     return round(m - 1, 4), out
 
 
+# ── 價格：換股估值、換股後漲跌、持股損益（2026-10-26）──────────────────────
+
+def _px_get(url):
+    req = urllib.request.Request(url, headers={'User-Agent': UA, 'Accept': 'application/json'})
+    raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
+    time.sleep(PX_DELAY)
+    return json.loads(raw.decode('utf-8'))
+
+
+def day_prices(day):
+    u"""某個交易日上市＋上櫃個股 {代號: [均價, 收盤]}；兩邊都拿不到回 None（下次再補，不存空的）。"""
+    out = {}
+    ymd = day.replace('-', '')
+    try:
+        doc = _px_get(TWSE_PX % ymd)
+        for t in doc.get('tables') or []:
+            f = t.get('fields') or []
+            if u'收盤價' not in f or u'成交金額' not in f:
+                continue
+            vi, ai, ci = f.index(u'成交股數'), f.index(u'成交金額'), f.index(u'收盤價')
+            for r in t.get('data') or []:
+                sh, val, cl = num(r[vi]), num(r[ai]), num(r[ci])
+                if sh and cl:
+                    out[r[0].strip()] = [round(val / float(sh), 2), cl]
+    except Exception as e:                                    # noqa: BLE001
+        note(u'證交所行情 %s：%s' % (day, str(e)[:60]))
+    roc = '%d/%s' % (int(day[:4]) - 1911, day[5:].replace('-', '/'))
+    try:
+        doc = _px_get(TPEX_PX % roc)
+        for t in doc.get('tables') or []:
+            f = [x.strip() for x in (t.get('fields') or [])]
+            if u'收盤' not in f or u'成交金額(元)' not in f or u'代號' not in f:
+                continue
+            ki, vi, ai, ci = f.index(u'代號'), f.index(u'成交股數'), f.index(u'成交金額(元)'), f.index(u'收盤')
+            for r in t.get('data') or []:
+                sh, val, cl = num(r[vi]), num(r[ai]), num(r[ci])
+                if sh and cl:
+                    out[r[ki].strip()] = [round(val / float(sh), 2), cl]
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買行情 %s：%s' % (day, str(e)[:60]))
+    return out or None
+
+
+def price_of(px, day, code, use_close=False):
+    v = (px.get(day) or {}).get(code)
+    return (v[1] if use_close else v[0]) if v else None
+
+
+def annotate(etf, px):
+    u"""換股紀錄補上當日均價（items 第 6 欄）與估值 v=[買進, 賣出]（元）。
+
+    估值＝股數變化 × 當日均價，跟籌碼小宇的「持股淨買賣」同一個算法；張數變化可能含申購贖回，
+    不等於經理人的委託成交。只算列出來的變動（扣掉資金進出後偏離 0.5% 以上），而且只算台股
+    （海外股票、期貨沒有這兩個交易所的價格）。
+    """
+    for ch in etf.get('changes') or []:
+        buy = sell = 0.0
+        items = []
+        for it in ch['items']:
+            it = list(it[:5])
+            p = price_of(px, ch['d'], it[0])
+            it.append(p)
+            if p:
+                dv = (it[3] - it[2]) * p
+                if dv > 0:
+                    buy += dv
+                else:
+                    sell -= dv
+            items.append(it)
+        ch['items'] = items
+        ch['v'] = [round(buy), round(sell)]
+
+
+def book_apply(book, rows, day, px, names):
+    u"""持股損益帳本：把帳本的股數調成 rows（那天收盤後的持股），差額用那天的均價買賣。
+
+    移動平均成本：加碼成本加上「股數 × 均價」；減碼按平均成本實現損益。沒有台股價格的（海外、期貨）不記。
+    中間漏掉的日子不會失真太多：下一份持股一來，差額照樣補上，只是價格用那一天的。
+    """
+    pos = book['pos']
+    cur = dict((r[0], r[2]) for r in rows)
+    for code in set(pos) | set(cur):
+        b = cur.get(code, 0)
+        a = pos[code][0] if code in pos else 0
+        if a == b:
+            continue
+        p = price_of(px, day, code)
+        if p is None:
+            continue
+        if b > a:
+            if code in pos:
+                pos[code][0], pos[code][1] = b, pos[code][1] + (b - a) * p
+            else:
+                pos[code] = [b, (b - a) * p, 0.0]
+        else:
+            avg = pos[code][1] / a
+            gain = (a - b) * (p - avg)
+            book['real'] += gain
+            pos[code][2] += gain
+            if b == 0:
+                book['done'].append([code, names.get(code, code), round(pos[code][2]), day])
+                del pos[code]
+            else:
+                pos[code][0], pos[code][1] = b, avg * b
+    book['asof'] = day
+    book['done'] = book['done'][-40:]
+
+
+def book_init(rows, day, px):
+    pos = {}
+    for r in rows:
+        p = price_of(px, day, r[0], use_close=True)
+        if p is not None and r[2] > 0:
+            pos[r[0]] = [r[2], r[2] * p, 0.0]
+    return {'since': day, 'asof': day, 'pos': pos, 'real': 0.0, 'done': []}
+
+
+def prices_and_books(etfs, seq, px, names):
+    u"""補價格 → 換股紀錄估值 → 持股損益帳本。回傳 (px, last)。
+
+    px 只留「換股日＋各檔持股日＋帳本要用的日子」，代號只留持股或換股出現過的，檔案才不會越長越大。
+    帳本從第一次有價格的那份持股開始（成本＝當天收盤），之前沒有完整的每日持股，不硬回推。
+    """
+    codes, need = set(), set()
+    for code, etf in etfs.items():
+        codes.update(r[0] for r in etf.get('holdings') or [])
+        for ch in etf.get('changes') or []:
+            need.add(ch['d'])
+            codes.update(it[0] for it in ch['items'])
+        need.add(etf['asof'])
+        book = etf.get('book')
+        for asof, rows in seq.get(code, []):
+            if book and asof > book['asof']:
+                need.add(asof)
+                codes.update(r[0] for r in rows)
+        if book:
+            codes.update(book['pos'])
+    missing = sorted(d for d in need if d and d not in px)[-MAX_PX_DAYS:]
+    if missing:
+        log(u'補價格 %d 天：%s～%s' % (len(missing), missing[0], missing[-1]))
+    for d in missing:
+        r = day_prices(d)
+        if r:
+            px[d] = dict((c, r[c]) for c in codes if c in r)
+    px = dict((d, dict((c, v) for c, v in px[d].items() if c in codes)) for d in sorted(px) if d in need)
+
+    for code, etf in etfs.items():
+        annotate(etf, px)
+        book = etf.get('book')
+        if not book:
+            if etf['asof'] in px:
+                etf['book'] = book_init(etf['holdings'], etf['asof'], px)
+                log(u'%s 持股損益從 %s 起算' % (code, etf['asof']))
+            continue
+        for asof, rows in seq.get(code, []):
+            if asof > book['asof'] and asof in px:
+                book_apply(book, rows, asof, px, names)
+        book['real'] = round(book['real'])
+        for v in book['pos'].values():
+            v[1], v[2] = round(v[1]), round(v[2])
+
+    last = {}
+    for d in sorted(px):                                     # 每個代號取最近一次有收盤的
+        for c, v in px[d].items():
+            last[c] = v[1]
+    return px, {'d': max(px) if px else None, 'px': last}
+
+
 def trading_days_back(n):
     today = datetime.now(TPE).date()
     out = []
@@ -539,6 +714,7 @@ def main():
                         'top': code in top,
                         'reason': refused or u'這家投信的持股還沒接上'})
 
+    seq = {}
     for e in jobs:
         code = e['code']
         cur = etfs.get(code) or {}
@@ -554,6 +730,7 @@ def main():
                 continue
             if asof and rows and (not snaps or snaps[-1][0] != asof):
                 snaps.append((asof, sorted(rows, key=lambda r: -r[3])))
+        seq[code] = snaps                                     # 持股損益帳本要逐日套用（價格抓完才做）
         if not snaps:
             note(u'%s 一天都沒拿到' % code)
             if cur:
@@ -588,10 +765,14 @@ def main():
             'holdings': prev[1],
             'changes': changes[-KEEP_CHANGES:],
         }
+        if cur.get('book'):
+            etfs[code]['book'] = cur['book']
         last = changes[-1] if changes else None
         log(u'  持股 %d 檔，最新 %s；換股紀錄 %d 天%s' % (
             len(prev[1]), prev[0], len(changes),
             u'，最近一次 %d 檔變動' % len(last['items']) if last else u''))
+
+    px, last = prices_and_books(etfs, seq, doc.get('px') or {}, names)
 
     payload = {
         'meta': {
@@ -605,6 +786,9 @@ def main():
             'errors': ERRORS,
         },
         'etfs': dict(sorted(etfs.items())),               # 依代號排序（站主指定）
+        # 各標的最近一次收盤（換股後漲跌、未實現損益用）；px＝用過的日子的 {代號: [均價, 收盤]}，下次直接沿用
+        'last': last,
+        'px': px,
     }
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(payload, ensure_ascii=False, separators=(',', ':')))

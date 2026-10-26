@@ -6,8 +6,32 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import {
   kindOf, netChange, groupChanges, consensus, sharesLabel, aggregateTop,
-  type ActiveData, type ChangeDay,
+  afterReturn, scorecard, bookSummary,
+  type ActiveData, type ActiveEtf, type ChangeDay,
 } from '../src/lib/active.ts';
+
+test('換股成效與持股損益（2026-10-26）', () => {
+  const last = { d: '2026-10-23', px: { '2330': 110, '3711': 90, '2454': 50 } };
+  const etf: ActiveEtf = {
+    name: 'X', issuer: 'Y', asof: '2026-10-22', holdings: [['2330', '台積電', 2000, 10], ['2454', '聯發科', 1000, 5]],
+    changes: [
+      { d: '2026-10-21', p: '2026-10-20', f: 0, items: [['2330', '台積電', 1000, 2000, 10, 100], ['3711', '日月光', 1000, 0, 0, 100]] },
+      { d: '2026-10-22', p: '2026-10-21', f: 0, items: [['9999', '海外', 0, 5, 1]] },      // 沒有均價（舊資料／海外）→ 不算
+    ],
+    book: { since: '2026-10-20', asof: '2026-10-22', pos: { '2330': [2000, 190000, 0], '2454': [1000, 60000, 500] }, real: 1500, done: [] },
+  };
+  assert.ok(Math.abs(afterReturn(etf.changes[0].items[0], last)! - 0.1) < 1e-12, '100 → 110 = +10%');
+  assert.equal(afterReturn(etf.changes[1].items[0], last), null, '沒有均價 → null');
+  const sc = scorecard(etf, last);
+  assert.ok(Math.abs(sc.buy.ret! - 0.1) < 1e-12 && sc.buy.n === 1 && sc.buy.value === 100000, '買進台積 1000 股 @100，現在 110');
+  assert.ok(Math.abs(sc.sell.ret! + 0.1) < 1e-12 && sc.sell.n === 1, '賣出日月光 @100，現在 90 → -10%（賣對了）');
+  const bk = bookSummary(etf, last)!;
+  assert.equal(bk.cost, 250000);
+  assert.equal(bk.unreal, 2000 * 110 - 190000 + 1000 * 50 - 60000, '未實現＝收盤市值 − 成本');
+  assert.equal(bk.real, 1500);
+  assert.ok(Math.abs(bk.pct - (bk.unreal + 1500) / 250000) < 1e-12);
+  assert.equal(bookSummary({ ...etf, book: undefined }, last), null, '沒有帳本 → null');
+});
 import { stillUpcoming, daysUntil, taipeiToday, pick, type UpcomingItem } from '../src/lib/upcoming.ts';
 
 test('換股分類要扣掉資金進出', async (t) => {
@@ -161,6 +185,16 @@ test('真實 active_holdings.json', { skip: !existsSync(ACTIVE) && '沒有 activ
   await t.test('資金進出比例在合理範圍（單日 ±50% 以上代表比錯了日子）', () => {
     for (const [code, e] of Object.entries(d.etfs)) {
       for (const c of e.changes) assert.ok(Math.abs(c.f) < 0.5, `${code} ${c.d} 的 f=${c.f}`);
+    }
+  });
+
+  await t.test('估值與均價合理（2026-10-26）：均價為正、估值不是負的、單日不超過 ETF 市值', () => {
+    for (const [code, e] of Object.entries(d.etfs)) {
+      for (const c of e.changes) {
+        for (const it of c.items) if (it[5] != null) assert.ok(it[5] > 0, `${code} ${c.d} ${it[0]} 均價 ${it[5]}`);
+        if (c.v && e.cap) assert.ok(c.v[0] >= 0 && c.v[1] >= 0 && Math.max(...c.v) / 1e8 < e.cap, `${code} ${c.d} 估值 ${c.v}`);
+      }
+      if (e.book) for (const [k, [sh, cost]] of Object.entries(e.book.pos)) assert.ok(sh > 0 && cost > 0, `${code} 帳本 ${k}`);
     }
   });
 });

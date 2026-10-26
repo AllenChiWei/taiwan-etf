@@ -8,8 +8,8 @@
 
 /** [代號, 名稱, 股數, 權重%] */
 export type Holding = [string, string, number, number];
-/** [代號, 名稱, 前股數, 股數, 權重%] */
-export type ChangeItem = [string, string, number, number, number];
+/** [代號, 名稱, 前股數, 股數, 權重%, 當日均價（2026-10-26 起；海外、期貨、舊資料沒有）] */
+export type ChangeItem = [string, string, number, number, number, (number | null)?];
 
 export interface ChangeDay {
   /** 持股對應的交易日 */
@@ -19,6 +19,17 @@ export interface ChangeDay {
   /** 當天資金進出讓持股整體伸縮的比例（0.004 = 同比例多了 0.4%） */
   f: number;
   items: ChangeItem[];
+  /** 估值 [買進, 賣出]（元）＝股數變化 × 當日均價，只算有台股價格的 */
+  v?: [number, number];
+}
+
+/** 持股損益帳本（移動平均成本）：pos＝{代號: [股數, 成本, 已實現]}，done＝出清的 [代號, 名稱, 已實現, 日期] */
+export interface Book {
+  since: string;
+  asof: string;
+  pos: Record<string, [number, number, number]>;
+  real: number;
+  done: [string, string, number, string][];
 }
 
 export interface ActiveEtf {
@@ -31,6 +42,7 @@ export interface ActiveEtf {
   asof: string;
   holdings: Holding[];
   changes: ChangeDay[];
+  book?: Book;
 }
 
 export interface ActiveData {
@@ -45,6 +57,69 @@ export interface ActiveData {
     errors: string[];
   };
   etfs: Record<string, ActiveEtf>;
+  /** 各標的最近一次收盤（d＝最新的價格日） */
+  last?: { d: string | null; px: Record<string, number> };
+}
+
+/** 換股之後到最新收盤的漲跌（0.05 = +5%）；沒有均價或收盤時 null。 */
+export function afterReturn(item: ChangeItem, last?: ActiveData['last']): number | null {
+  const p = item[5];
+  const c = last?.px[item[0]];
+  return p && c ? c / p - 1 : null;
+}
+
+export interface Scorecard {
+  /** 買進（新增＋加碼）的金額加權漲跌、估值（元）、筆數 */
+  buy: { ret: number | null; value: number; n: number };
+  /** 賣出（剔除＋減碼）之後的漲跌：正的代表賣早了 */
+  sell: { ret: number | null; value: number; n: number };
+  /** 統計範圍（最早、最晚換股日） */
+  from: string | null;
+  to: string | null;
+}
+
+/**
+ * 換股成效：近期每一筆換股，從當天均價到最新收盤的漲跌，用「股數變化 × 均價」加權。
+ * 只回答「經理人買的有沒有漲、賣的有沒有跌」，不是 ETF 的報酬；張數變化可能含申購贖回。
+ */
+export function scorecard(etf: ActiveEtf, last?: ActiveData['last'], days = 60): Scorecard {
+  const acc = { buy: { pnl: 0, value: 0, n: 0 }, sell: { pnl: 0, value: 0, n: 0 } };
+  const chs = etf.changes.slice(-days);
+  for (const ch of chs) {
+    for (const it of ch.items) {
+      const p = it[5];
+      const c = last?.px[it[0]];
+      if (!p || !c) continue;
+      const dv = it[3] - it[2];
+      const side = dv > 0 ? acc.buy : acc.sell;
+      side.value += Math.abs(dv) * p;
+      side.pnl += Math.abs(dv) * (c - p);
+      side.n += 1;
+    }
+  }
+  const fin = (s: { pnl: number; value: number; n: number }) =>
+    ({ ret: s.value ? s.pnl / s.value : null, value: s.value, n: s.n });
+  return { buy: fin(acc.buy), sell: fin(acc.sell), from: chs[0]?.d ?? null, to: chs[chs.length - 1]?.d ?? null };
+}
+
+export interface BookRow { code: string; name: string; shares: number; cost: number; value: number; unreal: number; real: number }
+
+/** 持股損益帳本 → 未實現（收盤市值 − 成本）、已實現、各標的明細（沒有收盤價的不算）。 */
+export function bookSummary(etf: ActiveEtf, last?: ActiveData['last']) {
+  const b = etf.book;
+  if (!b) return null;
+  const names = new Map(etf.holdings.map(h => [h[0], h[1]] as [string, string]));
+  const rows: BookRow[] = [];
+  for (const [code, [shares, cost, real]] of Object.entries(b.pos)) {
+    const c = last?.px[code];
+    if (!c) continue;
+    const value = shares * c;
+    rows.push({ code, name: names.get(code) ?? code, shares, cost, value, unreal: value - cost, real });
+  }
+  const cost = rows.reduce((a, r) => a + r.cost, 0);
+  const unreal = rows.reduce((a, r) => a + r.unreal, 0);
+  rows.sort((x, y) => Math.abs(y.unreal + y.real) - Math.abs(x.unreal + x.real));
+  return { since: b.since, asof: last?.d ?? b.asof, cost, unreal, real: b.real, pct: cost ? (unreal + b.real) / cost : 0, rows, done: b.done };
 }
 
 export type ChangeKind = 'new' | 'out' | 'add' | 'cut';
