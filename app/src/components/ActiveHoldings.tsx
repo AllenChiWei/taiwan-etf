@@ -12,6 +12,7 @@ import {
   afterReturn, scorecard, bookSummary,
   type ActiveData, type ChangeDay, type ChangeItem, type ChangeKind,
 } from '../lib/active';
+import { managerBoard } from '../lib/holders';
 
 const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -126,6 +127,7 @@ export function ActiveHoldings() {
 
   const cons = useMemo(() => (data ? consensus(data) : null), [data]);
   const agg = useMemo(() => (data ? aggregateTop(data) : null), [data]);
+  const board = useMemo(() => (data ? managerBoard(data) : []), [data]);
 
   if (data === undefined) return <p className="py-10 text-center text-[13px] text-muted">載入持股資料中…</p>;
   if (data === null || !data.etfs[code]) {
@@ -141,6 +143,38 @@ export function ActiveHoldings() {
 
   return (
     <div className="pt-4">
+      {board.some(r => r.edge != null) && (
+        <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+            <h2 className="text-sm font-bold text-ink">經理人排行（選股力）</h2>
+            <span className="text-[11.5px] text-faint">近 60 次換股，算到 {data.last?.d} 收盤</span>
+          </div>
+          <div className="mt-2 grid grid-cols-[1.4em_1fr_auto_auto_auto] items-baseline gap-x-2.5 text-[10.5px] text-faint">
+            <span /><span>ETF</span><span className="w-[4.2em] text-right">買進後</span>
+            <span className="w-[4.2em] text-right">賣出後</span><span className="w-[4.6em] text-right">選股力</span>
+          </div>
+          <ol>
+            {board.map((r, i) => (
+              <li key={r.code} className="grid grid-cols-[1.4em_1fr_auto_auto_auto] items-baseline gap-x-2.5 border-b border-line/60 py-1.5 last:border-0">
+                <span className="text-right font-mono text-[12px] text-faint">{r.edge != null && r.n >= 10 ? i + 1 : '–'}</span>
+                <button type="button" onClick={() => { setCode(r.code); setOpenDay(null); setShowAll(false); }}
+                        className="min-w-0 truncate text-left text-[13px] text-ink hover:text-accent">
+                  <span className="font-mono text-[12px] text-muted">{r.code}</span> {r.name.replace(/^主動/, '')}
+                  {r.n < 10 && <span className="ml-1 text-[10.5px] text-faint">（{r.n} 筆，不足）</span>}
+                </button>
+                <span className={`w-[4.2em] text-right font-mono text-[12px] tabular-nums ${tone(r.buy)}`}>{r.buy == null ? '—' : pctTxt(r.buy)}</span>
+                <span className={`w-[4.2em] text-right font-mono text-[12px] tabular-nums ${tone(r.sell)}`}>{r.sell == null ? '—' : pctTxt(r.sell)}</span>
+                <span className={`w-[4.6em] text-right font-mono text-[13px] font-bold tabular-nums ${tone(r.edge)}`}>{r.edge == null ? '—' : pctTxt(r.edge)}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+            選股力＝買進（新增＋加碼）之後的漲跌 − 賣出（剔除＋減碼）之後的漲跌，每筆從換股當天均價算到最新收盤、用金額加權。
+            正的代表買的比賣的漲得多。換股不到 10 筆的不排名；張數變化可能含申購贖回，海外股票與期貨不算。點 ETF 看明細。
+          </p>
+        </section>
+      )}
+
       {agg && agg.rows.length > 0 && (
         <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
