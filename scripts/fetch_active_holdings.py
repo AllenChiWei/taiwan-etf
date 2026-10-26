@@ -97,7 +97,7 @@ PICKED = ['00981A', '00988A', '00409A', '00411A', '00406A', '00991A', '00400A', 
 TOP_N = 10
 
 ISSUER_NAME = {'ezmoney': u'統一投信', 'fhtrust': u'復華投信', 'ctbc': u'中國信託投信',
-               'capital': u'群益投信', 'yuanta': u'元大投信', 'kgi': u'凱基投信'}
+               'capital': u'群益投信', 'yuanta': u'元大投信', 'kgi': u'凱基投信', 'nomura': u'野村投信'}
 # 已知的網站內部代碼，最底層的備援（各家清單都查不到、也沒有上次的紀錄時用）
 KNOWN_IDS = {
     '00981A': ('ezmoney', '49YTW'), '00988A': ('ezmoney', '61YTW'), '00411A': ('ezmoney', '64YTW'),
@@ -106,7 +106,7 @@ KNOWN_IDS = {
 }
 # 從 ETF 簡稱（「主動統一台股增長」）認投信
 ISSUER_BY_NAME = [(u'統一', 'ezmoney'), (u'復華', 'fhtrust'), (u'中信', 'ctbc'), (u'群益', 'capital'),
-                  (u'元大', 'yuanta'), (u'凱基', 'kgi')]
+                  (u'元大', 'yuanta'), (u'凱基', 'kgi'), (u'野村', 'nomura')]
 # 做不到的投信與原因。其他沒接的投信會標「還沒接」
 REFUSED = {
     u'國泰': u'國泰投信網站對表明身分的程式回 403（連 robots.txt 也是），不假裝成瀏覽器去抓',
@@ -333,6 +333,32 @@ class Yuanta(object):
                       for x in stocks]
 
 
+# ── 野村 ─────────────────────────────────────────────────────
+
+class Nomura(object):
+    u"""野村 nomurafunds.com.tw：沒有 robots.txt（/robots.txt 回首頁 HTML）。2026-10-26 接上。
+    前端是 Angular，apiUrl＝/API/ETFAPI/api/；POST Fund/GetFundAssets {FundID: 證券代號, SearchDate: YYYY-MM-DD}
+    （日期要 ISO，寫成 2026/10/22 回 400）。持股日期看 FundAsset.NavDate；Table 依類別分表（股票、期貨…），
+    每表前四欄是 代號、名稱、股數（口數）、權重。"""
+    URL = 'https://www.nomurafunds.com.tw/API/ETFAPI/api/Fund/GetFundAssets'
+
+    def __init__(self, http):
+        self.http = http
+
+    def fetch(self, code, day):
+        d = self.http.post_json(self.URL, {'FundID': code, 'SearchDate': day.isoformat()})
+        data = ((d or {}).get('Entries') or {}).get('Data') or {}
+        nav = str((data.get('FundAsset') or {}).get('NavDate') or '')
+        rows = []
+        for t in data.get('Table') or []:
+            for r in t.get('Rows') or []:
+                if len(r) >= 4 and str(r[0]).strip() and num(r[2]):
+                    rows.append(row(r[0], r[1], num(r[2]), num(r[3])))
+        if not rows or not re.match(r'^\d{4}/\d{2}/\d{2}$', nav):
+            return None, []
+        return nav.replace('/', '-'), rows
+
+
 # ── 凱基 ─────────────────────────────────────────────────────
 
 class Kgi(object):
@@ -439,6 +465,8 @@ def resolve_ids(http, ctbc_http, universe=None):
     for code, (n, _) in (universe or {}).items():       # 元大：API 直接用證券代號
         if u'元大' in n and code not in out:
             out[code] = ('yuanta', code)
+        if u'野村' in n and code not in out:                # 野村：API 也直接用證券代號
+            out[code] = ('nomura', code)
     return out
 
 
@@ -685,7 +713,7 @@ def main():
     http = Http()
     ctbc_http = Http(cookies=False)
     clients = {'ezmoney': Ezmoney(http), 'fhtrust': Fhtrust(http), 'ctbc': Ctbc(ctbc_http),
-               'capital': Capital(http), 'yuanta': Yuanta(http), 'kgi': Kgi(http)}
+               'capital': Capital(http), 'yuanta': Yuanta(http), 'kgi': Kgi(http), 'nomura': Nomura(http)}
     names = load_names()
 
     try:
@@ -697,12 +725,13 @@ def main():
     top = [c for c, _ in ranked[:TOP_N]]
     log(u'市值前 %d：%s' % (TOP_N, u'、'.join('%s %s（%s 億）' % (c, universe[c][0], universe[c][1])
                                            for c in top)))
-    # 指定的、市值前五、以及之前追蹤過的（掉出前五也繼續更新，紀錄才不會斷）
-    targets = sorted(set(PICKED) | set(top) | set(etfs))
     # 上次查到的代碼當底，這次查到的蓋上去：某家清單那天被擋也不會漏掉
     ids = dict(KNOWN_IDS)
     ids.update((k, tuple(v)) for k, v in ((doc.get('meta') or {}).get('ids') or {}).items())
     ids.update(resolve_ids(http, ctbc_http, universe))
+    # 指定的、市值前十、之前追蹤過的（掉出前十也繼續更新，紀錄才不會斷），
+    # 2026-10-26 起再加上「投信接得上的所有主動式股票型」（站主要求擴大檔數，參考籌碼小宇 23 檔）
+    targets = sorted(set(PICKED) | set(top) | set(etfs) | set(c for c in universe if c in ids))
     jobs, blocked = [], []
     for code in targets:
         name = names.get(code) or universe.get(code, (code,))[0]
@@ -782,7 +811,7 @@ def main():
             'top': top,
             # 各家網站內部的基金代碼，下次某家清單被擋時沿用
             'ids': dict((c, list(v)) for c, v in sorted(ids.items()) if c in set(targets)),
-            'source': u'各投信官網每日公告之持股（統一、復華、中國信託、群益、元大、凱基）',
+            'source': u'各投信官網每日公告之持股（統一、復華、中國信託、群益、元大、凱基、野村）',
             'errors': ERRORS,
         },
         'etfs': dict(sorted(etfs.items())),               # 依代號排序（站主指定）
