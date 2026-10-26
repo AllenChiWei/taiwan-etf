@@ -54,6 +54,7 @@ jobs:
       RETAIL_FILES: app/public/data/retail.json
       HOLD_FILES: app/public/data/active_holdings.json
       TOP10_FILES: app/public/data/top10.json
+      EHOLD_FILES: app/public/data/etf_holders.json
       SDIV_FILES: app/public/data/stock_dividends.json
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
@@ -263,6 +264,16 @@ jobs:
           python scripts/fetch_top10.py
           cd app && node --test tests/top10.test.ts
 
+      # ── 區塊八之二：ETF 受益人數（集保股權分散表，每週）────────────────
+      # 集保只給最新一週，所以逐週累積；同一週重跑只是覆蓋同一筆。一個 GET（約 2.4 MB）。
+      - name: ETF 受益人數
+        id: eholders
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/fetch_etf_holders.py
+          cd app && node --test tests/etfHolders.test.ts
+
       # ── 區塊九：全部上市櫃個股的配息（配息試算用）─────────────────────
       # 上市用證交所整年的除權息結果表；上櫃官方只有當天，歷史用 FinMind 一檔一個請求
       # 分批回補（每天最多 200 檔，補完就只剩當天的幾個請求）。
@@ -310,6 +321,7 @@ jobs:
           note 散戶多空比   '${{ steps.retail.outcome }}' $RETAIL_FILES
           note 主動式換股   '${{ steps.hold.outcome }}'   $HOLD_FILES
           note 前十大持股   '${{ steps.top10.outcome }}'  $TOP10_FILES
+          note ETF受益人數  '${{ steps.eholders.outcome }}' $EHOLD_FILES
           note 個股配息     '${{ steps.sdiv.outcome }}'   $SDIV_FILES
 
           echo "pending=${pending}" >> $GITHUB_OUTPUT
@@ -326,13 +338,14 @@ jobs:
             echo "| 散戶多空比 | ${{ steps.retail.outcome }} |"
             echo "| 主動式換股 | ${{ steps.hold.outcome }} |"
             echo "| 前十大持股 | ${{ steps.top10.outcome }} |"
+            echo "| ETF 受益人數 | ${{ steps.eholders.outcome }} |"
             echo "| 個股配息 | ${{ steps.sdiv.outcome }} |"
           } >> $GITHUB_STEP_SUMMARY
 
       - name: 提交變更
         id: commit
         run: |
-          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES $SDIV_FILES"
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES $EHOLD_FILES $SDIV_FILES"
           if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT

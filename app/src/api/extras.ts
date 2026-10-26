@@ -6,6 +6,7 @@
 import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
+import type { EtfHoldersData } from '../lib/etfHolders.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
@@ -38,6 +39,9 @@ export const fetchUpcoming = (signal?: AbortSignal) =>
 
 export const fetchTop10 = (signal?: AbortSignal) =>
   load<Top10Data>('top10.json', d => Boolean(d.etfs && d.meta), signal);
+
+export const fetchEtfHolders = (signal?: AbortSignal) =>
+  load<EtfHoldersData>('etf_holders.json', d => Boolean(d.etfs && d.dates), signal);
 
 export const fetchStockDividends = (signal?: AbortSignal) =>
   load<StockDividendData>('stock_dividends.json', d => Boolean(d.stocks), signal);

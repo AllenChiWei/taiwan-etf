@@ -5,22 +5,25 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { fetchActive, fetchTop10 } from '../api/extras';
+import { fetchActive, fetchEtfHolders, fetchTop10 } from '../api/extras';
 import { top10For, missingReason, type Top10Data } from '../lib/top10';
+import { holdersFor, type EtfHoldersData } from '../lib/etfHolders';
 import type { ActiveData } from '../lib/active';
 import type { Etf } from '../types';
 
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
+const signed = (v: number) => `${v > 0 ? '+' : ''}${nf0.format(v)}`;
 
 // 模組層級的快取：開過一次之後，再點別檔不必重新下載
-let cache: Promise<[Top10Data | null, ActiveData | null]> | null = null;
+let cache: Promise<[Top10Data | null, ActiveData | null, EtfHoldersData | null]> | null = null;
 function loadAll() {
-  cache ??= Promise.all([fetchTop10().catch(() => null), fetchActive().catch(() => null)]);
+  cache ??= Promise.all([fetchTop10().catch(() => null), fetchActive().catch(() => null), fetchEtfHolders().catch(() => null)]);
   return cache;
 }
 
 export function Top10Modal({ etf, onClose }: { etf: Etf; onClose: () => void }) {
-  const [data, setData] = useState<[Top10Data | null, ActiveData | null] | null>(null);
+  const [data, setData] = useState<[Top10Data | null, ActiveData | null, EtfHoldersData | null] | null>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
@@ -44,6 +47,7 @@ export function Top10Modal({ etf, onClose }: { etf: Etf; onClose: () => void }) 
 
   const view = data ? top10For(etf.code, data[0], data[1]) : null;
   const max = view ? Math.max(...view.rows.map(r => r.pct ?? 0), 1) : 1;
+  const holders = data ? holdersFor(etf.code, data[2]) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 sm:items-center sm:p-4"
@@ -69,6 +73,25 @@ export function Top10Modal({ etf, onClose }: { etf: Etf; onClose: () => void }) 
             ×
           </button>
         </div>
+
+        {holders && (
+          <div className="mt-3 rounded-lg bg-sunken px-3 py-2 text-[12.5px]">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <span className="text-muted">
+                受益人數 <strong className="font-mono text-[14px] tabular-nums text-ink">{nf0.format(holders.holders)}</strong> 人
+                {holders.w1 && <span className={`ml-1.5 font-mono tabular-nums ${holders.w1.holders >= 0 ? 'text-up' : 'text-down'}`}>週 {signed(holders.w1.holders)}</span>}
+                {holders.w4 && <span className={`ml-1.5 font-mono tabular-nums ${holders.w4.holders >= 0 ? 'text-up' : 'text-down'}`}>4 週 {signed(holders.w4.holders)}</span>}
+              </span>
+              <span className="text-muted">
+                流通 <span className="font-mono tabular-nums text-ink">{nf0.format(holders.lots)}</span> 張
+                {holders.w1 && <span className="ml-1.5 font-mono tabular-nums">（週{holders.w1.lots >= 0 ? '淨申購' : '淨贖回'} {nf0.format(Math.abs(holders.w1.lots))}）</span>}
+              </span>
+            </div>
+            <p className="mt-0.5 text-[10.5px] text-faint">
+              集保股權分散表 · {holders.asof}（每週更新{holders.w1 ? '' : '；週變化從下週開始累積'}）
+            </p>
+          </div>
+        )}
 
         {!data && <p className="py-10 text-center text-[13px] text-muted">載入中…</p>}
         {data && !view && (

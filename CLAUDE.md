@@ -141,7 +141,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成九個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成十個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -153,6 +153,7 @@ deploy workflow.
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
 | 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信／群益／元大／凱基／野村投信官網＋證交所 `MI_INDEX`／櫃買 `afterTrading/otc`（估值與持股損益用的均價） |
 | 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
+| ETF 受益人數 | `eholders` | `etf_holders.json`（逐週累積） | 集保開放資料 1-5 |
 | 個股配息 | `sdiv` | `stock_dividends.json` | 證交所／櫃買＋FinMind |
 
 每一塊都是 `continue-on-error: true`，各自把**驗證與吃它產出的那支測試**放在自己裡面。
@@ -882,6 +883,13 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 `t187ap47_L` 補當月才成立的新基金。比對前要去掉名稱後面的法定警語（「(本基金之配息來源
 可能為收益平準金…)」「(本基金採匯率避險)」）—— 第一版沒去掉，340 檔有 162 檔對不到；
 傘型基金只比「之」後面的子基金名。雙幣別代號（00625K、00687C）前端退回本尊。
+
+同一個視窗上方是**受益人數**（2026-10-27）：`scripts/fetch_etf_holders.py` → `etf_holders.json`
+（進版控，`lib/etfHolders.ts`）。集保「集保戶股權分散表」（`opendata.tdcc.com.tw/getOD.ashx?id=1-5`，
+政府開放資料、無 robots.txt）持股分級 17＝合計：人數＝受益人數、股數÷1000＝流通張數（週變化＝淨申贖）。
+**集保只給最新一週**，所以逐週累積（同週重跑覆蓋同一筆），週／4 週變化要等資料累積才會出現。
+折溢價沒做：證交所即時淨值 `mis.twse.com.tw` 的 robots.txt 全站禁止；MoneyDJ 頁面雖有欄位，但
+robots.txt 檔頭聲明禁止未經同意的資料探勘 —— 要做需站主決定來源。
 
 **查不到的**：槓桿／反向、期貨、不動產、平衡型 —— 公會那幾個類型的查詢回空的（它們主要
 持有期貨、現金或受益憑證），畫面依分區說明原因（`missingReason()`）。
