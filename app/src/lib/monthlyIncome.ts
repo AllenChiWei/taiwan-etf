@@ -29,6 +29,10 @@ export interface IncomeRow {
   nhiYear: number;
   /** 最近一次除息日 */
   lastDate: string;
+  /** 上市未滿一年、配息次數不到一年份：年配息＝平均每次 × 一年次數（推估） */
+  estimated: boolean;
+  /** 實際用到的配息次數 */
+  paid: number;
 }
 
 const PER_YEAR: Record<string, number> = { 月配: 12, 雙月配: 6, 季配: 4, 半年配: 2, 年配: 1 };
@@ -47,7 +51,9 @@ export function incomeRow(code: string, name: string, freq: string, events: [str
   if (!events || !events.length || !price || price <= 0 || monthly <= 0) return null;
   const n = perYearOf(freq, events);
   const recent = events.slice(-n);
-  const annual = recent.reduce((a, e) => a + e[1], 0);
+  const estimated = recent.length < n;
+  // 新上市的主動式 ETF 只配過幾次：直接加總會把幾個月的配息當成一整年，張數高估好幾倍
+  const annual = recent.reduce((a, e) => a + e[1], 0) * (estimated ? n / recent.length : 1);
   if (!(annual > 0)) return null;
   const lots = Math.ceil((monthly * 12) / annual / 1000);
   const shares = lots * 1000;
@@ -57,8 +63,10 @@ export function incomeRow(code: string, name: string, freq: string, events: [str
   return {
     code, name, freq, price, perYear: n, annual, yieldPct: (annual / price) * 100, lots, capital: shares * price,
     perPayment, nhi, nhiYear: nhi ? shares * annual * NHI_RATE : 0, lastDate: last[0],
+    estimated, paid: recent.length,
   };
 }
 
-/** 熱門高股息與月配 ETF（預設比較名單） */
-export const DEFAULT_CODES = ['0056', '00878', '00919', '00929', '00713', '00934', '00939', '00940'];
+/** 熱門高股息與月配 ETF＋站主指定的主動式（預設比較名單） */
+export const DEFAULT_CODES = ['0056', '00878', '00919', '00929', '00713', '00934', '00939', '00940',
+  '00400A', '00401A', '00404A', '00406A', '00981A'];

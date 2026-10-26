@@ -7,7 +7,6 @@
 
 import { DividendPlanner } from '../components/DividendPlanner';
 import { EmptyState } from '../components/EmptyState';
-import { MonthlyIncome } from '../components/MonthlyIncome';
 import { useCalcIndex } from '../hooks/useCalcIndex';
 
 export function DividendPage() {
@@ -26,7 +25,6 @@ export function DividendPage() {
       )}
       {loading && <p className="py-16 text-center text-muted">載入配息資料中…</p>}
 
-      {index && <MonthlyIncome />}
       {index && <DividendPlanner index={index} />}
 
       {index && (

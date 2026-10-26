@@ -28,4 +28,15 @@ test('月配每次不到 2 萬不扣；資料不足回 null；頻率不明數近
   assert.equal(incomeRow('00X', 'X', '月配', [], 20, 10000), null);
   assert.equal(incomeRow('00X', 'X', '月配', ev, 0, 10000), null);
   assert.equal(perYearOf('—', ev), 12);
+  assert.equal(r.estimated, false);
+});
+
+test('上市未滿一年：用平均每次 × 一年次數推估，不把幾個月的配息當成一年', () => {
+  // 00400A：月配、只配過 4 次 0.12 → 年 1.44（不是 0.48）
+  const ev: [string, number, number][] = [['2026-07-09', 0.12, 1], ['2026-08-05', 0.12, 1], ['2026-09-07', 0.12, 1], ['2026-10-08', 0.12, 1]];
+  const r = incomeRow('00400A', 'X', '月配', ev, 14.41, 10000)!;
+  assert.ok(r.estimated);
+  assert.equal(r.paid, 4);
+  assert.ok(Math.abs(r.annual - 1.44) < 1e-9);
+  assert.equal(r.lots, Math.ceil(120000 / 1.44 / 1000));
 });

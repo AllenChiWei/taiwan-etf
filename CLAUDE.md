@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **推送前必做（站主 2026-10-27 要求「以後都要更新」）**：瀏覽者看得到的功能新增／改進／修正，
+> **同一個提交**就在 `app/src/lib/changelog.ts` 最上面加一條（寫法見下方「更新日誌」）。
+> 10-08 之後連續兩週的功能都漏記過。私人頁（QT 看板等密碼頁）與每日資料更新不記。
+
 ## Project
 
 A Traditional-Chinese market dashboard（站名「職業賭徒日誌」）：Taiwan and US ETFs,

@@ -56,7 +56,7 @@ export const PAGES: SearchItem[] = [
   { kind: 'page', name: '即將上市 ETF', to: '/', search: { view: 'upcoming' }, keywords: '新上市 募集 即將上市' },
   { kind: 'page', name: '美股 ETF', to: '/us', keywords: '美股 美國 ETF' },
   { kind: 'page', name: '收藏與比較', to: '/favorites', keywords: '收藏 比較 重疊 績效' },
-  { kind: 'page', name: '試算（回測、退休）', to: '/calc', keywords: '試算 回測 退休 定期定額' },
+  { kind: 'page', name: '試算（回測、退休、月領）', to: '/calc', keywords: '試算 回測 退休 定期定額 月領 要買幾張 二代健保' },
   { kind: 'page', name: '配息規劃', to: '/dividend', keywords: '配息 月配 股息 存股 規劃' },
   { kind: 'page', name: '期貨對帳單', to: '/futures', keywords: '對帳單 期貨 元大' },
   { kind: 'page', name: '籌碼（法人、選擇權）', to: '/chips', keywords: '籌碼 法人 外資 投信 選擇權 put call 大額 散戶 價平和' },

@@ -78,7 +78,8 @@ export function MonthlyIncome() {
                         className="ml-1.5 text-[11px] text-faint hover:text-down">✕</button>
               </span>
               <span className="block text-[10.5px] text-faint">
-                {r.freq} · 殖利率 {nf2.format(r.yieldPct)}% · 每次約 {nf0.format(r.perPayment)} 元 ·{' '}
+                {r.freq} · 殖利率 {nf2.format(r.yieldPct)}%
+                {r.estimated && <span className="whitespace-nowrap text-accent">（只配過 {r.paid} 次，年化推估）</span>} · 每次約 {nf0.format(r.perPayment)} 元 ·{' '}
                 {r.nhi ? <span className="whitespace-nowrap text-up">扣健保年約 {nf0.format(r.nhiYear)} 元</span> : <span className="whitespace-nowrap">不扣健保</span>}
               </span>
             </span>
@@ -102,7 +103,7 @@ export function MonthlyIncome() {
         {msg && <span className="text-[11.5px] text-muted">{msg}</span>}
       </div>
       <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
-        年配息＝最近一年實際配發（季配取最近 4 次、月配 12 次），不是「最近一次 × 次數」——今年配息成長快的會被高估。
+        年配息＝最近一年實際配發（季配取最近 4 次、月配 12 次），不是「最近一次 × 次數」——今年配息成長快的會被高估。上市未滿一年的用已配發的平均每次 × 一年次數推估。
         單筆股利達 2 萬元扣 2.11% 二代健保補充保費；未計股利所得稅。配息會變動、也可能來自本金，過去不代表未來，非投資建議。
       </p>
     </section>

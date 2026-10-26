@@ -1,4 +1,4 @@
-/* 試算分頁：歷史回測 + 退休推估。
+/* 試算分頁：歷史回測 + 退休推估 + 月領試算（2026-10-27 站主要求從配息頁搬過來，元件在 components/MonthlyIncome.tsx）。
  *
  * 回測用的是 scripts/fetch_calc.py 產的月頻資料（只還原分割、不還原配息），
  * 所以「領現金 / 股息再投入 / 配息後才買」三種選擇會算出不同的結果。
@@ -13,13 +13,14 @@ import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { NumberInput as SharedNumberInput } from '../components/NumberInput';
 import { EmptyState } from '../components/EmptyState';
+import { MonthlyIncome } from '../components/MonthlyIncome';
 import { useCalcIndex } from '../hooks/useCalcIndex';
 import {
   runBacktest, project, monthIndex,
   type CalcIndex, type CalcSeries, type Timing, type ProjectYear,
 } from '../lib/backtest';
 
-type Tab = 'backtest' | 'retire';
+type Tab = 'backtest' | 'retire' | 'monthly';
 
 /** 退休推估「帶入標的」選單的一列。 */
 interface Seed {
@@ -783,7 +784,10 @@ export function CalculatorPage() {
   const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'backtest', label: '歷史回測' },
     { id: 'retire', label: '退休推估' },
+    { id: 'monthly', label: '月領試算' },
   ];
+  // 月領試算用的是配息與殖利率（dividends.json、yields.json），不靠回測索引
+  const needsIndex = tab !== 'monthly';
 
   return (
     <>
@@ -804,19 +808,20 @@ export function CalculatorPage() {
         ))}
       </div>
 
-      {error && (
+      {needsIndex && error && (
         <EmptyState
           icon="📉"
           title="這個部署版本沒有包含試算資料"
           hint="回測資料是部署時產生的，需要 GitHub Actions 有 FINLAB_API_TOKEN。"
         />
       )}
-      {!index && !error && <p className="py-16 text-center text-muted">載入試算資料中…</p>}
+      {needsIndex && !index && !error && <p className="py-16 text-center text-muted">載入試算資料中…</p>}
 
       {index && tab === 'backtest' && <BacktestTab index={index} />}
       {index && tab === 'retire' && <RetireTab index={index} />}
+      {tab === 'monthly' && <div className="mt-4"><MonthlyIncome /></div>}
 
-      {index && (
+      {index && needsIndex && (
         <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
           回測用每月第一個交易日與除息日的實際收盤價，配息為實際除息金額，
           股價已還原分割。結果不含賣出時的證交稅與可能的匯費，也假設每一筆都成交得到。

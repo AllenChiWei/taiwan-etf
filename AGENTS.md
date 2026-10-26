@@ -1,5 +1,10 @@
 # AGENTS.md
 
+> **Before every push (owner's rule, 2026-10-27):** any user-visible feature added, improved or
+> fixed must add an entry at the top of `app/src/lib/changelog.ts` in the same commit
+> (Traditional Chinese, written for visitors; see 「更新日誌」 in CLAUDE.md). Daily data refreshes
+> and the password-protected private pages are not logged.
+
 ## Project overview
 
 A searchable Traditional-Chinese directory of Taiwan ETFs, published to GitHub Pages at
