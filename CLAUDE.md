@@ -783,7 +783,8 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
 台股頁的「主動式換股」分頁（`?view=active`），`scripts/fetch_active_holdings.py` →
 `active_holdings.json`（進版控：最新持股＋近 60 次換股）。清單＝站主指定的幾檔（`PICKED`）
 ＋**每天重算的市值前十大主動式股票型 ETF**（證交所 `t187ap47_L` 發行單位數 × `STOCK_DAY_ALL`
-收盤價；代號結尾 A、類型不含「債」），依代號排序。掉出前十的繼續更新。最上面的「合計持股」
+收盤價；代號結尾 A、類型不含「債」），依代號排序。掉出前十的繼續更新。2026-10-26 起再加上**投信接得上的
+所有主動式股票型**（站主要求擴大檔數，參考籌碼小宇）；新加入的第一次回補 25 個交易日。最上面的「合計持股」
 是前十大（有每日持股的那幾檔）的「權重 × 市值」加總，期貨不算（`aggregateTop()`）。
 
 **持股只在各投信自己的網站**。證交所 `rwd/zh/ETF/productContent?id=` 會給每檔的 PCF 網址，
@@ -805,6 +806,9 @@ Don't write literal `<tr>` / `<td>` in its CSS comments — `verify_page.py` cou
   要送 `null` body（空 body 回 411），回應外面包一層 `data`；`api/etf/buyback {fundId, date}`，
   date 是公告日、持股日期是 `pcf.date2`。
 - **元大**：robots `Allow: /`。`etfapi.yuantaetfs.com/ectranslation/api/bridge?FuncId=PCF/Daily&ticker=代號`。
+- **野村**（2026-10-26）：沒有 robots.txt（`/robots.txt` 回首頁 HTML）。Angular 前端，`apiUrl` 是
+  `/API/ETFAPI/api/`；`POST Fund/GetFundAssets {FundID: 證券代號, SearchDate: "YYYY-MM-DD"}`（寫成 `2026/10/22` 回 400），
+  持股日期是 `FundAsset.NavDate`，`Table` 依類別分表、每表前四欄＝代號、名稱、股數、權重。
 - **凱基**：robots 沒有限制。`POST /Fund/RedemptionVC fundID=J024` 回 HTML 片段，持股日期是
   「(YYYY/MM/DD)每受益權單位淨資產價值」的括號；基金代碼從下拉選單用簡稱對。
 
