@@ -36,7 +36,7 @@ export function CommandPalette({ open, onClose, etfs }: {
 
   const items = useMemo<SearchItem[]>(() => [
     ...PAGES,
-    ...etfs.map(e => ({ kind: 'etf' as const, code: e.code, name: e.name, keywords: e.freq, to: '/', search: { q: e.code } })),
+    ...etfs.map(e => ({ kind: 'etf' as const, code: e.code, name: e.name, keywords: e.freq, to: '/etf', search: { code: e.code } })),
     ...stocks,
   ], [etfs, stocks]);
   const hits = useMemo(() => searchAll(items, q), [items, q]);

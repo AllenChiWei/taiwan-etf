@@ -16,7 +16,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
 export type SitePath = '/' | '/us' | '/favorites' | '/calc' | '/dividend' | '/futures'
-  | '/chips' | '/news' | '/macro' | '/calendar' | '/stock' | '/poker' | '/about' | '/changelog';
+  | '/chips' | '/news' | '/macro' | '/calendar' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
   kind: ChangeKind;
@@ -36,6 +36,9 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-10-27',
     items: [
+      { kind: 'new', to: '/etf',
+        text: '每檔 ETF 有自己的頁面：收盤價、實配殖利率、近 3 月～5 年報酬、受益人數、投入 10 萬的成長圖、'
+          + '最近 8 次配息與月領 1 萬要幾張、前十大持股，網址可以直接分享。快速搜尋選到 ETF、或台股清單點名稱後按「完整頁面」都會到這裡。' },
       { kind: 'fix', to: '/calc',
         text: '月領試算的二代健保改成只算配息裡的「股利、利息所得」：資本利得、收益平準金（含掩護性買權的選擇權權利金）'
           + '不扣健保也不課所得稅。原本把整筆配息都當股利，0056、00919 等大部分高股息 ETF 都被高估；'
