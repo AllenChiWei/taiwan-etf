@@ -4,9 +4,10 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { fetchDivMix, fetchEtfDividends, fetchYields } from '../api/extras';
 import { fetchDataset } from '../api/etfs';
-import { DEFAULT_CODES, incomeRow, type DivMixData, type IncomeRow } from '../lib/monthlyIncome';
+import { DEFAULT_CODES, incomeRow, type DivMix, type DivMixData, type IncomeRow } from '../lib/monthlyIncome';
 import type { EtfDividendData, YieldData } from '../lib/dividend';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -19,6 +20,7 @@ export function MonthlyIncome() {
   const [codes, setCodes] = useState<string[]>(DEFAULT_CODES);
   const [add, setAdd] = useState('');
   const [msg, setMsg] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -73,7 +75,11 @@ export function MonthlyIncome() {
           <li key={r.code} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1.5 last:border-0">
             <span className="min-w-0">
               <span className="block truncate text-[13px] text-ink">
-                <span className="font-mono text-[12px] text-muted">{r.code}</span> {r.name}
+                <button type="button" aria-expanded={open === r.code} onClick={() => setOpen(o => (o === r.code ? null : r.code))}
+                        className="text-left hover:text-accent">
+                  <span className="font-mono text-[12px] text-muted">{r.code}</span> {r.name}
+                  <span className="ml-1 text-[10.5px] text-accent">{open === r.code ? '收合 ▴' : '組成 ▾'}</span>
+                </button>
                 <button type="button" aria-label={`移除 ${r.code}`} onClick={() => setCodes(cs => cs.filter(c => c !== r.code))}
                         className="ml-1.5 text-[11px] text-faint hover:text-down">✕</button>
               </span>
@@ -87,6 +93,7 @@ export function MonthlyIncome() {
               <span className="block font-mono text-[14px] font-bold tabular-nums text-ink">{nf0.format(r.lots)} 張</span>
               <span className="block font-mono text-[11px] tabular-nums text-faint">本金 {wan(r.capital)}</span>
             </span>
+            {open === r.code && <MixDetail r={r} mix={src.mix?.mix[r.code] ?? null} />}
           </li>
         ))}
       </ul>
@@ -119,6 +126,47 @@ function NhiNote({ r }: { r: IncomeRow }) {
   return r.nhi
     ? <span className="whitespace-nowrap text-up">{pct}・扣健保年約 {nf0.format(r.nhiYear)} 元</span>
     : <span className="whitespace-nowrap">{pct}・不扣健保</span>;
+}
+
+/** 順序同集保 divDet1～5；前兩項（股利、利息）才扣健保、課所得稅 */
+const MIX_PARTS = [
+  { label: '股利所得', color: 'bg-up', taxed: true },
+  { label: '利息所得', color: 'bg-yield', taxed: true },
+  { label: '收益平準金', color: 'bg-accent', taxed: false },
+  { label: '已實現資本利得', color: 'bg-down', taxed: false },
+  { label: '其他所得', color: 'bg-na', taxed: false },
+];
+
+/** 點 ETF 名稱展開：最近一次公告的配息組成，以及以目前月領金額換算每次各領多少 */
+function MixDetail({ r, mix }: { r: IncomeRow; mix: DivMix | null }) {
+  const parts = mix ? MIX_PARTS.map((p, i) => ({ ...p, pct: mix.d[i] ?? 0 })).filter(p => p.pct > 0) : [];
+  return (
+    <div className="col-span-2 mb-1 rounded-lg bg-sunken px-3 py-2 text-[12px]">
+      {parts.length ? (
+        <>
+          <div className="mb-1.5 text-[11px] text-faint">配息組成（集保 ETF 觀測站，{mix!.date} 除息那次）</div>
+          <div className="flex h-2.5 overflow-hidden rounded-full" role="img"
+               aria-label={parts.map(p => `${p.label} ${nf0.format(p.pct)}%`).join('、')}>
+            {parts.map(p => <span key={p.label} className={p.color} style={{ width: `${p.pct}%` }} />)}
+          </div>
+          <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+            {parts.map(p => (
+              <li key={p.label} className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${p.color}`} />
+                <span className="text-ink">{p.label}</span>
+                <span className="font-mono tabular-nums text-muted">{nf2.format(p.pct)}%</span>
+                <span className="ml-auto font-mono tabular-nums text-faint">每次約 {nf0.format(r.perPayment * p.pct / 100)} 元</span>
+                <span className={`whitespace-nowrap text-[10.5px] ${p.taxed ? 'text-up' : 'text-faint'}`}>{p.taxed ? '計健保・所得稅' : '免'}</span>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <p className="text-muted">集保 ETF 觀測站還沒公告這檔的配息組成（新上市、主動式常見），扣不扣健保以投信的收益分配通知為準。</p>
+      )}
+      <Link to="/etf" search={{ code: r.code }} className="mt-1.5 inline-block font-semibold text-accent">{r.code} 完整頁面 →</Link>
+    </div>
+  );
 }
 
 /** 畫分享圖卡（1080×1350），能分享就分享、否則下載；回傳結果訊息 */
