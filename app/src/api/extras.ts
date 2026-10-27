@@ -7,6 +7,7 @@ import type { ActiveData } from '../lib/active.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
 import type { EtfHoldersData } from '../lib/etfHolders.ts';
+import type { DivMixData } from '../lib/monthlyIncome.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
@@ -42,6 +43,10 @@ export const fetchTop10 = (signal?: AbortSignal) =>
 
 export const fetchEtfHolders = (signal?: AbortSignal) =>
   load<EtfHoldersData>('etf_holders.json', d => Boolean(d.etfs && d.dates), signal);
+
+/** 配息組成（集保 ETF 觀測站，scripts/fetch_div_mix.py）：月領試算判斷哪部分要扣二代健保 */
+export const fetchDivMix = (signal?: AbortSignal) =>
+  load<DivMixData>('div_mix.json', d => Boolean(d.mix), signal);
 
 export const fetchStockDividends = (signal?: AbortSignal) =>
   load<StockDividendData>('stock_dividends.json', d => Boolean(d.stocks), signal);

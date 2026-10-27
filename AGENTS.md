@@ -116,6 +116,11 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   TPEx `afterTrading/otc`), per-change valuation `v` = Δshares × VWAP (an **estimate** — share changes can be
   creations/redemptions), and a moving-average-cost book (`book`) that starts on its first priced snapshot and
   is never back-filled. Details and each issuer's API quirks are in CLAUDE.md「主動式 ETF 換股」.
+- 配息組成 (`scripts/fetch_div_mix.py` → `div_mix.json`, committed, step `dmix`, 2026-10-27): each ETF's latest
+  announced split of a distribution into 股利／利息／收益平準金／已實現資本利得／其他 (%) from TDCC's ETF 觀測站
+  API (`POST fundclear.com.tw/api/etf/dividend/query-dividend`, 100 rows per page max, no robots.txt). The 月領試算
+  only charges the 2.11% 二代健保 on the 股利＋利息 share; all-zero rows mean "not announced" and the UI says so
+  instead of guessing (00406A's covered-call premiums are exempt but it publishes no split).
 - 殖利率 is computed here (公告配息 ÷ 當日收盤價), not scraped; MoneyDJ is now fetched
   **weekly** for the two fields that never change (保管銀行、配息頻率).
 

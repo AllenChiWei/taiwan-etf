@@ -4,9 +4,9 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchEtfDividends, fetchYields } from '../api/extras';
+import { fetchDivMix, fetchEtfDividends, fetchYields } from '../api/extras';
 import { fetchDataset } from '../api/etfs';
-import { DEFAULT_CODES, incomeRow, type IncomeRow } from '../lib/monthlyIncome';
+import { DEFAULT_CODES, incomeRow, type DivMixData, type IncomeRow } from '../lib/monthlyIncome';
 import type { EtfDividendData, YieldData } from '../lib/dividend';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -14,7 +14,7 @@ const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFr
 const wan = (v: number) => `${nf0.format(Math.round(v / 1e4))} 萬`;
 
 export function MonthlyIncome() {
-  const [src, setSrc] = useState<{ d: EtfDividendData; y: YieldData; etfs: { code: string; name: string; freq: string }[]; asof: string } | null>(null);
+  const [src, setSrc] = useState<{ d: EtfDividendData; y: YieldData; mix: DivMixData | null; etfs: { code: string; name: string; freq: string }[]; asof: string } | null>(null);
   const [monthly, setMonthly] = useState(10000);
   const [codes, setCodes] = useState<string[]>(DEFAULT_CODES);
   const [add, setAdd] = useState('');
@@ -22,9 +22,9 @@ export function MonthlyIncome() {
 
   useEffect(() => {
     const ac = new AbortController();
-    Promise.all([fetchEtfDividends(ac.signal), fetchYields(ac.signal), fetchDataset(ac.signal)]).then(([d, y, ds]) => {
+    Promise.all([fetchEtfDividends(ac.signal), fetchYields(ac.signal), fetchDataset(ac.signal), fetchDivMix(ac.signal).catch(() => null)]).then(([d, y, ds, mix]) => {
       if (!ac.signal.aborted && d && y) {
-        setSrc({ d, y, etfs: ds.etfs.map(e => ({ code: e.code, name: e.name, freq: e.freq })), asof: ds.meta.yieldAsof ?? ds.meta.updated });
+        setSrc({ d, y, mix, etfs: ds.etfs.map(e => ({ code: e.code, name: e.name, freq: e.freq })), asof: ds.meta.yieldAsof ?? ds.meta.updated });
       }
     }).catch(() => {});
     return () => ac.abort();
@@ -35,7 +35,7 @@ export function MonthlyIncome() {
     const by = new Map(src.etfs.map(e => [e.code, e]));
     return codes.map(c => {
       const e = by.get(c);
-      return e ? incomeRow(c, e.name, e.freq, src.d.dividends[c], src.y.yields[c]?.price, monthly) : null;
+      return e ? incomeRow(c, e.name, e.freq, src.d.dividends[c], src.y.yields[c]?.price, monthly, src.mix?.mix[c]) : null;
     }).filter((r): r is IncomeRow => r !== null).sort((a, b) => a.capital - b.capital);
   }, [src, codes, monthly]);
 
@@ -80,7 +80,7 @@ export function MonthlyIncome() {
               <span className="block text-[10.5px] text-faint">
                 {r.freq} · 殖利率 {nf2.format(r.yieldPct)}%
                 {r.estimated && <span className="whitespace-nowrap text-accent">（只配過 {r.paid} 次，年化推估）</span>} · 每次約 {nf0.format(r.perPayment)} 元 ·{' '}
-                {r.nhi ? <span className="whitespace-nowrap text-up">扣健保年約 {nf0.format(r.nhiYear)} 元</span> : <span className="whitespace-nowrap">不扣健保</span>}
+                <NhiNote r={r} />
               </span>
             </span>
             <span className="text-right">
@@ -104,10 +104,21 @@ export function MonthlyIncome() {
       </div>
       <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
         年配息＝最近一年實際配發（季配取最近 4 次、月配 12 次），不是「最近一次 × 次數」——今年配息成長快的會被高估。上市未滿一年的用已配發的平均每次 × 一年次數推估。
-        單筆股利達 2 萬元扣 2.11% 二代健保補充保費；未計股利所得稅。配息會變動、也可能來自本金，過去不代表未來，非投資建議。
+        二代健保補充保費只算配息裡的股利所得、利息所得（單筆達 2 萬元扣 2.11%）；收益平準金、已實現資本利得（含掩護性買權的選擇權權利金）不扣健保、也不課所得稅。
+        配息組成用集保 ETF 觀測站最近一次公告的預估占比，實際以投信的收益分配通知為準；未計股利所得稅。配息會變動、也可能來自本金，過去不代表未來，非投資建議。
       </p>
     </section>
   );
+}
+
+/** 「股利 18%・扣健保年約 N 元」：只有股利＋利息所得那部分算健保 */
+function NhiNote({ r }: { r: IncomeRow }) {
+  if (r.taxPct === null) return <span className="whitespace-nowrap">配息組成未公告</span>;
+  if (r.taxPct === 0) return <span className="whitespace-nowrap">無股利所得，不扣健保</span>;
+  const pct = `股利${r.taxPct >= 99.5 ? '' : ` ${nf0.format(r.taxPct)}%`}`;
+  return r.nhi
+    ? <span className="whitespace-nowrap text-up">{pct}・扣健保年約 {nf0.format(r.nhiYear)} 元</span>
+    : <span className="whitespace-nowrap">{pct}・不扣健保</span>;
 }
 
 /** 畫分享圖卡（1080×1350），能分享就分享、否則下載；回傳結果訊息 */
@@ -140,7 +151,7 @@ async function shareCard(rows: IncomeRow[], monthly: number, asof: string): Prom
     g.textAlign = 'left';
   });
   g.fillStyle = '#7d8aa3'; g.font = font(500, 24);
-  g.fillText(`近一年實際配息 × ${asof} 收盤價｜單筆股利 ≥ 2 萬扣二代健保 2.11%`, 80, H - 110);
+  g.fillText(`近一年實際配息 × ${asof} 收盤價｜股利所得單筆 ≥ 2 萬扣健保 2.11%`, 80, H - 110);
   g.fillText('職業賭徒日誌 allenchiwei.github.io/taiwan-etf｜公開資料整理，非投資建議', 80, H - 70);
   const blob: Blob | null = await new Promise(res => c.toBlob(res, 'image/png'));
   if (!blob) return '產生圖片失敗';
