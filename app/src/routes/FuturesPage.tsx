@@ -9,9 +9,12 @@
  * 策略與避險）、主觀交易（其餘，多半是個股期貨）。不同月份的合約視為同一商品。
  *
  * 計算全部在 lib/futures.ts，那裡是純函式而且有對真實檔案的測試。這裡只負責畫。
+ *
+ * 例外（2026-10-28 使用者要求）：解鎖私人頁後會自動載入「當年度對帳單」——那是使用者自己在本機加密後上傳的
+ * （DashBoard_AI\statement_export.py，密碼同 v18），見下方 statementVault。上傳的檔案照舊不離開裝置。
  */
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   parseSheet, stats, groupBy, byYear, monthMatrix, histogram, dailyCurves,
   mergeTrades, classifyOptions, optionMetrics, StatementError,
@@ -24,6 +27,27 @@ import { TONE_CLASS } from '../lib/format';
 import { loadFuturesPrefs, saveFuturesPrefs, type FuturesPrefs } from '../lib/storage';
 import { EmptyState } from '../components/EmptyState';
 import { PnlChart, type PnlLine } from '../components/PnlChart';
+import { Vault } from '../lib/vault';
+
+/* 私人：當年度對帳單（2026-10-28 使用者要求放進私人頁）。DashBoard_AI\statement_export.py 把 EasyWin 匯出的
+ * 已實現損益列原樣加密上傳（密碼、salt 同 v18），這裡解鎖狀態下自動載入、用同一個 parseSheet 解析。
+ * 對帳單最後一天之後只有元大 API 的每日合計（沒有逐筆），另外列出、不混進下面的勝率與曲線。
+ * 沒解鎖的人什麼都看不到，上傳功能照舊。 */
+const statementVault = new Vault(`${import.meta.env.BASE_URL}data/statement/`, 'twetf.v18.unlock');
+interface ApiDay { d: string; gross: number; fee: number; tax: number; net: number }
+interface StatementData {
+  generated: string; year: string; asof: string; api_asof: string;
+  files: Array<{ name: string; rows: unknown[][] }>; api: ApiDay[];
+}
+async function loadStatementIfUnlocked(): Promise<StatementData | null> {
+  try {
+    const m = await statementVault.loadManifest();
+    if (!m || (!statementVault.unlocked && !(await statementVault.restore(m)))) return null;
+    return await statementVault.fetchJson<StatementData>('statement.enc');
+  } catch {
+    return null;
+  }
+}
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
@@ -820,6 +844,26 @@ export function FuturesPage() {
   const [prefs, setPrefsState] = useState<FuturesPrefs>(
     () => loadFuturesPrefs({ ...DEFAULT_OPTION_RULE, overrides: {} }));
   const input = useRef<HTMLInputElement>(null);
+  const [saved, setSaved] = useState<StatementData | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    void loadStatementIfUnlocked().then(d => {
+      if (!alive || !d) return;
+      const loaded: Loaded[] = [];
+      for (const f of d.files) {
+        try {
+          const trades = parseSheet(f.rows);
+          loaded.push({ name: `${d.year} 對帳單・${f.name}`, n: trades.length, trades });
+        } catch (e) {
+          setError(`${f.name}：${e instanceof Error ? e.message : '讀不懂'}`);
+        }
+      }
+      setSaved(d);
+      setFiles(prev => (prev.length ? prev : loaded));
+    });
+    return () => { alive = false; };
+  }, []);
 
   function setPrefs(p: FuturesPrefs) {
     setPrefsState(p);
@@ -978,6 +1022,44 @@ export function FuturesPage() {
             {error}
           </p>
         )}
+
+        {saved && saved.api.length > 0 && (() => {
+          const sum = (k: keyof Omit<ApiDay, 'd'>) => saved.api.reduce((a, x) => a + x[k], 0);
+          const mine = files.filter(f => f.name.startsWith(`${saved.year} 對帳單`));
+          if (!mine.length) return null;
+          const book = mergeTrades(mine.map(f => f.trades)).reduce((a, t) => a + t.net, 0);
+          return (
+            <details className="mt-2 rounded-lg bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
+              <summary className="cursor-pointer">
+                對帳單只到 <span className="font-mono">{saved.asof}</span>；之後
+                {' '}<span className="font-mono">{saved.api[0].d.slice(5)}～{saved.api_asof.slice(5)}</span>{' '}
+                {saved.api.length} 個交易日用元大 API 每日合計補：淨
+                {' '}<span className={`font-mono font-semibold ${tone(sum('net'))}`}>{money(sum('net'))}</span>，
+                今年合計約 <span className={`font-mono font-semibold ${tone(book + sum('net'))}`}>{money(book + sum('net'))}</span>
+              </summary>
+              <p className="mt-1.5 text-[11px] text-faint">
+                API 沒有歷史對帳單、當日成交也只回日盤，所以這段只有每日合計，<strong className="text-muted">沒算進下面的勝率、曲線與月績效</strong>；
+                手續費與稅入帳的日子和對帳單不同，和對帳單會差一點。要逐筆的話，在 EasyWin 重新匯出已實現損益再跑一次匯出。
+              </p>
+              <table className="mt-1.5 w-full font-mono text-[11.5px] tabular-nums">
+                <thead><tr className="text-faint"><th className="text-left font-normal">日期</th>
+                  <th className="text-right font-normal">平倉損益</th><th className="text-right font-normal">手續費＋稅</th>
+                  <th className="text-right font-normal">淨</th></tr></thead>
+                <tbody>
+                  {saved.api.map(x => (
+                    <tr key={x.d}><td>{x.d.slice(5)}</td><td className="text-right">{nf0.format(x.gross)}</td>
+                      <td className="text-right">{nf0.format(x.fee + x.tax)}</td>
+                      <td className={`text-right ${tone(x.net)}`}>{money(x.net)}</td></tr>
+                  ))}
+                  <tr className="border-t border-line font-semibold"><td>合計</td>
+                    <td className="text-right">{nf0.format(sum('gross'))}</td>
+                    <td className="text-right">{nf0.format(sum('fee') + sum('tax'))}</td>
+                    <td className={`text-right ${tone(sum('net'))}`}>{money(sum('net'))}</td></tr>
+                </tbody>
+              </table>
+            </details>
+          );
+        })()}
 
         <p className="mt-2 text-[11px] leading-relaxed text-faint">
           支援 .xls／.xlsx／.csv，可以一次選好幾份（例如每年一份），期間重疊的部分只算一次。

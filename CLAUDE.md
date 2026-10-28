@@ -588,6 +588,14 @@ localStorage（`twetf.futuresPrefs`），不存交易內容。委託單號的字
 
 **使用者的對帳單是私人資料，絕對不要 commit。** `.gitignore` 已排除 *.xls／*.xlsx。
 
+**例外：加密的當年度對帳單（2026-10-28 使用者要求放進私人頁）。** `D:\ai\DashBoard_AI\statement_export.py`
+讀 `C:\Yuanta\EasyWin\user` 的已實現損益 .xls（只讀），只留當年度的列、原樣放進 JSON，用 v18 同一把密碼與 salt
+加密成 `app/public/data/statement/statement.enc`。`FuturesPage` 解鎖狀態下自動載入、用同一個 `parseSheet` 解析
+（和手動上傳結果一樣）。對帳單最後一天之後用 `D:\ai\Yuanta\equity_log.csv`（元大 API FA003 每日平倉損益／手續費／
+期交稅）補每日合計，另列一個區塊、不混進勝率與曲線。只能提交這個加密檔，明文仍然不可以。
+元大交易 API **沒有歷史對帳單查詢**；當日成交查詢（DealQuery）只回日盤成交，夜盤與到期結算都沒有，
+所以逐筆資料一定要從 EasyWin 匯出（2026-10-28 實測：9/14～10/28 的成交回報只解釋得了實際期交稅約四成）。
+
 **檔案不會離開瀏覽器。** 這個站是靜態的、沒有後端，對帳單是完整的交易紀錄，
 不該經過任何伺服器。解析與計算都在前端，算完就丟。畫面上有寫明這件事。
 
