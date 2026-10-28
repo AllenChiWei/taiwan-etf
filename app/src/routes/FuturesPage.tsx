@@ -32,11 +32,13 @@ import { Vault } from '../lib/vault';
 /* 私人：當年度對帳單（2026-10-28 使用者要求放進私人頁）。DashBoard_AI\statement_export.py 把 EasyWin 匯出的
  * 已實現損益列原樣加密上傳（密碼、salt 同 v18），這裡解鎖狀態下自動載入、用同一個 parseSheet 解析。
  * 對帳單最後一天之後只有元大 API 的每日合計（沒有逐筆），另外列出、不混進下面的勝率與曲線。
+ * 從 since 開始（使用者要求補上 2025-11、12 月），所以「今年合計」只算 year 那一年的列。
  * 沒解鎖的人什麼都看不到，上傳功能照舊。 */
 const statementVault = new Vault(`${import.meta.env.BASE_URL}data/statement/`, 'twetf.v18.unlock');
+const STATEMENT_LABEL = '已存對帳單・';
 interface ApiDay { d: string; gross: number; fee: number; tax: number; net: number }
 interface StatementData {
-  generated: string; year: string; asof: string; api_asof: string;
+  generated: string; year: string; since?: string; asof: string; api_asof: string;
   files: Array<{ name: string; rows: unknown[][] }>; api: ApiDay[];
 }
 async function loadStatementIfUnlocked(): Promise<StatementData | null> {
@@ -854,7 +856,7 @@ export function FuturesPage() {
       for (const f of d.files) {
         try {
           const trades = parseSheet(f.rows);
-          loaded.push({ name: `${d.year} 對帳單・${f.name}`, n: trades.length, trades });
+          loaded.push({ name: `${STATEMENT_LABEL}${f.name}`, n: trades.length, trades });
         } catch (e) {
           setError(`${f.name}：${e instanceof Error ? e.message : '讀不懂'}`);
         }
@@ -1025,9 +1027,10 @@ export function FuturesPage() {
 
         {saved && saved.api.length > 0 && (() => {
           const sum = (k: keyof Omit<ApiDay, 'd'>) => saved.api.reduce((a, x) => a + x[k], 0);
-          const mine = files.filter(f => f.name.startsWith(`${saved.year} 對帳單`));
+          const mine = files.filter(f => f.name.startsWith(STATEMENT_LABEL));
           if (!mine.length) return null;
-          const book = mergeTrades(mine.map(f => f.trades)).reduce((a, t) => a + t.net, 0);
+          const book = mergeTrades(mine.map(f => f.trades))
+            .reduce((a, t) => a + (t.year === saved.year ? t.net : 0), 0);
           return (
             <details className="mt-2 rounded-lg bg-sunken px-3 py-2 text-[12px] leading-relaxed text-muted">
               <summary className="cursor-pointer">
