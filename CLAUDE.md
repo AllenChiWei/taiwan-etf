@@ -201,7 +201,7 @@ unstyled pill.
 | --- | --- |
 | `futContractsDateDown` | 三大法人各期貨契約未平倉（含契約金額，近 120 天） |
 | `callsAndPutsDateDown` | 三大法人臺指選擇權買賣權分計（未平倉與當日交易，買方／賣方／淨額） |
-| `pcRatioDown` | Put/Call Ratio（成交量比、未平倉量比） |
+| `pcRatioDown` | Put/Call Ratio（成交量比、未平倉量比）；另用 `callsAndPutsDateDown` 的投信買權賣方算「扣投信賣出買權」版（`pc.oiAdj`／`volAdj`／`itcOi`，掩護性買權 ETF 把原始比率壓在 100 以下，籌碼頁預設顯示扣掉後的） |
 | `largeTraderFutDown` / `largeTraderOptDown` | 大額交易人前五大／前十大 |
 | `futDataDown` | 期貨每日行情；只拿小台／微台的全市場未沖銷量，用來推算散戶未平倉 |
 
