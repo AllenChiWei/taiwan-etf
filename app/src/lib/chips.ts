@@ -86,8 +86,15 @@ export interface ChipsData {
     oi?: Record<string, (number | null)[]>;
   };
   options: OptRow[];
-  /** Put/Call Ratio：vol 是成交量比、oi 是未平倉量比，單位都是 % */
-  pc: { dates: string[]; vol: number[]; oi: number[] };
+  /**
+   * Put/Call Ratio：vol 是成交量比、oi 是未平倉量比，單位都是 %。
+   * oiAdj／volAdj 是扣掉投信賣出買權（掩護性買權 ETF）後的比率，itcOi 是投信買權賣方未平倉口數；
+   * 某天沒有投信資料是 null。舊版的 chips.json 沒有這三個欄位。
+   */
+  pc: {
+    dates: string[]; vol: number[]; oi: number[];
+    oiAdj?: (number | null)[]; volAdj?: (number | null)[]; itcOi?: (number | null)[];
+  };
   large: { fut: LargeRow[]; opt: LargeRow[] };
   top: { twse: TopByWho | null; tpex: TopByWho | null };
   /** 各類股成交比重（上市）。舊版的 chips.json 沒有這個欄位。 */
@@ -338,11 +345,13 @@ export function summaryTiles(data: ChipsData): SummaryTile[] {
       hint: '推算，偏多為正' });
   }
 
-  const [pc, pcPrev] = lastTwo(data.pc.oi);
+  // 有扣投信賣出買權的版本就用它：原始值被掩護性買權 ETF 長期壓在 100 以下
+  const adj = data.pc.oiAdj && lastTwo(data.pc.oiAdj)[0] !== null;
+  const [pc, pcPrev] = lastTwo(adj ? data.pc.oiAdj! : data.pc.oi);
   if (pc !== null) {
     out.push({ key: 'pc', label: 'P/C 未平倉比', value: pc,
       change: pcPrev === null ? null : pc - pcPrev, unit: 'pct', tone: 'none',
-      hint: '賣權 ÷ 買權' });
+      hint: adj ? '已扣投信賣出買權' : '賣權 ÷ 買權' });
   }
 
   const m = data.margin;

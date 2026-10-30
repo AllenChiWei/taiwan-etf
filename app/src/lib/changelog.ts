@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-10-30',
+    items: [
+      { kind: 'improve', to: '/chips',
+        text: 'Put/Call Ratio 預設改成「扣投信賣出買權」：掩護性買權 ETF 由投信賣出台指買權，'
+          + '把買權墊高、讓原始比率長期低於 100%；現在先把投信的買權賣方部位扣掉再算，可以切回原始值對照。'
+          + '每日摘要的 P/C 比也改用扣掉後的數字。' },
+    ],
+  },
+  {
     date: '2026-10-27',
     items: [
       { kind: 'improve', to: '/calc',

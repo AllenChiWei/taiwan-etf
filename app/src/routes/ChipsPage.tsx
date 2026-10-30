@@ -12,7 +12,7 @@ import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
-  retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles,
+  retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
   linePath,
   type SummaryTile,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
@@ -476,21 +476,33 @@ function SummaryStrip({ data }: { data: ChipsData }) {
 
 /* ── Put/Call Ratio ─────────────────────────────────────── */
 
+/** 扣投信賣出買權／原始。掩護性買權 ETF 由投信賣出買權，原始比率長期偏低 */
+const PC_MODES = ['扣投信賣出買權', '原始'] as const;
+
 function PcSection({ data }: { data: ChipsData }) {
-  const { dates, vol, oi } = data.pc;
-  const lastVol = vol.length ? vol[vol.length - 1] : null;
-  const lastOi = oi.length ? oi[oi.length - 1] : null;
+  const { dates, itcOi } = data.pc;
+  const hasAdj = !!data.pc.oiAdj && data.pc.oiAdj.some(v => v !== null);
+  const [mode, setMode] = useState<(typeof PC_MODES)[number]>('扣投信賣出買權');
+  const adj = hasAdj && mode === '扣投信賣出買權';
+  const vol: (number | null)[] = adj ? data.pc.volAdj ?? [] : data.pc.vol;
+  const oi: (number | null)[] = adj ? data.pc.oiAdj ?? [] : data.pc.oi;
+  const [lastVol] = lastTwo(vol);
+  const [lastOi] = lastTwo(oi);
+  const [rawOi] = lastTwo(data.pc.oi);
+  const [itc] = lastTwo(itcOi ?? []);
   // 100% 是多空平衡點，圖上要看得出在它的哪一邊，所以畫的是與 100 的差
-  const volRel = vol.map(v => v - 100);
-  const oiRel = oi.map(v => v - 100);
+  const volRel = vol.map(v => (v === null ? null : v - 100));
+  const oiRel = oi.map(v => (v === null ? null : v - 100));
+  const callSub = adj ? '（買權 − 投信賣出買權）' : '買權';
 
   return (
     <Section title="Put/Call Ratio" hint={`近 ${dates.length} 個交易日`}>
+      {hasAdj && <Switch options={PC_MODES} value={mode} onChange={setMode} label="計算方式" />}
       <div className="mt-2 grid grid-cols-2 gap-2.5">
         <Stat label="成交量比" value={lastVol === null ? '—' : `${nf2.format(lastVol)}%`}
-              sub="賣權成交量 ÷ 買權成交量" />
+              sub={`賣權成交量 ÷ ${callSub}成交量`} />
         <Stat label="未平倉量比" value={lastOi === null ? '—' : `${nf2.format(lastOi)}%`}
-              sub="賣權未平倉 ÷ 買權未平倉" />
+              sub={adj && rawOi !== null ? `原始 ${nf2.format(rawOi)}%` : `賣權未平倉 ÷ ${callSub}未平倉`} />
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg border border-line bg-bg p-2.5">
@@ -505,6 +517,13 @@ function PcSection({ data }: { data: ChipsData }) {
       <p className="mt-2 text-[11px] text-faint">
         比率高於 100% 代表賣權多於買權。未平倉量比變動慢、被當成偏中期的指標，
         成交量比每天跳動大。兩者都是統計，不是訊號。
+        {hasAdj && (
+          <>
+            {' '}掩護性買權 ETF 由投信賣出買權，會把買權墊高、讓原始比率長期低於 100%；
+            「扣投信賣出買權」是把投信的買權賣方部位從買權扣掉再算
+            {itc !== null && `（最新投信賣出買權未平倉 ${nf0.format(itc)} 口）`}。
+          </>
+        )}
       </p>
     </Section>
   );

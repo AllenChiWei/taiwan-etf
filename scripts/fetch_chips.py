@@ -13,6 +13,7 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
     futContractsDateDown   三大法人-區分各期貨契約（含契約金額）
     callsAndPutsDateDown   三大法人-選擇權買賣權分計（含契約金額）
     pcRatioDown            Put/Call Ratio（成交量與未平倉量）
+                           另用 callsAndPutsDateDown 的投信買權賣方，算扣掉掩護性買權 ETF 的版本
     largeTraderFutDown     期貨大額交易人未沖銷部位（前五大／前十大）
     largeTraderOptDown     選擇權大額交易人未沖銷部位
     futDataDown            期貨每日交易行情（拿小台／微台的全市場未沖銷量）
@@ -379,23 +380,50 @@ def options(rows):
     return out
 
 
-def pc_ratio(days, end=None):
-    u"""Put/Call Ratio 的歷史。一次最多一個月，所以切段抓。"""
-    dates, vol, oi = [], [], []
+def itc_calls(days, end=None):
+    u"""投信的臺指買權賣方：{交易日: (未平倉口數, 當日成交口數)}。
+
+    掩護性買權（covered call）ETF 由投信賣出買權，買權未平倉被墊高，原始 PC ratio
+    長期低於 100。扣掉這一塊才看得出其他人的多空。callsAndPutsDateDown 只開放近 3 年，
+    這裡只要近 HISTORY_DAYS 天，不受影響。
+    """
+    out = {}
+    for a, b in windows(days, WINDOW_DAYS, end):
+        for c in fetch_csv('callsAndPutsDateDown', {
+                'firstDate': '', 'lastDate': '', 'commodityId': 'TXO',
+                'queryStartDate': a, 'queryEndDate': b}):
+            if len(c) >= 16 and c[2] == 'CALL' and WHO.get(c[3], c[3]) == u'投信':
+                out[iso(c[0])] = (num(c[12]), num(c[6]))
+    return out
+
+
+def pc_ratio(days, end=None, itc=None):
+    u"""Put/Call Ratio 的歷史。一次最多一個月，所以切段抓。
+
+    itc 有給（itc_calls 的結果）就另外算扣掉投信賣出買權的版本：
+        oiAdj  = 賣權未平倉 ÷ (買權未平倉 − 投信買權賣方未平倉) × 100
+        volAdj = 賣權成交量 ÷ (買權成交量 − 投信買權賣方成交量) × 100
+    某天沒有投信資料就是 null（不拿原始值頂替，免得看起來像修正過）。
+    """
+    by_day = {}
     for a, b in windows(days, WINDOW_DAYS, end):
         for c in fetch_csv('pcRatioDown', {'queryStartDate': a, 'queryEndDate': b}):
-            day = iso(c[0])
-            if day in dates:
-                continue
-            dates.append(day)
-            vol.append(num(c[3]))
-            oi.append(num(c[6]))
-    order = sorted(range(len(dates)), key=lambda i: dates[i])
-    return {
-        'dates': [dates[i] for i in order],
-        'vol': [vol[i] for i in order],
-        'oi': [oi[i] for i in order],
+            by_day.setdefault(iso(c[0]), c)
+    dates = sorted(by_day)
+    out = {
+        'dates': dates,
+        'vol': [num(by_day[d][3]) for d in dates],
+        'oi': [num(by_day[d][6]) for d in dates],
     }
+    if itc:
+        def adj(put, call, minus):
+            return round(put / (call - minus) * 100, 2) if call - minus > 0 else None
+        out['itcOi'] = [itc[d][0] if d in itc else None for d in dates]
+        out['oiAdj'] = [adj(num(by_day[d][4]), num(by_day[d][5]), itc[d][0]) if d in itc else None
+                        for d in dates]
+        out['volAdj'] = [adj(num(by_day[d][1]), num(by_day[d][2]), itc[d][1]) if d in itc else None
+                         for d in dates]
+    return out
 
 
 def large_traders(rows, ids, is_option):
@@ -809,9 +837,11 @@ def main():
     log(u'  臺指選擇權 %d 筆' % len(opt_latest))
 
     log(u'期交所：Put/Call Ratio（近 %d 天）…' % HISTORY_DAYS)
-    pc = pc_ratio(HISTORY_DAYS, last_date)
-    log(u'  %d 個交易日，最新未平倉比 %s%%'
-        % (len(pc['dates']), pc['oi'][-1] if pc['oi'] else u'—'))
+    itc = itc_calls(HISTORY_DAYS, last_date)
+    pc = pc_ratio(HISTORY_DAYS, last_date, itc)
+    log(u'  %d 個交易日，最新未平倉比 %s%%，扣投信賣出買權 %s%%'
+        % (len(pc['dates']), pc['oi'][-1] if pc['oi'] else u'—',
+           pc['oiAdj'][-1] if pc.get('oiAdj') else u'—'))
 
     log(u'期交所：大額交易人（%s）…' % fut_day)
     day_slash = fut_day.replace('-', '/')

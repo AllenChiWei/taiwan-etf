@@ -253,6 +253,20 @@ test('真實 chips.json', { skip: !existsSync(PATH) && '沒有 chips.json（部�
       for (const v of vol.concat(oi)) assert.ok(v > 0 && v < 1000, `比率超出範圍：${v}`);
     });
 
+    await t.test('扣投信賣出買權的 PC ratio 與日期等長，且不低於原始值', () => {
+      const { dates, oi, oiAdj, volAdj, itcOi } = data.pc;
+      if (!oiAdj) return;                       // 舊版資料沒有
+      assert.equal(oiAdj.length, dates.length);
+      assert.equal(volAdj?.length, dates.length);
+      assert.equal(itcOi?.length, dates.length);
+      oiAdj.forEach((v, i) => {
+        if (v === null) return;
+        assert.ok(v > 0 && v < 1000, `修正比率超出範圍：${v}`);
+        // 分母扣掉投信部位只會變小，所以修正後不會比原始低（四捨五入容許 0.01）
+        assert.ok(v >= oi[i] - 0.01, `${dates[i]} 修正後 ${v} 低於原始 ${oi[i]}`);
+      });
+    });
+
     await t.test('大額交易人的前十大不小於前五大', () => {
       for (const r of data.large.fut.concat(data.large.opt)) {
         assert.ok(r.b10 >= r.b5, `${r.name} 的前十大買方比前五大小`);
