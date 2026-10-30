@@ -11,6 +11,7 @@
 import type { FmRow } from '../lib/fundamentals.ts';
 import type { UsPriceRow, FxRow } from '../lib/usDividend.ts';
 import { latestMidRate } from '../lib/usDividend.ts';
+import type { PerRow, PriceRow } from '../lib/valuation.ts';
 
 const API = 'https://api.finmindtrade.com/api/v4/data';
 
@@ -56,6 +57,31 @@ export function fetchFundamentals(code: string, signal?: AbortSignal): Promise<F
   ]).then(([income, balance, cashflow]) => ({ income, balance, cashflow }));
   cache.set(code, p);
   p.catch(() => cache.delete(code));                // 失敗的不要記住，下次再試
+  return p;
+}
+
+/* ── 個股估值（本益比河流圖）────────────────────────────────
+ * 每日本益比／淨值比／殖利率加收盤價，兩個請求。FinMind 的本益比從 2015 年起，
+ * 抓 11 年才湊得出「近 10 年」。一樣是瀏覽器抓、同一個分頁記住。
+ */
+
+export interface ValSet { per: PerRow[]; price: PriceRow[] }
+
+const valCache = new Map<string, Promise<ValSet>>();
+
+export function fetchValuation(code: string, signal?: AbortSignal): Promise<ValSet> {
+  const hit = valCache.get(code);
+  if (hit) return hit;
+  const start = `${new Date().getFullYear() - 11}-01-01`;
+  const p = Promise.all([
+    rows<PerRow>('TaiwanStockPER', code, start, signal),
+    rows<PriceRow>('TaiwanStockPrice', code, start, signal),
+  ]).then(([per, price]) => ({
+    per: per.map(r => ({ date: r.date, PER: Number(r.PER), PBR: Number(r.PBR), dividend_yield: Number(r.dividend_yield) })),
+    price: price.map(r => ({ date: r.date, close: Number(r.close) })),
+  }));
+  valCache.set(code, p);
+  p.catch(() => valCache.delete(code));
   return p;
 }
 

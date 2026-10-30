@@ -23,6 +23,7 @@ import { SearchableSelect, type SelectOption } from '../components/SearchableSel
 import { EmptyState } from '../components/EmptyState';
 import { StockSheet } from '../components/StockSheet';
 import { FundamentalsBoard } from '../components/FundamentalsBoard';
+import { ValuationBoard } from '../components/ValuationBoard';
 import { HoldersSection } from '../components/HoldersSection';
 // 面板抽在 StockBoard，因為清單的抽屜要用同一組（見那個檔案的說明）
 import {
@@ -590,6 +591,7 @@ export function StockPage() {
           <InstDailySection data={data} />
           <RevenueSection data={data} />
           <FinancialSection data={data} />
+          <ValuationBoard code={data.code} industry={data.info.industry} months={data.m} />
           <FundamentalsBoard code={data.code} />
           <ChipsSection data={data} />
         </>

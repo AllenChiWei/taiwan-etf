@@ -27,6 +27,7 @@ Where each field comes from, because it is not one source:
 | 新聞 | 鉅亨網 API + 中央社 RSS（只存標題與連結） |
 | 公告 | 公開資訊觀測站重大訊息（TWSE `t187ap04_L` + TPEx `mopsfin_t187ap04_O`） |
 | 個股財報 | 公開資訊觀測站 OpenAPI（基本資料／月營收／損益表／資產負債表）——**累積式** |
+| 個股估值（本益比河流圖） | FinMind `TaiwanStockPER`＋`TaiwanStockPrice`，**瀏覽器打開個股時才抓**，不經部署流程 |
 | 個股籌碼 | TWSE `T86`／`MI_MARGN`／`MI_QFIIS`、TPEx 對應端點、集保 TDCC |
 | 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
 | 定期定額人氣榜 | TWSE OpenAPI `ETFReport/ETFRank`（**月報**，ETF 與個股各前 20 名） |
@@ -339,6 +340,22 @@ CSP 的 `connect-src` 為此放行 `https://api.finmindtrade.com`。
 - 金融業沒有營業成本與存貨，那些比率是 null、畫面寫「不適用」，不是 0。
 - 面板刻意固定深色（站主要的「BI、科技感」），不跟主題切換；紅漲綠跌照舊，
   但天數與負債比是「越低越好」，所以那幾格變小顯示紅色。
+
+### 估值：本益比／淨值比河流圖、預估本益比
+
+`components/ValuationBoard.tsx`，計算在 `lib/valuation.ts`（`tests/valuation.test.ts`）。跟財務分析儀表板
+一樣由瀏覽器向 FinMind 抓（`fetchValuation`，`TaiwanStockPER` 與 `TaiwanStockPrice` 兩個請求，2015 年起逐日）。
+
+- **近四季 EPS 不另外抓財報**：收盤價 ÷ 交易所本益比反推（台積電 2026-10-30：2370 ÷ 27.47 = 86.28），
+  口徑跟交易所一致。本益比 0 是近四季虧損，當成沒有、那段不畫河流。
+- 河流 = 每月底的 EPS（或每股淨值）× 近 3／5／10 年本益比（淨值比）的第 10／25／50／75／90 百分位。
+  有效天數不到 120 天不算百分位。景氣循環股獲利高峰時河流會衝到股價好幾倍（長榮 2022），
+  圖的 Y 軸限制在收盤價範圍的一半到 2 倍，超出的裁掉。
+- 金融股（`金融保險業`／`金融業`）與目前虧損的預設看淨值比；`CYCLICAL` 那幾個產業顯示「本益比容易失真」提示。
+- **營收推估**：近 3 個月（不足就用有的）營收合計 ÷ 去年同期（由年增率反推）套到近四季 EPS，假設淨利率不變。
+  月營收來自 `stocks/{code}.json` 的 `m`（累積式，剛上線時只有兩個月），不多打 FinMind。
+  另可自己輸入 EPS。兩者都跟歷史「近四季」本益比分布比，畫面標「推估」。
+- 沒有分析師共識 EPS：FactSet、CMoney 都要付費，新聞裡的調查數字不抓。
 
 ### 營收排行、創新高、類股成交比重
 
