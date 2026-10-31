@@ -148,7 +148,7 @@ def try_existing_salt(password):
 # 所以沒有付費資料上線時，就不該有任何東西被鎖住 —— 部署流程也已經不呼叫它。
 #
 # 機制整套留著（連同前端的解鎖畫面）：哪天又有付費資料要上線，把那個市場從
-# 這個清單拿掉就接得回去。CLAUDE.md 有該一起改的清單。
+# 這個清單拿掉就接得回去。docs/claude/series.md 有該一起改的清單。
 PLAINTEXT_SERIES = ('tw', 'us')
 
 

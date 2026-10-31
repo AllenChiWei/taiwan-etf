@@ -394,7 +394,7 @@ jobs:
       # 兩個市場的曲線都改用 FinMind 之後，上線的資料裡已經沒有 FinLab 的付費
       # 內容了（試算資料一直是公開資訊整理成的月度摘要），所以沒有東西要加密，
       # 也沒有東西要檢查。`scripts/encrypt_data.py` 與前端的解鎖畫面都還留著，
-      # 哪天又有付費資料要上線時照 CLAUDE.md 的清單接回去。
+      # 哪天又有付費資料要上線時照 docs/claude/series.md 的清單接回去。
       - name: 沒有 FinLab 憑證時的提醒
         if: ${{ env.FINLAB_API_TOKEN == '' && steps.plan.outputs.reuse != 'true' }}
         run: |

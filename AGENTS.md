@@ -5,6 +5,11 @@
 > (Traditional Chinese, written for visitors; see 「更新日誌」 in CLAUDE.md). Daily data refreshes
 > and the password-protected private pages are not logged.
 
+> **Topic details live in `docs/claude/`** (split out of CLAUDE.md on 2026-10-31 so it stays small):
+> stocks, chips/news, ATM straddle, performance curves, data sources and quotas, macro/calendar,
+> calculators, futures statements, ETF holdings. Read the relevant one before changing that area,
+> and update it when the behaviour changes. CLAUDE.md has the index.
+
 ## Project overview
 
 A searchable Traditional-Chinese directory of Taiwan ETFs, published to GitHub Pages at
@@ -99,7 +104,7 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
 - Performance curves for **both** markets come from FinMind and ship as plaintext
   (`fetch_series_tw.py`, `fetch_series_us.py`, shared machinery in
   `finmind_series.py`). Nothing on the site is encrypted any more; the encryption
-  path is dormant, not deleted — see CLAUDE.md for the checklist to switch it back on.
+  path is dormant, not deleted — see `docs/claude/series.md` for the checklist to switch it back on.
 - US curves are **total return** (FinMind `Adj_Close`); the US returns *table* is
   still FinLab and is **price return only**. They will not agree. That is expected.
 - Every `scripts/*.py` ends with `if __name__ == '__main__':`. Importing one to test a
@@ -115,7 +120,7 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   impersonate a browser). Since 2026-10-26 it also stores per-day VWAP/close (`px`, from TWSE `MI_INDEX` and
   TPEx `afterTrading/otc`), per-change valuation `v` = Δshares × VWAP (an **estimate** — share changes can be
   creations/redemptions), and a moving-average-cost book (`book`) that starts on its first priced snapshot and
-  is never back-filled. Details and each issuer's API quirks are in CLAUDE.md「主動式 ETF 換股」.
+  is never back-filled. Details and each issuer's API quirks are in `docs/claude/etf-holdings.md`「主動式 ETF 換股」.
 - 配息組成 (`scripts/fetch_div_mix.py` → `div_mix.json`, committed, step `dmix`, 2026-10-27): each ETF's latest
   announced split of a distribution into 股利／利息／收益平準金／已實現資本利得／其他 (%) from TDCC's ETF 觀測站
   API (`POST fundclear.com.tw/api/etf/dividend/query-dividend`, 100 rows per page max, no robots.txt). The 月領試算
