@@ -136,6 +136,9 @@ export interface RevenueEstimate {
   growth: number;
   /** 推估未來四季 EPS */
   eps: number;
+  /** 近 N 個月營收合計、去年同期合計（千元）—— 篩選頁拿來擋基期近零的 */
+  cur: number;
+  prev: number;
 }
 
 /**
@@ -154,7 +157,7 @@ export function revenueEstimate(months: Month[], ttmEps: number | null, n = 3): 
   const prev = usable.reduce((s, m) => s + (m.rev as number) / (1 + (m.yoy as number) / 100), 0);
   if (!(prev > 0)) return null;
   const growth = (cur / prev - 1) * 100;
-  return { months: usable.map(m => m.p), growth, eps: ttmEps * (cur / prev) };
+  return { months: usable.map(m => m.p), growth, eps: ttmEps * (cur / prev), cur, prev };
 }
 
 /** 給定 EPS（或每股淨值）：目前價格對應的倍數、在歷史的百分位、各百分位倍數對應的股價。 */

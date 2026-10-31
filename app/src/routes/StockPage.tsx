@@ -10,8 +10,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
-  fetchStockIndex, fetchStock, fetchRanking, fetchHighs,
+  fetchStockIndex, fetchStock, fetchRanking, fetchHighs, fetchPe,
 } from '../api/stocks';
+import { enrich, screen, median, type PeData, type CheapSort } from '../lib/cheap';
 import {
   rankRevenue, filterHighs, rankReturns, moneyFromThousands, NEAR_PCT, RETURN_LABELS,
   type StockData, type StockIndex, type Ranking, type Highs,
@@ -404,13 +405,188 @@ function ReturnsTab() {
   );
 }
 
+/* ── 低本益比 ───────────────────────────────────────────── */
+
+const FPE_MAX = [10, 15, 20];
+
+const CHEAP_SORTS: Array<{ id: CheapSort; label: string }> = [
+  { id: 'fpe', label: '預估本益比' },
+  { id: 'growth', label: '營收成長' },
+  { id: 'yield', label: '殖利率' },
+  { id: 'pe', label: '近四季本益比' },
+];
+
+/** 月平均營收門檻（千元，1 億 = 100,000 千元）與成交金額門檻（元） */
+const CHEAP_MIN_REV = 100_000;
+const CHEAP_MIN_VALUE = 10_000_000;
+const CHEAP_PAGE = 100;
+
+const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+function Tag({ children }: { children: React.ReactNode }) {
+  return (
+    <span className="ml-1.5 rounded bg-sunken px-1 py-px align-[1px] text-[10.5px] font-semibold text-muted">
+      {children}
+    </span>
+  );
+}
+
+function CheapTab() {
+  // 點一列就把儀表板蓋在原地；關掉之後清單還停在同一行
+  const [sheet, setSheet] = useState<string | null>(null);
+  const [data, setData] = useState<PeData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [maxFpe, setMaxFpe] = useState(20);
+  const [sort, setSort] = useState<CheapSort>('fpe');
+  const [market, setMarket] = useState('');
+  // 預設排除的四種：基期近零、冷門、金融股、營收倍增（原因見 lib/cheap.ts）
+  const [minRev, setMinRev] = useState(true);
+  const [minValue, setMinValue] = useState(true);
+  const [exFinancial, setExFinancial] = useState(true);
+  const [exExtreme, setExExtreme] = useState(true);
+  const [exCyclical, setExCyclical] = useState(false);
+  const [shown, setShown] = useState(CHEAP_PAGE);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchPe(ac.signal)
+      .then(d => { if (!ac.signal.aborted) setData(d); })
+      .catch(() => { if (!ac.signal.aborted) setData(null); })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
+  }, []);
+
+  const all = useMemo(() => (data ? enrich(data.rows) : []), [data]);
+  const rows = useMemo(() => screen(all, {
+    maxFpe, sort, market, exFinancial, exCyclical, exExtreme,
+    minRev: minRev ? CHEAP_MIN_REV : 0, minValue: minValue ? CHEAP_MIN_VALUE : 0,
+  }), [all, maxFpe, sort, market, minRev, minValue, exFinancial, exCyclical, exExtreme]);
+  useEffect(() => setShown(CHEAP_PAGE), [rows]);
+
+  const medFpe = useMemo(() => median(all.map(r => r.fpe)), [all]);
+  const medPe = useMemo(() => median(all.map(r => r.pe)), [all]);
+
+  if (loading) {
+    return <p className="py-12 text-center text-[13px] text-muted">載入本益比資料中…</p>;
+  }
+  if (!data) {
+    return <EmptyState title="還沒有本益比資料"
+                       hint="交易所的本益比在每次部署時整理，來源暫時無法連線時會是空的。"
+                       icon="🏷️" />;
+  }
+
+  const months = data.meta.months;
+  return (
+    <>
+      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+          <h2 className="text-sm font-bold text-ink">預估本益比 &lt; {maxFpe}</h2>
+          <span className="text-[11.5px] text-faint">收盤 {data.meta.date ?? '—'}</span>
+        </div>
+
+        <div className="mt-2 grid grid-cols-3 gap-2">
+          <Cell label="符合條件" value={`${nf0.format(rows.length)} 檔`} />
+          <Cell label="全市場預估" value={medFpe === null ? '—' : `${nf1.format(medFpe)} 倍`} sub="中位數" />
+          <Cell label="全市場近四季" value={medPe === null ? '—' : `${nf1.format(medPe)} 倍`} sub="中位數" />
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {FPE_MAX.map(v => (
+            <Chip key={v} active={maxFpe === v} onClick={() => setMaxFpe(v)}>&lt; {v} 倍</Chip>
+          ))}
+          {['', '上市', '上櫃'].map(m => (
+            <Chip key={m || 'all'} active={market === m} onClick={() => setMarket(m)}>
+              {m || '全部市場'}
+            </Chip>
+          ))}
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {CHEAP_SORTS.map(s => (
+            <Chip key={s.id} active={sort === s.id} onClick={() => setSort(s.id)}>
+              依{s.label}
+            </Chip>
+          ))}
+        </div>
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          <Chip active={minRev} onClick={() => setMinRev(v => !v)}>月營收 ≥ 1 億</Chip>
+          <Chip active={minValue} onClick={() => setMinValue(v => !v)}>成交 ≥ 1000 萬</Chip>
+          <Chip active={exExtreme} onClick={() => setExExtreme(v => !v)}>排除營收倍增</Chip>
+          <Chip active={exFinancial} onClick={() => setExFinancial(v => !v)}>排除金融股</Chip>
+          <Chip active={exCyclical} onClick={() => setExCyclical(v => !v)}>排除景氣循環</Chip>
+        </div>
+        <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+          預估本益比 ＝ 收盤價 ÷（近四季 EPS × 近 3 個月營收比去年同期的倍數），假設淨利率不變，
+          跟個股頁「營收推估」同一個算法；月營收目前累積到 {months.join('、') || '—'}。
+          營收門檻套在今年與去年同期兩邊：建設公司去年同月常常接近零，成長率上百萬 %，
+          預估本益比會變成 0.0 倍。營收倍增時淨利率幾乎一定跟著變，推估不可靠；
+          金融股的月營收含投資損益、波動很大，應該看淨值比。
+        </p>
+      </section>
+
+      <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
+        <ol>
+          {rows.slice(0, shown).map((r, i) => (
+            <li key={r.c}
+                onClick={() => setSheet(r.c)}
+                role="button" tabIndex={0}
+                onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(r.c); } }}
+                className="cursor-pointer hover:bg-sunken/50 grid grid-cols-[1.9em_1fr_auto] items-baseline gap-2
+                           border-b border-line/60 py-1.5 last:border-0">
+              <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
+              <span className="min-w-0">
+                <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
+                <span className="ml-1.5 text-[12.5px] text-muted">{r.n}</span>
+                {r.cyclical && <Tag>景氣循環</Tag>}
+                {r.financial && <Tag>金融</Tag>}
+                <span className="mt-0.5 block text-[11px] text-faint">
+                  {r.m}　{r.i}　收盤 {nf2.format(r.p)}
+                </span>
+                <span className="block text-[11px] text-faint">
+                  營收 <span className={`font-mono tabular-nums ${TONE_CLASS[netTone(r.growth)]}`}>
+                    {signedPct(r.growth)}</span>
+                  {'　'}殖利率 {r.y === null ? '—' : `${nf2.format(r.y)}%`}
+                </span>
+              </span>
+              <span className="text-right">
+                <span className="block font-mono text-[14px] font-bold tabular-nums text-ink">
+                  {nf1.format(r.fpe)} 倍
+                </span>
+                <span className="block font-mono text-[11px] tabular-nums text-faint">
+                  近四季 {nf1.format(r.pe)}
+                </span>
+              </span>
+            </li>
+          ))}
+        </ol>
+        {rows.length === 0 && (
+          <p className="py-6 text-center text-[12.5px] text-muted">沒有符合條件的個股。</p>
+        )}
+        {rows.length > shown && (
+          <button type="button" onClick={() => setShown(n => n + CHEAP_PAGE)}
+                  className="my-1.5 h-9 w-full rounded-lg bg-sunken text-[12.5px] font-semibold text-muted hover:text-ink">
+            再顯示 {nf0.format(Math.min(CHEAP_PAGE, rows.length - shown))} 檔（共 {nf0.format(rows.length)} 檔）
+          </button>
+        )}
+      </div>
+
+      <p className="mt-3 text-[11px] leading-relaxed text-faint">
+        本益比低不等於便宜：近四季有一次性獲利（處分資產、業外收益）的會特別低，
+        景氣循環股在獲利高峰時本益比最低。點一檔可以看它自己的歷史本益比河流圖，
+        比跟全市場比更有意義。來源：{data.meta.source}。本頁僅供參考，不構成投資建議。
+      </p>
+      <StockSheet code={sheet} onClose={() => setSheet(null)} />
+    </>
+  );
+}
+
 /* ── 頁面 ───────────────────────────────────────────────── */
 
-type Tab = 'search' | 'rank' | 'high' | 'ret';
+type Tab = 'search' | 'rank' | 'cheap' | 'high' | 'ret';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'search', label: '查個股' },
   { id: 'rank', label: '營收排行' },
+  { id: 'cheap', label: '低本益比' },
   { id: 'high', label: '創新高' },
   { id: 'ret', label: '漲跌幅' },
 ];
@@ -508,6 +684,7 @@ export function StockPage() {
         <h1 className="sr-only">個股</h1>
         {tabBar}
         {tab === 'rank' && <RankingTab />}
+        {tab === 'cheap' && <CheapTab />}
         {tab === 'high' && <HighsTab />}
         {tab === 'ret' && <ReturnsTab />}
       </>

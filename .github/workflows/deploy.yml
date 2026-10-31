@@ -177,6 +177,12 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_stocks.py
 
+      # 低本益比篩選：交易所每日本益比＋上一步的月營收（fin_history.json）。
+      # 四個官方端點、不吃 FinLab／FinMind 額度；容許失敗，缺檔時那個分頁自己說還沒有資料。
+      - name: 產生本益比篩選資料
+        continue-on-error: true
+        run: python scripts/fetch_pe.py
+
       - name: 存下個股籌碼快取
         if: ${{ steps.stocks.outcome == 'success' && hashFiles('.cache/stock_chips.json') != '' }}
         uses: actions/cache/save@v4

@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-10-31',
+    items: [
+      { kind: 'new', to: '/stock',
+        text: '個股頁新增「低本益比」分頁：全市場篩出預估本益比低於 10／15／20 倍的個股，'
+          + '預估本益比用近 3 個月營收成長推估（跟個股頁同一個算法），可依營收成長、殖利率排序；'
+          + '預設排除基期太小、營收倍增、成交太少與金融股，景氣循環股會標出來。點一檔就看得到它的本益比河流圖。' },
+    ],
+  },
+  {
     date: '2026-10-30',
     items: [
       { kind: 'new', to: '/stock',

@@ -17,6 +17,7 @@ import {
   InstDailySection, RevenueSection, FinancialSection,
 } from './StockBoard';
 import { FundamentalsBoard } from './FundamentalsBoard';
+import { ValuationBoard } from './ValuationBoard';
 
 interface Props {
   code: string | null;
@@ -116,6 +117,7 @@ export function StockSheet({ code, name, onClose }: Props) {
               <InstDailySection data={data} />
               <RevenueSection data={data} />
               <FinancialSection data={data} />
+              <ValuationBoard code={data.code} industry={data.info.industry} months={data.m} />
               <FundamentalsBoard code={data.code} />
               <InfoSection data={data} />
             </>

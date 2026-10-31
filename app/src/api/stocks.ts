@@ -5,6 +5,7 @@
  */
 
 import type { StockData, StockIndex, Ranking, Highs } from '../lib/stock.ts';
+import type { PeData } from '../lib/cheap.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -67,6 +68,15 @@ export async function fetchRanking(signal?: AbortSignal): Promise<Ranking | null
   const d = json as Partial<Ranking>;
   if (!Array.isArray(d.rows)) throw new StockError('營收排行格式不正確');
   return json as Ranking;
+}
+
+/** 低本益比篩選（全市場本益比＋近 3 個月營收）。回 null 代表這次部署沒有產生。 */
+export async function fetchPe(signal?: AbortSignal): Promise<PeData | null> {
+  const json = await getJson(`${BASE}data/stocks/pe.json`, signal);
+  if (json === null) return null;
+  const d = json as Partial<PeData>;
+  if (!Array.isArray(d.rows) || !d.meta) throw new StockError('本益比資料格式不正確');
+  return json as PeData;
 }
 
 /* highs.json 是 776 KB。排行榜與個股詳情都要用它，每次都抓一份在手機上太重，

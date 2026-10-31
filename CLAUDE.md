@@ -28,6 +28,7 @@ Where each field comes from, because it is not one source:
 | 公告 | 公開資訊觀測站重大訊息（TWSE `t187ap04_L` + TPEx `mopsfin_t187ap04_O`） |
 | 個股財報 | 公開資訊觀測站 OpenAPI（基本資料／月營收／損益表／資產負債表）——**累積式** |
 | 個股估值（本益比河流圖） | FinMind `TaiwanStockPER`＋`TaiwanStockPrice`，**瀏覽器打開個股時才抓**，不經部署流程 |
+| 低本益比篩選（全市場） | 證交所 `BWIBBU_ALL`／`STOCK_DAY_ALL`、櫃買本益比與收盤行情 ＋ `fin_history.json` 月營收（部署時產生） |
 | 個股籌碼 | TWSE `T86`／`MI_MARGN`／`MI_QFIIS`、TPEx 對應端點、集保 TDCC |
 | 各類股成交比重 | TWSE `BFIAMU`（只有上市，櫃買沒有對應端點） |
 | 定期定額人氣榜 | TWSE OpenAPI `ETFReport/ETFRank`（**月報**，ETF 與個股各前 20 名） |
@@ -61,6 +62,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_news.py              新聞與重大訊息 → news.json（部署時產生）
   reuse_calc.py              FinLab 失敗時，從線上抓回試算資料當備援
   fetch_stocks.py            個股財報（累積）與籌碼 → stocks/（部署時產生）
+  fetch_pe.py                全市場本益比＋近 3 個月營收 → stocks/pe.json（低本益比篩選，部署時產生）
   fetch_highs.py             創 150/200/250 日新高與漲跌幅 → highs.json
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
@@ -356,6 +358,19 @@ CSP 的 `connect-src` 為此放行 `https://api.finmindtrade.com`。
   月營收來自 `stocks/{code}.json` 的 `m`（累積式，剛上線時只有兩個月），不多打 FinMind。
   另可自己輸入 EPS。兩者都跟歷史「近四季」本益比分布比，畫面標「推估」。
 - 沒有分析師共識 EPS：FactSet、CMoney 都要付費，新聞裡的調查數字不抓。
+
+### 低本益比篩選
+
+`stocks/pe.json`（`scripts/fetch_pe.py`，部署時產生，排在 `fetch_stocks.py` 後面）：證交所 `BWIBBU_ALL`／
+`STOCK_DAY_ALL`、櫃買 `tpex_mainboard_peratio_analysis`／`daily_close_quotes` 的本益比與收盤，加上
+`fin_history.json` 每檔近 3 個「可用」月營收。計算在 `lib/cheap.ts`（`tests/cheap.test.ts`），
+**預估本益比直接呼叫 `revenueEstimate()`**，所以跟個股頁的營收推估一定同一個數字 —— 不要在 Python 另算一份。
+
+- 本益比空白（近四季虧損）、不在公司清單（ETF、特別股）的不列。
+- 預設排除：本期或基期月平均營收 < 1 億（建設股基期近零，坤悅 +2,630,241% → 0.0 倍）、
+  營收年增 > 100%（淨利率不變不成立）、成交 < 1000 萬、金融股（月營收含投資損益，富邦金 −64%）。
+  景氣循環股只標籤、不預設排除。
+- 個股抽屜（`StockSheet`）也放了 `ValuationBoard`，從清單點一檔就看得到河流圖。
 
 ### 營收排行、創新高、類股成交比重
 
