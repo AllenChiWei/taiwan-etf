@@ -32,7 +32,7 @@ export const EVERY: readonly { every: Every; label: string }[] = [
 export const everyLabel = (e: Every) => EVERY.find(x => x.every === e)?.label ?? `每 ${e} 個月`;
 
 /** 分類下拉的預設選項；使用者自己打的新分類也照樣能用。 */
-export const DEFAULT_CATS = ['居住', '飲食', '交通', '保險', '稅費', '電信網路', '教育', '醫療', '孝親', '娛樂旅遊', '訂閱', '其他'];
+export const DEFAULT_CATS = ['居住', '生活', '飲食', '交通', '保險', '稅費', '電信網路', '教育', '醫療', '孝親', '娛樂旅遊', '訂閱', '投資', '其他'];
 
 /** 快速新增的常見項目（台灣的稅單月份：牌照稅 4 月、房屋稅與所得稅 5 月、燃料費 7 月、地價稅 11 月）。 */
 export const PRESETS: readonly Omit<BudgetItem, 'id' | 'amount'>[] = [
@@ -40,7 +40,12 @@ export const PRESETS: readonly Omit<BudgetItem, 'id' | 'amount'>[] = [
   { name: '管理費', cat: '居住', every: 1, month: 1 },
   { name: '水電瓦斯', cat: '居住', every: 2, month: 1 },
   { name: '手機網路', cat: '電信網路', every: 1, month: 1 },
+  { name: '生活費', cat: '生活', every: 1, month: 1 },
+  { name: '雜費', cat: '其他', every: 1, month: 1 },
   { name: '伙食', cat: '飲食', every: 1, month: 1 },
+  // 學費一學期繳一次：上學期 8 月、下學期 2 月（2026-11-01 使用者要求加學費／生活費／雜費／投資）
+  { name: '學費', cat: '教育', every: 6, month: 2 },
+  { name: '投資', cat: '投資', every: 1, month: 1 },
   { name: '油錢／交通', cat: '交通', every: 1, month: 1 },
   { name: '汽機車保險', cat: '保險', every: 12, month: 1 },
   { name: '壽險／醫療險', cat: '保險', every: 12, month: 1 },
