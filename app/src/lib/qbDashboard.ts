@@ -708,6 +708,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     const bestND = [...all].sort((x, y) => (y.m.nd ?? -1e9) - (x.m.nd ?? -1e9))[0];
     const bestSh = [...all].sort((x, y) => (y.m.sharpe ?? -1e9) - (x.m.sharpe ?? -1e9))[0];
     $('verdict').innerHTML = `<h2>${state.period}：評價後有沒有比較好？</h2><ul>
+      <li class="note"><b>口徑：這一頁是「看板理論值」</b>（2026-11-01 統一標準的 ②）：策略每日損益 × 動能，不扣 QT 交易成本，而且假設 B 吃得到策略盤中的每一次進出（QT 實際是每天 13:45 用收盤部位整合一次）。數字會比實盤樂觀，只用來比較「選哪些策略、怎麼加權」的相對好壞；<b>實盤近似（QT 引擎、扣成本，定案用）看「QT 重播」分頁</b>，兩者不能混著比。</li>
       <li>評價前（平均分配）：淨利 ${fmtW(base.net)} 萬、最大回撤 ${fmtW(base.mdd)} 萬、淨利/回撤 ${fmt1(base.nd)}、Sharpe ${fmt2(base.sharpe)}、虧損月 ${pct0(base.loseM)}。</li>
       <li>Sharpe 贏過評價前的設定：${beat.length} 組（共 ${all.length - 1} 組）。</li>
       <li>淨利/回撤最好：<b>${bestND.c.name}</b>（${fmt1(bestND.m.nd)}）；Sharpe 最好：<b>${bestSh.c.name}</b>（${fmt2(bestSh.m.sharpe)}）。</li>
@@ -717,7 +718,7 @@ export function mountQbDashboard(root, D, echarts, loadWeek, loadBlend, opts = {
     $('kpiNote').innerHTML = `<span style="color:${C.a}">A</span>＝${ca.name}；<span style="color:${C.b}">B</span>＝${cb.name}（${cb.desc}）；`
       + `<span style="color:${C.c}">C</span>＝B＋${levByKey[state.c].name}${levOf(state.b, state.c).fallback ? '<b>（這個 B 不是分多空，沒有多空分邊資料，改用定案集成計算）</b>' : ''}（所選期間平均槓桿 ${(lseg.reduce((t, v) => t + v, 0) / lseg.length).toFixed(2)} 倍；`
       + `在「自動槓桿」分頁點任一方法就會換成 C）。${state.scaled ? '同曝險：部位乘上一個固定倍數，讓平均在場倍數與評價前相同（不是複利）。' : '原始部位，不調整。'}`
-      + `<br>帳戶層四列以本金 2,800 萬、規模 K 0.05 計算；<b>比較複利（定版 C）要看帳戶年化、回撤%、年化÷回撤%、報酬率 Sharpe</b>，金額型的淨利÷回撤與 Sharpe 會因後期部位變大而必然變差。網站沒有扣交易成本與 290 口上限，實盤規模（B 轉換率 1.5）的精確結果看「QT 重播」分頁。`;
+      + `<br>帳戶層四列以本金 2,800 萬、規模 K 0.05 計算；<b>比較複利（定版 C）要看帳戶年化、回撤%、年化÷回撤%、報酬率 Sharpe</b>，金額型的淨利÷回撤與 Sharpe 會因後期部位變大而必然變差。這一頁是看板理論值：沒有扣交易成本與口數上限、假設盤中進出都吃到；實盤規模的結果（QT 引擎、扣成本）看「QT 重播」分頁。`;
     const kp = [['淨利（萬）', A.net, B.net, Cm.net, fmtW, true], ['最大回撤（萬）', A.mdd, B.mdd, Cm.mdd, fmtW, false],
                 ['淨利 / 回撤', A.nd, B.nd, Cm.nd, fmt1, true], ['Sharpe', A.sharpe, B.sharpe, Cm.sharpe, fmt2, true],
                 ['虧損月比例', A.loseM, B.loseM, Cm.loseM, pct0, false], ['最差單月（萬）', A.worstM, B.worstM, Cm.worstM, fmtW, true],
