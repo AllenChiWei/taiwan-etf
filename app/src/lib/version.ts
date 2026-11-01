@@ -10,10 +10,11 @@ export type UpdateAction = 'none' | 'reload' | 'countdown' | 'prompt';
  * - 使用者剛切回這個分頁：直接重新整理。他剛回來，手上沒有做到一半的事。
  * - 正在看：跳提示倒數，可以按「稍後」。
  * - 對帳單頁：只提示不倒數 —— 上傳的檔案只在記憶體裡，重新整理就沒了。
+ * - 支出預估頁：同樣只提示 —— 還沒按儲存的修改只在畫面上。
  */
 export function decideUpdate(current: string, remote: string | null,
                              opts: { returning: boolean; pathname: string }): UpdateAction {
   if (!remote || remote === current) return 'none';
-  if (opts.pathname === '/futures') return 'prompt';
+  if (opts.pathname === '/futures' || opts.pathname === '/budget') return 'prompt';
   return opts.returning ? 'reload' : 'countdown';
 }

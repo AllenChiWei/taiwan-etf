@@ -130,6 +130,10 @@ export function MePage() {
           <div className="text-sm font-bold text-ink">QT 設定說明書</div>
           <p className="mt-1 text-[12.5px] text-muted">每個設定欄位的建議值與原因、原始／進階雙專案架構、內建自動槓桿與複利、流程圖與名詞解釋</p>
         </Link>
+        <Link to="/budget" className={card}>
+          <div className="text-sm font-bold text-ink">支出預估</div>
+          <p className="mt-1 text-[12.5px] text-muted">每月／每年的各種開銷，看每個月要付多少、預抓一年的花費；各裝置共用</p>
+        </Link>
         <Link to="/futures" className={card}>
           <div className="text-sm font-bold text-ink">對帳單分析</div>
           <p className="mt-1 text-[12.5px] text-muted">程式／主觀／選擇權分開看，檔案只在瀏覽器裡解析、不上傳</p>

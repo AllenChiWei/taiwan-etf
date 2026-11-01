@@ -17,4 +17,5 @@ test('切回分頁時直接重新整理，正在看時倒數', () => {
 test('對帳單頁只提示：上傳的檔案在記憶體裡，自動重新整理會清掉', () => {
   assert.equal(decideUpdate('abc', 'def', { returning: true, pathname: '/futures' }), 'prompt');
   assert.equal(decideUpdate('abc', 'def', { returning: false, pathname: '/futures' }), 'prompt');
+  assert.equal(decideUpdate('abc', 'def', { returning: true, pathname: '/budget' }), 'prompt');
 });

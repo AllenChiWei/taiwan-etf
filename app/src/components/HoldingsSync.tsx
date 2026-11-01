@@ -12,7 +12,7 @@
 
 import { useEffect, useState } from 'react';
 import { Vault, type VaultManifest } from '../lib/vault';
-import { ghRead, ghWrite, rawRead } from '../lib/ghSync';
+import { ghWrite, readEncrypted, readToken, type Src } from '../lib/ghSync';
 
 export interface SyncEntry { code: string; shares: number; m?: 'us'; acct?: string }
 interface Payload { v?: number; accounts?: unknown; holdings?: unknown; generated?: string }
@@ -38,46 +38,11 @@ function nowStamp(): string {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
-/* 2026-10-07 修正：GitHub API 未登入時每個 IP 每小時只有 60 次（同一個家用網路共用），用完時讀不到權杖，
- * 畫面誤以為「還沒設定」而要求重貼權杖、載入也退回舊版。改成：
- *   權杖：API → raw.githubusercontent.com（不算 API 次數）→ 網站部署的那份；分清楚「沒有設定」與「暫時讀不到」。
- *   持股：有權杖就用權杖讀（每小時 5,000 次、一定是最新）；否則 API → raw → 部署版，並標明可能不是最新。 */
-type Src = 'api' | 'raw' | 'site';
-
+/* 2026-10-07 修正：GitHub API 用完次數時，權杖與持股都改走備援（lib/ghSync.ts 的 readToken、readEncrypted；
+ * 2026-11-01 搬過去和支出預估共用）。有權杖就用權杖讀持股，一定是最新；備援讀到的標明可能不是最新。 */
 async function readRemote(token: string | null): Promise<{ r: Remote | null; src: Src | null }> {
-  try {
-    const f = await ghRead('holdings.enc', token ?? undefined);
-    if (f) return { r: clean(await holdingsVault.decryptJson<Payload>(f.bytes)), src: 'api' };
-  } catch { /* 改用備援 */ }
-  try {
-    const b = await rawRead('holdings.enc');
-    if (b) return { r: clean(await holdingsVault.decryptJson<Payload>(b)), src: 'raw' };
-  } catch { /* 改用部署的版本 */ }
-  try { return { r: clean(await holdingsVault.fetchJson<Payload>('holdings.enc')), src: 'site' }; } catch { return { r: null, src: null }; }
-}
-
-async function readToken(): Promise<{ token: string | null; state: 'ok' | 'none' | 'error' }> {
-  const pick = async (b: Uint8Array) => {
-    const t = await holdingsVault.decryptJson<{ token?: string }>(b);
-    return typeof t.token === 'string' && t.token ? t.token : null;
-  };
-  let failed = false;
-  try {
-    const f = await ghRead('token.enc');
-    if (!f) return { token: null, state: 'none' };
-    const t = await pick(f.bytes);
-    if (t) return { token: t, state: 'ok' };
-  } catch { failed = true; }
-  try {
-    const b = await rawRead('token.enc');
-    if (b) { const t = await pick(b); if (t) return { token: t, state: 'ok' }; }
-    else if (!failed) return { token: null, state: 'none' };
-  } catch { failed = true; }
-  try {
-    const t = await holdingsVault.fetchJson<{ token?: string }>('token.enc');
-    if (typeof t.token === 'string' && t.token) return { token: t.token, state: 'ok' };
-  } catch { /* 都讀不到 */ }
-  return { token: null, state: failed ? 'error' : 'none' };
+  const { data, src } = await readEncrypted<Payload>(holdingsVault, 'holdings.enc', token);
+  return { r: data ? clean(data) : null, src: data ? src : null };
 }
 
 export function HoldingsSync({ entries, accounts, onLoad }: {
@@ -131,7 +96,7 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
     try {
       if (!(await holdingsVault.unlockTransient(pw, manifest))) { setMsg('密碼不對。'); return; }
       setUnlocked(true); setPw('');
-      const tk = await readToken();
+      const tk = await readToken(holdingsVault);
       const { r, src: s } = await readRemote(tk.token);
       setRemote(r); setToken(tk.token); setTokenState(tk.state); setSrc(s);
       const what = ask; setAsk(null);
