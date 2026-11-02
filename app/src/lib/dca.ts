@@ -21,7 +21,8 @@ export interface DcaPlan {
 
 export interface DcaData { v: 1; generated: string; people: string[]; plans: DcaPlan[] }
 
-export const BROKERS = ['華南', '永豐'];
+// 第一個是新增時的預設（2026-11-02 使用者：預設永豐）
+export const BROKERS = ['永豐', '華南'];
 export const DEFAULT_PEOPLE = ['我', '小孩'];
 
 export const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
