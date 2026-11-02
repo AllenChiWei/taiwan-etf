@@ -19,11 +19,12 @@ export interface DcaPlan {
   off?: boolean;
 }
 
-export interface DcaData { v: 1; generated: string; people: string[]; plans: DcaPlan[] }
+export interface DcaData { v: 1; generated: string; people: string[]; plans: DcaPlan[]; holdings: DcaHolding[] }
 
 // 第一個是新增時的預設（2026-11-02 使用者：預設永豐）
 export const BROKERS = ['永豐', '華南'];
-export const DEFAULT_PEOPLE = ['我', '小孩'];
+// 2026-11-02 使用者：小孩改成莎莎和 QQ
+export const DEFAULT_PEOPLE = ['我', '莎莎', 'QQ'];
 
 export const newId = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 
@@ -88,16 +89,17 @@ export function parseDays(text: string): number[] | null {
   return [...new Set(parts)].sort((a, b) => a - b);
 }
 
-/** 人名清單：存檔裡的在前，計畫裡出現但清單沒有的補在後；都沒有時用預設（我、小孩）。 */
-export function peopleOf(data: Pick<DcaData, 'people' | 'plans'>): string[] {
+/** 人名清單：存檔裡的在前，計畫或持股裡出現但清單沒有的補在後；都沒有時用預設（我、莎莎、QQ）。 */
+export function peopleOf(data: Pick<DcaData, 'people' | 'plans'> & { holdings?: readonly DcaHolding[] }): string[] {
   const out = data.people.length ? [...data.people] : [...DEFAULT_PEOPLE];
   for (const p of data.plans) if (p.who && !out.includes(p.who)) out.push(p.who);
+  for (const h of data.holdings ?? []) if (h.who && !out.includes(h.who)) out.push(h.who);
   return out;
 }
 
 /** 從加密檔解出來的資料逐欄檢查；格式不對的計畫丟掉，不讓一筆壞資料弄壞整頁。 */
 export function cleanDca(raw: unknown): DcaData {
-  const r = (typeof raw === 'object' && raw !== null ? raw : {}) as { generated?: unknown; people?: unknown; plans?: unknown };
+  const r = (typeof raw === 'object' && raw !== null ? raw : {}) as { generated?: unknown; people?: unknown; plans?: unknown; holdings?: unknown };
   const plans: DcaPlan[] = [];
   for (const x of Array.isArray(r.plans) ? r.plans : []) {
     if (typeof x !== 'object' || x === null) continue;
@@ -117,5 +119,109 @@ export function cleanDca(raw: unknown): DcaData {
     });
   }
   const people = Array.isArray(r.people) ? [...new Set(r.people.filter((p): p is string => typeof p === 'string' && p.trim() !== '').map(p => p.trim()))] : [];
-  return { v: 1, generated: typeof r.generated === 'string' ? r.generated : '', people, plans };
+  return { v: 1, generated: typeof r.generated === 'string' ? r.generated : '', people, plans, holdings: cleanHoldings(r.holdings) };
+}
+
+/* ── 小孩的持股與比較（2026-11-02 使用者：小孩改成莎莎和 QQ，記錄兩個小孩的持股，分析兩個人目前的差異）── */
+
+export interface DcaHolding {
+  id: string;
+  who: string;
+  code: string;
+  name: string;
+  /** 股數（1 張＝1,000 股） */
+  shares: number;
+  /** 投入成本（元，可不填） */
+  cost?: number;
+}
+
+/** 報價：股價與「最近一次配息 × 一年配幾次」估的每股年配息（網站 yields.json） */
+export interface Quote { price: number; perYear: number }
+
+export interface PersonSummary {
+  who: string;
+  /** 有報價的市值合計 */
+  mv: number;
+  /** 有填成本的那幾筆的成本合計，與同樣那幾筆的市值（算報酬率用） */
+  cost: number;
+  mvWithCost: number;
+  /** 預估年配息 */
+  div: number;
+  /** 每月定期定額（沒暫停的） */
+  monthly: number;
+  n: number;
+  /** 缺報價的代號（市值沒算進去） */
+  noQuote: string[];
+  /** 各檔市值（大的在前） */
+  rows: { code: string; name: string; shares: number; mv: number; share: number }[];
+}
+
+export function summarize(who: string, holdings: readonly DcaHolding[], plans: readonly DcaPlan[], quotes: ReadonlyMap<string, Quote>): PersonSummary {
+  const hs = holdings.filter(h => h.who === who);
+  const byCode = new Map<string, { name: string; shares: number }>();
+  for (const h of hs) {
+    const k = h.code || h.name;
+    const g = byCode.get(k) ?? { name: h.name, shares: 0 };
+    g.shares += h.shares;
+    byCode.set(k, g);
+  }
+  let mv = 0, div = 0, cost = 0, mvWithCost = 0;
+  const noQuote: string[] = [];
+  const rows: PersonSummary['rows'] = [];
+  for (const [code, g] of byCode) {
+    const q = quotes.get(code.toUpperCase());
+    if (!q) { noQuote.push(code); rows.push({ code, name: g.name, shares: g.shares, mv: 0, share: 0 }); continue; }
+    mv += g.shares * q.price; div += g.shares * q.perYear;
+    rows.push({ code, name: g.name, shares: g.shares, mv: g.shares * q.price, share: 0 });
+  }
+  for (const h of hs) {
+    const q = quotes.get(h.code.toUpperCase());
+    if (h.cost !== undefined && q) { cost += h.cost; mvWithCost += h.shares * q.price; }
+  }
+  for (const r of rows) r.share = mv > 0 ? r.mv / mv : 0;
+  rows.sort((a, b) => b.mv - a.mv);
+  return { who, mv, cost, mvWithCost, div, monthly: monthTotal(plans, who), n: byCode.size, noQuote, rows };
+}
+
+/** 兩個人的持股逐檔對照：兩人都有、只有 a、只有 b（依兩人市值合計排序） */
+export function compareHoldings(a: PersonSummary, b: PersonSummary) {
+  const codes = [...new Set([...a.rows.map(r => r.code), ...b.rows.map(r => r.code)])];
+  const get = (s: PersonSummary, c: string) => s.rows.find(r => r.code === c);
+  const rows = codes.map(c => {
+    const x = get(a, c), y = get(b, c);
+    return { code: c, name: (x ?? y)!.name, a: x ?? null, b: y ?? null };
+  }).sort((p, q) => ((q.a?.mv ?? 0) + (q.b?.mv ?? 0)) - ((p.a?.mv ?? 0) + (p.b?.mv ?? 0)));
+  return { rows, both: rows.filter(r => r.a && r.b).length, onlyA: rows.filter(r => r.a && !r.b).map(r => r.code), onlyB: rows.filter(r => !r.a && r.b).map(r => r.code) };
+}
+
+/** 從加密檔解出來的持股逐筆檢查 */
+export function cleanHoldings(raw: unknown): DcaHolding[] {
+  const out: DcaHolding[] = [];
+  for (const x of Array.isArray(raw) ? raw : []) {
+    if (typeof x !== 'object' || x === null) continue;
+    const o = x as Record<string, unknown>;
+    const shares = Number(o.shares), cost = o.cost === undefined || o.cost === null || o.cost === '' ? undefined : Number(o.cost);
+    const code = typeof o.code === 'string' ? o.code.trim().toUpperCase() : '';
+    const name = typeof o.name === 'string' ? o.name.trim() : '';
+    if ((!code && !name) || !Number.isFinite(shares) || shares <= 0) continue;
+    out.push({
+      id: typeof o.id === 'string' && o.id ? o.id : newId(),
+      who: typeof o.who === 'string' && o.who.trim() ? o.who.trim() : DEFAULT_PEOPLE[0],
+      code, name: name || code, shares,
+      ...(cost !== undefined && Number.isFinite(cost) && cost >= 0 ? { cost } : {}),
+    });
+  }
+  return out;
+}
+
+/** 改名：計畫、持股、人名清單一起改 */
+export function renamePerson(d: Pick<DcaData, 'people' | 'plans' | 'holdings'>, from: string, to: string): Pick<DcaData, 'people' | 'plans' | 'holdings'> {
+  const t = to.trim();
+  if (!t || t === from) return d;
+  const people = d.people.includes(t) ? d.people.filter(p => p !== from) : d.people.map(p => (p === from ? t : p));
+  return {
+    people,
+    plans: d.plans.map(p => (p.who === from ? { ...p, who: t } : p)),
+    holdings: d.holdings.map(h => (h.who === from ? { ...h, who: t } : h)),
+  };
 }

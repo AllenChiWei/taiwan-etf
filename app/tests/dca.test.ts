@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   monthlyOf, monthTotal, byBroker, byPerson, actualDay, monthDeductions, upcoming, parseDays, daysText, peopleOf, cleanDca, type DcaPlan,
+  summarize, compareHoldings, cleanHoldings, renamePerson, type DcaHolding, type Quote,
 } from '../src/lib/dca.ts';
 
 const plan = (o: Partial<DcaPlan>): DcaPlan => ({ id: 'x', who: '我', code: '0050', name: '元大台灣50', days: [6], amount: 3000, broker: '華南', ...o });
@@ -46,8 +47,9 @@ test('扣款日的輸入與文字', () => {
   assert.equal(daysText([26, 6]), '每月 6、26 日');
 });
 
-test('人名清單：存檔的在前、計畫裡有的補上；都沒有用預設', () => {
-  assert.deepEqual(peopleOf({ people: [], plans: [] }), ['我', '小孩']);
+test('人名清單：存檔的在前、計畫裡有的補上；都沒有用預設（我、莎莎、QQ）', () => {
+  assert.deepEqual(peopleOf({ people: [], plans: [] }), ['我', '莎莎', 'QQ']);
+  assert.deepEqual(peopleOf({ people: ['我'], plans: [], holdings: [{ id: 'h', who: 'QQ', code: '0050', name: 'x', shares: 1 }] }), ['我', 'QQ']);
   assert.deepEqual(peopleOf({ people: ['爸爸'], plans: [plan({ who: '妹妹' })] }), ['爸爸', '妹妹']);
 });
 
@@ -65,4 +67,45 @@ test('壞資料丟掉、欄位整理', () => {
   assert.equal(d.plans.length, 1);
   assert.deepEqual(d.plans[0], { id: 'ok', who: '小孩', code: '00406A', name: '00406A', days: [6, 26], amount: 2000, broker: '永豐' });
   assert.equal(cleanDca(null).plans.length, 0);
+});
+
+const hold = (o: Partial<DcaHolding>): DcaHolding => ({ id: 'h', who: '莎莎', code: '0050', name: '元大台灣50', shares: 1000, ...o });
+const quotes = new Map<string, Quote>([['0050', { price: 50, perYear: 1.5 }], ['00646', { price: 60, perYear: 0 }]]);
+
+test('小孩比較：市值、成本報酬、年配息、每月定期定額、缺報價', () => {
+  const hs = [
+    hold({ id: 'a', shares: 1000, cost: 40000 }), hold({ id: 'b', shares: 500 }),          // 同一檔分兩筆
+    hold({ id: 'c', code: '00646', name: '元大S&P500', shares: 200, cost: 10000 }),
+    hold({ id: 'd', code: '9999', name: '沒有報價', shares: 10 }),
+    hold({ id: 'e', who: 'QQ', shares: 300 }),
+  ];
+  const plans = [plan({ who: '莎莎', amount: 3000 }), plan({ who: 'QQ', amount: 1000, days: [6, 16] })];
+  const a = summarize('莎莎', hs, plans, quotes);
+  assert.equal(a.mv, 1500 * 50 + 200 * 60);
+  assert.equal(a.div, 1500 * 1.5);
+  assert.equal(a.cost, 50000);
+  assert.equal(a.mvWithCost, 1000 * 50 + 200 * 60);
+  assert.equal(a.monthly, 3000);
+  assert.equal(a.n, 3);
+  assert.deepEqual(a.noQuote, ['9999']);
+  assert.equal(a.rows[0].code, '0050');
+  const b = summarize('QQ', hs, plans, quotes);
+  assert.equal(b.monthly, 2000);
+  const c = compareHoldings(a, b);
+  assert.equal(c.both, 1);
+  assert.deepEqual(c.onlyA.sort(), ['00646', '9999']);
+  assert.deepEqual(c.onlyB, []);
+});
+
+test('持股清理與改名', () => {
+  const hs = cleanHoldings([{ who: 'QQ', code: '0050', shares: '2000', cost: '' }, { code: 'x', shares: 0 }, { name: '', code: '' }, null]);
+  assert.equal(hs.length, 1);
+  assert.equal(hs[0].shares, 2000);
+  assert.equal(hs[0].cost, undefined);
+  const r = renamePerson({ people: ['我', '小孩'], plans: [plan({ who: '小孩' })], holdings: [hold({ who: '小孩' })] }, '小孩', '莎莎');
+  assert.deepEqual(r.people, ['我', '莎莎']);
+  assert.equal(r.plans[0].who, '莎莎');
+  assert.equal(r.holdings[0].who, '莎莎');
+  // 改成已經存在的名字＝合併
+  assert.deepEqual(renamePerson({ people: ['莎莎', '小孩'], plans: [], holdings: [] }, '小孩', '莎莎').people, ['莎莎']);
 });
