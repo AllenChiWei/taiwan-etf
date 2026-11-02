@@ -103,7 +103,8 @@ plus deleting the file and its three scripts.
 | `docs/claude/macro-calendar.md` | 美國總經與台股行事曆 | 改總經頁、行事曆頁、fetch_macro.py、fetch_calendar.py |
 | `docs/claude/calculators.md` | 試算（定期定額、配息試算的個股） | 改試算頁、配息試算、stock_dividends |
 | `docs/claude/futures-statement.md` | 期貨對帳單分析 | 改對帳單頁（/futures） |
-| `docs/claude/budget.md` | 支出預估（私人頁） | 改支出預估頁（/budget）、lib/ghSync.ts |
+| `docs/claude/budget.md` | 支出預估＋用 ETF 配息支付（私人頁） | 改支出預估頁（/budget）、lib/budget.ts、lib/ghSync.ts |
+| `docs/claude/dca.md` | 定期定額紀錄（私人頁） | 改定期定額頁（/dca）、lib/dca.ts |
 | `docs/claude/etf-holdings.md` | ETF 持股（主動式換股、前十大、即將上市） | 改主動式 ETF 換股、fetch_active_holdings.py、前十大持股、即將上市 |
 
 ## Verify changes

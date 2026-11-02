@@ -84,3 +84,21 @@ test('清理：壞的項目丟掉、缺的欄位補預設', () => {
   assert.equal('note' in d.items[2], false);
   assert.deepEqual(cleanBudget(null), { v: 1, generated: '', items: [] });
 });
+
+test('用 ETF 配息支付：張數、市值、二代健保', async () => {
+  const { lotsFor } = await import('../src/lib/budget.ts');
+  const e = { perUnit: 0.138, fpy: 12, price: 8.6 };            // 00406A：月配 0.138、股價 8.6
+  // 一年 30 萬：每張一年 0.138×1000×12＝1,656 → 182 張；每月領 182×138＝25,116 ≥ 2 萬 → 扣 2.11% 後要 186 張
+  const y = lotsFor(300000, e, e.fpy);
+  assert.equal(y.nhi, true);
+  assert.equal(y.lots, Math.ceil(300000 / (1656 * (1 - 0.0211))));
+  assert.equal(y.mv, y.lots * 1000 * 8.6);
+  // 不勾二代健保
+  assert.equal(lotsFor(300000, e, e.fpy, false).lots, Math.ceil(300000 / 1656));
+  // 小金額不到 2 萬不扣：一年 1 萬 → 7 張、每次 966 元
+  const s = lotsFor(10000, e, e.fpy);
+  assert.deepEqual([s.lots, s.nhi, s.payPerTime], [7, false, 7 * 138]);
+  // 每個月都要夠付 5 萬（月配一個月配 1 次）
+  assert.equal(lotsFor(50000, e, 1).lots, Math.ceil(50000 / (138 * (1 - 0.0211))));
+  assert.equal(lotsFor(0, e, 12).lots, 0);
+});

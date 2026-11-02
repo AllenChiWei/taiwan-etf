@@ -18,4 +18,5 @@ test('對帳單頁只提示：上傳的檔案在記憶體裡，自動重新整�
   assert.equal(decideUpdate('abc', 'def', { returning: true, pathname: '/futures' }), 'prompt');
   assert.equal(decideUpdate('abc', 'def', { returning: false, pathname: '/futures' }), 'prompt');
   assert.equal(decideUpdate('abc', 'def', { returning: true, pathname: '/budget' }), 'prompt');
+  assert.equal(decideUpdate('abc', 'def', { returning: true, pathname: '/dca' }), 'prompt');
 });

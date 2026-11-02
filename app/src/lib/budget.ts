@@ -146,3 +146,45 @@ export function cleanBudget(raw: unknown): BudgetData {
   }
   return { v: 1, generated: typeof r.generated === 'string' ? r.generated : '', items };
 }
+
+/* ── 用 ETF 配息支付（2026-11-02 使用者：想用 00406A 的配息付這些開銷，算要幾張、多少市值）──
+ * 配息用「最近一次配息 × 一年配幾次」估（使用者指定；同網站年化殖利率的算法），一張＝1,000 股。
+ * 二代健保：單次配息 ≥ 2 萬元扣 2.11%（勾選時才算）；所得稅看個人級距，不在這裡算。 */
+
+export const NHI_RATE = 0.0211;
+export const NHI_MIN = 20000;
+
+export interface PayerInput {
+  /** 每股每次配息（元） */
+  perUnit: number;
+  /** 一年配幾次（月配 12、季配 4…） */
+  fpy: number;
+  /** 股價（元） */
+  price: number;
+}
+
+export interface PayerResult {
+  lots: number;
+  /** 市值（元） */
+  mv: number;
+  /** 每張每次配息（元，扣二代健保前） */
+  perPay: number;
+  /** 這個張數每次領多少（元，扣二代健保前） */
+  payPerTime: number;
+  /** 有沒有扣二代健保 */
+  nhi: boolean;
+}
+
+/**
+ * 要付 need 元，這段期間會配 pays 次（一年＝fpy；一個月＝fpy÷12，月配就是 1 次），需要幾張。
+ * 先不扣二代健保算一次；張數多到單次配息 ≥ 2 萬，再用扣 2.11% 後的金額重算。
+ */
+export function lotsFor(need: number, e: PayerInput, pays: number, nhi = true): PayerResult {
+  const perPay = e.perUnit * 1000;
+  const perLot = perPay * pays;
+  if (!(need > 0) || !(perLot > 0)) return { lots: 0, mv: 0, perPay, payPerTime: 0, nhi: false };
+  let lots = Math.ceil(need / perLot - 1e-9);
+  let taxed = false;
+  if (nhi && lots * perPay >= NHI_MIN) { lots = Math.ceil(need / (perLot * (1 - NHI_RATE)) - 1e-9); taxed = true; }
+  return { lots, mv: lots * 1000 * e.price, perPay, payPerTime: lots * perPay, nhi: taxed };
+}

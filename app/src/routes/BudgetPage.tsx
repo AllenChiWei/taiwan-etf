@@ -14,7 +14,7 @@ import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Locked } from './QBPage';
 import { ghWrite, readEncrypted, readToken, type Src } from '../lib/ghSync';
 import {
-  byCategory, categories, cleanBudget, EVERY, monthTotals, newId, paysIn, perYear, PRESETS, scheduleText, yearTotal,
+  byCategory, categories, cleanBudget, EVERY, lotsFor, monthTotals, newId, NHI_MIN, paysIn, perYear, PRESETS, scheduleText, yearTotal,
   type BudgetData, type BudgetItem, type Every,
 } from '../lib/budget';
 
@@ -166,6 +166,8 @@ function Board({ loaded }: { loaded: Loaded }) {
           <div className="font-mono text-lg font-bold text-ink">{peak.total > 0 ? <>{peak.m} 月 <span className="text-[13px]">{money(peak.total)}</span></> : '—'}</div>
         </div>
       </div>
+
+      <PayerCard items={items} />
 
       <section className="mt-4 rounded-xl border border-line bg-surface p-3">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
@@ -365,5 +367,113 @@ function ItemForm({ draft, setDraft, cats, onOk, onCancel, input, btn }: {
         <button type="submit" className={btn}>{draft.id ? '確定修改' : '加入'}</button>
       </div>
     </form>
+  );
+}
+
+/* ── 用 ETF 配息支付（2026-11-02 使用者：用 00406A 的配息付這些開銷，算要幾張、多少市值；用最近一次配息估）──
+ * 配息、股價取網站的 yields.json（last＝最近一次每股配息、fpy＝一年配幾次、price＝收盤）與 dividends.json（最近一次除息日），
+ * 都可以手動改；代號與勾選記在這台裝置（localStorage），不進加密檔。 */
+
+interface PayerQuote { name: string; perUnit: number; fpy: number; price: number; lastDate: string; asof: string }
+const PAYER_KEY = 'twetf.budget.payer';
+
+function loadPrefs(): { code: string; noInvest: boolean; nhi: boolean } {
+  try {
+    const j = JSON.parse(localStorage.getItem(PAYER_KEY) ?? '{}') as Partial<{ code: string; noInvest: boolean; nhi: boolean }>;
+    return { code: typeof j.code === 'string' && j.code ? j.code : '00406A', noInvest: j.noInvest === true, nhi: j.nhi !== false };
+  } catch { return { code: '00406A', noInvest: false, nhi: true }; }
+}
+
+function PayerCard({ items }: { items: BudgetItem[] }) {
+  const [prefs, setPrefs] = useState(loadPrefs);
+  const [codeText, setCodeText] = useState(prefs.code);
+  const [quote, setQuote] = useState<PayerQuote | null>(null);
+  const [err, setErr] = useState('');
+  const [perUnit, setPerUnit] = useState('');
+  const [fpy, setFpy] = useState('');
+  const [price, setPrice] = useState('');
+  const savePrefs = (p: typeof prefs) => { setPrefs(p); try { localStorage.setItem(PAYER_KEY, JSON.stringify(p)); } catch { /* 只是記住偏好 */ } };
+
+  useEffect(() => {
+    const code = prefs.code.toUpperCase();
+    const base = import.meta.env.BASE_URL;
+    setErr('');
+    Promise.all([
+      fetch(`${base}data/yields.json`).then(r => r.json()),
+      fetch(`${base}data/dividends.json`).then(r => r.json()).catch(() => null),
+      fetch(`${base}data/etfs.json`).then(r => r.json()).catch(() => null),
+    ]).then(([y, d, e]: [
+      { meta?: { asof?: string }; yields?: Record<string, { last?: number; fpy?: number; price?: number }> },
+      { dividends?: Record<string, [string, number, number][]> } | null,
+      { etfs?: { code?: string; name?: string }[] } | null,
+    ]) => {
+      const q = y.yields?.[code];
+      if (!q || !q.last || !q.fpy || !q.price) { setQuote(null); setErr(`網站資料裡找不到 ${code} 的配息或股價，請直接在下面填。`); return; }
+      const ev = d?.dividends?.[code] ?? [];
+      const name = e?.etfs?.find(x => x.code?.toUpperCase() === code)?.name ?? code;
+      const qq = { name, perUnit: q.last, fpy: q.fpy, price: q.price, lastDate: ev.length ? ev[ev.length - 1][0] : '', asof: y.meta?.asof ?? '' };
+      setQuote(qq); setPerUnit(String(qq.perUnit)); setFpy(String(qq.fpy)); setPrice(String(qq.price));
+    }).catch(() => setErr('讀不到配息資料，請直接在下面填。'));
+  }, [prefs.code]);
+
+  const used = prefs.noInvest ? items.filter(x => x.cat !== '投資') : items;
+  const year = yearTotal(used);
+  const months = monthTotals(used);
+  const peak = months.reduce((a, x) => (x.total > a.total ? x : a), months[0]);
+  const e = { perUnit: Number(perUnit), fpy: Number(fpy), price: Number(price) };
+  const ok = e.perUnit > 0 && e.fpy > 0 && e.price > 0;
+  const yr = ok ? lotsFor(year, e, e.fpy, prefs.nhi) : null;
+  const mo = ok && e.fpy >= 12 ? lotsFor(peak.total, e, e.fpy / 12, prefs.nhi) : null;
+  const yieldPct = ok ? (e.perUnit * e.fpy / e.price) * 100 : 0;
+  const input = 'h-9 w-full min-w-0 rounded-lg border border-line bg-bg px-2 font-mono text-base text-ink sm:text-[13px]';
+  const res = 'rounded-lg border border-line bg-bg px-3 py-2';
+
+  return (
+    <section className="mt-4 rounded-xl border border-line bg-surface p-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+        <h2 className="text-sm font-bold text-ink">用 ETF 配息支付</h2>
+        <span className="text-[11px] text-faint">配息用最近一次 × 一年配幾次估</span>
+      </div>
+      <form className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4" onSubmit={ev => { ev.preventDefault(); savePrefs({ ...prefs, code: codeText.trim().toUpperCase() || '00406A' }); }}>
+        <label className="flex flex-col text-[11.5px] text-muted">ETF 代號
+          <span className="flex gap-1"><input className={input} value={codeText} onChange={ev => setCodeText(ev.target.value)} onBlur={() => savePrefs({ ...prefs, code: codeText.trim().toUpperCase() || '00406A' })} /></span>
+        </label>
+        <label className="flex flex-col text-[11.5px] text-muted">每股每次配息（元）
+          <input className={input} value={perUnit} onChange={ev => setPerUnit(ev.target.value)} inputMode="decimal" />
+        </label>
+        <label className="flex flex-col text-[11.5px] text-muted">一年配幾次
+          <input className={input} value={fpy} onChange={ev => setFpy(ev.target.value)} inputMode="numeric" />
+        </label>
+        <label className="flex flex-col text-[11.5px] text-muted">股價（元）
+          <input className={input} value={price} onChange={ev => setPrice(ev.target.value)} inputMode="decimal" />
+        </label>
+      </form>
+      <p className="mt-1 text-[11.5px] text-faint">
+        {quote ? <>{prefs.code} {quote.name}：最近一次配息 {quote.perUnit} 元{quote.lastDate ? `（${quote.lastDate} 除息）` : ''}、一年 {quote.fpy} 次、收盤 {quote.price} 元（{quote.asof}）；年化殖利率約 {yieldPct.toFixed(1)}%。</> : err}
+      </p>
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[12.5px] text-muted">
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={prefs.nhi} onChange={ev => savePrefs({ ...prefs, nhi: ev.target.checked })} />扣二代健保 2.11%（單次配息 ≥ {money(NHI_MIN)} 元）</label>
+        <label className="flex items-center gap-1.5"><input type="checkbox" checked={prefs.noInvest} onChange={ev => savePrefs({ ...prefs, noInvest: ev.target.checked })} />不含「投資」分類</label>
+      </div>
+      {ok && yr && (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div className={res}>
+            <div className="text-[11.5px] text-muted">全年 {money(year)} 元（配息存起來，各月互相補）</div>
+            <div className="font-mono text-lg font-bold text-ink">{money(yr.lots)} 張<span className="ml-2 text-[13px] font-semibold text-muted">市值 {money(yr.mv)}</span></div>
+            <div className="text-[11.5px] text-faint">每次領約 {money(yr.payPerTime)} 元{yr.nhi ? '，已扣二代健保' : ''}</div>
+          </div>
+          {mo ? (
+            <div className={res}>
+              <div className="text-[11.5px] text-muted">每個月都夠付（最多的 {peak.m} 月 {money(peak.total)} 元）</div>
+              <div className="font-mono text-lg font-bold text-ink">{money(mo.lots)} 張<span className="ml-2 text-[13px] font-semibold text-muted">市值 {money(mo.mv)}</span></div>
+              <div className="text-[11.5px] text-faint">每月領約 {money(mo.payPerTime)} 元{mo.nhi ? '，已扣二代健保' : ''}</div>
+            </div>
+          ) : (
+            <div className={`${res} text-[12px] text-faint`}>不是月配，只算全年攤平的張數。</div>
+          )}
+        </div>
+      )}
+      <p className="mt-1 text-[11px] text-faint">一張＝1,000 股。配息會變動，最近一次不代表之後每次都一樣；所得稅依個人級距，這裡沒有算。</p>
+    </section>
   );
 }
