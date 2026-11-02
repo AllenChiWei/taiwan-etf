@@ -34,6 +34,14 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-02',
+    items: [
+      { kind: 'improve', to: '/dividend',
+        text: '配息試算的「配息月曆」可以點月份展開當月組成：哪幾檔除息、每股多少、各領多少、佔當月幾成，'
+          + '以及配息來源估算（股利、利息、收益平準金、資本利得），看得出那個月有多少要算二代健保。手機也能點。' },
+    ],
+  },
+  {
     date: '2026-10-31',
     items: [
       { kind: 'new', to: '/stock',

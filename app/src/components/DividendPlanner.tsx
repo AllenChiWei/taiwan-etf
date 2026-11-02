@@ -14,7 +14,8 @@ import {
   seriesFromStock, activePayer, withUpcoming,
   type HoldingProjection, type ProjectionWithUpcoming, type StockDividendData, type EtfDividendData, type YieldData,
 } from '../lib/dividend';
-import { fetchStockDividends, fetchEtfDividends, fetchYields, fetchCalendar } from '../api/extras';
+import { fetchStockDividends, fetchEtfDividends, fetchYields, fetchCalendar, fetchDivMix } from '../api/extras';
+import type { DivMixData } from '../lib/monthlyIncome';
 import { upcomingByCode, dayLabel, type CalendarData } from '../lib/calendar';
 import { useDataset } from '../hooks/useDataset';
 import { useUsDataset } from '../hooks/useUsDataset';
@@ -89,6 +90,15 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     const ac = new AbortController();
     fetchStockDividends(ac.signal).then(d => { if (!ac.signal.aborted) setStockDivs(d); })
       .catch(() => { /* 沒有這份就只能選 ETF，不影響其他功能 */ });
+    return () => ac.abort();
+  }, []);
+  /** 配息月曆點開的月份（0=一月）；各 ETF 最近一次公告的配息組成（集保，月份明細估算股利／平準金用） */
+  const [openMonth, setOpenMonth] = useState<number | null>(null);
+  const [divMix, setDivMix] = useState<DivMixData | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchDivMix(ac.signal).then(d => { if (!ac.signal.aborted) setDivMix(d); })
+      .catch(() => { /* 沒有這份，月份明細就不拆配息來源 */ });
     return () => ac.abort();
   }, []);
 
@@ -443,7 +453,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">配息月曆</h2>
-              <span className="text-[11.5px] text-faint">月份以除息日為準・依一年可領金額排序</span>
+              <span className="text-[11.5px] text-faint">月份以除息日為準・依一年可領金額排序・點月份看組成</span>
             </div>
 
             {/* 圖例。每檔的顏色在十二個月裡固定，才看得出誰佔比大 */}
@@ -467,8 +477,15 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                 const parts = rows
                   .map(r => ({ r, amount: r.byMonth[m] * r.shares }))
                   .filter(x => x.amount > 0);
+                const isOpen = openMonth === m;
                 return (
-                  <li key={label} className="flex items-center gap-2">
+                  <li key={label}>
+                  {/* 整列可以點（2026-11-02 站主要求）：展開這個月是哪幾檔、各領多少、配息來源。
+                      原本只有滑鼠停在分段上的 title，手機看不到 */}
+                  <button type="button" aria-expanded={isOpen} disabled={v <= 0}
+                          onClick={() => setOpenMonth(o => (o === m ? null : m))}
+                          className={`flex w-full items-center gap-2 rounded text-left disabled:cursor-default
+                                      ${isOpen ? 'bg-accent-soft' : 'hover:bg-sunken'}`}>
                     <span className="w-9 shrink-0 text-right text-[12px] text-muted">{label}</span>
                     <span className="relative h-6 flex-1 overflow-hidden rounded bg-sunken">
                       {/* 外層寬度 = 這個月佔最高月份的比例；內層再按各檔金額分段。
@@ -498,6 +515,15 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                                      font-semibold tabular-nums text-ink">
                       {v > 0 ? money(v) : '—'}
                     </span>
+                    <span className="w-3 shrink-0 text-[10px] text-accent">{v > 0 ? (isOpen ? '▴' : '▾') : ''}</span>
+                  </button>
+                  {isOpen && (
+                    <MonthDetail label={label} total={v} colorOf={colorOf} mix={divMix}
+                                 kindOf={code => (usSet.has(code) ? 'us'
+                                   : index.codes[code]?.kind === 'stock' || (stockDivs?.stocks[code] && !(code in index.codes)) ? 'stock' : 'etf')}
+                                 acctOf={accounts.length > 1 ? acctOf : undefined}
+                                 parts={parts.map(({ r, amount }) => ({ r, amount, perShare: r.byMonth[m] }))} />
+                  )}
                   </li>
                 );
               })}
@@ -704,6 +730,101 @@ interface AccountView {
   rows: HoldingProjection[];
   count: number;
   portfolio: ReturnType<typeof buildPortfolio>;
+}
+
+/** 配息來源的五類，順序同集保 divDet1～5；前兩類（股利、利息）計二代健保與所得稅 */
+const MIX_PARTS = [
+  { label: '股利所得', color: 'bg-up', taxed: true },
+  { label: '利息所得', color: 'bg-yield', taxed: true },
+  { label: '收益平準金', color: 'bg-accent', taxed: false },
+  { label: '已實現資本利得', color: 'bg-down', taxed: false },
+  { label: '其他所得', color: 'bg-na', taxed: false },
+];
+
+/**
+ * 配息月曆點開一個月：這個月哪幾檔除息、每股多少、領多少、佔當月幾成，
+ * 以及配息來源（ETF 用集保最近一次公告的組成估算，台股個股全算股利所得，美股與未公告的另列）。
+ */
+function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf }: {
+  label: string;
+  total: number;
+  parts: { r: ProjectionWithUpcoming; amount: number; perShare: number }[];
+  colorOf: (code: string) => string;
+  mix: DivMixData | null;
+  kindOf: (code: string) => 'etf' | 'stock' | 'us';
+  acctOf?: (code: string) => string;
+}) {
+  const src = MIX_PARTS.map(() => 0);
+  let us = 0, unknown = 0;
+  for (const { r, amount } of parts) {
+    const k = kindOf(r.code);
+    const d = k === 'etf' ? mix?.mix[r.code]?.d : undefined;
+    const sum = d ? d.reduce((a, b) => a + (b > 0 ? b : 0), 0) : 0;
+    if (k === 'stock') src[0] += amount;
+    else if (k === 'us') us += amount;
+    else if (d && sum > 0) d.forEach((p, i) => { if (p > 0 && i < src.length) src[i] += amount * p / sum; });
+    else unknown += amount;
+  }
+  const rows = [
+    ...MIX_PARTS.map((p, i) => ({ ...p, amount: src[i] })),
+    { label: '美股（海外所得）', color: 'bg-na', taxed: false, amount: us },
+    { label: '組成未公告', color: 'bg-line', taxed: false, amount: unknown },
+  ].filter(x => x.amount > 0.5);
+  const taxed = src[0] + src[1];
+  return (
+    <div className="mt-1 mb-2 rounded-lg bg-sunken px-3 py-2 text-[12px] sm:ml-11">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="font-semibold text-ink">{label}配息組成</span>
+        <span className="font-mono tabular-nums text-muted">合計 {money(total)} 元・{parts.length} 檔</span>
+      </div>
+      <ul className="mt-1.5 space-y-1">
+        {parts.map(({ r, amount, perShare }) => (
+          <li key={r.code} className="grid grid-cols-[auto_1fr_auto] items-baseline gap-x-2">
+            <span className="inline-block h-2.5 w-2.5 shrink-0 self-center rounded-sm" style={{ background: colorOf(r.code) }} />
+            <span className="min-w-0">
+              <span className="block truncate text-ink">
+                <span className="font-mono font-semibold">{r.code}</span> {r.name}
+                {r.fromUpcoming && r.upcoming?.ck === 'est' && (
+                  <span className="ml-1 rounded bg-surface px-1 text-[10.5px] text-muted">預估</span>
+                )}
+              </span>
+              <span className="block text-[10.5px] text-faint">
+                每股 {nf4(perShare)} 元 × {nf0.format(r.shares)} 股
+                {acctOf && <>・{acctOf(r.code)}</>}
+              </span>
+            </span>
+            <span className="text-right">
+              <span className="block font-mono font-semibold tabular-nums text-ink">{money(amount)}</span>
+              <span className="block font-mono text-[10.5px] tabular-nums text-faint">{nf0.format(total > 0 ? amount / total * 100 : 0)}%</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+      {rows.length > 0 && (
+        <>
+          <div className="mt-2 mb-1 text-[11px] text-faint">配息來源（估算）</div>
+          <div className="flex h-2 overflow-hidden rounded-full" role="img"
+               aria-label={rows.map(x => `${x.label} ${money(x.amount)} 元`).join('、')}>
+            {rows.map(x => <span key={x.label} className={x.color} style={{ width: `${x.amount / total * 100}%` }} />)}
+          </div>
+          <ul className="mt-1.5 grid gap-x-4 gap-y-0.5 sm:grid-cols-2">
+            {rows.map(x => (
+              <li key={x.label} className="flex items-center gap-1.5">
+                <span className={`h-2 w-2 shrink-0 rounded-full ${x.color}`} />
+                <span className="text-ink">{x.label}</span>
+                <span className="ml-auto font-mono tabular-nums text-muted">{money(x.amount)} 元</span>
+                <span className={`w-20 text-right text-[10.5px] ${x.taxed ? 'text-up' : 'text-faint'}`}>{x.taxed ? '計健保・所得稅' : ''}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+            ETF 的來源比例用集保 ETF 觀測站最近一次公告的組成套用，台股個股全算股利所得；
+            股利＋利息約 {money(taxed)} 元，單筆達 2 萬元扣二代健保 2.11%。實際以投信的收益分配通知為準。
+          </p>
+        </>
+      )}
+    </div>
+  );
 }
 
 /** 一個帳戶的配息：年配息（與佔全部的比例）、每月、市值、殖利率，十二個月各領多少，持股清單。 */
