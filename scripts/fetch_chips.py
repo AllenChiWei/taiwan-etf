@@ -29,7 +29,11 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
 FinMind（一個請求給一段完整歷史，免費層）：
 
     TaiwanStockTotalMarginPurchaseShortSale   上市融資融券餘額
-    USStockPrice ^VIX ^GSPC SPY TLT HYG LQD   VIX 與自算恐懼貪婪指數的原料
+    USStockPrice ^VIX ^GSPC SPY TLT HYG LQD RSP   VIX 與自算恐懼貪婪指數的原料
+
+CBOE（cdn.cboe.com 每日選擇權統計 JSON，robots 沒有禁止）：
+
+    {日期}_daily_options   全市場 Put/Call（TOTAL PUT/CALL RATIO），恐懼貪婪的一項
 
 期交所沒有 robots.txt（回 404），證交所與櫃買的都沒有禁止這些路徑。即使如此還是
 照本專案一貫的做法：User-Agent 標明用途與網址、每次請求之間留間隔、只抓需要的。
@@ -80,9 +84,15 @@ fetch_stocks.py 踩過，所以這裡照欄位名稱找第一組「今日餘額�
 
 **恐懼貪婪是自算的近似值，不是 CNN 的。** CNN 的資料端點對表明身分的程式回
 HTTP 418（「I'm a teapot. You're a bot.」），cnn.com 的 robots.txt 也點名擋掉 AI
-代理；要拿只能假裝成瀏覽器，這個專案不做。所以照 CNN 公開的方法、用拿得到的四項
-自己算（見 app/src/lib/sentiment.ts），原料是 FinMind 的含息還原價 ——
+代理；要拿只能假裝成瀏覽器，這個專案不做。所以照 CNN 公開的方法、用拿得到的資料
+自己算七項（見 app/src/lib/sentiment.ts），原料是 FinMind 的含息還原價 ——
 債券 ETF 每月配息，用純價格算報酬會讓「避險需求」每個月被配息日誤判一次。
+
+**CBOE 的 Put/Call 一天一個檔案，歷史靠種子＋快取累積。** 每天打幾百個請求回補
+一年太浪費，所以 scripts/seed/cboe_putcall.json 存了 2023-06 起的歷史（2026-11-03
+回補），每次執行只補種子與快取（.cache/cboe_putcall.json）之後缺的日子，最多
+PC_MAX_FETCH 天。休市日 CBOE 回 404，記成 null 不再重問；但最近三天的 404 可能只是
+還沒公佈，不記。
 
 **契約金額的單位是千元。** 期交所原始欄位就是千元，這裡原樣保留，換算交給前端，
 免得在 JSON 裡再乘一次、之後看到數字時搞不清楚是哪一種單位。
@@ -93,6 +103,7 @@ import re
 import os
 import sys
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
@@ -143,8 +154,12 @@ FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
 FINMIND_TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
 # 自算恐懼貪婪：125 日均線 + 一年的百分位，再畫一段走勢，所以要兩年半的歷史
 US_SYMBOLS = {'^GSPC': 'spx', '^VIX': 'vix', 'SPY': 'spy',
-              'TLT': 'tlt', 'HYG': 'hyg', 'LQD': 'lqd'}
+              'TLT': 'tlt', 'HYG': 'hyg', 'LQD': 'lqd', 'RSP': 'rsp'}
 US_HISTORY_DAYS = 920
+CBOE_DAILY = 'https://cdn.cboe.com/data/us/options/market_statistics/daily/%s_daily_options'
+PC_SEED = os.path.join(ROOT, 'scripts', 'seed', 'cboe_putcall.json')
+PC_CACHE = os.path.join(ROOT, '.cache', 'cboe_putcall.json')
+PC_MAX_FETCH = 40
 
 # 期交所寫「外資及陸資」，畫面上一律講「外資」—— 兩邊指的是同一件事
 WHO = {u'自營商': u'自營商', u'投信': u'投信', u'外資及陸資': u'外資', u'外資': u'外資'}
@@ -605,7 +620,7 @@ def maintenance(day):
 # ── 美股：VIX 與自算恐懼貪婪的原料 ───────────────────────────
 
 def us_series(end):
-    u"""{dates, spx, vix, spy, tlt, hyg, lqd}，含息還原收盤（Adj_Close）。
+    u"""{dates, spx, vix, spy, tlt, hyg, lqd, rsp, pc}，含息還原收盤（Adj_Close）＋ CBOE Put/Call。
 
     各檔日期對齊到聯集，缺的那天是 None（前端跳過，不當成 0）。
     """
@@ -619,7 +634,48 @@ def us_series(end):
     out = {'dates': dates}
     for key, series in cols.items():
         out[key] = [series.get(d) or None for d in dates]
+    # CBOE 全市場 Put/Call，對齊美股日期；沒有的那天是 None
+    pc = cboe_putcall(end)
+    out['pc'] = [pc.get(d) for d in dates]
     return out
+
+
+def cboe_putcall(today):
+    u"""{日期: CBOE 全市場 Put/Call}，種子＋快取＋補抓缺的日子（見檔頭）。抓不到回已有的。"""
+    have = {}
+    for path in (PC_SEED, PC_CACHE):
+        try:
+            with open(path, encoding='utf-8') as f:
+                have.update(json.load(f))
+        except (OSError, ValueError):
+            pass
+    last = max(have) if have else (today - timedelta(days=400)).isoformat()
+    d = datetime.strptime(last, '%Y-%m-%d').date() + timedelta(days=1)
+    todo = []
+    while d < today:
+        if d.weekday() < 5 and d.isoformat() not in have:
+            todo.append(d)
+        d += timedelta(days=1)
+    for d in todo[-PC_MAX_FETCH:]:
+        key = d.isoformat()
+        try:
+            doc = json.loads(fetch(CBOE_DAILY % key).decode('utf-8'))
+            ratio = next((float(x['value']) for x in doc.get('ratios', [])
+                          if x.get('name') == 'TOTAL PUT/CALL RATIO'), None)
+            have[key] = ratio
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 404) and (today - d).days > 3:
+                have[key] = None
+        except Exception as e:                                # noqa: BLE001
+            note(u'CBOE Put/Call %s：%s' % (key, str(e)[:60]))
+            break
+    try:
+        os.makedirs(os.path.dirname(PC_CACHE), exist_ok=True)
+        with open(PC_CACHE, 'w', encoding='utf-8') as f:
+            json.dump(have, f, separators=(',', ':'), sort_keys=True)
+    except OSError:
+        pass
+    return have
 
 
 def top_n(rows, prices, n=10):

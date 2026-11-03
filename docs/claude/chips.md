@@ -86,10 +86,21 @@
 **CNN 恐懼貪婪指數不抓**（2026-09-23 查過）：`production.dataviz.cnn.io` 對表明身分的
 UA 回 **HTTP 418「I'm a teapot. You're a bot.」**，cnn.com 的 robots.txt 點名 ClaudeBot、
 anthropic-ai 等代理 `Disallow: /`、對所有人擋 `/api/`；FinMind 的 `CnnFearGreedIndex` 要付費。
-所以籌碼頁的是**照 CNN 公開方法自算的近似值**（`lib/sentiment.ts`）：S&P 500 相對 125 日
-均線、VIX 相對 50 日均線、20 日股債報酬差、20 日高收益債與投資級債報酬差，各自換成一年
-百分位後平均。CNN 另外三項（新高新低、漲跌量能、Put/Call）沒有合法免費來源。畫面上必須
-寫明「自算，非 CNN」。原料一律用含息還原價 —— 債券 ETF 月配息，純價格會每月誤判一次。
+所以籌碼頁的是**照 CNN 公開方法自算的近似值**（`lib/sentiment.ts`），七項各自換成一年
+百分位後平均：S&P 500 相對 125 日均線、S&P 500 離 52 週高點（代理新高新低家數）、RSP÷SPY
+相對 50 日均線（代理漲跌量能）、CBOE 全市場 Put/Call 5 日平均、VIX 相對 50 日均線、20 日
+股債報酬差、20 日高收益債與投資級債報酬差。畫面上必須寫明「自算，非 CNN」。原料一律用
+含息還原價 —— 債券 ETF 月配息，純價格會每月誤判一次。
+
+**2026-11-03 從四項補成七項**：四項版 11/2 算出 4、CNN 是 23，站主反映差太多。對 CNN 歷史
+（GitHub `alexey-formalmethods/datasets` 的 money.cnn 資料，2011～2022-08）校正：四項版平均
+差 12.4 分（2017～2022），七項版 10.0；2026 年五個已知 CNN 值（5/15 64、7/2 37、7/21 40、
+8/3 46、11/2 23）平均差 19.5 → 9.9。窗口 504 天、z 分數排名都試過，沒有比較好。
+finhacker.cz 的 CNN 歷史是 Gumroad 付費商品，不用。
+**CBOE Put/Call**：`cdn.cboe.com/data/us/options/market_statistics/daily/{日期}_daily_options`
+（robots 沒禁止），一天一檔，2019-10 以前是 `totalpc.csv`（停更）。歷史放種子檔＋Actions 快取，
+每次只補缺的日子（`fetch_chips.py` 的 `cboe_putcall`）。**站主電腦的 Python 驗證 CBOE 憑證
+會失敗**（本機憑證庫問題，curl 正常），本機測試要換成 curl。
 
 **查過但不採用：奇摩股市**的 robots.txt 有一組點名 AI 代理的清單（anthropic-ai、
 ClaudeBot、GPTBot…）全部 `Disallow: /`，對所有人也擋掉 `/api`、`/caas`、

@@ -331,12 +331,29 @@ jobs:
       # 籌碼面（期交所三大法人／大額交易人、交易所法人買賣超）。不需要 FinLab，
       # 來源都是公開端點。continue-on-error 是刻意的：交易所偶爾維護或逾時，
       # 那不該讓整個網站的部署失敗 —— 缺檔時籌碼頁自己會說「今天還沒有資料」。
+      # 恐懼貪婪的 Put/Call：CBOE 一天一個檔，種子（scripts/seed）之後的日子累積在這份快取，
+      # 每次只補缺的幾天（見 fetch_chips.py 檔頭）。
+      - name: 取回 CBOE Put/Call 快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/cboe_putcall.json
+          key: cboe-putcall-${{ github.run_id }}
+          restore-keys: |
+            cboe-putcall-
+
       - name: 產生籌碼資料
         continue-on-error: true
         env:
-          # 融資餘額、VIX 與自算恐懼貪婪用的美股序列來自 FinMind（七個請求）
+          # 融資餘額、VIX 與自算恐懼貪婪用的美股序列來自 FinMind（八個請求）
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python scripts/fetch_chips.py
+
+      - name: 存下 CBOE Put/Call 快取
+        if: ${{ always() && hashFiles('.cache/cboe_putcall.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/cboe_putcall.json
+          key: cboe-putcall-${{ github.run_id }}
 
       # FinLab 失敗（額度用完、服務中斷、或改版）時退回備份。半途失敗的產出不能
       # 只補一半 —— 那會混出一份新舊相間的資料，所以整組換回去。

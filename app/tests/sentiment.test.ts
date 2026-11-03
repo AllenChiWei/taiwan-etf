@@ -50,10 +50,11 @@ function fake(n: number, f: Partial<Record<keyof Omit<UsSeries, 'dates'>, (i: nu
     dates: Array.from({ length: n }, (_, i) => `d${String(i).padStart(4, '0')}`),
     spx: col(f.spx), vix: col(f.vix), spy: col(f.spy),
     tlt: col(f.tlt), hyg: col(f.hyg), lqd: col(f.lqd),
+    rsp: col(f.rsp), pc: Array.from({ length: n }, (_, i) => (f.pc ? f.pc(i) : 0.9)),
   };
 }
 
-test('四項的方向：越大越貪婪', async (t) => {
+test('各項的方向：越大越貪婪', async (t) => {
   await t.test('VIX 衝高時「波動率」這項是負的（恐懼）', () => {
     const us = fake(80, { vix: i => (i < 79 ? 15 : 30) });
     const v = components(us).volatility;
@@ -64,6 +65,34 @@ test('四項的方向：越大越貪婪', async (t) => {
     const us = fake(40, { spy: i => 100 + i, tlt: () => 100 });
     assert.ok(components(us).safeHaven[39]! > 0);
   });
+
+  await t.test('離 52 週高點越遠「股價強度」越低', () => {
+    const us = fake(300, { spx: i => (i < 280 ? 100 + i : 380 - (i - 280) * 5) });
+    const s = components(us).strength;
+    assert.equal(s[279], 0);
+    assert.ok(s[299]! < s[285]! && s[299]! < 0);
+  });
+
+  await t.test('等權重贏市值權重時「市場寬度」是正的', () => {
+    const us = fake(80, { rsp: i => (i < 60 ? 100 : 100 + (i - 60)) });
+    assert.ok(components(us).breadth[79]! > 0);
+  });
+
+  await t.test('Put/Call 偏高時那一項比較低（恐懼）', () => {
+    const us = fake(40, { pc: i => (i < 30 ? 0.8 : 1.3) });
+    const p = components(us).putCall;
+    assert.ok(p[39]! < p[20]!);
+  });
+});
+
+test('舊的 chips.json 沒有 RSP／Put/Call：只用有的五項，不列空的那兩項', () => {
+  const us = fake(420, { spx: i => 4000 + Math.sin(i / 7) * 40, vix: i => 20 + Math.sin(i / 5) * 2 });
+  delete us.rsp;
+  delete us.pc;
+  const fg = fearGreed(us);
+  assert.ok(fg.latest);
+  assert.deepEqual(fg.latest!.parts.map(p => p.key),
+    ['momentum', 'strength', 'volatility', 'safeHaven', 'junk']);
 });
 
 test('持續上漲、VIX 走低的市場落在貪婪那一側', () => {
@@ -98,6 +127,11 @@ test('真實 chips.json 的美股序列', { skip: !existsSync(PATH) && '沒有 c
   for (const k of ['spx', 'vix', 'spy', 'tlt', 'hyg', 'lqd'] as const) {
     assert.equal(us[k].length, us.dates.length, `${k} 的長度跟日期不一樣`);
   }
+  for (const k of ['rsp', 'pc'] as const) {
+    if (us[k]) assert.equal(us[k]!.length, us.dates.length, `${k} 的長度跟日期不一樣`);
+  }
+  // Put/Call 在 0.3 到 3 之間；超出代表抓錯欄位
+  for (const v of us.pc ?? []) if (v !== null) assert.ok(v > 0.3 && v < 3, `Put/Call ${v} 不合理`);
   // VIX 在 5 到 100 之間；超出代表抓到的不是 VIX（例如某個同名代號）
   for (const v of us.vix) if (v !== null) assert.ok(v > 5 && v < 100, `VIX ${v} 不合理`);
   const fg = fearGreed(us);

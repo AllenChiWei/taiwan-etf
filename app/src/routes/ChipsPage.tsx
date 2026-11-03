@@ -393,11 +393,12 @@ function SentimentSection({ data }: { data: ChipsData }) {
       </div>
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         <strong className="text-muted">這不是 CNN 的恐懼貪婪指數。</strong>
-        CNN 的資料不開放給程式抓，這裡照它公開的方法、用拿得到的四項自己算：
-        S&amp;P 500 相對 125 日均線、VIX 相對 50 日均線、近 20 日股票 vs 公債報酬、
-        高收益債 vs 投資級債報酬。每項換成「在過去一年排第幾」（0–100）後平均。
-        CNN 另外三項（新高新低家數、漲跌量能、Put/Call）沒有合法的免費來源，
-        所以數字會跟 CNN 不同，看方向就好。資料：FinMind（含息還原價）。
+        CNN 的資料不開放給程式抓，這裡照它公開的七項方法自己算：S&amp;P 500 相對
+        125 日均線、離 52 週高點多遠（代替新高新低家數）、等權重 vs 市值權重 S&amp;P 500
+        （代替漲跌量能）、CBOE Put/Call 5 日平均、VIX 相對 50 日均線、近 20 日股票 vs
+        公債報酬、高收益債 vs 投資級債報酬。每項換成「在過去一年排第幾」（0–100）後平均。
+        對過去 CNN 的數字校正過，平均約差 10 分，看方向就好。
+        資料：FinMind（含息還原價）、CBOE。
       </p>
     </Section>
   );
