@@ -12,5 +12,6 @@
   4. `cd D:\ai\DashBoard_AI && uv run --python 3.12 gen_export.py D:\ai\_tmp\gen_ls15\payload.json`（加密、只提交 data/gen/、推送；會重設這個 worktree，先提交自己的修改）
 - 資料格式：`dates`（共用日期）、`strategies[]`（id、side、sess、組合、stats.all/is/os、years[]、eq[] 累計萬元、robust、pl 程式碼）、
   `combos.long/short/both`（n、stats、years、eq、相關；both 多一個 corrLS＝多單組合 vs 空單組合）。舊格式（只有 `combo`、沒有 side）也能顯示，當成空單一組。
+- 2026-11-03 站主：每列前面有勾選框，可以把策略移出組合，組合在前端重算（`lib/genPortfolio.ts`，`tests/genPortfolio.test.ts`），上方顯示「全部開著 → 現在」的變化，曲線多一條全開虛線；關掉的記在 localStorage `twetf.gen.off|<generated>`。詳細區多了統計卡（樣本內外每年淨利、賺錢年份、最好最差年、SQN 或相關）與每年淨利長條圖。資料每段、每年要有 `gp`／`gl`（萬，獲利／虧損交易合計）才能重算獲利因子，舊資料顯示「—」；QT「一鍵組合」的 portfolio.json 也有（2026.11.3.2 之後的版本）。
 - 本機實測私人頁：`D:\ai\_tmp\scripts_iso\gen_verify.py`（v18 金鑰由程式從 .env 讀、塞進 localStorage 跑 site_verify，結束後還原 data/gen 並刪掉含金鑰的 Edge 設定檔）。
 - 私人頁不記「更新」頁（changelog）。
