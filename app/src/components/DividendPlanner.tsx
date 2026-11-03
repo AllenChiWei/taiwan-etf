@@ -640,7 +640,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     </div>
                   )}
 
-                  <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-7">
+                  {/* 八格：電腦版一排放完（加了發放日後原本的 7 欄會折成兩排，站主 2026-11-03 要求維持一排） */}
+                  <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-8">
                     <Cell label="股數" value={`${nf0.format(r.shares)} 股`}
                           hint={r.shares >= 1000
                             ? `${nf2.format(r.shares / SHARES_PER_LOT)} 張` : undefined} />
