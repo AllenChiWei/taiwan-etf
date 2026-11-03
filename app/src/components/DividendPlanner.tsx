@@ -232,7 +232,31 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return { name, rows: list, count: own.length, portfolio: buildPortfolio(list) };
   }), [accounts, entries, project]);
   const acctOf = (code: string) => entries.find(e => e.code === code)?.acct ?? accounts[0];
+  /** 發放日（2026-11-03 站主要求：各檔明細顯示）。除息日取交易所配息事件裡「推估用的那個月」最後一筆（ETF dividends.json、
+      個股 stock_dividends.json），或已公告的下一次；發放日查行事曆（e添富／投信公告，只保留最近約三個月）。
+      優先給還沒入帳的那次，都入帳了給最近的；查不到發放日回 { ex, pay: null }，連除息日都沒有回 null。 */
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Taipei' });
+  const payInfo = (r: ProjectionWithUpcoming): { ex: string; pay: string | null } | null => {
+    const payOf = (ex: string) => calendar?.pay?.[`${r.code}|${ex}`]
+      ?? calendar?.exdiv.find(x => x.code === r.code && x.d === ex)?.pay ?? null;
+    const cands: { ex: string; pay: string | null }[] = [];
+    if (r.latestMonth) {
+      const ev = etfDivs?.dividends[r.code] ?? stockDivs?.stocks[r.code]?.ev ?? [];
+      const hit = ev.map(e => e[0]).filter(d => d.startsWith(r.latestMonth)).sort();
+      if (hit.length) cands.push({ ex: hit[hit.length - 1], pay: payOf(hit[hit.length - 1]) });
+    }
+    if (r.upcoming) cands.push({ ex: r.upcoming.d, pay: r.upcoming.pay ?? payOf(r.upcoming.d) });
+    const known = cands.filter(c => c.pay);
+    const ahead = known.filter(c => c.pay! >= today).sort((a, b) => a.pay!.localeCompare(b.pay!));
+    if (ahead.length) return ahead[0];
+    if (known.length) return known.sort((a, b) => b.pay!.localeCompare(a.pay!))[0];
+    return cands.length ? { ex: cands[cands.length - 1].ex, pay: null } : null;
+  };
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const usSet = useMemo(() => new Set(usKey ? usKey.split(',') : []), [usKey]);
+  /** 配息來源分類：美股、台股個股（全算股利所得）、ETF（用集保公告的組成）。總帳戶與各帳戶的月份明細共用 */
+  const kindOf = (code: string): 'etf' | 'stock' | 'us' => (usSet.has(code) ? 'us'
+    : index.codes[code]?.kind === 'stock' || (stockDivs?.stocks[code] && !(code in index.codes)) ? 'stock' : 'etf');
   /** 加了卻算不出來的美股：抓不到日價或匯率。不說的話它們會安靜地從畫面消失 */
   const usProblems = usCodes.flatMap(c => {
     const r = usRows.get(c);
@@ -518,9 +542,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     <span className="w-3 shrink-0 text-[10px] text-accent">{v > 0 ? (isOpen ? '▴' : '▾') : ''}</span>
                   </button>
                   {isOpen && (
-                    <MonthDetail label={label} total={v} colorOf={colorOf} mix={divMix}
-                                 kindOf={code => (usSet.has(code) ? 'us'
-                                   : index.codes[code]?.kind === 'stock' || (stockDivs?.stocks[code] && !(code in index.codes)) ? 'stock' : 'etf')}
+                    <MonthDetail label={label} total={v} colorOf={colorOf} mix={divMix} kindOf={kindOf}
                                  acctOf={accounts.length > 1 ? acctOf : undefined}
                                  parts={parts.map(({ r, amount }) => ({ r, amount, perShare: r.byMonth[m] }))} />
                   )}
@@ -540,7 +562,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               </div>
               <div className="mt-2 grid gap-3 lg:grid-cols-2">
                 {byAccount.map(a => (
-                  <AccountCard key={a.name} a={a} total={portfolio.annual} colorOf={colorOf}
+                  <AccountCard key={a.name} a={a} total={portfolio.annual} colorOf={colorOf} mix={divMix} kindOf={kindOf}
                                renaming={renaming} setRenaming={setRenaming} commitRename={commitRename}
                                deleting={deleting} setDeleting={setDeleting} onDelete={deleteAccount} />
                 ))}
@@ -638,6 +660,16 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                               ? `${Number(r.upcoming.d.slice(5, 7))}/${Number(r.upcoming.d.slice(8, 10))} 除息${r.upcoming.ck === 'est' ? '・預估' : ''}`
                               : `${r.latestMonth}${r.exact ? '' : '　約略值'}`
                             : undefined} />
+                    {(() => {
+                      // 發放日：還沒入帳的那次優先；美股沒有發放日資料
+                      const pi = usSet.has(r.code) ? null : payInfo(r);
+                      return (
+                        <Cell label="發放日" value={pi?.pay ? dayLabel(pi.pay) : '—'}
+                              hint={!pi ? undefined
+                                : pi.pay ? `${md(pi.ex)} 除息・${pi.pay >= today ? '還沒入帳' : '已入帳'}`
+                                : `${md(pi.ex)} 除息・發放日查不到`} />
+                      );
+                    })()}
                     <Cell label="預估年配息/股" value={`${nf2.format(r.perShare)} 元`} />
                     <Cell label="殖利率" value={`${nf2.format(r.yieldPct)}%`} tone />
                     <Cell label="一年可領" value={`${money(r.annual)} 元`} tone />
@@ -745,7 +777,7 @@ const MIX_PARTS = [
  * 配息月曆點開一個月：這個月哪幾檔除息、每股多少、領多少、佔當月幾成，
  * 以及配息來源（ETF 用集保最近一次公告的組成估算，台股個股全算股利所得，美股與未公告的另列）。
  */
-function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf }: {
+function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf, inset = true }: {
   label: string;
   total: number;
   parts: { r: ProjectionWithUpcoming; amount: number; perShare: number }[];
@@ -753,6 +785,8 @@ function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf }: {
   mix: DivMixData | null;
   kindOf: (code: string) => 'etf' | 'stock' | 'us';
   acctOf?: (code: string) => string;
+  /** 總帳戶月曆左邊有月份欄，明細往右縮齊；各帳戶卡片裡不縮 */
+  inset?: boolean;
 }) {
   const src = MIX_PARTS.map(() => 0);
   let us = 0, unknown = 0;
@@ -772,7 +806,7 @@ function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf }: {
   ].filter(x => x.amount > 0.5);
   const taxed = src[0] + src[1];
   return (
-    <div className="mt-1 mb-2 rounded-lg bg-sunken px-3 py-2 text-[12px] sm:ml-11">
+    <div className={`mt-1 mb-2 rounded-lg bg-sunken px-3 py-2 text-[12px] ${inset ? 'sm:ml-11' : ''}`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
         <span className="font-semibold text-ink">{label}配息組成</span>
         <span className="font-mono tabular-nums text-muted">合計 {money(total)} 元・{parts.length} 檔</span>
@@ -828,8 +862,10 @@ function MonthDetail({ label, total, parts, colorOf, mix, kindOf, acctOf }: {
 }
 
 /** 一個帳戶的配息：年配息（與佔全部的比例）、每月、市值、殖利率，十二個月各領多少，持股清單。 */
-function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, deleting, setDeleting, onDelete }: {
+function AccountCard({ a, total, colorOf, mix, kindOf, renaming, setRenaming, commitRename, deleting, setDeleting, onDelete }: {
   a: AccountView; total: number; colorOf: (code: string) => string;
+  mix: DivMixData | null;
+  kindOf: (code: string) => 'etf' | 'stock' | 'us';
   renaming: { from: string; to: string } | null;
   setRenaming: (v: { from: string; to: string } | null) => void;
   commitRename: () => void;
@@ -840,6 +876,8 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
   const isRenaming = renaming?.from === a.name;
   // 持股清單預設收合（跟「年配息來源」同一套），重點數字與每月配息一直顯示（站主要求）
   const [expanded, setExpanded] = useState(false);
+  /** 點開的月份（2026-11-03 站主要求：各帳戶也能看當月配息組成） */
+  const [openMonth, setOpenMonth] = useState<number | null>(null);
   return (
     <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -893,17 +931,33 @@ function AccountCard({ a, total, colorOf, renaming, setRenaming, commitRename, d
             <Cell label="殖利率" value={`${nf2.format(a.portfolio.yieldPct)}%`} tone />
           </dl>
           {/* 十二個月各領多少：一直顯示（站主要求），只有下面的持股清單收合。
-              兩列各六個月，手機上也放得下 */}
-          <dl className="mt-2 grid grid-cols-6 gap-1 text-center">
-            {MONTH_LABELS.map((label, m) => (
-              <div key={label} className="rounded bg-sunken px-0.5 py-1">
-                <dt className="text-[10.5px] text-faint">{label}</dt>
-                <dd className="font-mono text-[11px] font-semibold tabular-nums text-ink">
-                  {a.portfolio.byMonth[m] > 0 ? money(a.portfolio.byMonth[m]) : '—'}
-                </dd>
-              </div>
-            ))}
-          </dl>
+              兩列各六個月，手機上也放得下。每格可以點（2026-11-03）：下方展開這個帳戶當月的配息組成 */}
+          <div className="mt-2 grid grid-cols-6 gap-1 text-center">
+            {MONTH_LABELS.map((label, m) => {
+              const v = a.portfolio.byMonth[m];
+              const isOpen = openMonth === m;
+              return (
+                <button key={label} type="button" aria-expanded={isOpen} disabled={v <= 0}
+                        aria-label={`${a.name} ${label}配息組成`}
+                        onClick={() => setOpenMonth(o => (o === m ? null : m))}
+                        className={`rounded px-0.5 py-1 disabled:cursor-default
+                                    ${isOpen ? 'bg-accent-soft ring-1 ring-accent' : 'bg-sunken hover:bg-accent-soft'}`}>
+                  <span className="block text-[10.5px] text-faint">{label}{v > 0 ? (isOpen ? ' ▴' : ' ▾') : ''}</span>
+                  <span className="block font-mono text-[11px] font-semibold tabular-nums text-ink">
+                    {v > 0 ? money(v) : '—'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          {openMonth !== null && a.portfolio.byMonth[openMonth] > 0 && (
+            <div className="mt-1.5 -mb-1">
+              <MonthDetail inset={false} label={`${a.name}・${MONTH_LABELS[openMonth]}`} total={a.portfolio.byMonth[openMonth]}
+                           colorOf={colorOf} mix={mix} kindOf={kindOf}
+                           parts={a.rows.map(r => ({ r, amount: r.byMonth[openMonth] * r.shares, perShare: r.byMonth[openMonth] }))
+                                        .filter(x => x.amount > 0)} />
+            </div>
+          )}
           <button
             type="button"
             onClick={() => setExpanded(v => !v)}

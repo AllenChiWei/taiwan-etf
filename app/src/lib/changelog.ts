@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-03',
+    items: [
+      { kind: 'improve', to: '/dividend',
+        text: '配息試算的「各帳戶配息」也能點月份：展開這個帳戶當月哪幾檔除息、每股多少、各領多少，以及配息來源（股利、利息、收益平準金等估算）。' },
+      { kind: 'improve', to: '/dividend',
+        text: '配息試算的「各檔明細」多一格「發放日」：最近一次（或已公告的下一次）哪天發錢、哪天除息、入帳了沒有。' },
+    ],
+  },
+  {
     date: '2026-11-02',
     items: [
       { kind: 'improve', to: '/dividend',
