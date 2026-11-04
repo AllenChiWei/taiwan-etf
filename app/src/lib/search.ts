@@ -64,6 +64,7 @@ export const PAGES: SearchItem[] = [
   { kind: 'page', name: '美國總經', to: '/macro', keywords: '總經 通膨 就業 利率 殖利率曲線 cpi' },
   { kind: 'page', name: '行事曆（除權息、股東會）', to: '/calendar', keywords: '行事曆 除權息 除息 股東會 法說會 結算' },
   { kind: 'page', name: '個股財報與籌碼', to: '/stock', keywords: '個股 財報 營收 籌碼 新高' },
+  { kind: 'page', name: '可轉債', to: '/cb', keywords: '可轉債 CB 轉換 溢價率 轉換價值 待發行 公司債' },
   { kind: 'page', name: '德州撲克範圍表', to: '/poker', keywords: '撲克 poker' },
   { kind: 'page', name: '更新日誌', to: '/changelog', keywords: '更新 changelog 版本' },
   { kind: 'page', name: '說明', to: '/about', keywords: '說明 關於 資料來源' },

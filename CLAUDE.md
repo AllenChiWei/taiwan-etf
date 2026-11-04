@@ -45,6 +45,7 @@ Where each field comes from, because it is not one source:
 | 美股績效曲線 | **FinMind** `USStockPrice` 的 `Adj_Close`，已含息還原（公開資料，不加密） |
 | 美國總經（`/macro`） | FRED `fredgraph.csv`（**只收美國政府機關的數列**）＋ EIA 原油庫存 —— 部署時產生 |
 | 台股行事曆（`/calendar`） | 證交所 `TWT48U`、櫃買 `tpex_exright_prepost`（除權息預告）、`t187ap41_L/_O`（股東會）、重大訊息 `t187ap04_L`／`mopsfin_t187ap04_O` 第 12 款（法說會，**靠上次發布的 calendar.json 逐日累積**）；財報期限與結算日依規則算 |
+| 可轉債（`/cb`） | 櫃買 `RSta0113`（行情表 CSV）、`RSdrs001`（資訊看板 CSV）、OpenAPI `bond_ISSBD5_data`（發行資料、待發行）＋兩家交易所收盤價 —— 部署時產生 |
 
 MoneyDJ's `Basic0008` returns scrape was dropped in favour of FinLab, halving the daily
 request count against them (718 pages → 359). Their robots.txt says data mining without
@@ -77,6 +78,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_dividends_finmind.py 一次性：用 FinMind 回補交易所補不到的配息歷史
   fetch_macro.py             美國總經（FRED＋EIA）→ macro.json（部署時產生）
   fetch_calendar.py          台股行事曆（除權息預告、股東會）→ calendar.json（部署時產生）
+  fetch_cb.py                可轉債（櫃買行情表＋資訊看板＋發行資料）→ cb.json（部署時產生）
 tools/                     dev helpers: headless screenshots, static server
 taiwan_etf_list.html       the original single-file page, still live at its old URL
 .github/workflows/         daily data update + Pages deploy
@@ -101,6 +103,7 @@ plus deleting the file and its three scripts.
 | `docs/claude/series.md` | 績效曲線（FinMind） | 改 fetch_series_*.py、finmind_series.py、績效曲線 |
 | `docs/claude/sources.md` | 資料來源規則與流量（爬蟲、FinLab、MoneyDJ、殖利率） | 新增或改任何抓取來源、碰 FinLab／MoneyDJ、改殖利率算法 |
 | `docs/claude/macro-calendar.md` | 美國總經與台股行事曆 | 改總經頁、行事曆頁、fetch_macro.py、fetch_calendar.py |
+| `docs/claude/cb.md` | 可轉債 | 改可轉債頁（/cb）、fetch_cb.py、lib/cb.ts |
 | `docs/claude/calculators.md` | 試算（定期定額、配息試算的個股） | 改試算頁、配息試算、stock_dividends |
 | `docs/claude/futures-statement.md` | 期貨對帳單分析 | 改對帳單頁（/futures） |
 | `docs/claude/budget.md` | 支出預估＋用 ETF 配息支付（私人頁） | 改支出預估頁（/budget）、lib/budget.ts、lib/ghSync.ts |

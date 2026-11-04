@@ -23,9 +23,11 @@ interface Props {
   code: string | null;
   name?: string;
   onClose: () => void;
+  /** 放在面板最上面的額外區塊（可轉債頁放那一檔債的細節與公司新聞） */
+  extra?: React.ReactNode;
 }
 
-export function StockSheet({ code, name, onClose }: Props) {
+export function StockSheet({ code, name, onClose, extra }: Props) {
   const [data, setData] = useState<StockData | null>(null);
   const [highs, setHighs] = useState<Highs | null>(null);
   const [ranking, setRanking] = useState<Ranking | null>(null);
@@ -100,6 +102,7 @@ export function StockSheet({ code, name, onClose }: Props) {
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 pb-4">
+          {extra}
           {state === 'loading' && (
             <p className="py-12 text-center text-[13px] text-muted">載入 {code} 中…</p>
           )}

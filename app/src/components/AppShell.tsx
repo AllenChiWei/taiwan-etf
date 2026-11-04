@@ -27,6 +27,7 @@ const TABS = [
   { to: '/macro', label: '總經' },
   { to: '/calendar', label: '行事曆' },
   { to: '/stock', label: '個股' },
+  { to: '/cb', label: '可轉債' },
   { to: '/poker', label: '撲克' },
   { to: '/changelog', label: '更新' },
   { to: '/about', label: '說明' },

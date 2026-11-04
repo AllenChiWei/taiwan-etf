@@ -315,6 +315,12 @@ jobs:
           python scripts/fetch_macro.py || echo "::warning title=總經::這次沒有產生 macro.json"
           python scripts/fetch_calendar.py || echo "::warning title=行事曆::這次沒有產生 calendar.json"
 
+      # 可轉債（櫃買行情表＋資訊看板＋發行資料，加兩個收盤價端點，共六個請求）。
+      # 缺檔時可轉債頁自己會說還沒有資料。
+      - name: 產生可轉債資料
+        continue-on-error: true
+        run: python scripts/fetch_cb.py || echo "::warning title=可轉債::這次沒有產生 cb.json"
+
       - name: 存下 ETF 收益分配公告快取
         if: ${{ always() && hashFiles('.cache/etf_notices.json') != '' }}
         uses: actions/cache/save@v4

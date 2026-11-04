@@ -16,7 +16,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
 export type SitePath = '/' | '/us' | '/favorites' | '/calc' | '/dividend' | '/futures'
-  | '/chips' | '/news' | '/macro' | '/calendar' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
+  | '/chips' | '/news' | '/macro' | '/calendar' | '/cb' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
   kind: ChangeKind;
@@ -33,6 +33,13 @@ export interface ChangeDay {
 
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
+  {
+    date: '2026-11-04',
+    items: [
+      { kind: 'new', to: '/cb',
+        text: '新增「可轉債」頁，每天更新：價格區間分布、平均價與 PR75／PR90、平均轉換價值與溢價率等統計看板；全部可轉債的價格、轉換價、溢價率、賣回日；待發行的可轉債；依產業整理發行公司，看哪些產業最近集中發債。點任一檔可看公司的營收、財報與近期新聞。' },
+    ],
+  },
   {
     date: '2026-11-03',
     items: [

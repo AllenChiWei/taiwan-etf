@@ -36,6 +36,7 @@ const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage
 const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
 const MacroPage = lazyRoute(() => import('./routes/MacroPage'), m => m.MacroPage);
 const CalendarPage = lazyRoute(() => import('./routes/CalendarPage'), m => m.CalendarPage);
+const CbPage = lazyRoute(() => import('./routes/CbPage'), m => m.CbPage);
 const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
 const EtfPage = lazyRoute(() => import('./routes/EtfPage'), m => m.EtfPage);
 const DividendPage = lazyRoute(
@@ -150,6 +151,12 @@ const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/calendar',
   component: CalendarPage,
+});
+
+const cbRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/cb',
+  component: CbPage,
 });
 
 /** 個股頁只有一個參數：看哪一檔。型別不對就當成沒選。 */
@@ -275,7 +282,7 @@ const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
 
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
-   chipsRoute, newsRoute, macroRoute, calendarRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
+   chipsRoute, newsRoute, macroRoute, calendarRoute, cbRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
    v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, guideRoute, budgetRoute, dcaRoute, genRoute, meRoute, ...oldQbRoutes]);
 
 export const router = createRouter({

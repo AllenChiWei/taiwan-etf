@@ -11,6 +11,7 @@ import type { DivMixData } from '../lib/monthlyIncome.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
+import type { CbData } from '../lib/cb.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -63,3 +64,7 @@ export const fetchMacro = (signal?: AbortSignal) =>
   load<MacroData>('macro.json', d => Boolean(d.series && d.meta), signal);
 export const fetchCalendar = (signal?: AbortSignal) =>
   load<CalendarData>('calendar.json', d => Array.isArray(d.exdiv) && Array.isArray(d.meetings), signal);
+
+/** 可轉債（scripts/fetch_cb.py，部署時產生） */
+export const fetchCb = (signal?: AbortSignal) =>
+  load<CbData>('cb.json', d => Array.isArray(d.bonds) && Boolean(d.meta), signal);
