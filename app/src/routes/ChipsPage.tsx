@@ -13,8 +13,8 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, maintEpisodes, dropToReach,
-  type SummaryTile, type CreditRow,
+  linePath, CREDIT, maintEpisodes, dropToReach, shortRatio, shortAfterEpisodes,
+  type SummaryTile, type CreditRow, type ShortRow,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -312,14 +312,14 @@ function MarginSection({ data }: { data: ChipsData }) {
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
       </p>
-      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} />}
+      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} shorts={m.shortHist ?? []} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
     </Section>
   );
 }
 
 /** 大盤融資維持率（上市＋上櫃）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破 140% 的時段 */
-function MaintHistory({ hist }: { hist: Array<[string, number]> }) {
+function MaintHistory({ hist, shorts }: { hist: Array<[string, number]>; shorts: ShortRow[] }) {
   const [years, setYears] = useState(5);
   const [showAll, setShowAll] = useState(false);
   const [d0, cur] = hist[hist.length - 1];
@@ -333,6 +333,8 @@ function MaintHistory({ hist }: { hist: Array<[string, number]> }) {
   const to140 = dropToReach(cur, 140);
   const to130 = dropToReach(cur, 130);
   const tone = cur < 140 ? 'text-up' : cur < 150 ? 'text-ink' : 'text-ink';
+  const after = shortAfterEpisodes(eps, shorts, 20);
+  const afterOf = new Map(after.map(a => [a.low, a]));
   return (
     <div className="mt-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -361,26 +363,41 @@ function MaintHistory({ hist }: { hist: Array<[string, number]> }) {
         </div>
         <Line values={pts.map(r => r[1])} guides={[140, 130]} height={110} />
       </div>
+      {shorts.length > 20 && <ShortHistory shorts={shorts} cut={cut} after={after} />}
       {eps.length > 0 && (
         <div className="mt-2 overflow-x-auto">
-          <table className="w-full min-w-[420px] text-[12px] tabular-nums">
-            <thead className="text-left text-muted">
+          <table className="w-full text-[12px] tabular-nums">
+            <thead className="text-left align-bottom text-muted">
               <tr>
-                <th className="py-1 pr-2 font-semibold">跌破 140% 的時段</th>
-                <th className="py-1 pr-2 font-semibold">最低那天</th>
+                <th className="py-1 pr-2 font-semibold">最低那天<div className="text-[10.5px] font-normal text-faint">跌破 140% 的時段</div></th>
                 <th className="py-1 pr-2 text-right font-semibold">最低</th>
-                <th className="py-1 text-right font-semibold">低於 140 的天數</th>
+                <th className="py-1 pr-2 text-right font-semibold">天數</th>
+                {after.length > 0 && <>
+                  <th className="py-1 pr-2 text-right font-semibold">券資比</th>
+                  <th className="py-1 pr-2 text-right font-semibold">20 日後融券</th>
+                  <th className="py-1 text-right font-semibold">20 日後指數</th>
+                </>}
               </tr>
             </thead>
             <tbody>
-              {(showAll ? eps : eps.slice(0, 8)).map(e => (
-                <tr key={e.start} className="border-t border-line">
-                  <td className="py-1.5 pr-2">{e.start} ～ {e.ongoing ? '至今' : e.end}</td>
-                  <td className="py-1.5 pr-2">{e.low}</td>
-                  <td className="py-1.5 pr-2 text-right font-mono font-semibold text-ink">{nf1.format(e.min)}%</td>
-                  <td className="py-1.5 text-right">{e.days}</td>
-                </tr>
-              ))}
+              {(showAll ? eps : eps.slice(0, 8)).map(e => {
+                const a = afterOf.get(e.low);
+                return (
+                  <tr key={e.start} className="border-t border-line">
+                    <td className="whitespace-nowrap py-1.5 pr-2">
+                      {e.low}
+                      <div className="text-[10.5px] text-faint">{e.start.slice(5)} ～ {e.ongoing ? '至今' : e.end.slice(5)}</div>
+                    </td>
+                    <td className="py-1.5 pr-2 text-right font-mono font-semibold text-ink">{nf1.format(e.min)}%</td>
+                    <td className="py-1.5 pr-2 text-right">{e.days}</td>
+                    {after.length > 0 && <>
+                      <td className="py-1.5 pr-2 text-right">{a ? `${nf2.format(a.ratio)}%` : '—'}</td>
+                      <td className={`py-1.5 pr-2 text-right font-mono ${signTone(a?.shortChg)}`}>{signPct(a?.shortChg)}</td>
+                      <td className={`py-1.5 text-right font-mono ${signTone(a?.idxChg)}`}>{signPct(a?.idxChg)}</td>
+                    </>}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
           {eps.length > 8 && (
@@ -397,6 +414,65 @@ function MaintHistory({ hist }: { hist: Array<[string, number]> }) {
         2009～2026/10/27 用 FinLab 的每檔融資餘額 × 收盤價 ÷ 交易所公佈的融資金額回補，之後每天用證交所與櫃買的官方資料接著算（2026/10/27 兩邊對帳一致：174.2%）。
       </p>
     </div>
+  );
+}
+
+/** 帶正負號的百分比；台股慣例漲紅跌綠 */
+function signPct(v: number | null | undefined): string {
+  return v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${nf1.format(v)}%`;
+}
+function signTone(v: number | null | undefined): string {
+  return v === null || v === undefined || v === 0 ? 'text-muted' : v > 0 ? 'text-up' : 'text-down';
+}
+
+function median(xs: number[]): number | null {
+  if (!xs.length) return null;
+  const s = [...xs].sort((a, b) => a - b);
+  const k = Math.floor(s.length / 2);
+  return s.length % 2 ? s[k] : (s[k - 1] + s[k]) / 2;
+}
+
+/** 融券（上市＋上櫃）與券資比，跟維持率同一個時間範圍；判斷追繳之後有沒有軋空 */
+function ShortHistory({ shorts, cut, after }: {
+  shorts: ShortRow[]; cut: string; after: ReturnType<typeof shortAfterEpisodes>;
+}) {
+  const last = shorts[shorts.length - 1];
+  const prev = shorts[shorts.length - 2];
+  const back20 = shorts[shorts.length - 21];
+  const ratio = shortRatio(last);
+  const rank = (shorts.filter(r => shortRatio(r) <= ratio).length / shorts.length) * 100;
+  const shown = shorts.filter(r => r[0] >= cut);
+  const step = Math.max(1, Math.ceil(shown.length / 500));
+  const pts = shown.filter((_, i) => i % step === 0 || i === shown.length - 1);
+  const done = after.filter(a => a.shortChg !== null && a.idxChg !== null);
+  const up = done.filter(a => (a.shortChg as number) > 0).length;
+  const idxAvg = done.length ? done.reduce((s, a) => s + (a.idxChg as number), 0) / done.length : null;
+  const shortMed = median(done.map(a => a.shortChg as number));
+  return (
+    <>
+      <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Stat label="融券餘額（上市＋上櫃）" value={`${nf1.format(last[1] / 1e4)} 萬張`}
+              sub={prev ? `較前日 ${last[1] >= prev[1] ? '+' : ''}${nf0.format(last[1] - prev[1])} 張` : undefined} />
+        <Stat label="券資比" value={`${nf2.format(ratio)}%`} sub={`比 ${nf0.format(rank)}% 的歷史日子高`} />
+        <Stat label="近 20 日融券增減" value={back20 ? signPct((last[1] / back20[1] - 1) * 100) : '—'}
+              tone={back20 ? signTone(last[1] - back20[1]) : undefined} />
+        <Stat label="跌破 140% 最低日之後 20 日" value={idxAvg === null ? '—' : `指數 ${signPct(idxAvg)}`}
+              sub={done.length ? `融券 ${up}／${done.length} 波增加（中位數 ${signPct(shortMed)}）` : undefined} />
+      </div>
+      <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+        <div className="flex justify-between text-[11px] text-muted">
+          <span>券資比（%）＝融券 ÷ 融資張數</span>
+          <span className="tabular-nums">{pts[0]?.[0]} ～ {last[0]}</span>
+        </div>
+        <Line values={pts.map(shortRatio)} height={80} />
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        軋空是放空的人被迫回補、越補越漲：融券應該減少、指數上漲。下表右邊三欄是每一波最低那天的券資比（融券÷融資張數），和之後 20 個交易日融券與加權指數的變化（天數＝維持率低於 140% 的交易日數）——
+        歷史上斷頭低點之後指數多半反彈，但融券大多是<b className="font-semibold text-muted">增加</b>（空方在反彈中加碼），反彈主要是賣壓出清，不是空單回補。
+        融券還有季節性：股東常會、除權息前停止融券、強制回補（約 4～8 月），那時候融券減少不是軋空；2020-03 另有主管機關限制放空。
+        2009～2026/11/3 用 FinLab 的融資券總餘額回補（跟證交所、櫃買公佈的合計一致），之後每天接官方資料。
+      </p>
+    </>
   );
 }
 

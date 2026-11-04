@@ -159,6 +159,9 @@ TPEX_MARGIN = 'https://www.tpex.org.tw/www/zh-tw/margin/balance'
 # 大盤融資維持率（上市＋上櫃）的歷史：FinLab 回補的種子（2009 起）＋每天累積在線上 chips.json
 MAINT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_maint_seed.json')
 MAINT_KEEP = 6000
+# 融券（上市＋上櫃）的歷史 [日期, 融券張數, 融資張數, 加權指數]：同樣是 FinLab 種子＋每天累積。
+# 2026-11-04 站主要看「追繳之後容易軋空嗎」，所以跟維持率放一起、帶著指數
+SHORT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_short_seed.json')
 LIVE_CHIPS = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 CREDIT_KEEP = 750
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
@@ -595,12 +598,14 @@ def margin_history(end):
 def maintenance(day):
     u"""上市大盤融資維持率（%）。算法見檔頭。拿不到就回 None。
 
-    回傳 {'ratio', 'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n'（算進去的檔數）}。
+    回傳 {'ratio', 'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n'（算進去的檔數）,
+    'lots'／'short'（合計列的融資、融券今日餘額，張）}。
     """
     doc = fetch_json(TWSE_MARGIN % day, u'證交所融資融券彙總')
     if not doc or doc.get('stat') != 'OK':
         return None
     money = None
+    lots_all = short_all = None
     value = 0.0
     n = 0
     closes = twse_closes(day)
@@ -612,6 +617,10 @@ def maintenance(day):
             for r in rows:
                 if r[0].startswith(u'融資金額'):
                     money = num(r[ti]) * 1000            # 仟元 -> 元
+                elif r[0].startswith(u'融資(交易單位)'):
+                    lots_all = num(r[ti])
+                elif r[0].startswith(u'融券(交易單位)'):
+                    short_all = num(r[ti])
         elif u'代號' in fields and u'今日餘額' in fields:
             # 第一組「今日餘額」是融資（第二組是融券）
             bi = fields.index(u'今日餘額')
@@ -625,11 +634,11 @@ def maintenance(day):
         note(u'融資維持率：%s' % (u'沒有收盤價' if money else u'找不到融資金額'))
         return None
     return {'ratio': round(value / money * 100, 2), 'value': int(value),
-            'money': int(money), 'n': n}
+            'money': int(money), 'n': n, 'lots': lots_all, 'short': short_all}
 
 
 def tpex_maintenance(day):
-    u"""上櫃那一半：{'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n'}。day 是 YYYYMMDD。
+    u"""上櫃那一半：{'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n', 'lots'／'short'（合計列，張）}。day 是 YYYYMMDD。
 
     融資餘額與融資金額來自櫃買融資融券頁的 API（合計列「融資金(仟元)」的今日餘額），
     收盤價來自同一天的上櫃收盤行情。兩份都要是同一天，拿不到就回 None（那天只算得出上市）。
@@ -648,10 +657,13 @@ def tpex_maintenance(day):
     t = tables[0]
     fields = [f.strip() for f in t.get('fields') or []]
     bi = fields.index(u'資餘額')
-    money = None
+    si = fields.index(u'券餘額')
+    money = lots_all = short_all = None
     for r in t.get('summary') or []:
         if len(r) > bi and u'融資金' in (r[1] or ''):
             money = num(r[bi]) * 1000                        # 仟元 -> 元
+        elif len(r) > si and u'合計' in (r[1] or ''):
+            lots_all, short_all = num(r[bi]), num(r[si])
     roc = '%d/%s/%s' % (int(day[:4]) - 1911, day[4:6], day[6:])
     closes = {}
     try:
@@ -676,36 +688,63 @@ def tpex_maintenance(day):
             n += 1
     if not money or not n:
         return None
-    return {'value': value, 'money': money, 'n': n}
+    return {'value': value, 'money': money, 'n': n, 'lots': lots_all, 'short': short_all}
+
+
+def twse_taiex(day):
+    u"""發行量加權股價指數收盤（證交所收盤行情 type=ALL 的指數表），拿不到回 None。"""
+    for t in (twse_price_doc(day) or {}).get('tables') or []:
+        fields = t.get('fields') or []
+        if u'收盤指數' not in fields:
+            continue
+        ci = fields.index(u'收盤指數')
+        for r in t.get('data') or []:
+            if r[0].strip() == u'發行量加權股價指數':
+                return float(num(r[ci])) or None
+    return None
+
+
+def _seed_and_live(path, key, conv):
+    u"""{日期: 列}：版控裡的種子（conv 轉成網站的列格式，回 None 就跳過）蓋上線上 chips.json 的 margin[key]。"""
+    rows = {}
+    try:
+        for r in json.load(io.open(path, encoding='utf-8')).get('rows') or []:
+            c = conv(r)
+            if c:
+                rows[r[0]] = c
+    except Exception:                                         # noqa: BLE001
+        pass
+    try:
+        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
+        for r in ((live.get('margin') or {}).get(key) or []):
+            rows[r[0]] = r
+    except Exception:                                         # noqa: BLE001
+        pass
+    return rows
 
 
 def maint_history(twse, day):
     u"""大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：種子（FinLab 回補）＋線上累積＋今天。
+    同時回傳融券的歷史 [日期, 融券張數, 融資張數, 加權指數]（SHORT_SEED 起頭，同一套累積）。
 
     今天要上市與上櫃都算得出來才加（只有一半的話跟歷史不是同一個口徑）。
     """
-    rows = {}
-    seed = {}
-    try:
-        seed = json.load(io.open(MAINT_SEED, encoding='utf-8'))
-    except Exception:                                         # noqa: BLE001
-        pass
-    for r in seed.get('rows') or []:
-        if r[3] is not None:
-            rows[r[0]] = [r[0], r[3]]
-    try:
-        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
-        for r in ((live.get('margin') or {}).get('maintHist') or []):
-            rows[r[0]] = r
-    except Exception:                                         # noqa: BLE001
-        pass
+    rows = _seed_and_live(MAINT_SEED, 'maintHist', lambda r: [r[0], r[3]] if r[3] is not None else None)
+    shorts = _seed_and_live(SHORT_SEED, 'shortHist', lambda r: list(r))
     if twse and day:
-        otc = tpex_maintenance(day.replace('-', ''))
+        compact = day.replace('-', '')
+        otc = tpex_maintenance(compact)
         if otc:
             ratio = (twse['value'] + otc['value']) / (twse['money'] + otc['money']) * 100
             rows[day] = [day, round(ratio, 1)]
             log(u'  大盤融資維持率（上市＋上櫃）%s：%.1f%%' % (day, ratio))
-    return [rows[d] for d in sorted(rows)][-MAINT_KEEP:]
+            taiex = twse_taiex(compact)
+            if None not in (twse.get('short'), twse.get('lots'), otc.get('short'), otc.get('lots'), taiex):
+                shorts[day] = [day, int(twse['short'] + otc['short']), int(twse['lots'] + otc['lots']), taiex]
+                log(u'  融券（上市＋上櫃）%s：%s 張，券資比 %.2f%%' % (
+                    day, shorts[day][1], shorts[day][1] / float(shorts[day][2]) * 100))
+    return ([rows[d] for d in sorted(rows)][-MAINT_KEEP:],
+            [shorts[d] for d in sorted(shorts)][-MAINT_KEEP:])
 
 
 def credit_risk():
@@ -1056,8 +1095,9 @@ def main():
             break
     log(u'  餘額 %d 天，維持率 %s%%' % (
         len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
-    margin['maintHist'] = maint_history(margin['maint'], margin['maint']['date'] if margin['maint'] else None)
-    log(u'  大盤融資維持率歷史 %d 天' % len(margin['maintHist']))
+    margin['maintHist'], margin['shortHist'] = maint_history(
+        margin['maint'], margin['maint']['date'] if margin['maint'] else None)
+    log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
 

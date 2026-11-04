@@ -489,3 +489,18 @@ test('融資維持率：跌破 140 的斷頭時段（相鄰的併成一段）與
   assert.equal(Math.round(dropToReach(162.5, 130)! * 10) / 10, 20);
   assert.equal(dropToReach(125, 130), null);
 });
+
+test('shortAfterEpisodes：最低那天之後 n 日的融券與指數變化，還沒走完是 null', async () => {
+  const { maintEpisodes, shortAfterEpisodes, shortRatio } = await import('../src/lib/chips.ts');
+  const ep = maintEpisodes([['2025-04-08', 150], ['2025-04-09', 130], ['2025-04-10', 145], ['2025-04-11', 150]], 140, 10);
+  const s: Array<[string, number, number, number]> = [
+    ['2025-04-08', 100, 5000, 20000], ['2025-04-09', 200, 4000, 18000], ['2025-04-10', 150, 4000, 18900], ['2025-04-11', 300, 4000, 19800],
+  ];
+  assert.equal(shortRatio(s[1]), 5);
+  const [a] = shortAfterEpisodes(ep, s, 2);
+  assert.deepEqual([a.low, a.short, a.ratio], ['2025-04-09', 200, 5]);
+  assert.equal(Math.round(a.shortChg! * 10) / 10, 50);
+  assert.equal(Math.round(a.idxChg! * 10) / 10, 10);
+  assert.equal(shortAfterEpisodes(ep, s, 5)[0].shortChg, null);
+  assert.equal(shortAfterEpisodes(ep, [], 2).length, 0);   // 沒有融券資料的舊版 chips.json
+});
