@@ -3,7 +3,14 @@ name: 部署到 GitHub Pages
 # push 到 main 時自動部署；也提供 workflow_call，讓每日更新流程在 commit 後直接呼叫。
 # （用 GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以更新流程必須主動呼叫，
 #   否則資料更新後網站不會重新部署。）
+#
+# 另外每個交易日台灣 21:50（UTC 13:50）再部署一次：證交所／櫃買的融資餘額、融資維持率、
+# 追繳資料最晚約 21:30 才公布，19:00 那次每日更新常抓不到當天的（2026-11-04 站主告知）。
+# 這次不重抓 FinLab（排程事件沒有 inputs，REFRESH_FINLAB 是 false），只是讓部署時才產生的
+# 籌碼等資料拿到當天的。
 on:
+  schedule:
+    - cron: '50 13 * * 1-5'
   push:
     branches: [main]
     paths:
