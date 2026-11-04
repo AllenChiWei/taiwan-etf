@@ -7,14 +7,14 @@
  * 再看誰在買什麼。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type PointerEvent } from 'react';
 import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
   linePath, CREDIT, maintEpisodes, dropToReach,
-  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints,
+  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -464,16 +464,99 @@ function ShortHistory({ shorts, sbl, cut }: { shorts: ShortRow[]; sbl: Array<[st
   );
 }
 
-/** 台股情緒：臺指 VIX、期貨正逆價差、騰落線對加權指數。只有折線，數字只留最新一個 */
-function TwMoodSection({ tw }: { tw?: TwMood }) {
+interface AlignedChart { title: string; rows: Array<[string, number]>; digits: number; guides?: number[] }
+
+/**
+ * 幾張折線共用同一條日期軸：同一個左右位置就是同一天，有直線刻度對齊；
+ * 指一張圖，每張圖都在同一天畫豎線、標題旁換成那天的值（站主 2026-11-05 要求按日期對齊）。
+ * 手機上 touch-pan-y：上下滑還是捲頁面，點一下或左右拖才是看某一天。
+ */
+function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string }) {
+  const [hover, setHover] = useState<number | null>(null);
+  const al = useMemo(() => alignByDate(charts.map(c => c.rows), cut), [charts, cut]);
+  const n = al.dates.length;
+  if (n < 2) return null;
+  const W = 320;
+  const H = 80;
+  const x = (i: number) => (i / (n - 1)) * W;
+  const pick = (e: PointerEvent<SVGSVGElement>) => {
+    const r = e.currentTarget.getBoundingClientRect();
+    setHover(Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1)))));
+  };
+  return (
+    <div onPointerLeave={() => setHover(null)}>
+      {charts.map((c, k) => {
+        const vals = al.values[k];
+        const nums = vals.filter((v): v is number => v !== null);
+        if (nums.length < 2) return null;
+        const lo = Math.min(...nums);
+        const span = Math.max(...nums) - lo || 1;
+        const y = (v: number) => 3 + (1 - (v - lo) / span) * (H - 6);
+        const pts = vals.flatMap((v, i) => (v === null ? [] : [{ x: x(i), y: y(v) }]));
+        const last = c.rows[c.rows.length - 1];
+        const hv = hover === null ? null : vals[hover];
+        return (
+          <div key={c.title} className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+            <div className="flex justify-between gap-2 text-[11px] text-muted">
+              <span>{c.title}</span>
+              <span className="shrink-0 tabular-nums">
+                {hover === null ? last[0].slice(5) : al.dates[hover]}{' '}
+                <b className="font-mono font-semibold text-ink">
+                  {hover === null ? last[1].toFixed(c.digits) : hv === null ? '—' : hv.toFixed(c.digits)}
+                </b>
+              </span>
+            </div>
+            <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={c.title}
+                 className="mt-1 h-20 w-full touch-pan-y" onPointerDown={pick} onPointerMove={pick}>
+              {al.ticks.map(([i]) => (
+                <line key={i} x1={x(i)} x2={x(i)} y1="0" y2={H} stroke="currentColor"
+                      className="text-line" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              ))}
+              {(c.guides ?? []).filter(g => g >= lo && g <= lo + span).map(g => (
+                <line key={`g${g}`} x1="0" x2={W} y1={y(g)} y2={y(g)} stroke="currentColor"
+                      className="text-muted" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+              ))}
+              <path d={linePath(pts)} fill="none" stroke="currentColor" strokeWidth="1.5"
+                    className="text-accent" vectorEffect="non-scaling-stroke" />
+              {hover !== null && (
+                <line x1={x(hover)} x2={x(hover)} y1="0" y2={H} stroke="currentColor"
+                      className="text-ink" strokeWidth="1" vectorEffect="non-scaling-stroke" />
+              )}
+            </svg>
+          </div>
+        );
+      })}
+      {/* 共用的日期刻度：卡片內距跟上面一樣，位置才對得上 */}
+      <div className="relative mx-2.5 h-4 text-[10.5px] tabular-nums text-faint">
+        {al.ticks.map(([i, label]) => (
+          <span key={i} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${(i / (n - 1)) * 100}%` }}>{label}</span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** 台股情緒：加權指數、騰落線、臺指 VIX、期貨正逆價差，共用一條日期軸。只有折線，數字只留最新一個 */
+function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
   const [years, setYears] = useState(1);
-  const ad = useMemo(() => (tw ? adLine(tw.breadth) : []), [tw]);
+  const charts = useMemo<AlignedChart[]>(() => {
+    if (!tw) return [];
+    // 加權指數：融券歷史裡有 2009 起的，正逆價差的只從 2021-10 起；合併後跟騰落線一樣從 2009 畫起
+    const idx = new Map<string, number>();
+    for (const r of shorts ?? []) if (r[3] > 0) idx.set(r[0], r[3]);
+    for (const r of tw.basis) idx.set(r[0], r[2]);
+    return [
+      { title: '加權指數', rows: [...idx].sort((a, b) => (a[0] < b[0] ? -1 : 1)), digits: 0 },
+      { title: '騰落線（上市股票，累計上漲 − 下跌家數）', rows: adLine(tw.breadth), digits: 0 },
+      { title: '臺指 VIX（期交所，2026-08 起累積）', rows: tw.vix, digits: 2 },
+      { title: '期貨正逆價差（點，5 日平均）', rows: basisPoints(tw.basis), digits: 0, guides: [0] },
+    ];
+  }, [tw, shorts]);
   if (!tw || (!tw.vix.length && !tw.basis.length && !tw.breadth.length)) return null;
   const end = [tw.vix, tw.basis, tw.breadth].map(r => r[r.length - 1]?.[0] ?? '').sort().pop() as string;
   const cut = years ? `${Number(end.slice(0, 4)) - years}${end.slice(4)}` : '';
-  const idx: Array<[string, number]> = tw.basis.map(r => [r[0], r[2]]);
   return (
-    <Section title="台股情緒" hint="臺指 VIX、期貨正逆價差、騰落線">
+    <Section title="台股情緒" hint="指數、騰落線、VIX、正逆價差">
       <div className="mt-2 flex gap-1.5">
         {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
           <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
@@ -482,13 +565,11 @@ function TwMoodSection({ tw }: { tw?: TwMood }) {
           </button>
         ))}
       </div>
-      <TrendChart title="臺指 VIX（期交所，2026-08 起累積）" rows={tw.vix} cut={cut} height={90} digits={2} />
-      <TrendChart title="期貨正逆價差（點，5 日平均；台指期近月 − 加權指數）" rows={basisPoints(tw.basis)} cut={cut} height={90} guides={[0]} digits={0} />
-      <TrendChart title="騰落線（上市股票，累計上漲 − 下跌家數）" rows={ad} cut={cut} height={90} digits={0} />
-      <TrendChart title="加權指數（對照騰落線）" rows={idx} cut={cut} height={90} digits={0} />
+      <AlignedCharts charts={charts} cut={cut} />
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積。
-        正逆價差取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
+        四張圖用同一條日期軸，上下同一個位置就是同一天；點一下或左右拖，每張圖都會標出那一天的值。
+        臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積，前面是空白。
+        正逆價差＝台指期近月 − 加權指數，取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
         騰落線跟指數同向是普漲；指數創高、騰落線往下是少數權值股撐盤。
       </p>
     </Section>
@@ -1227,7 +1308,7 @@ export function ChipsPage() {
       <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
       <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
       <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
-      <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} /></div>
+      <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
       <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
       <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
       <div id="sec-atm" className="scroll-mt-16">

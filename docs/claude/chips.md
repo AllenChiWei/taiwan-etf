@@ -99,6 +99,10 @@
 
 研究腳本：`D:\ai\DashBoard_AI\research_chips_extra.py`（借券、漲跌家數）；VIX、正逆價差種子用 fetch_chips 本身的函式產生。
 
+**前端按日期對齊**（2026-11-05 使用者：各圖要按日期對齊才看得懂）：`ChipsPage` 的 `AlignedCharts` 用 `chips.ts` 的 `alignByDate()`
+把四條數列放到同一條日期軸（還沒資料的那段是空白，VIX 只在 2026-08 之後有線），共用刻度、點一下四張圖同步標同一天。
+加權指數合併 `margin.shortHist`（2009 起）與 `tw.basis`（2021-10 起），才能跟騰落線全程對照。要加新的情緒數列就加進 `charts`，不要再用各自撐滿寬度的 `TrendChart`。
+
 ### 融券與軋空（2026-11-04 使用者要求：追繳後容易軋空嗎）
 
 `margin.shortHist`：[日期, 融券張數, 融資張數, 加權指數]，上市＋上櫃合計，2009-01-05 起。

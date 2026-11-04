@@ -497,3 +497,19 @@ test('adLine 從第一天累加漲跌家數差；basisPoints＝期貨−指數',
   // 2 日平均：第一天只有自己，第二天 (68.46 − 120) ÷ 2
   assert.deepEqual(basisPoints([['d1', 43376, 43307.54], ['d2', 45000, 45120]], 2), [['d1', 68.46], ['d2', -25.77]]);
 });
+
+test('alignByDate：幾條數列對到同一條日期軸，還沒開始的那段是 null', async () => {
+  const { alignByDate } = await import('../src/lib/chips.ts');
+  const long: Array<[string, number]> = [['2026-01-02', 1], ['2026-01-05', 2], ['2026-01-06', 3], ['2026-01-07', 4]];
+  const short: Array<[string, number]> = [['2026-01-06', 30], ['2026-01-07', 40]];
+  const a = alignByDate([long, short], '2026-01-05');
+  assert.deepEqual(a.dates, ['2026-01-05', '2026-01-06', '2026-01-07']);
+  assert.deepEqual(a.values, [[2, 3, 4], [null, 30, 40]]);
+  // 抽樣到 2 點：每點取該段最後一筆，短的那條在第一段沒資料
+  const b = alignByDate([long, short], '', 2);
+  assert.deepEqual(b.dates, ['2026-01-02', '2026-01-06', '2026-01-07']);
+  assert.deepEqual(b.values, [[1, 3, 4], [null, 30, 40]]);
+  // 刻度：跨年標年份
+  const c = alignByDate([[['2025-12-30', 1], ['2026-01-02', 2], ['2026-04-01', 3]]], '');
+  assert.deepEqual(c.ticks, [[1, '2026'], [2, '4月']]);
+});

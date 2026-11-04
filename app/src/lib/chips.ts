@@ -164,6 +164,49 @@ export function basisPoints(rows: Array<[string, number, number]>, n = 5): Array
   });
 }
 
+export interface AlignedSeries {
+  /** 共用的日期軸（所有數列在 cut 之後出現過的交易日，抽樣到最多 maxPts 點） */
+  dates: string[];
+  /** 每條數列在每個軸點的值；那段還沒有資料就是 null（VIX 2026-08 才開始） */
+  values: (number | null)[][];
+  /** 軸上的刻度 [軸點索引, 標籤]：兩年以內標季（1 月標年份），更長標年 */
+  ticks: Array<[number, string]>;
+}
+
+/**
+ * 把幾條 [日期, 值] 數列對到同一條日期軸上（站主 2026-11-05：台股情緒各圖要按日期對齊才看得懂）。
+ * 抽樣時每個軸點取「上一個軸點之後、到這一天為止」這條數列最後一筆，所以哪天缺一筆也不會斷線。
+ */
+export function alignByDate(series: Array<Array<[string, number]>>, cut: string, maxPts = 500): AlignedSeries {
+  const all = new Set<string>();
+  for (const s of series) for (const [d] of s) if (d >= cut) all.add(d);
+  const full = [...all].sort();
+  const step = Math.max(1, Math.ceil(full.length / maxPts));
+  const dates = full.filter((_, i) => i % step === 0 || i === full.length - 1);
+  const values = series.map(s => {
+    const rows = s.filter(r => r[0] >= cut);
+    let j = 0;
+    return dates.map(d => {
+      let v: number | null = null;
+      while (j < rows.length && rows[j][0] <= d) v = rows[j++][1];
+      return v;
+    });
+  });
+  const ticks: Array<[number, string]> = [];
+  if (dates.length > 1) {
+    const years = (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / (365.25 * 864e5);
+    const every = years <= 2 ? 0 : years <= 7 ? 1 : years <= 14 ? 2 : 4;
+    dates.forEach((d, i) => {
+      if (i === 0 || d.slice(0, 7) === dates[i - 1].slice(0, 7)) return;
+      const y = Number(d.slice(0, 4));
+      const m = Number(d.slice(5, 7));
+      if (every === 0 && m % 3 === 1) ticks.push([i, m === 1 ? String(y) : `${m}月`]);
+      else if (every > 0 && d.slice(0, 4) !== dates[i - 1].slice(0, 4) && y % every === 0) ticks.push([i, String(y)]);
+    });
+  }
+  return { dates, values, ticks };
+}
+
 export interface MaintEpisode {
   /** 跌破門檻的第一天、回到門檻以上的前一天（還沒回來就是最後一天） */
   start: string;

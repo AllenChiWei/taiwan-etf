@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-05',
+    items: [
+      { kind: 'improve', to: '/chips',
+        text: '台股情緒四張圖（加權指數、騰落線、臺指 VIX、正逆價差）改成同一條日期軸：上下同一個位置就是同一天，點一下每張圖都標出那天的值；加權指數補到 2009 年起，跟騰落線全程對照。' },
+    ],
+  },
+  {
     date: '2026-11-04',
     items: [
       { kind: 'improve', to: '/cb',
