@@ -131,43 +131,6 @@ export interface MarginData {
 
 export type ShortRow = [string, number, number, number];
 
-/** 券資比（%）＝融券張數 ÷ 融資張數 */
-export function shortRatio(r: ShortRow): number {
-  return r[2] > 0 ? (r[1] / r[2]) * 100 : 0;
-}
-
-export interface EpisodeShort {
-  /** 對應的維持率時段（用最低那天對位） */
-  low: string;
-  /** 最低那天的融券張數與券資比 */
-  short: number;
-  ratio: number;
-  /** 之後 n 個交易日的融券、加權指數變化（%）；還沒走完就是 null */
-  shortChg: number | null;
-  idxChg: number | null;
-}
-
-/**
- * 每一波維持率跌破 140%，最低那天之後 n 個交易日融券與指數怎麼走 ——
- * 看「追繳斷頭之後有沒有軋空」：軋空是空方被迫回補，融券應該減少、指數上漲。
- */
-export function shortAfterEpisodes(eps: MaintEpisode[], hist: ShortRow[], n = 20): EpisodeShort[] {
-  const at = new Map(hist.map((r, i) => [r[0], i]));
-  const out: EpisodeShort[] = [];
-  for (const e of eps) {
-    const i = at.get(e.low);
-    if (i === undefined) continue;
-    const r = hist[i];
-    const f = hist[i + n];
-    out.push({
-      low: e.low, short: r[1], ratio: shortRatio(r),
-      shortChg: f ? (f[1] / r[1] - 1) * 100 : null,
-      idxChg: f ? (f[3] / r[3] - 1) * 100 : null,
-    });
-  }
-  return out;
-}
-
 export interface MaintEpisode {
   /** 跌破門檻的第一天、回到門檻以上的前一天（還沒回來就是最後一天） */
   start: string;
