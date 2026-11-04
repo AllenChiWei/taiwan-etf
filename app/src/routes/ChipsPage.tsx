@@ -13,7 +13,7 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT,
+  linePath, CREDIT, maintEpisodes, dropToReach,
   type SummaryTile, type CreditRow,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
@@ -312,8 +312,91 @@ function MarginSection({ data }: { data: ChipsData }) {
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
       </p>
+      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
     </Section>
+  );
+}
+
+/** 大盤融資維持率（上市＋上櫃）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破 140% 的時段 */
+function MaintHistory({ hist }: { hist: Array<[string, number]> }) {
+  const [years, setYears] = useState(5);
+  const [showAll, setShowAll] = useState(false);
+  const [d0, cur] = hist[hist.length - 1];
+  const cut = years ? `${Number(d0.slice(0, 4)) - years}${d0.slice(4)}` : '';
+  const shown = hist.filter(r => r[0] >= cut);
+  const step = Math.max(1, Math.ceil(shown.length / 500));      // 一天一點太密，最多畫 500 點
+  const pts = shown.filter((_, i) => i % step === 0 || i === shown.length - 1);
+  const below = hist.filter(r => r[1] <= cur).length;
+  const rank = (below / hist.length) * 100;
+  const eps = maintEpisodes(hist, 140, 10);
+  const to140 = dropToReach(cur, 140);
+  const to130 = dropToReach(cur, 130);
+  const tone = cur < 140 ? 'text-up' : cur < 150 ? 'text-ink' : 'text-ink';
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">大盤融資維持率歷史（上市＋上櫃）</h3>
+        <span className="text-[11.5px] text-faint">{hist[0][0]} 起 · 最新 {d0}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Stat label="大盤融資維持率" value={`${nf1.format(cur)}%`} tone={tone}
+              sub={`比 ${nf0.format(rank)}% 的歷史日子高`} />
+        <Stat label="粗估再跌多少到 140%" value={to140 === null ? '已低於' : `${nf1.format(to140)}%`} sub="恐慌殺盤常見的水位" />
+        <Stat label="粗估再跌多少到 130%" value={to130 === null ? '已低於' : `${nf1.format(to130)}%`} sub="個股追繳線" />
+        <Stat label="跌破 140% 的次數" value={`${eps.length} 波`} sub={eps.length ? `最近一次 ${eps[0].low.slice(0, 7)}` : undefined} />
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
+          <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
+                  className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${years === y ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+        <div className="flex justify-between text-[11px] text-muted">
+          <span>維持率（%）· 虛線 140／130</span>
+          <span className="tabular-nums">{pts[0][0]} ～ {d0}</span>
+        </div>
+        <Line values={pts.map(r => r[1])} guides={[140, 130]} height={110} />
+      </div>
+      {eps.length > 0 && (
+        <div className="mt-2 overflow-x-auto">
+          <table className="w-full min-w-[420px] text-[12px] tabular-nums">
+            <thead className="text-left text-muted">
+              <tr>
+                <th className="py-1 pr-2 font-semibold">跌破 140% 的時段</th>
+                <th className="py-1 pr-2 font-semibold">最低那天</th>
+                <th className="py-1 pr-2 text-right font-semibold">最低</th>
+                <th className="py-1 text-right font-semibold">低於 140 的天數</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(showAll ? eps : eps.slice(0, 8)).map(e => (
+                <tr key={e.start} className="border-t border-line">
+                  <td className="py-1.5 pr-2">{e.start} ～ {e.ongoing ? '至今' : e.end}</td>
+                  <td className="py-1.5 pr-2">{e.low}</td>
+                  <td className="py-1.5 pr-2 text-right font-mono font-semibold text-ink">{nf1.format(e.min)}%</td>
+                  <td className="py-1.5 text-right">{e.days}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {eps.length > 8 && (
+            <button type="button" onClick={() => setShowAll(v => !v)} className="mt-1 text-[12px] text-accent hover:underline">
+              {showAll ? '收起' : `看全部 ${eps.length} 波`}
+            </button>
+          )}
+        </div>
+      )}
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        維持率＝融資買進的股票現值 ÷ 借的錢（上市＋上櫃全部有融資的證券，含 ETF）。個股跌破 130% 被追繳、補不足就斷頭賣出，
+        大盤掉到 140% 以下多半已經是斷頭賣壓湧現的時候（2011 歐債、2015-08、2020-03、2025-04 都是）。
+        「再跌多少」是粗估：假設融資部位跟大盤同漲同跌、融資金額不變；融資股多半是中小型股、跌得比大盤兇，實際會更快到。
+        2009～2026/10/27 用 FinLab 的每檔融資餘額 × 收盤價 ÷ 交易所公佈的融資金額回補，之後每天用證交所與櫃買的官方資料接著算（2026/10/27 兩邊對帳一致：174.2%）。
+      </p>
+    </div>
   );
 }
 

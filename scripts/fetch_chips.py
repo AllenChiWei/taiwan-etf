@@ -154,6 +154,11 @@ TWSE_MARGIN = ('https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN'
 # 證交所「信用交易儀表板」（/dashboard/zh/credit/margin.html）背後的端點：全市場擔保維持率、
 # 追繳／處分戶數與金額、信用交易戶數。只給近 60 個交易日，所以每次跟上次發布的 chips.json 合併累積。
 TWSE_CREDIT = 'https://www.twse.com.tw/rwd/zh/marginTrading/BFIJ3U_TREND?response=json&days=60'
+# 上櫃融資餘額（每檔張數＋合計列的「融資金(仟元)」），櫃買融資融券頁背後的端點，POST date=YYYY/MM/DD
+TPEX_MARGIN = 'https://www.tpex.org.tw/www/zh-tw/margin/balance'
+# 大盤融資維持率（上市＋上櫃）的歷史：FinLab 回補的種子（2009 起）＋每天累積在線上 chips.json
+MAINT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_maint_seed.json')
+MAINT_KEEP = 6000
 LIVE_CHIPS = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 CREDIT_KEEP = 750
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
@@ -623,6 +628,86 @@ def maintenance(day):
             'money': int(money), 'n': n}
 
 
+def tpex_maintenance(day):
+    u"""上櫃那一半：{'value'（融資部位市值，元）, 'money'（融資金額，元）, 'n'}。day 是 YYYYMMDD。
+
+    融資餘額與融資金額來自櫃買融資融券頁的 API（合計列「融資金(仟元)」的今日餘額），
+    收盤價來自同一天的上櫃收盤行情。兩份都要是同一天，拿不到就回 None（那天只算得出上市）。
+    """
+    try:
+        body = urllib.parse.urlencode({'date': '%s/%s/%s' % (day[:4], day[4:6], day[6:]), 'response': 'json'}).encode()
+        req = urllib.request.Request(TPEX_MARGIN, data=body, headers={'User-Agent': UA})
+        doc = json.loads(urllib.request.urlopen(req, timeout=TIMEOUT).read().decode('utf-8'))
+        time.sleep(DELAY)
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買融資餘額：%s' % str(e)[:80])
+        return None
+    tables = doc.get('tables') or []
+    if not tables or not tables[0].get('data'):
+        return None
+    t = tables[0]
+    fields = [f.strip() for f in t.get('fields') or []]
+    bi = fields.index(u'資餘額')
+    money = None
+    for r in t.get('summary') or []:
+        if len(r) > bi and u'融資金' in (r[1] or ''):
+            money = num(r[bi]) * 1000                        # 仟元 -> 元
+    roc = '%d/%s/%s' % (int(day[:4]) - 1911, day[4:6], day[6:])
+    closes = {}
+    try:
+        pdoc = json.loads(fetch(TPEX_PRICE % roc).decode('utf-8'))
+        for pt in pdoc.get('tables') or []:
+            pf = [f.strip() for f in pt.get('fields') or []]
+            if u'收盤' not in pf:
+                continue
+            ci = pf.index(u'收盤')
+            for r in pt.get('data') or []:
+                c = num(r[ci])
+                if c > 0:
+                    closes[r[0].strip()] = float(c)
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買收盤行情（維持率用）：%s' % str(e)[:80])
+    value, n = 0.0, 0
+    for r in t['data']:
+        c = closes.get(r[0].strip())
+        lots = num(r[bi])
+        if c and lots > 0:
+            value += lots * 1000 * c
+            n += 1
+    if not money or not n:
+        return None
+    return {'value': value, 'money': money, 'n': n}
+
+
+def maint_history(twse, day):
+    u"""大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：種子（FinLab 回補）＋線上累積＋今天。
+
+    今天要上市與上櫃都算得出來才加（只有一半的話跟歷史不是同一個口徑）。
+    """
+    rows = {}
+    seed = {}
+    try:
+        seed = json.load(io.open(MAINT_SEED, encoding='utf-8'))
+    except Exception:                                         # noqa: BLE001
+        pass
+    for r in seed.get('rows') or []:
+        if r[3] is not None:
+            rows[r[0]] = [r[0], r[3]]
+    try:
+        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
+        for r in ((live.get('margin') or {}).get('maintHist') or []):
+            rows[r[0]] = r
+    except Exception:                                         # noqa: BLE001
+        pass
+    if twse and day:
+        otc = tpex_maintenance(day.replace('-', ''))
+        if otc:
+            ratio = (twse['value'] + otc['value']) / (twse['money'] + otc['money']) * 100
+            rows[day] = [day, round(ratio, 1)]
+            log(u'  大盤融資維持率（上市＋上櫃）%s：%.1f%%' % (day, ratio))
+    return [rows[d] for d in sorted(rows)][-MAINT_KEEP:]
+
+
 def credit_risk():
     u"""證交所信用交易儀表板：每天一列 [日期, 全市場擔保維持率%, 追繳戶數, 當日通知追繳戶數, 追繳金額(元),
     處分戶數, 處分金額(元), 信用交易戶數, 信用交易戶數占比%, 信用交易成交值(元)]。
@@ -971,6 +1056,8 @@ def main():
             break
     log(u'  餘額 %d 天，維持率 %s%%' % (
         len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
+    margin['maintHist'] = maint_history(margin['maint'], margin['maint']['date'] if margin['maint'] else None)
+    log(u'  大盤融資維持率歷史 %d 天' % len(margin['maintHist']))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
 

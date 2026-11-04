@@ -474,3 +474,18 @@ test('定期定額人氣榜', async (t) => {
     assert.deepEqual(joinDca([], lookup), []);
   });
 });
+
+test('融資維持率：跌破 140 的斷頭時段（相鄰的併成一段）與粗估跌幅', async () => {
+  const { maintEpisodes, dropToReach } = await import('../src/lib/chips.ts');
+  const h: Array<[string, number]> = [
+    ['2025-04-01', 150], ['2025-04-02', 139], ['2025-04-03', 132], ['2025-04-07', 141], ['2025-04-08', 135],
+    ['2025-04-09', 130], ['2025-04-10', 145], ['2025-05-01', 150],
+  ];
+  const ep = maintEpisodes(h, 140, 10);
+  assert.equal(ep.length, 1);                       // 04-07 回到 141 只隔一天，算同一波
+  assert.deepEqual([ep[0].start, ep[0].end, ep[0].low, ep[0].min, ep[0].days], ['2025-04-02', '2025-04-09', '2025-04-09', 130, 4]);
+  assert.equal(ep[0].ongoing, false);
+  assert.equal(maintEpisodes([['2026-01-01', 150], ['2026-01-02', 138]])[0].ongoing, true);
+  assert.equal(Math.round(dropToReach(162.5, 130)! * 10) / 10, 20);
+  assert.equal(dropToReach(125, 130), null);
+});

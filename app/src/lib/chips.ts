@@ -123,6 +123,51 @@ export interface MarginData {
    *  處分戶數, 處分金額(元), 信用交易戶數, 信用交易戶數占比%, 信用交易成交值(元)]。舊版沒有。
    */
   credit?: CreditRow[];
+  /** 大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
+  maintHist?: Array<[string, number]>;
+}
+
+export interface MaintEpisode {
+  /** 跌破門檻的第一天、回到門檻以上的前一天（還沒回來就是最後一天） */
+  start: string;
+  end: string;
+  /** 期間最低那天與數值 */
+  low: string;
+  min: number;
+  days: number;
+  ongoing: boolean;
+}
+
+/**
+ * 維持率跌破 threshold 的每一段（斷頭賣壓期）。間隔不到 gap 個交易日的兩段併成一段 ——
+ * 不然 2011 年那種在 140 上下來回的會被切成十幾段，看不出是同一波。新到舊。
+ */
+export function maintEpisodes(hist: Array<[string, number]>, threshold = 140, gap = 10): MaintEpisode[] {
+  const out: MaintEpisode[] = [];
+  let cur: MaintEpisode | null = null;
+  let lastBelow = -Infinity;
+  hist.forEach(([d, v], i) => {
+    if (v >= threshold) return;
+    if (cur && i - lastBelow <= gap) {
+      cur.end = d;
+      cur.days += 1;
+      if (v < cur.min) { cur.min = v; cur.low = d; }
+    } else {
+      cur = { start: d, end: d, low: d, min: v, days: 1, ongoing: false };
+      out.push(cur);
+    }
+    lastBelow = i;
+  });
+  if (cur && hist.length && hist.length - 1 - lastBelow <= 0) (cur as MaintEpisode).ongoing = true;
+  return out.reverse();
+}
+
+/**
+ * 粗估大盤還要跌多少（%）維持率才會到 target：假設融資部位跟大盤同漲同跌、融資金額不變，
+ * 維持率跟市值成正比 → 1 − target ÷ 現在。實際上融資股多半是中小型股，跌得比大盤兇，所以只是參考。
+ */
+export function dropToReach(current: number, target: number): number | null {
+  return current > target ? (1 - target / current) * 100 : null;
 }
 
 export type CreditRow = [string, number | null, number | null, number | null, number | null,
