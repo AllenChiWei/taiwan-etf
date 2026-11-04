@@ -162,6 +162,11 @@ MAINT_KEEP = 6000
 # 融券（上市＋上櫃）的歷史 [日期, 融券張數, 融資張數, 加權指數]：同樣是 FinLab 種子＋每天累積。
 # 2026-11-04 站主要看「追繳之後容易軋空嗎」，所以跟維持率放一起、帶著指數
 SHORT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_short_seed.json')
+# 追繳（信用交易儀表板）沒有回補來源，種子是 2026-11-04 當時線上累積的那幾十天，之後靠快取＋線上
+CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
+# 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
+HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
+HIST_KEYS = ('maintHist', 'shortHist', 'credit')
 LIVE_CHIPS = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 CREDIT_KEEP = 750
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
@@ -704,8 +709,34 @@ def twse_taiex(day):
     return None
 
 
+_LIVE = []
+
+
+def _live_margin():
+    u"""線上那份 chips.json 的 margin（同一次執行只抓一次）；讀不到回 None。"""
+    if not _LIVE:
+        try:
+            _LIVE.append((json.loads(fetch(LIVE_CHIPS).decode('utf-8')).get('margin') or {}))
+        except Exception as e:                                # noqa: BLE001
+            log(u'  線上 chips.json 讀不到（%s）' % str(e)[:50])
+            _LIVE.append(None)
+    return _LIVE[0]
+
+
+def _hist_cache():
+    try:
+        return json.load(io.open(HIST_CACHE, encoding='utf-8'))
+    except Exception:                                         # noqa: BLE001
+        return {}
+
+
 def _seed_and_live(path, key, conv):
-    u"""{日期: 列}：版控裡的種子（conv 轉成網站的列格式，回 None 就跳過）蓋上線上 chips.json 的 margin[key]。"""
+    u"""{日期: 列}：版控裡的種子（conv 轉成網站的列格式，回 None 就跳過）→ Actions 快取 → 線上 chips.json 的 margin[key]，
+    後面的蓋前面的。
+
+    三層是為了**不弄丟累積的歷史**：只靠線上那份的話，某次部署讀不到它，這次產出就只剩種子＋今天，
+    而且會蓋掉線上那份，之後再也補不回來（追繳那份證交所只給 60 天）。快取與線上都讀不到時記進 meta.errors。
+    """
     rows = {}
     try:
         for r in json.load(io.open(path, encoding='utf-8')).get('rows') or []:
@@ -714,13 +745,23 @@ def _seed_and_live(path, key, conv):
                 rows[r[0]] = c
     except Exception:                                         # noqa: BLE001
         pass
-    try:
-        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
-        for r in ((live.get('margin') or {}).get(key) or []):
-            rows[r[0]] = r
-    except Exception:                                         # noqa: BLE001
-        pass
+    cached = _hist_cache().get(key) or []
+    live = _live_margin()
+    for r in cached + ((live or {}).get(key) or []):
+        rows[r[0]] = r
+    if not cached and not (live or {}).get(key):
+        note(u'%s 的累積歷史：Actions 快取與線上 chips.json 都讀不到，只剩種子＋今天' % key)
     return rows
+
+
+def save_hist_cache(margin):
+    u"""把三份累積歷史存進 .cache（deploy.yml 用 actions/cache 帶到下一次部署）。"""
+    try:
+        os.makedirs(os.path.dirname(HIST_CACHE), exist_ok=True)
+        with io.open(HIST_CACHE, 'w', encoding='utf-8') as f:
+            json.dump(dict((k, margin.get(k) or []) for k in HIST_KEYS), f, ensure_ascii=False, separators=(',', ':'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'存累積歷史快取：%s' % str(e)[:80])
 
 
 def maint_history(twse, day):
@@ -757,13 +798,7 @@ def credit_risk():
 
     端點只留近 60 天：跟線上那份合併，留 CREDIT_KEEP 天。線上抓不到就只有這 60 天。
     """
-    rows = {}
-    try:
-        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
-        for r in ((live.get('margin') or {}).get('credit') or []):
-            rows[r[0]] = r
-    except Exception as e:                                    # noqa: BLE001
-        log(u'  線上 chips.json 讀不到（%s），追繳歷史只有近 60 天' % str(e)[:50])
+    rows = _seed_and_live(CREDIT_SEED, 'credit', list)
     doc = fetch_json(TWSE_CREDIT, u'證交所信用交易儀表板')
     if doc and doc.get('stat') == 'OK':
         for r in doc.get('data') or []:
@@ -1100,6 +1135,7 @@ def main():
     log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
+    save_hist_cache(margin)
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
     us = us_series(datetime.now(TPE).date())

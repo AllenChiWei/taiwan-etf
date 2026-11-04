@@ -1,11 +1,18 @@
 name: 每日更新 ETF 資料
 
-# 台灣時間每個交易日 19:00（= UTC 11:00）。台股 13:30 收盤，MoneyDJ 傍晚才更新完報酬率。
-# 要改時間就改下面的 cron：GitHub 用 UTC，台灣時間減 8 小時。
-# 例：台灣 21:00 -> '0 13 * * 1-5'；台灣 08:00 -> '0 0 * * 2-6'（跨日，星期往後移一天）
+# 主要觸發：站主電腦的工作排程「TaiwanETF每日更新觸發」每個交易日 19:05 推一筆
+# .github/trigger/daily-update.txt（用站主自己的帳號推，所以會觸發 push 事件）。
+# 2026-11-04 改：GitHub 的 schedule 常延遲 6～10 小時（19:00 的排程，提交多在 00:30～05:00），
+# 網站整晚停在前一天。
+# 備援：GitHub 排程台灣 21:17（避開整點，整點最塞）；guard 看到 10 小時內已經有每日更新提交就跳過，
+# 不會重跑一次（FinLab 每天有流量上限）。
+# 要改時間：本機那份改工作排程；這裡的 cron 是 UTC，台灣時間減 8 小時。
 on:
+  push:
+    branches: [main]
+    paths: ['.github/trigger/daily-update.txt']
   schedule:
-    - cron: '0 11 * * 1-5'
+    - cron: '17 13 * * 1-5'
   workflow_dispatch:
     inputs:
       skip_returns:
@@ -40,7 +47,28 @@ concurrency:
 # 有東西被擱置時這個 job 仍然算失敗（紅色，才看得到），但 deploy 照樣跑，
 # 所以網站拿得到當天更新的那幾塊。
 jobs:
+  # 備援排程跑的時候，本機觸發那次多半已經更新完了 —— 那就整個跳過
+  guard:
+    runs-on: ubuntu-latest
+    outputs:
+      run: ${{ steps.g.outputs.run }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 40
+      - id: g
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] && \
+             git log --since="10 hours ago" --format=%s | grep -q "資料：每日更新"; then
+            echo "10 小時內已經有每日更新提交（本機觸發那次），備援排程跳過"
+            echo "run=false" >> $GITHUB_OUTPUT
+          else
+            echo "run=true" >> $GITHUB_OUTPUT
+          fi
+
   update:
+    needs: guard
+    if: ${{ needs.guard.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:

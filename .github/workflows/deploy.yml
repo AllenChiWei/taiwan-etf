@@ -4,8 +4,10 @@ name: 部署到 GitHub Pages
 # （用 GITHUB_TOKEN 推的 commit 不會觸發 push 事件，所以更新流程必須主動呼叫，
 #   否則資料更新後網站不會重新部署。）
 #
-# 另外每個交易日台灣 21:50（UTC 13:50）再部署一次：證交所／櫃買的融資餘額、融資維持率、
+# 另外每個交易日晚上再部署一次：證交所／櫃買的融資餘額、融資維持率、
 # 追繳資料最晚約 21:30 才公布，19:00 那次每日更新常抓不到當天的（2026-11-04 站主告知）。
+# 主要由站主電腦的工作排程「TaiwanETF晚間部署觸發」21:45 推 .github/trigger/evening-deploy.txt 觸發；
+# 21:50 的 GitHub 排程是備援（GitHub 排程常延遲好幾小時，多部署一次無妨）。
 # 這次不重抓 FinLab（排程事件沒有 inputs，REFRESH_FINLAB 是 false），只是讓部署時才產生的
 # 籌碼等資料拿到當天的。
 on:
@@ -18,6 +20,7 @@ on:
       - 'scripts/**'
       - 'taiwan_etf_list.html'
       - '.github/workflows/deploy.yml'
+      - '.github/trigger/evening-deploy.txt'
   workflow_call:
     inputs:
       refresh_finlab:
@@ -371,12 +374,29 @@ jobs:
           restore-keys: |
             cboe-putcall-
 
+      # 融資維持率、融券、追繳的累積歷史（fetch_chips.py 的 HIST_CACHE）：種子＋這份快取＋線上那份三層合併，
+      # 某一層讀不到也不會把累積的日子弄丟
+      - name: 取回籌碼累積歷史快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/chips_hist.json
+          key: chips-hist-${{ github.run_id }}
+          restore-keys: |
+            chips-hist-
+
       - name: 產生籌碼資料
         continue-on-error: true
         env:
           # 融資餘額、VIX 與自算恐懼貪婪用的美股序列來自 FinMind（八個請求）
           FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
         run: python scripts/fetch_chips.py
+
+      - name: 存下籌碼累積歷史快取
+        if: ${{ always() && hashFiles('.cache/chips_hist.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/chips_hist.json
+          key: chips-hist-${{ github.run_id }}
 
       - name: 存下 CBOE Put/Call 快取
         if: ${{ always() && hashFiles('.cache/cboe_putcall.json') != '' }}
