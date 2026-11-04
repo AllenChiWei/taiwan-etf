@@ -117,7 +117,19 @@ export interface MarginData {
   short: number[];
   /** 最新一天的大盤融資維持率（自算，只有上市） */
   maint: { date: string; ratio: number; value: number; money: number; n: number } | null;
+  /**
+   * 證交所信用交易儀表板（官方），每天一列：
+   * [日期, 全市場擔保維持率%, 追繳戶數（整戶維持率 < 130%）, 當日通知追繳戶數, 追繳金額(元),
+   *  處分戶數, 處分金額(元), 信用交易戶數, 信用交易戶數占比%, 信用交易成交值(元)]。舊版沒有。
+   */
+  credit?: CreditRow[];
 }
+
+export type CreditRow = [string, number | null, number | null, number | null, number | null,
+  number | null, number | null, number | null, number | null, number | null];
+
+/** 信用交易儀表板的欄位名，跟 CreditRow 的位置對應 */
+export const CREDIT = { d: 0, keep: 1, below: 2, call: 3, callAmt: 4, exe: 5, exeAmt: 6, acc: 7, accRate: 8, amt: 9 } as const;
 
 /** 定期定額交易戶數。這是這一頁唯一一份「散戶在買什麼」的官方數字。 */
 export interface DcaRow {

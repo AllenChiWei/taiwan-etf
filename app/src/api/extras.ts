@@ -11,7 +11,7 @@ import type { DivMixData } from '../lib/monthlyIncome.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
-import type { CbData } from '../lib/cb.ts';
+import type { CbData, CbMarket, CbSeriesPoint } from '../lib/cb.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -68,3 +68,19 @@ export const fetchCalendar = (signal?: AbortSignal) =>
 /** 可轉債（scripts/fetch_cb.py，部署時產生） */
 export const fetchCb = (signal?: AbortSignal) =>
   load<CbData>('cb.json', d => Array.isArray(d.bonds) && Boolean(d.meta), signal);
+
+/** 可轉債市場溫度計歷史（2017 起每天一列） */
+export const fetchCbMarket = (signal?: AbortSignal) =>
+  load<CbMarket>('cb_market.json', d => Array.isArray(d.rows) && Array.isArray(d.cols), signal);
+
+/** 單檔可轉債走勢：點開那一檔才抓 */
+export async function fetchCbSeries(code: string, signal?: AbortSignal): Promise<CbSeriesPoint[] | null> {
+  try {
+    const res = await fetch(`${BASE}data/cb_series/${encodeURIComponent(code)}.json`, { signal, cache: 'no-cache' });
+    if (!res.ok) return null;
+    const d: unknown = await res.json();
+    return Array.isArray(d) ? (d as CbSeriesPoint[]) : null;
+  } catch {
+    return null;
+  }
+}

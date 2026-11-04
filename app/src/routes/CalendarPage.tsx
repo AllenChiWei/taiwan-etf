@@ -8,7 +8,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { fetchCalendar, fetchEtfDividends, fetchYields } from '../api/extras';
+import { fetchCalendar, fetchCb, fetchEtfDividends, fetchYields } from '../api/extras';
+import { cbEvents, loadCbFavs, type CbData } from '../lib/cb';
 import {
   allEvents, filterEvents, groupByDate, dayLabel, daysUntil, KIND_LABEL,
   etfExDivMonth, shiftMonth,
@@ -18,12 +19,13 @@ import type { EtfDividendData, YieldData } from '../lib/dividend';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { EmptyState } from '../components/EmptyState';
 
-const KINDS: EventKind[] = ['exdiv', 'meeting', 'call', 'report', 'revenue', 'settle'];
+const KINDS: EventKind[] = ['exdiv', 'meeting', 'call', 'cb', 'report', 'revenue', 'settle'];
 
 const KIND_CLASS: Record<EventKind, string> = {
   exdiv: 'bg-accent-soft text-accent',
   meeting: 'bg-sunken text-ink',
   call: 'bg-sunken text-ink',
+  cb: 'bg-sunken text-ink',
   report: 'bg-sunken text-muted',
   revenue: 'bg-sunken text-muted',
   settle: 'bg-sunken text-muted',
@@ -65,7 +67,9 @@ function EventRow({ e }: { e: CalEvent }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
           {e.code && (
-            isStock
+            e.kind === 'cb'
+              ? <Link to="/cb" className="font-mono text-[12.5px] font-bold text-accent hover:underline">{e.code}</Link>
+              : isStock
               ? <Link to="/stock" search={{ code: e.code }}
                       className="font-mono text-[12.5px] font-bold text-accent hover:underline">{e.code}</Link>
               : <span className="font-mono text-[12.5px] font-bold text-muted">{e.code}</span>
@@ -243,20 +247,29 @@ export function CalendarPage() {
   const [onlyMine, setOnlyMine] = useState(false);
   const [tab, setTab] = useState<'events' | 'etf'>('events');
 
+  // 可轉債的賣回、到期、轉換價生效、新上櫃（cb.json）。另外載入，缺檔不影響其他事件
+  const [cb, setCb] = useState<CbData | null>(null);
+
   useEffect(() => {
     const ac = new AbortController();
     fetchCalendar(ac.signal)
       .then(d => { if (!ac.signal.aborted) { setData(d); setState('ready'); } })
       .catch(() => { if (!ac.signal.aborted) setState('ready'); });
+    fetchCb(ac.signal).then(d => { if (!ac.signal.aborted) setCb(d); }).catch(() => {});
     return () => ac.abort();
   }, []);
 
   const today = taipeiToday();
   const until = data?.meta.until && data.meta.until > today ? data.meta.until : addDays(today, 90);
-  const events = useMemo(() => allEvents(data, today, until), [data, today, until]);
+  const events = useMemo(() => {
+    const list: CalEvent[] = [...allEvents(data, today, until), ...cbEvents(cb, today, until)];
+    const rank = (e: CalEvent) => (e.code ? 0 : 1);
+    return list.sort((a, b) => a.d.localeCompare(b.d) || rank(a) - rank(b) || (a.code ?? '').localeCompare(b.code ?? ''));
+  }, [data, cb, today, until]);
 
+  // 「只看我的」＝ETF 收藏＋配息持股＋可轉債收藏（可轉債頁的星號）
   const mine = useMemo(
-    () => new Set([...fav.codes, ...holdingCodes()]),
+    () => new Set([...fav.codes, ...holdingCodes(), ...loadCbFavs()]),
     [fav.codes]);
 
   const shown = filterEvents(events, { kinds, query, mine: onlyMine ? mine : null });
@@ -278,7 +291,7 @@ export function CalendarPage() {
         <h1 className="text-lg font-bold text-ink">台股行事曆</h1>
         <p className="text-[12px] text-muted">
           {tab === 'events'
-            ? <>除權息、股東會、法說會、財報與月營收期限、期貨結算・{today} 起到 {until}</>
+            ? <>除權息、股東會、法說會、可轉債賣回與到期、財報與月營收期限、期貨結算・{today} 起到 {until}</>
             : <>每個月哪幾檔 ETF 除息、每股配多少・可切換月份</>}
         </p>
       </div>

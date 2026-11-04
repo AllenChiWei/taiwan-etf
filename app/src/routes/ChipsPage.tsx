@@ -13,8 +13,8 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath,
-  type SummaryTile,
+  linePath, CREDIT,
+  type SummaryTile, type CreditRow,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -312,7 +312,67 @@ function MarginSection({ data }: { data: ChipsData }) {
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
       </p>
+      {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
     </Section>
+  );
+}
+
+/** 「1.4 億」「2,845 萬」：追繳、處分金額是元 */
+function money(v: number | null): string {
+  if (v === null) return '—';
+  return v >= 1e8 ? `${nf1.format(v / 1e8)} 億` : `${nf0.format(v / 1e4)} 萬`;
+}
+
+/** 證交所信用交易儀表板（官方）：全市場擔保維持率、追繳與處分 */
+function CreditBlock({ rows }: { rows: CreditRow[] }) {
+  const last = rows[rows.length - 1];
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  const keep = last[CREDIT.keep];
+  const dKeep = keep !== null && prev?.[CREDIT.keep] != null ? keep - (prev[CREDIT.keep] as number) : null;
+  const below = last[CREDIT.below];
+  const dBelow = below !== null && prev?.[CREDIT.below] != null ? below - (prev[CREDIT.below] as number) : null;
+  const col = (i: number) => rows.map(r => r[i] as number | null);
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">追繳與擔保維持率（證交所信用交易儀表板）</h3>
+        <span className="text-[11.5px] text-faint">最新 {last[CREDIT.d]} · 近 {rows.length} 個交易日</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Stat label="全市場擔保維持率" value={keep === null ? '—' : `${nf1.format(keep)}%`}
+              sub={dKeep === null ? undefined : `較前日 ${dKeep > 0 ? '+' : ''}${nf1.format(dKeep)} 個百分點`}
+              tone={dKeep === null ? undefined : TONE_CLASS[netTone(dKeep)]} />
+        <Stat label="追繳戶數" value={below === null ? '—' : `${nf0.format(below)} 戶`}
+              sub={`較前日 ${dBelow === null ? '—' : signed(dBelow)} · 當日通知 ${nf0.format(last[CREDIT.call] ?? 0)} 戶`} />
+        <Stat label="追繳金額" value={money(last[CREDIT.callAmt])} sub="當日證券商通知應補繳" />
+        <Stat label="處分" value={`${nf0.format(last[CREDIT.exe] ?? 0)} 戶`} sub={`金額 ${money(last[CREDIT.exeAmt])}`} />
+      </div>
+      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">全市場擔保維持率（%）</div>
+          <Line values={col(CREDIT.keep)} guides={[130]} />
+        </div>
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">追繳戶數（整戶維持率低於 130%）</div>
+          <Bars values={col(CREDIT.below)} />
+        </div>
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">追繳金額（億元）</div>
+          <Bars values={col(CREDIT.callAmt).map(v => (v === null ? null : v / 1e8))} />
+        </div>
+        <div className="rounded-lg border border-line bg-bg p-2.5">
+          <div className="text-[11.5px] text-muted">
+            信用交易戶數（最新 {nf0.format(last[CREDIT.acc] ?? 0)} 戶，占 {last[CREDIT.accRate] ?? '—'}%）
+          </div>
+          <Bars values={col(CREDIT.acc)} />
+        </div>
+      </div>
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        官方數字，來自證交所「信用交易儀表板」。<b>擔保維持率是融資、融券合併計算</b>（全市場融資擔保品市值加融券保證金，
+        除以融資金加融券標的市值），所以跟上面自算的「融資維持率」不同。追繳戶數＝截至當日整戶擔保維持率低於 130% 的戶數；
+        「當日通知」是當天證券商發出追繳通知的戶數。證交所只提供近 60 個交易日，這裡每天累積，之後會越來越長。
+      </p>
+    </div>
   );
 }
 

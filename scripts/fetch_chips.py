@@ -25,6 +25,7 @@ u"""籌碼面資料：期交所的三大法人與大額交易人、交易所的�
     TPEx  insti/dailyTrade            上櫃三大法人買賣超
     TPEx  afterTrading/otc            上櫃當日收盤行情
     TWSE  marginTrading/MI_MARGN      融資融券彙總（算大盤融資維持率）
+    TWSE  marginTrading/BFIJ3U_TREND  信用交易儀表板：全市場擔保維持率、追繳／處分戶數與金額（近 60 天，合併線上累積）
 
 FinMind（一個請求給一段完整歷史，免費層）：
 
@@ -150,6 +151,11 @@ RETAIL_IDS = {'MTX': u'小型臺指期貨', 'TMF': u'微型臺指期貨'}
 
 TWSE_MARGIN = ('https://www.twse.com.tw/rwd/zh/marginTrading/MI_MARGN'
                '?date=%s&selectType=ALL&response=json')
+# 證交所「信用交易儀表板」（/dashboard/zh/credit/margin.html）背後的端點：全市場擔保維持率、
+# 追繳／處分戶數與金額、信用交易戶數。只給近 60 個交易日，所以每次跟上次發布的 chips.json 合併累積。
+TWSE_CREDIT = 'https://www.twse.com.tw/rwd/zh/marginTrading/BFIJ3U_TREND?response=json&days=60'
+LIVE_CHIPS = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
+CREDIT_KEEP = 750
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
 FINMIND_TOKEN = os.environ.get('FINMIND_TOKEN', '').strip()
 # 自算恐懼貪婪：125 日均線 + 一年的百分位，再畫一段走勢，所以要兩年半的歷史
@@ -617,6 +623,36 @@ def maintenance(day):
             'money': int(money), 'n': n}
 
 
+def credit_risk():
+    u"""證交所信用交易儀表板：每天一列 [日期, 全市場擔保維持率%, 追繳戶數, 當日通知追繳戶數, 追繳金額(元),
+    處分戶數, 處分金額(元), 信用交易戶數, 信用交易戶數占比%, 信用交易成交值(元)]。
+
+    「追繳戶數」照證交所儀表板的用法取 belowAccNum（截至當日整戶擔保維持率低於 130% 的戶數），
+    callAccNum 是當天證券商發出追繳通知的戶數，另外存。**擔保維持率是融資融券合併計算**，
+    跟上面自算的「融資維持率」（只有融資、只有上市個股市值）不是同一個數字。
+
+    端點只留近 60 天：跟線上那份合併，留 CREDIT_KEEP 天。線上抓不到就只有這 60 天。
+    """
+    rows = {}
+    try:
+        live = json.loads(fetch(LIVE_CHIPS).decode('utf-8'))
+        for r in ((live.get('margin') or {}).get('credit') or []):
+            rows[r[0]] = r
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  線上 chips.json 讀不到（%s），追繳歷史只有近 60 天' % str(e)[:50])
+    doc = fetch_json(TWSE_CREDIT, u'證交所信用交易儀表板')
+    if doc and doc.get('stat') == 'OK':
+        for r in doc.get('data') or []:
+            d = r.get('date') or ''
+            if len(d) != 8:
+                continue
+            day = '%s-%s-%s' % (d[:4], d[4:6], d[6:])
+            rows[day] = [day, r.get('keepRate'), r.get('belowAccNum'), r.get('callAccNum'), r.get('callAmt'),
+                         r.get('exeAccNum'), r.get('exeAmt'), r.get('marginAccNum'), r.get('marginAccRate'),
+                         r.get('crdAmt')]
+    return [rows[d] for d in sorted(rows)][-CREDIT_KEEP:]
+
+
 # ── 美股：VIX 與自算恐懼貪婪的原料 ───────────────────────────
 
 def us_series(end):
@@ -935,6 +971,8 @@ def main():
             break
     log(u'  餘額 %d 天，維持率 %s%%' % (
         len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
+    margin['credit'] = credit_risk()
+    log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
     us = us_series(datetime.now(TPE).date())

@@ -315,11 +315,28 @@ jobs:
           python scripts/fetch_macro.py || echo "::warning title=總經::這次沒有產生 macro.json"
           python scripts/fetch_calendar.py || echo "::warning title=行事曆::這次沒有產生 calendar.json"
 
-      # 可轉債（櫃買行情表＋資訊看板＋發行資料，加兩個收盤價端點，共六個請求）。
-      # 缺檔時可轉債頁自己會說還沒有資料。
+      # 可轉債（櫃買行情表＋資訊看板＋發行資料，加收盤價與重大訊息端點）。缺檔時可轉債頁自己會說還沒有資料。
+      # 每檔走勢與籌備中靠 .cache/cb_store.json 累積（跟個股籌碼同一種作法）；
+      # 快取不見時 fetch_cb.py 會自己往回補 400 個日曆天的資訊看板（約 280 個請求、五六分鐘，只有那一次）。
+      - name: 取回可轉債走勢快取
+        uses: actions/cache/restore@v4
+        with:
+          path: .cache/cb_store.json
+          key: cb-store-${{ github.run_id }}
+          restore-keys: |
+            cb-store-
+
       - name: 產生可轉債資料
+        id: cb
         continue-on-error: true
-        run: python scripts/fetch_cb.py || echo "::warning title=可轉債::這次沒有產生 cb.json"
+        run: python scripts/fetch_cb.py
+
+      - name: 存下可轉債走勢快取
+        if: ${{ steps.cb.outcome == 'success' && hashFiles('.cache/cb_store.json') != '' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .cache/cb_store.json
+          key: cb-store-${{ github.run_id }}
 
       - name: 存下 ETF 收益分配公告快取
         if: ${{ always() && hashFiles('.cache/etf_notices.json') != '' }}

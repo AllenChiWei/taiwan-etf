@@ -10,7 +10,7 @@
  * 日期一律是 'YYYY-MM-DD' 字串，比較用字典序，不經過時區換算。
  */
 
-export type EventKind = 'exdiv' | 'meeting' | 'call' | 'report' | 'revenue' | 'settle';
+export type EventKind = 'exdiv' | 'meeting' | 'call' | 'report' | 'revenue' | 'settle' | 'cb';
 
 export interface ExDivRow {
   d: string; code: string; name: string;
@@ -83,7 +83,7 @@ export interface CalEvent {
 }
 
 export const KIND_LABEL: Record<EventKind, string> = {
-  exdiv: '除權息', meeting: '股東會', call: '法說會', report: '財報期限', revenue: '月營收期限', settle: '期貨結算',
+  exdiv: '除權息', meeting: '股東會', call: '法說會', report: '財報期限', revenue: '月營收期限', settle: '期貨結算', cb: '可轉債',
 };
 
 const pad = (n: number) => String(n).padStart(2, '0');

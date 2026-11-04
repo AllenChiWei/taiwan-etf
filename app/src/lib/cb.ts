@@ -68,6 +68,17 @@ export interface CbUpcoming {
   y: number | null;
 }
 
+/** 籌備中：重大訊息主旨提到轉換公司債（董事會決議、申報生效…），之後還沒發新債的 */
+export interface CbPlanned {
+  s: string;
+  name: string;
+  ind: string;
+  subject: string;
+  /** 公告日 */
+  d: string;
+  u: string;
+}
+
 export interface CbData {
   meta: {
     date: string;
@@ -80,7 +91,18 @@ export interface CbData {
   };
   bonds: CbBond[];
   upcoming: CbUpcoming[];
+  /** 舊版 cb.json 沒有 */
+  planned?: CbPlanned[];
 }
+
+/** 市場溫度計歷史（cb_market.json）：每天一列，欄位名在 cols */
+export interface CbMarket {
+  cols: string[];
+  rows: Array<Array<string | number | null>>;
+}
+
+/** 單檔走勢（cb_series/<代號>.json）：[日期, 價格, 標的股價, 溢價率] */
+export type CbSeriesPoint = [string, number, number | null, number | null];
 
 /* ── 價格區間（照使用者給的 XQ 看板：<95、95~100、100~105、105~110、110~120、≥120） ── */
 
@@ -260,13 +282,17 @@ export function byIndustry(bonds: CbBond[], upcoming: CbUpcoming[], asOf: string
 
 /* ── 清單篩選與排序 ───────────────────────────────────────── */
 
-export type CbSort = 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue';
+export type CbSort = 'code' | 'vol' | 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue' | 'ytp' | 'put';
 
 export const CB_SORTS: Array<{ id: CbSort; label: string; desc: boolean }> = [
+  { id: 'vol', label: '成交量', desc: true },
+  { id: 'code', label: '代號', desc: false },
   { id: 'val', label: '成交金額', desc: true },
   { id: 'prem', label: '溢價率', desc: false },
   { id: 'px', label: '價格', desc: true },
   { id: 'cv', label: '轉換價值', desc: true },
+  { id: 'ytp', label: '賣回殖利率', desc: true },
+  { id: 'put', label: '賣回日', desc: false },
   { id: 'outPct', label: '餘額比例', desc: false },
   { id: 'issue', label: '發行日', desc: true },
   { id: 'mat', label: '到期日', desc: false },
@@ -277,17 +303,65 @@ export function outPct(b: CbBond): number | null {
   return b.tot && b.out !== null ? (b.out / b.tot) * 100 : null;
 }
 
-function sortKey(b: CbBond, s: CbSort): number | string | null {
+const DAY_MS = 86_400_000;
+
+/** 兩個 YYYY-MM-DD 相差幾天（b − a）。 */
+export function daysBetween(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T00:00:00Z`) - Date.parse(`${a}T00:00:00Z`)) / DAY_MS);
+}
+
+/** 賣回日：申請期間的最後一天（櫃買給起迄，錢在截止後才付，用迄日比較保守）。 */
+export function putDate(b: CbBond): string | null {
+  return b.putE ?? b.putS;
+}
+
+/**
+ * 年化報酬（%）：用 px 買、在 day 拿回 redeem。距離不到 30 天的不算 ——
+ * 幾天的報酬年化之後會變成好幾百 %，排序時把真正有意義的擠掉。
+ */
+function annualised(px: number | null, redeem: number | null, asOf: string, day: string | null): number | null {
+  if (!px || !redeem || !day) return null;
+  const d = daysBetween(asOf, day);
+  if (d < 30) return null;
+  return (Math.pow(redeem / px, 365 / d) - 1) * 100;
+}
+
+/** 賣回殖利率：現在買、到最近賣回日用賣回價賣回的年化報酬（%）。沒有賣回權就是 null。 */
+export function ytp(b: CbBond, asOf: string): number | null {
+  const d = putDate(b);
+  return d && d >= asOf ? annualised(b.px, b.putP, asOf, d) : null;
+}
+
+/** 到期殖利率：假設到期以面額 100 償還（台灣可轉債多半零票面、到期還本 100）。 */
+export function ytm(b: CbBond, asOf: string): number | null {
+  return b.mat && b.mat >= asOf ? annualised(b.px, 100, asOf, b.mat) : null;
+}
+
+/** 已經進入轉換期間 */
+export function convertible(b: CbBond, asOf: string): boolean {
+  return Boolean(b.convS && b.convS <= asOf && (!b.convE || b.convE >= asOf));
+}
+
+function sortKey(b: CbBond, s: CbSort, asOf: string): number | string | null {
   switch (s) {
+    case 'code': return b.c;
     case 'prem': return b.prem;
     case 'px': return b.px;
     case 'cv': return b.cv;
     case 'val': return b.val ?? 0;
+    case 'vol': return b.vol ?? 0;
     case 'outPct': return outPct(b);
     case 'mat': return b.mat;
     case 'issue': return b.issue;
+    case 'ytp': return ytp(b, asOf);
+    case 'put': { const d = putDate(b); return d && d >= asOf ? d : null; }
   }
 }
+
+/** 數值區間；null 表示不限 */
+export interface Range { min: number | null; max: number | null }
+
+export const ANY: Range = { min: null, max: null };
 
 export interface CbFilter {
   q: string;
@@ -296,26 +370,179 @@ export interface CbFilter {
   onlyTraded: boolean;
   sort: CbSort;
   desc: boolean;
+  px?: Range;
+  prem?: Range;
+  cv?: Range;
+  /** 餘額比例（%） */
+  out?: Range;
+  /** 賣回殖利率（%） */
+  ytp?: Range;
+  /** 距最近賣回日幾天內（null＝不限） */
+  putWithin?: number | null;
+  /** 發行幾天內（null＝不限） */
+  issuedWithin?: number | null;
+  /** '有擔保' | '無擔保' | null */
+  guarantee?: string | null;
+  /** 只看已進入轉換期間 */
+  convertibleOnly?: boolean;
+  /** 今天成交張數至少 */
+  minVol?: number | null;
+  /** 只看收藏 */
+  favs?: ReadonlySet<string> | null;
+  /** 判斷「幾天內」「已可轉換」的基準日（資料日期） */
+  asOf?: string;
 }
+
+const inRange = (v: number | null, r?: Range) =>
+  !r || (r.min === null && r.max === null)
+  || (v !== null && (r.min === null || v >= r.min) && (r.max === null || v <= r.max));
+
+/** 預設策略：一鍵套用一組條件（使用者 11-04 要的「可轉債篩選器」） */
+export interface CbPreset {
+  id: string;
+  label: string;
+  hint: string;
+  f: Partial<CbFilter>;
+}
+
+export const CB_PRESETS: CbPreset[] = [
+  { id: 'safe', label: '低價保本', hint: '價格 ≤ 105、一年內可賣回：下檔有賣回價撐著，上檔留給股價',
+    f: { px: { min: null, max: 105 }, putWithin: 365, sort: 'ytp', desc: true } },
+  { id: 'atm', label: '平價股性', hint: '溢價率 ≤ 5%、價格 ≤ 115：跟股票連動高、還沒漲太多',
+    f: { prem: { min: null, max: 5 }, px: { min: null, max: 115 }, sort: 'prem', desc: false } },
+  { id: 'neg', label: '負溢價', hint: '溢價率 < 0 且已可轉換：轉成股票賣掉比賣債多（要扣交易成本與轉換天數）',
+    f: { prem: { min: null, max: -0.01 }, convertibleOnly: true, sort: 'prem', desc: false } },
+  { id: 'new', label: '新上市', hint: '發行 90 天內：新債的蜜月期',
+    f: { issuedWithin: 90, sort: 'issue', desc: true } },
+  { id: 'call', label: '強贖警戒', hint: '轉換價值 ≥ 130：股價連續 30 個營業日超過轉換價 30% 時公司可以提前贖回',
+    f: { cv: { min: 130, max: null }, sort: 'cv', desc: true } },
+  { id: 'low', label: '餘額偏低', hint: '餘額 < 20%：大多已轉換，剩不到 10% 時公司可以收回（流動性也差）',
+    f: { out: { min: null, max: 20 }, sort: 'outPct', desc: false } },
+];
 
 export function filterBonds(bonds: CbBond[], f: CbFilter): CbBond[] {
   const q = f.q.trim().toLowerCase();
   const bk = [...BUCKETS, ...HIGH_BUCKETS].find(b => b.id === f.bucket) ?? null;
+  const asOf = f.asOf ?? new Date().toISOString().slice(0, 10);
   const rows = bonds.filter(b =>
     (!q || b.c.includes(q) || b.s.includes(q) || b.n.toLowerCase().includes(q) || b.sn.toLowerCase().includes(q))
     && (!bk || (b.px !== null && inBucket(b.px, bk)))
     && (!f.ind || b.ind === f.ind)
-    && (!f.onlyTraded || b.close !== null));
+    && (!f.onlyTraded || b.close !== null)
+    && inRange(b.px, f.px) && inRange(b.prem, f.prem) && inRange(b.cv, f.cv)
+    && inRange(outPct(b), f.out) && inRange(ytp(b, asOf), f.ytp)
+    && (f.putWithin == null || (() => { const d = putDate(b); return Boolean(d && d >= asOf && daysBetween(asOf, d) <= f.putWithin!); })())
+    && (f.issuedWithin == null || Boolean(b.issue && b.issue <= asOf && daysBetween(b.issue, asOf) <= f.issuedWithin))
+    && (!f.guarantee || b.g === f.guarantee)
+    && (!f.convertibleOnly || convertible(b, asOf))
+    && (f.minVol == null || (b.vol ?? 0) >= f.minVol)
+    && (!f.favs || f.favs.has(b.c)));
   // 空值一律排最後，不管升冪降冪 —— 不然「沒有溢價率」會擠在最便宜的前面
   return rows.sort((a, b) => {
-    const x = sortKey(a, f.sort);
-    const y = sortKey(b, f.sort);
+    const x = sortKey(a, f.sort, asOf);
+    const y = sortKey(b, f.sort, asOf);
     if (x === null && y === null) return a.c.localeCompare(b.c);
     if (x === null) return 1;
     if (y === null) return -1;
     const c = x < y ? -1 : x > y ? 1 : 0;
     return (f.desc ? -c : c) || a.c.localeCompare(b.c);
   });
+}
+
+/* ── 行事曆：賣回、到期、轉換價生效、強制贖回、新上櫃、開始可轉換 ── */
+
+/** 跟 lib/calendar.ts 的 CalEvent 同形（不 import，避免兩邊互相引用） */
+export interface CbEvent {
+  d: string;
+  kind: 'cb';
+  /** 可轉債代號，「只看我的」用收藏比對 */
+  code: string;
+  title: string;
+  detail: string;
+}
+
+const f2 = (v: number | null) => (v === null ? '—' : v.toLocaleString('zh-TW', { maximumFractionDigits: 2 }));
+
+export function cbEvents(data: CbData | null, from: string, to: string): CbEvent[] {
+  if (!data) return [];
+  const out: CbEvent[] = [];
+  const push = (d: string | null, code: string, title: string, detail: string) => {
+    if (d && d >= from && d <= to) out.push({ d, kind: 'cb', code, title, detail });
+  };
+  for (const b of data.bonds) {
+    const who = b.n;
+    push(b.putS, b.c, `${who} 開始受理賣回`, `賣回價 ${f2(b.putP)}，申請到 ${b.putE ?? '—'}；現價 ${f2(b.px)}`);
+    if (b.putE !== b.putS) push(b.putE, b.c, `${who} 賣回申請截止`, `賣回價 ${f2(b.putP)}；現價 ${f2(b.px)}`);
+    push(b.mat, b.c, `${who} 到期`, `餘額 ${yi(b.out)}`);
+    push(b.cpEff, b.c, `${who} 轉換價 ${f2(b.cp)} 生效`, `標的 ${b.sn || b.s} 現價 ${f2(b.sp)}`);
+    push(b.callS, b.c, `${who} 強制贖回`, `贖回價 ${f2(b.callP)}`);
+    push(b.end, b.c, `${who} 終止櫃檯買賣`, '');
+    push(b.convS, b.c, `${who} 開始可轉換`, `轉換價 ${f2(b.cp)}`);
+  }
+  for (const u of data.upcoming) {
+    push(u.list || u.issue, u.c, `${u.n} 新上櫃`, `發行 ${yi(u.amt)}，轉換價 ${f2(u.cp)}，${u.y ? `${u.y} 年・` : ''}${u.g}`);
+  }
+  return out.sort((a, b) => a.d.localeCompare(b.d) || a.code.localeCompare(b.code));
+}
+
+/* ── 收藏（localStorage；跟 ETF 收藏分開，因為代號空間不同） ── */
+
+export const CB_FAV_KEY = 'twetf.cbFav';
+
+export function loadCbFavs(): Set<string> {
+  try {
+    const v = JSON.parse(localStorage.getItem(CB_FAV_KEY) ?? '[]');
+    return new Set(Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []);
+  } catch {
+    return new Set();
+  }
+}
+
+export function saveCbFavs(favs: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(CB_FAV_KEY, JSON.stringify([...favs].sort()));
+  } catch {
+    /* 私密模式等存不了，就只在這次有效 */
+  }
+}
+
+/* ── 市場溫度計歷史 ─────────────────────────────────────── */
+
+export interface MarketMetric {
+  id: string;
+  label: string;
+  /** 從一列算出這個指標 */
+  get: (row: Record<string, number | null>) => number | null;
+  unit: '%' | '';
+}
+
+const share = (k: string[]) => (r: Record<string, number | null>) =>
+  r.n ? (k.reduce((s, x) => s + (r[x] ?? 0), 0) / r.n) * 100 : null;
+
+export const MARKET_METRICS: MarketMetric[] = [
+  { id: 'hot', label: '價格 ≥ 120 比例', get: share(['b120p']), unit: '%' },
+  { id: 'h150', label: '價格 ≥ 150 比例', get: share(['h150p']), unit: '%' },
+  { id: 'cheap', label: '價格 < 100 比例', get: share(['b95', 'b100']), unit: '%' },
+  { id: 'avg', label: '平均價格', get: r => r.avg, unit: '' },
+  { id: 'pr90', label: 'PR90 高高價', get: r => r.pr90, unit: '' },
+  { id: 'prem', label: '平均溢價率', get: r => r.prem, unit: '%' },
+  { id: 'premItm', label: '價內平均溢價率', get: r => r.premItm, unit: '%' },
+  { id: 'cv', label: '平均轉換價值', get: r => r.cv, unit: '' },
+  { id: 'n', label: '可轉債檔數', get: r => r.n, unit: '' },
+];
+
+export function marketRows(m: CbMarket): Array<{ d: string; r: Record<string, number | null> }> {
+  return m.rows.map(row => {
+    const r: Record<string, number | null> = {};
+    m.cols.forEach((c, i) => { if (i > 0) r[c] = row[i] === null ? null : Number(row[i]); });
+    return { d: String(row[0]), r };
+  });
+}
+
+/** 目前值在歷史裡的百分位（0～100）：越高代表比過去大多數時候都高 */
+export function rankInHistory(values: number[], v: number): number | null {
+  if (!values.length) return null;
+  return (values.filter(x => x <= v).length / values.length) * 100;
 }
 
 /** 「1.5 億」「8,000 萬」。金額是元。 */
