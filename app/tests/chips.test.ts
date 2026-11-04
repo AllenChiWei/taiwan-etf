@@ -489,3 +489,11 @@ test('融資維持率：跌破 140 的斷頭時段（相鄰的併成一段）與
   assert.equal(Math.round(dropToReach(162.5, 130)! * 10) / 10, 20);
   assert.equal(dropToReach(125, 130), null);
 });
+
+test('adLine 從第一天累加漲跌家數差；basisPoints＝期貨−指數', async () => {
+  const { adLine, basisPoints } = await import('../src/lib/chips.ts');
+  assert.deepEqual(adLine([['d1', 600, 400], ['d2', 100, 900], ['d3', 500, 500]]), [['d1', 200], ['d2', -600], ['d3', -600]]);
+  assert.deepEqual(basisPoints([['d1', 43376, 43307.54], ['d2', 45000, 45120]], 1), [['d1', 68.46], ['d2', -120]]);
+  // 2 日平均：第一天只有自己，第二天 (68.46 − 120) ÷ 2
+  assert.deepEqual(basisPoints([['d1', 43376, 43307.54], ['d2', 45000, 45120]], 2), [['d1', 68.46], ['d2', -25.77]]);
+});

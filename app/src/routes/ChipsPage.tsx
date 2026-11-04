@@ -14,7 +14,7 @@ import {
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
   linePath, CREDIT, maintEpisodes, dropToReach,
-  type SummaryTile, type CreditRow, type ShortRow,
+  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -48,6 +48,26 @@ function Section({ title, hint, children }: {
       </div>
       {children}
     </section>
+  );
+}
+
+/** 這一頁十幾個區塊、手機上超過一萬像素高（2026-11-04），頂端放一排捷徑。橫向捲動，不撐寬頁面。 */
+const JUMPS: Array<[string, string]> = [
+  ['fut', '期貨法人'], ['retail', '散戶'], ['pc', 'P/C'], ['margin', '融資融券'], ['tw', '台股情緒'], ['us', '美股情緒'],
+  ['opt', '選擇權法人'], ['atm', '價平和'], ['large', '大額交易人'], ['sector', '類股'], ['top', '買賣超'], ['dca', '定期定額'],
+];
+
+function JumpNav() {
+  return (
+    <nav aria-label="跳到區塊" className="-mx-1 mt-3 flex gap-1.5 overflow-x-auto px-1 pb-1">
+      {JUMPS.map(([id, label]) => (
+        <button key={id} type="button"
+                onClick={() => document.getElementById(`sec-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                className="h-7 shrink-0 rounded-full bg-sunken px-3 text-[12px] font-semibold text-muted hover:text-ink">
+          {label}
+        </button>
+      ))}
+    </nav>
   );
 }
 
@@ -284,21 +304,21 @@ function MarginSection({ data }: { data: ChipsData }) {
   const daily = yi.map((v, i) => (i === 0 ? null : v - yi[i - 1]));
   const shortChange = m.short[last] - m.short[last - 1];
   return (
-    <Section title="融資融券（上市）" hint={`近 ${m.dates.length} 個交易日 · 最新 ${m.dates[last]}`}>
+    <Section title="融資融券" hint={`上市近 ${m.dates.length} 個交易日 · 最新 ${m.dates[last]}`}>
       <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
-        <Stat label="融資餘額" value={`${nf0.format(yi[last])} 億`}
+        <Stat label="融資餘額（上市）" value={`${nf0.format(yi[last])} 億`}
               sub={`較前日 ${signedYi(daily[last]!)} 億`}
               tone={TONE_CLASS[netTone(daily[last]!)]} />
-        <Stat label="融券餘額" value={`${nf0.format(m.short[last])} 張`}
+        <Stat label="融券餘額（上市）" value={`${nf0.format(m.short[last])} 張`}
               sub={`較前日 ${signed(shortChange)} 張`} />
         {m.maint && (
-          <Stat label="大盤融資維持率" value={`${nf1.format(m.maint.ratio)}%`}
+          <Stat label="融資維持率（上市）" value={`${nf1.format(m.maint.ratio)}%`}
                 sub={`${m.maint.date} · 自算，${nf0.format(m.maint.n)} 檔`} />
         )}
       </div>
       <div className="mt-2 grid gap-2 sm:grid-cols-2">
         <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">融資餘額（億元）</div>
+          <div className="text-[11.5px] text-muted">融資餘額（億元，上市）</div>
           <Line values={yi} />
         </div>
         <div className="rounded-lg border border-line bg-bg p-2.5">
@@ -312,14 +332,16 @@ function MarginSection({ data }: { data: ChipsData }) {
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
       </p>
-      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} shorts={m.shortHist ?? []} />}
+      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
     </Section>
   );
 }
 
 /** 大盤融資維持率（上市＋上櫃）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破 140% 的時段 */
-function MaintHistory({ hist, shorts }: { hist: Array<[string, number]>; shorts: ShortRow[] }) {
+function MaintHistory({ hist, shorts, sbl }: {
+  hist: Array<[string, number]>; shorts: ShortRow[]; sbl: Array<[string, number]>;
+}) {
   const [years, setYears] = useState(5);
   const [showAll, setShowAll] = useState(false);
   const [d0, cur] = hist[hist.length - 1];
@@ -361,7 +383,7 @@ function MaintHistory({ hist, shorts }: { hist: Array<[string, number]>; shorts:
         </div>
         <Line values={pts.map(r => r[1])} guides={[140, 130]} height={110} />
       </div>
-      {shorts.length > 20 && <ShortHistory shorts={shorts} cut={cut} />}
+      {shorts.length > 20 && <ShortHistory shorts={shorts} sbl={sbl} cut={cut} />}
       {eps.length > 0 && (
         <div className="mt-2 overflow-x-auto">
           <table className="w-full text-[12px] tabular-nums">
@@ -406,19 +428,70 @@ function MaintHistory({ hist, shorts }: { hist: Array<[string, number]>; shorts:
   );
 }
 
-/** 融券餘額（上市＋上櫃）折線，跟維持率同一個時間範圍：對照著看追繳之後有沒有軋空 */
-function ShortHistory({ shorts, cut }: { shorts: ShortRow[]; cut: string }) {
-  const shown = shorts.filter(r => r[0] >= cut);
+/**
+ * 一條 [日期, 值] 的趨勢折線，只畫 cut（含）之後；一天一點太密，最多畫 500 點。
+ * 站主 2026-11-04：「做折線圖看趨勢，我不要一堆數字」—— 標題旁只放最新一個值。
+ */
+function TrendChart({ title, rows, cut, height = 110, guides, digits = 1 }: {
+  title: string; rows: Array<[string, number]>; cut: string; height?: number; guides?: number[]; digits?: number;
+}) {
+  const shown = rows.filter(r => r[0] >= cut);
+  if (shown.length < 2) return null;
   const step = Math.max(1, Math.ceil(shown.length / 500));
   const pts = shown.filter((_, i) => i % step === 0 || i === shown.length - 1);
+  const [d, v] = rows[rows.length - 1];
   return (
     <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
-      <div className="flex justify-between text-[11px] text-muted">
-        <span>融券餘額（萬張，上市＋上櫃）</span>
-        <span className="tabular-nums">{pts[0]?.[0]} ～ {shorts[shorts.length - 1][0]}</span>
+      <div className="flex justify-between gap-2 text-[11px] text-muted">
+        <span>{title}</span>
+        <span className="shrink-0 tabular-nums">{d.slice(5)} <b className="font-mono font-semibold text-ink">{v.toFixed(digits)}</b></span>
       </div>
-      <Line values={pts.map(r => r[1] / 1e4)} height={110} />
+      <Line values={pts.map(r => r[1])} guides={guides} height={height} />
+      <div className="text-right text-[10.5px] tabular-nums text-faint">{pts[0][0]} ～ {d}</div>
     </div>
+  );
+}
+
+/** 融券、借券賣出餘額折線，跟維持率同一個時間範圍：對照著看追繳之後有沒有軋空 */
+function ShortHistory({ shorts, sbl, cut }: { shorts: ShortRow[]; sbl: Array<[string, number]>; cut: string }) {
+  return (
+    <>
+      <TrendChart title="融券餘額（萬張，上市＋上櫃）" rows={shorts.map(r => [r[0], r[1] / 1e4])} cut={cut} />
+      {sbl.length > 20 && (
+        <TrendChart title="借券賣出餘額（萬張，上市＋上櫃個股）" rows={sbl.map(r => [r[0], r[1] / 1e4])} cut={cut} digits={0} />
+      )}
+    </>
+  );
+}
+
+/** 台股情緒：臺指 VIX、期貨正逆價差、騰落線對加權指數。只有折線，數字只留最新一個 */
+function TwMoodSection({ tw }: { tw?: TwMood }) {
+  const [years, setYears] = useState(1);
+  const ad = useMemo(() => (tw ? adLine(tw.breadth) : []), [tw]);
+  if (!tw || (!tw.vix.length && !tw.basis.length && !tw.breadth.length)) return null;
+  const end = [tw.vix, tw.basis, tw.breadth].map(r => r[r.length - 1]?.[0] ?? '').sort().pop() as string;
+  const cut = years ? `${Number(end.slice(0, 4)) - years}${end.slice(4)}` : '';
+  const idx: Array<[string, number]> = tw.basis.map(r => [r[0], r[2]]);
+  return (
+    <Section title="台股情緒" hint="臺指 VIX、期貨正逆價差、騰落線">
+      <div className="mt-2 flex gap-1.5">
+        {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
+          <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
+                  className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${years === y ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <TrendChart title="臺指 VIX（期交所，2026-08 起累積）" rows={tw.vix} cut={cut} height={90} digits={2} />
+      <TrendChart title="期貨正逆價差（點，5 日平均；台指期近月 − 加權指數）" rows={basisPoints(tw.basis)} cut={cut} height={90} guides={[0]} digits={0} />
+      <TrendChart title="騰落線（上市股票，累計上漲 − 下跌家數）" rows={ad} cut={cut} height={90} digits={0} />
+      <TrendChart title="加權指數（對照騰落線）" rows={idx} cut={cut} height={90} digits={0} />
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積。
+        正逆價差取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
+        騰落線跟指數同向是普漲；指數創高、騰落線往下是少數權值股撐盤。
+      </p>
+    </Section>
   );
 }
 
@@ -1149,19 +1222,23 @@ export function ChipsPage() {
       </div>
 
       <SummaryStrip data={data} />
-      <FuturesSection data={data} />
-      <RetailSection />
-      <PcSection data={data} />
-      <MarginSection data={data} />
-      <SentimentSection data={data} />
-      <OptionsSection data={data} />
-      <AtmSection />
+      <JumpNav />
+      <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>
+      <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
+      <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
+      <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
+      <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} /></div>
+      <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
+      <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
+      <div id="sec-atm" className="scroll-mt-16">
+        <AtmSection />
         <SellerDecisionCard />
-      <AtmIntradaySection />
-      <LargeSection data={data} />
-      <SectorSection data={data} />
-      <TopSection data={data} onPick={setSheet} />
-      <DcaSection data={data} onPick={setSheet} />
+        <AtmIntradaySection />
+      </div>
+      <div id="sec-large" className="scroll-mt-16"><LargeSection data={data} /></div>
+      <div id="sec-sector" className="scroll-mt-16"><SectorSection data={data} /></div>
+      <div id="sec-top" className="scroll-mt-16"><TopSection data={data} onPick={setSheet} /></div>
+      <div id="sec-dca" className="scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
         籌碼資料為交易所與期交所的公開統計，僅供參考，不構成投資建議。

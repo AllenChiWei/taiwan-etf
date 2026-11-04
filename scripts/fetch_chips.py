@@ -166,7 +166,19 @@ SHORT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_short_seed.json')
 CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'credit')
+HIST_KEYS = ('maintHist', 'shortHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth')
+# 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
+# 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
+SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
+TWSE_SBL = 'https://www.twse.com.tw/rwd/zh/marginTrading/TWT93U?date=%s&response=json'
+TPEX_SBL = 'https://www.tpex.org.tw/www/zh-tw/margin/sbl'
+# 上市股票漲跌家數（騰落線）——FinLab 收盤價回補，跟 MI_INDEX「漲跌證券數合計」每天差 0～4 家
+BREADTH_SEED = os.path.join(ROOT, 'scripts', 'data', 'breadth_seed.json')
+# 台指期近月收盤（正逆價差）——期交所 futDataDown 回補 5 年
+BASIS_SEED = os.path.join(ROOT, 'scripts', 'data', 'basis_seed.json')
+# 臺指選擇權波動率指數：期交所只放近 3 個月的月檔（2026-08 起），之後靠累積
+TAIFEX_VIX = 'https://www.taifex.com.tw/file/taifex/Dailydownload/vix/log2data/%snew.txt'
+VIX_SEED = os.path.join(ROOT, 'scripts', 'data', 'vix_seed.json')
 LIVE_CHIPS = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 CREDIT_KEEP = 750
 FINMIND_API = 'https://api.finmindtrade.com/api/v4/data'
@@ -712,15 +724,15 @@ def twse_taiex(day):
 _LIVE = []
 
 
-def _live_margin():
-    u"""線上那份 chips.json 的 margin（同一次執行只抓一次）；讀不到回 None。"""
+def _live_section(section):
+    u"""線上那份 chips.json 的 margin／tw 區塊（同一次執行只抓一次）；讀不到回 None。"""
     if not _LIVE:
         try:
-            _LIVE.append((json.loads(fetch(LIVE_CHIPS).decode('utf-8')).get('margin') or {}))
+            _LIVE.append(json.loads(fetch(LIVE_CHIPS).decode('utf-8')))
         except Exception as e:                                # noqa: BLE001
             log(u'  線上 chips.json 讀不到（%s）' % str(e)[:50])
             _LIVE.append(None)
-    return _LIVE[0]
+    return None if _LIVE[0] is None else (_LIVE[0].get(section) or {})
 
 
 def _hist_cache():
@@ -730,9 +742,9 @@ def _hist_cache():
         return {}
 
 
-def _seed_and_live(path, key, conv):
-    u"""{日期: 列}：版控裡的種子（conv 轉成網站的列格式，回 None 就跳過）→ Actions 快取 → 線上 chips.json 的 margin[key]，
-    後面的蓋前面的。
+def _seed_and_live(path, key, conv, section='margin'):
+    u"""{日期: 列}：版控裡的種子（conv 轉成網站的列格式，回 None 就跳過）→ Actions 快取 → 線上 chips.json 的 section[key]，
+    後面的蓋前面的。key 在各 section 之間不重複（快取用 key 當鍵）。
 
     三層是為了**不弄丟累積的歷史**：只靠線上那份的話，某次部署讀不到它，這次產出就只剩種子＋今天，
     而且會蓋掉線上那份，之後再也補不回來（追繳那份證交所只給 60 天）。快取與線上都讀不到時記進 meta.errors。
@@ -746,20 +758,23 @@ def _seed_and_live(path, key, conv):
     except Exception:                                         # noqa: BLE001
         pass
     cached = _hist_cache().get(key) or []
-    live = _live_margin()
+    live = _live_section(section)
     for r in cached + ((live or {}).get(key) or []):
         rows[r[0]] = r
-    if not cached and not (live or {}).get(key):
+    if not cached and live is None:                           # 線上那份讀得到、只是還沒有這個鍵＝新欄位第一次部署，不算錯
         note(u'%s 的累積歷史：Actions 快取與線上 chips.json 都讀不到，只剩種子＋今天' % key)
     return rows
 
 
-def save_hist_cache(margin):
-    u"""把三份累積歷史存進 .cache（deploy.yml 用 actions/cache 帶到下一次部署）。"""
+def save_hist_cache(*sections):
+    u"""把累積歷史（HIST_KEYS）存進 .cache（deploy.yml 用 actions/cache 帶到下一次部署）。"""
     try:
         os.makedirs(os.path.dirname(HIST_CACHE), exist_ok=True)
+        out = {}
+        for sec in sections:
+            out.update((k, sec.get(k) or []) for k in HIST_KEYS if k in sec)
         with io.open(HIST_CACHE, 'w', encoding='utf-8') as f:
-            json.dump(dict((k, margin.get(k) or []) for k in HIST_KEYS), f, ensure_ascii=False, separators=(',', ':'))
+            json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
     except Exception as e:                                    # noqa: BLE001
         note(u'存累積歷史快取：%s' % str(e)[:80])
 
@@ -810,6 +825,126 @@ def credit_risk():
                          r.get('exeAccNum'), r.get('exeAmt'), r.get('marginAccNum'), r.get('marginAccRate'),
                          r.get('crdAmt')]
     return [rows[d] for d in sorted(rows)][-CREDIT_KEEP:]
+
+
+# ── 台股情緒與借券（2026-11-04）─────────────────────────────
+
+def _is_stock(code):
+    u"""個股：四碼數字、不以 0 開頭（排除 ETF、權證、特別股）"""
+    return len(code) == 4 and code.isdigit() and not code.startswith('0')
+
+
+def sbl_today(day):
+    u"""借券賣出當日餘額（張），上市＋上櫃個股合計；兩邊都拿到才回傳。day 是 YYYYMMDD。
+
+    兩張表都是「信用額度總量管制餘額表」，第 12 欄是借券賣出的當日餘額（股）。
+    """
+    doc = fetch_json(TWSE_SBL % day, u'證交所借券賣出餘額')
+    if not doc or doc.get('stat') != 'OK':
+        return None
+    twse = sum(num(r[12]) for r in doc.get('data') or [] if _is_stock(r[0].strip()))
+    try:
+        body = urllib.parse.urlencode({'date': '%s/%s/%s' % (day[:4], day[4:6], day[6:]), 'response': 'json'}).encode()
+        req = urllib.request.Request(TPEX_SBL, data=body, headers={'User-Agent': UA})
+        x = json.loads(urllib.request.urlopen(req, timeout=TIMEOUT).read().decode('utf-8'))
+        time.sleep(DELAY)
+        rows = (x.get('tables') or [{}])[0].get('data') or []
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買借券賣出餘額：%s' % str(e)[:80])
+        return None
+    if not twse or not rows:
+        return None
+    return int(round((twse + sum(num(r[12]) for r in rows if _is_stock(r[0].strip()))) / 1000))
+
+
+def breadth_today(day):
+    u"""上市股票 (上漲, 下跌) 家數：證交所收盤行情的「漲跌證券數合計」股票欄。拿不到回 None。"""
+    for t in (twse_price_doc(day) or {}).get('tables') or []:
+        if u'漲跌' not in (t.get('title') or '') or u'股票' not in (t.get('fields') or []):
+            continue
+        si = t['fields'].index(u'股票')
+        got = dict((r[0][:2], int(num(str(r[si]).split('(')[0]))) for r in t.get('data') or [])
+        if u'上漲' in got and u'下跌' in got:
+            return got[u'上漲'], got[u'下跌']
+    return None
+
+
+def sbl_history(day):
+    u"""借券賣出餘額（個股，上市＋上櫃）每天一列 [日期, 張]：種子＋快取＋線上＋今天。"""
+    rows = _seed_and_live(SBL_SEED, 'sblHist', list)
+    if day:
+        v = sbl_today(day.replace('-', ''))
+        if v:
+            rows[day] = [day, v]
+            log(u'  借券賣出餘額（個股）%s：%s 張' % (day, v))
+    return [rows[d] for d in sorted(rows)][-MAINT_KEEP:]
+
+
+def tx_near_close(rows):
+    u"""futDataDown（TX）的列 → {交易日: 近月一般時段收盤}。排除週契約（月份欄帶 W）與價差列（帶 /）。
+
+    欄位：0 交易日期、2 到期月份(週別)、6 收盤價、17 交易時段。近月＝當天最小的月份（結算日當天就是結算那口）。
+    """
+    best = {}
+    for c in rows:
+        if len(c) < 18 or c[17] != u'一般' or '/' in c[2] or 'W' in c[2].upper():
+            continue
+        px = num(c[6])
+        if px <= 0:
+            continue
+        day, ym = iso(c[0]), c[2].strip()
+        if day not in best or ym < best[day][0]:
+            best[day] = (ym, px)
+    return dict((d, v[1]) for d, v in best.items())
+
+
+def vix_rows(end):
+    u"""臺指選擇權波動率指數每天收盤 [[日期, 指數]]：期交所月檔（只放近 3 個月），抓這個月與前三個月。"""
+    out = []
+    m = end.replace(day=1)
+    for _ in range(4):
+        try:
+            text = fetch(TAIFEX_VIX % m.strftime('%Y%m')).decode('big5', 'replace')
+            for line in text.splitlines():
+                p = line.split()
+                if len(p) >= 3 and p[0].isdigit() and len(p[0]) == 8:
+                    out.append(['%s-%s-%s' % (p[0][:4], p[0][4:6], p[0][6:]), float(p[2])])
+        except Exception:                                     # noqa: BLE001
+            pass                                              # 太舊的月份期交所轉址（302），正常
+        m = (m - timedelta(days=1)).replace(day=1)
+    if not out:
+        note(u'期交所臺指 VIX：一個月檔都沒拿到')
+    return out
+
+
+def tw_mood(day, shorts):
+    u"""台股情緒：{'vix': [[日期, 指數]], 'basis': [[日期, 台指期近月, 加權指數]], 'breadth': [[日期, 上漲, 下跌]]}。
+    都是種子＋快取＋線上累積，再加上今天（或近幾週）抓到的。shorts 是融券歷史（借它的加權指數）。
+    """
+    tw = {}
+    vix = _seed_and_live(VIX_SEED, 'vix', list, 'tw')
+    for r in vix_rows(datetime.strptime(day, '%Y-%m-%d').date() if day else datetime.now(TPE).date()):
+        vix[r[0]] = r
+    tw['vix'] = [vix[d] for d in sorted(vix)]
+
+    basis = _seed_and_live(BASIS_SEED, 'basis', list, 'tw')
+    taiex = dict((r[0], r[3]) for r in shorts)
+    rows = []
+    for a, b in windows(WINDOW_DAYS, WINDOW_DAYS, datetime.strptime(day, '%Y-%m-%d').date() if day else None):
+        rows += fetch_csv('futDataDown', {'down_type': '1', 'commodity_id': 'TX', 'commodity_id2': '',
+                                          'queryStartDate': a, 'queryEndDate': b})
+    for d, px in tx_near_close(rows).items():
+        if d in taiex:
+            basis[d] = [d, px, taiex[d]]
+    tw['basis'] = [basis[d] for d in sorted(basis)][-MAINT_KEEP:]
+
+    breadth = _seed_and_live(BREADTH_SEED, 'breadth', list, 'tw')
+    if day:
+        b = breadth_today(day.replace('-', ''))
+        if b:
+            breadth[day] = [day, b[0], b[1]]
+    tw['breadth'] = [breadth[d] for d in sorted(breadth)][-MAINT_KEEP:]
+    return tw
 
 
 # ── 美股：VIX 與自算恐懼貪婪的原料 ───────────────────────────
@@ -1135,7 +1270,14 @@ def main():
     log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
-    save_hist_cache(margin)
+    mday = margin['maint']['date'] if margin['maint'] else None
+    margin['sblHist'] = sbl_history(mday)
+    log(u'  借券賣出餘額歷史 %d 天' % len(margin['sblHist']))
+
+    log(u'台股情緒：臺指 VIX、期貨正逆價差、漲跌家數…')
+    tw = tw_mood(fut_day, margin['shortHist'])
+    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth'])))
+    save_hist_cache(margin, tw)
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
     us = us_series(datetime.now(TPE).date())
@@ -1173,6 +1315,8 @@ def main():
         'dca': dca,
         # 上市融資餘額走勢與最新一天的維持率
         'margin': margin,
+        # 臺指 VIX、期貨正逆價差、上市漲跌家數（2026-11-04）
+        'tw': tw,
         # VIX 與自算恐懼貪婪的原料（美股日期，不跟台股同步）
         'us': us,
     }

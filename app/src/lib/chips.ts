@@ -105,6 +105,8 @@ export interface ChipsData {
   margin?: MarginData;
   /** VIX 與自算恐懼貪婪的原料（美股日期）。舊版沒有 */
   us?: UsSeries;
+  /** 臺指 VIX、期貨正逆價差、上市漲跌家數。舊版沒有 */
+  tw?: TwMood;
 }
 
 export interface MarginData {
@@ -127,9 +129,40 @@ export interface MarginData {
   maintHist?: Array<[string, number]>;
   /** 融券（上市＋上櫃）每天一列 [日期, 融券張數, 融資張數, 加權指數]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
   shortHist?: ShortRow[];
+  /** 借券賣出餘額（個股，上市＋上櫃，不含 ETF）每天一列 [日期, 張]：2009 起。舊版沒有 */
+  sblHist?: Array<[string, number]>;
 }
 
 export type ShortRow = [string, number, number, number];
+
+/** 台股情緒（2026-11-04）。舊版沒有 */
+export interface TwMood {
+  /** 臺指選擇權波動率指數 [日期, 指數]（期交所只給近 3 個月，2026-08 起累積） */
+  vix: Array<[string, number]>;
+  /** [日期, 台指期近月收盤, 加權指數]（2021-10 起） */
+  basis: Array<[string, number, number]>;
+  /** 上市股票 [日期, 上漲家數, 下跌家數]（2009 起） */
+  breadth: Array<[string, number, number]>;
+}
+
+/** 騰落線：從第一天起累加（上漲 − 下跌）家數 */
+export function adLine(rows: Array<[string, number, number]>): Array<[string, number]> {
+  let acc = 0;
+  return rows.map(([d, a, b]) => { acc += a - b; return [d, acc]; });
+}
+
+/**
+ * 期貨正逆價差（點）＝台指期近月 − 加權指數；正＝正價差。取 n 日平均：
+ * 台指期 13:45 才收、加權指數 13:30 就收，最後 15 分鐘的漲跌會整個算進當天的價差（2026-11-04 實測單日 −240～+336 來回跳），
+ * 平均掉才看得出趨勢。前 n−1 天不足 n 日就用已有的天數平均。
+ */
+export function basisPoints(rows: Array<[string, number, number]>, n = 5): Array<[string, number]> {
+  const raw = rows.map(([, tx, idx]) => tx - idx);
+  return rows.map(([d], i) => {
+    const w = raw.slice(Math.max(0, i - n + 1), i + 1);
+    return [d, Math.round((w.reduce((a, b) => a + b, 0) / w.length) * 100) / 100];
+  });
+}
 
 export interface MaintEpisode {
   /** 跌破門檻的第一天、回到門檻以上的前一天（還沒回來就是最後一天） */

@@ -86,6 +86,19 @@
 產出就只剩種子＋今天、還會蓋掉線上那份（追繳證交所只給 60 天，等於永久遺失）。快取和線上都讀不到時寫進 meta.errors。
 追繳的種子 `scripts/data/credit_seed.json` 是 2026-11-04 當時線上的 61 天。
 
+### 借券賣出、臺指 VIX、正逆價差、漲跌家數（2026-11-04 使用者：還欠缺什麼可參考的數據）
+
+流程照 `.claude/skills/data-block`。全部是種子＋快取＋線上三層累積，今天的值在 `fetch_chips.py` 的 `sbl_history()`、`tw_mood()`。
+
+| 資料 | 位置 | 種子 | 每天 | 對帳／坑 |
+|---|---|---|---|---|
+| 借券賣出餘額（張） | `margin.sblHist` | `sbl_seed.json`，FinLab `security_lending_sell:借券賣出餘額`，2009 起 | 證交所 TWT93U＋櫃買 `margin/sbl` 第 12 欄（股） | **只算個股**（四碼、不以 0 開頭）：官方合計六成是 ETF 造市避險、FinLab 只收部分 ETF；個股 2026-11-03 逐檔一致（1,441 萬張）。FinLab 缺部分個股的 9 天已剔除 |
+| 臺指 VIX | `tw.vix` | `vix_seed.json`，期交所月檔，2026-08 起 | 期交所 `Dailydownload/vix/log2data/YYYYMMnew.txt`（只放近 3 個月，更舊 302） | 取 13:45 那列 |
+| 台指期近月收盤 | `tw.basis` [日期, 期貨, 指數] | `basis_seed.json`，futDataDown TX，2021-10 起 | futDataDown 近 28 天，指數借 `shortHist` 的 | 排除週契約（W）與價差（/）；**期貨 13:45 收、指數 13:30 收**，單日價差 −240～+336 來回跳，前端畫 5 日平均 |
+| 上市漲跌家數 | `tw.breadth` [日期, 上漲, 下跌] | `breadth_seed.json`，FinLab 收盤價對前一日（上市普通股），2009 起 | MI_INDEX（type=ALL）「漲跌證券數合計」股票欄 | 跟官方每天差 0～4 家 |
+
+研究腳本：`D:\ai\DashBoard_AI\research_chips_extra.py`（借券、漲跌家數）；VIX、正逆價差種子用 fetch_chips 本身的函式產生。
+
 ### 融券與軋空（2026-11-04 使用者要求：追繳後容易軋空嗎）
 
 `margin.shortHist`：[日期, 融券張數, 融資張數, 加權指數]，上市＋上櫃合計，2009-01-05 起。
