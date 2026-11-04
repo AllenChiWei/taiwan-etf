@@ -5,9 +5,11 @@
  *
  * 資料由使用者電腦產生：QuantBrainsAIO\Release\_rebuild\research\gen_ls15_payload.py（或 QT「一鍵組合」的 portfolio.json）算好每支的數字，
  * DashBoard_AI\gen_export.py 用 v18 的 salt 與密碼加密成 data/gen/gen.enc 才推上來。
- * 金額單位萬元；樣本內（用來挑策略）到 isEnd，之後是樣本外。ECharts 只在這一頁才載入。 */
+ * 金額單位萬元；樣本內（用來挑策略）到 isEnd，之後是樣本外。ECharts 只在這一頁才載入。
+ * 2026-11-04 站主：NQ（小那斯達克）也放上來 → 上方切換商品（台指＝gen.enc、NQ＝gen_nq.enc），
+ *   資料的 unit（例「萬美元」，不換匯）、sessNotes（盤別說明）依商品；舊資料沒有就是台指的「萬」。 */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { useVaultExpiry } from '../hooks/useVaultExpiry';
@@ -31,13 +33,23 @@ interface GenData {
   generated: string; title: string; isEnd: string; notes: string[]; dates: string[]; strategies: Strat[];
   combo?: Combo;
   combos?: Partial<Record<Group, Combo>>;
+  /** 2026-11-04：商品代號、金額單位（例「萬美元」）、盤別說明（留倉／當沖／夜盤當沖） */
+  market?: string; unit?: string; sessNotes?: string[];
 }
+
+/** 商品切換：檔名對應 DashBoard_AI\gen_export.py 的 --set（沒有＝gen.enc） */
+const SETS = [{ id: 'txf', label: '台指', file: 'gen.enc' }, { id: 'nq', label: 'NQ 小那斯達克', file: 'gen_nq.enc' }] as const;
+const SET_KEY = 'twetf.gen.set';
+/** 金額單位（萬／萬美元），給表格、統計卡、圖表的提示用 */
+const UnitCtx = createContext('萬');
 
 const GROUP_LABEL: Record<Group, string> = { long: '多單', short: '空單', both: '多+空' };
 /** 合計列的 id（和策略 id 不會撞名） */
 const comboId = (g: Group) => `__${g}`;
 const SESS = ['留倉', '日盤當沖', '夜盤當沖'];
-const sessOf = (x: Strat) => (x.sess != null ? SESS[x.sess] ?? '' : x.dayOnly ? '只做日盤' : '');
+/** 盤別短名：資料有 sessNotes（其他商品）就用它括號前的字，例 NQ「當沖」 */
+const sessOf = (x: Strat, notes?: string[]) =>
+  (x.sess != null ? (notes?.[x.sess]?.split('（')[0] ?? SESS[x.sess] ?? '') : x.dayOnly ? '只做日盤' : '');
 const sideOf = (x: Strat): Side => x.side ?? 'short';
 /** 舊資料只有一組 combo（空 10 支），當成「空單」那組 */
 const combosOf = (d: GenData): Partial<Record<Group, Combo>> => d.combos ?? (d.combo ? { short: d.combo } : {});
@@ -53,10 +65,20 @@ export function GenPage() {
   const [state, setState] = useState<'loading' | 'missing' | 'locked' | 'ready' | 'error'>('loading');
   const [d, setD] = useState<GenData | null>(null);
   const [msg, setMsg] = useState('');
+  const [setId, setSetId] = useState<string>(() => {
+    try { return localStorage.getItem(SET_KEY) ?? SETS[0].id; } catch { return SETS[0].id; }
+  });
+  const cur = SETS.find(x => x.id === setId) ?? SETS[0];
 
-  const load = async () => {
-    try { setState('loading'); setD(await vault.fetchJson<GenData>('gen.enc')); setState('ready'); }
+  const load = async (file: string = cur.file) => {
+    try { setState('loading'); setD(await vault.fetchJson<GenData>(file)); setState('ready'); }
     catch (e) { setMsg(e instanceof Error ? e.message : String(e)); setState('error'); }
+  };
+  const pickSet = (id: string) => {
+    const s = SETS.find(x => x.id === id) ?? SETS[0];
+    setSetId(s.id);
+    try { localStorage.setItem(SET_KEY, s.id); } catch { /* 存不了就算了 */ }
+    if (state === 'ready' || state === 'error') void load(s.file);
   };
   useEffect(() => {
     vault.loadManifest().then(async m => {
@@ -67,11 +89,27 @@ export function GenPage() {
   }, []);
   useVaultExpiry(vault, state === 'ready', () => { setD(null); setState('locked'); });
 
-  if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
   if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有策略產生器的資料。</p>;
-  if (state === 'locked' && manifest) return <Locked vault={vault} title="策略產生器" manifest={manifest} onUnlock={load} />;
-  if (state === 'error' || !d) return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
-  return <Board d={d} />;
+  if (state === 'locked' && manifest) return <Locked vault={vault} title="策略產生器" manifest={manifest} onUnlock={() => load()} />;
+  const picker = (
+    <div role="tablist" aria-label="商品" className="mt-3 flex flex-wrap gap-1.5">
+      {SETS.map(x => (
+        <button key={x.id} type="button" role="tab" aria-selected={x.id === cur.id} onClick={() => pickSet(x.id)}
+                className={`h-8 rounded-full px-3.5 text-[13px] font-semibold transition-colors ${
+                  x.id === cur.id ? 'bg-accent text-white' : 'bg-sunken text-muted hover:text-ink'}`}>
+          {x.label}
+        </button>
+      ))}
+    </div>
+  );
+  if (state === 'loading') return <>{picker}<p className="py-16 text-center text-[13px] text-muted">載入中…</p></>;
+  if (state === 'error' || !d) return <>{picker}<p className="py-16 text-center text-[13px] text-down">{cur.id === 'txf' ? `載入失敗：${msg}` : `${cur.label} 還沒有資料或載入失敗：${msg}`}</p></>;
+  return (
+    <UnitCtx.Provider value={d.unit ?? '萬'}>
+      {picker}
+      <Board key={d.generated + (d.market ?? '')} d={d} />
+    </UnitCtx.Provider>
+  );
 }
 
 /** 關掉的策略記在這台瀏覽器（每一批資料各記各的；隱私模式存不了就只在這次有效） */
@@ -88,6 +126,7 @@ function useOff(key: string) {
 }
 
 function Board({ d }: { d: GenData }) {
+  const u = useContext(UnitCtx);
   const orig = useMemo(() => combosOf(d), [d]);
   const groups = (['both', 'long', 'short'] as Group[]).filter(g => orig[g]);
   const [tab, setTab] = useState<Group>(groups[0] ?? 'short');
@@ -178,7 +217,7 @@ function Board({ d }: { d: GenData }) {
                        onChange={e => toggle(list.map(x => x.id), e.target.checked)} />
               </th>
               <th className="px-2 py-2 text-left font-semibold">策略</th>
-              <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">淨利（萬）</th>
+              <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">淨利（{u}）</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">淨利÷MDD</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">獲利因子</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">樣本內 ÷MDD</th>
@@ -195,7 +234,7 @@ function Board({ d }: { d: GenData }) {
             ))}
             {list.map(x => (
               <Row key={x.id} id={x.id} sel={sel} onSel={pick} title={x.id}
-                   sub={`${x.tf >= 1440 ? '日K' : `${x.tf}分`}｜${x.entry}｜${x.filter}｜${x.exit}${sessOf(x) ? `｜${sessOf(x)}` : ''}`}
+                   sub={`${x.tf >= 1440 ? '日K' : `${x.tf}分`}｜${x.entry}｜${x.filter}｜${x.exit}${sessOf(x, d.sessNotes) ? `｜${sessOf(x, d.sessNotes)}` : ''}`}
                    st={x.stats} robust={x.robust} on={!off.has(x.id)} onToggle={v => toggle([x.id], v)} />
             ))}
           </tbody>
@@ -215,7 +254,7 @@ function Board({ d }: { d: GenData }) {
         </div>
         {s && <p className="mt-0.5 text-[12px] text-muted">
           {s.side ? `${GROUP_LABEL[s.side]}｜` : ''}濾網 {s.filter}｜出場 {s.exit}｜
-          {s.sess != null ? ({ 0: '留倉（可跨日）', 1: '日盤當沖（13:45 平倉）', 2: '夜盤當沖（05:00 平倉）' } as Record<number, string>)[s.sess]
+          {s.sess != null ? (d.sessNotes ?? ['留倉（可跨日）', '日盤當沖（13:45 平倉）', '夜盤當沖（05:00 平倉）'])[s.sess]
             : s.dayOnly ? '只做日盤（13:45 平倉）' : '日夜盤都做、可留倉'}
         </p>}
         {cur ? <>
@@ -240,6 +279,7 @@ function Board({ d }: { d: GenData }) {
 function Impact({ groups, cur, base, off, onReset }: {
   groups: Group[]; cur: Partial<Record<Group, Combo>>; base: Partial<Record<Group, Combo>>; off: number; onReset: () => void;
 }) {
+  const u = useContext(UnitCtx);
   const d = (a: number | null | undefined, b: number | null | undefined) => {
     if (a == null || b == null) return null;
     const x = b - a;
@@ -261,7 +301,7 @@ function Impact({ groups, cur, base, off, onReset }: {
               {c ? <>
                 <div>淨利÷MDD {r2(b.stats.all.nd)} → <b className="text-ink">{r2(c.stats.all.nd)}</b>{d(b.stats.all.nd, c.stats.all.nd)}</div>
                 <div>樣本外 {r2(b.stats.os.nd)} → <b className="text-ink">{r2(c.stats.os.nd)}</b>{d(b.stats.os.nd, c.stats.os.nd)}</div>
-                <div>淨利 {wan(b.stats.all.net)} → {wan(c.stats.all.net)} 萬；MDD {wan(b.stats.all.mdd)} → {wan(c.stats.all.mdd)} 萬</div>
+                <div>淨利 {wan(b.stats.all.net)} → {wan(c.stats.all.net)} {u}；MDD {wan(b.stats.all.mdd)} → {wan(c.stats.all.mdd)} {u}</div>
               </> : <div>全部關掉了</div>}
             </div>
           );
@@ -317,14 +357,15 @@ function StatCards({ stats, years, isYear, strat, combo }: { stats: Stats; years
   const best = years.reduce((a, b) => (b.net > a.net ? b : a), years[0] ?? { y: 0, net: 0 } as Year);
   const worst = years.reduce((a, b) => (b.net < a.net ? b : a), years[0] ?? { y: 0, net: 0 } as Year);
   const isYrs = years.filter(y => y.y <= isYear).length || 1, osYrs = years.filter(y => y.y > isYear).length || 1;
+  const u = useContext(UnitCtx);
   return (
     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <Card label="全期淨利" value={`${wan(stats.all.net)} 萬`} cls={sign(stats.all.net)} sub={`MDD ${wan(stats.all.mdd)} 萬`} />
+      <Card label="全期淨利" value={`${wan(stats.all.net)} ${u}`} cls={sign(stats.all.net)} sub={`MDD ${wan(stats.all.mdd)} ${u}`} />
       <Card label="淨利÷MDD" value={r2(stats.all.nd)} sub={`樣本內 ${r2(stats.is.nd)}／樣本外 ${r2(stats.os.nd)}`} />
       <Card label="獲利因子" value={r2(stats.all.pf)} sub={`樣本內 ${r2(stats.is.pf)}／樣本外 ${r2(stats.os.pf)}`} />
       <Card label="交易次數／勝率" value={stats.all.trades.toLocaleString('zh-TW')} sub={stats.all.win == null ? '' : `勝率 ${stats.all.win}%`} />
-      <Card label="樣本內每年淨利" value={`${wan(stats.is.net / isYrs)} 萬`} sub={`MDD ${wan(stats.is.mdd)} 萬`} />
-      <Card label="樣本外每年淨利" value={`${wan(stats.os.net / osYrs)} 萬`} cls={sign(stats.os.net)} sub={`MDD ${wan(stats.os.mdd)} 萬`} />
+      <Card label="樣本內每年淨利" value={`${wan(stats.is.net / isYrs)} ${u}`} sub={`MDD ${wan(stats.is.mdd)} ${u}`} />
+      <Card label="樣本外每年淨利" value={`${wan(stats.os.net / osYrs)} ${u}`} cls={sign(stats.os.net)} sub={`MDD ${wan(stats.os.mdd)} ${u}`} />
       <Card label="賺錢年份" value={`${winY}／${nYears}`} sub={`最好 ${best.y}（${wan(best.net)}）最差 ${worst.y}（${wan(worst.net)}）`} />
       {strat ? (
         <Card label={strat.sqn != null ? 'SQN／R 期望值' : '防過擬合'} value={strat.sqn != null ? r2(strat.sqn) : strat.robust ? `${strat.robust.passed}/${strat.robust.total}` : '—'}
@@ -337,11 +378,12 @@ function StatCards({ stats, years, isYear, strat, combo }: { stats: Stats; years
 }
 
 function YearTable({ years, isYear }: { years: Year[]; isYear: string }) {
+  const u = useContext(UnitCtx);
   return (
     <div className="mt-3 overflow-x-auto">
       <table className="w-full text-[12.5px]">
         <thead><tr className="text-muted">
-          {['年', '淨利（萬）', 'MDD（萬）', '淨利÷MDD', '獲利因子', '交易', '勝率'].map((h, i) => (
+          {['年', `淨利（${u}）`, `MDD（${u}）`, '淨利÷MDD', '獲利因子', '交易', '勝率'].map((h, i) => (
             <th key={h} className={`py-1 font-semibold whitespace-nowrap ${i ? 'pl-2 text-right' : 'pr-2 text-left'}`}>{h}</th>
           ))}
         </tr></thead>
@@ -402,12 +444,13 @@ function useEChart(opt: unknown) {
 
 /** 每年淨利長條圖：樣本內實心、樣本外淡色；虧損年用跌色 */
 function YearBars({ years, isYear }: { years: Year[]; isYear: number }) {
+  const u = useContext(UnitCtx);
   const opt = useMemo(() => {
     const ink = cssVar('--c-muted'), grid = cssVar('--c-border'), up = cssVar('--c-up'), down = cssVar('--c-down');
     return {
       animation: false, grid: { left: 52, right: 12, top: 24, bottom: 28 },
-      title: { text: '每年淨利（萬；淡色＝樣本外）', left: 0, top: 0, textStyle: { fontSize: 12, color: ink, fontWeight: 'normal' } },
-      tooltip: { trigger: 'axis', confine: true, valueFormatter: (v: number) => `${wan(v)} 萬` },
+      title: { text: `每年淨利（${u}；淡色＝樣本外）`, left: 0, top: 0, textStyle: { fontSize: 12, color: ink, fontWeight: 'normal' } },
+      tooltip: { trigger: 'axis', confine: true, valueFormatter: (v: number) => `${wan(v)} ${u}` },
       xAxis: { type: 'category', data: years.map(y => String(y.y)), axisLabel: { fontSize: 10, color: ink }, axisLine: { lineStyle: { color: grid } } },
       yAxis: { type: 'value', axisLabel: { fontSize: 10, color: ink, formatter: (v: number) => wan(v) }, splitLine: { lineStyle: { color: grid, opacity: 0.6 } } },
       series: [{
@@ -415,7 +458,7 @@ function YearBars({ years, isYear }: { years: Year[]; isYear: number }) {
         data: years.map(y => ({ value: y.net, itemStyle: { color: y.net >= 0 ? up : down, opacity: y.y > isYear ? 0.45 : 0.9 } })),
       }],
     };
-  }, [years, isYear]);
+  }, [years, isYear, u]);
   const el = useEChart(opt);
   return <div ref={el} className="mt-3 h-[200px] w-full overflow-hidden" />;
 }
@@ -423,6 +466,7 @@ function YearBars({ years, isYear }: { years: Year[]; isYear: number }) {
 function EquityChart({ d, combos, base, tab, list, sel, overlay }: {
   d: GenData; combos: Partial<Record<Group, Combo>>; base: Partial<Record<Group, Combo>>; tab: Group; list: Strat[]; sel: string; overlay: boolean;
 }) {
+  const u = useContext(UnitCtx);
   const opt = useMemo(() => {
     const ink = cssVar('--c-muted'), grid = cssVar('--c-border');
     const cut = d.dates.findIndex(x => x > d.isEnd);
@@ -466,13 +510,13 @@ function EquityChart({ d, combos, base, tab, list, sel, overlay }: {
     return {
       animation: false, grid: { left: 52, right: 12, top: legend ? 46 : 16, bottom: 44 },
       legend: legend ? { top: 0, textStyle: { fontSize: 11, color: ink }, itemWidth: 14 } : undefined,
-      tooltip: { trigger: 'axis', confine: true, valueFormatter: (v: number) => `${wan(v)} 萬` },
+      tooltip: { trigger: 'axis', confine: true, valueFormatter: (v: number) => `${wan(v)} ${u}` },
       xAxis: { type: 'category', data: d.dates, axisLabel: { fontSize: 10, color: ink }, axisLine: { lineStyle: { color: grid } } },
       yAxis: { type: 'value', axisLabel: { fontSize: 10, color: ink, formatter: (v: number) => wan(v) }, splitLine: { lineStyle: { color: grid, opacity: 0.6 } } },
       dataZoom: [{ type: 'inside' }, { type: 'slider', height: 14, bottom: 6 }],
       series,
     };
-  }, [d, combos, base, tab, list, sel, overlay]);
+  }, [d, combos, base, tab, list, sel, overlay, u]);
   const el = useEChart(opt);
   return <div ref={el} className="mt-3 h-[300px] w-full overflow-hidden sm:h-[360px]" />;
 }

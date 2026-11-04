@@ -14,5 +14,6 @@
   `combos.long/short/both`（n、stats、years、eq、相關；both 多一個 corrLS＝多單組合 vs 空單組合）。舊格式（只有 `combo`、沒有 side）也能顯示，當成空單一組。
 - 2026-11-03 站主：每列前面有勾選框，可以把策略移出組合，組合在前端重算（`lib/genPortfolio.ts`，`tests/genPortfolio.test.ts`），上方顯示「全部開著 → 現在」的變化，曲線多一條全開虛線；關掉的記在 localStorage `twetf.gen.off|<generated>`。詳細區多了統計卡（樣本內外每年淨利、賺錢年份、最好最差年、SQN 或相關）與每年淨利長條圖。資料每段、每年要有 `gp`／`gl`（萬，獲利／虧損交易合計）才能重算獲利因子，舊資料顯示「—」；QT「一鍵組合」的 portfolio.json 也有（2026.11.3.2 之後的版本）。
 - 2026-11-03 18:42 起換成 QT 2026.11.3.3（漲跌停鎖死不成交）一鍵組合的結果：`QuantTrader.Console.exe --sgen-auto <價格檔> D:\ai\_tmp\sgen_1103c\out --n-long 15 --n-short 15 --min-robust 4 --wfm --max-checks 120`，直接拿 `out\portfolio.json` 給 `gen_export.py`（不用 gen_ls15 那套腳本）。前進矩陣必須通過 → 空單 120 支候選只錄取 1 支（62 支沒過防過擬合、57 支沒過前進矩陣），標題「多 15＋空 1 支」。舊批次（多 15＋空 15，未修漲跌停）在 `D:\ai\_tmp\gen_ls15`。
+- 2026-11-04 起多商品：頁面上方切換「台指／NQ 小那斯達克」（`SETS`，localStorage `twetf.gen.set`）；台指＝`gen.enc`、NQ＝`gen_nq.enc`（`gen_export.py <json> --set nq`）。資料的 `unit`（「萬美元」，使用者要求不換匯）、`market`、`sessNotes`（NQ 是台灣時間 06:00 換日的 24 小時，「當沖」＝交易時段結束時平倉）由 QT `GenPipeline.Payload` 寫入；舊資料沒有就是「萬」與台指的盤別說明。一鍵組合還沒跑完時，可用 `--sgen-payload <價格檔> <名稱\t代號\t說明> <輸出> --inst NQ` 先把已錄取的推上來（不重跑防過擬合）。
 - 本機實測私人頁：`D:\ai\_tmp\scripts_iso\gen_verify.py`（v18 金鑰由程式從 .env 讀、塞進 localStorage 跑 site_verify，結束後還原 data/gen 並刪掉含金鑰的 Edge 設定檔）。
 - 私人頁不記「更新」頁（changelog）。
