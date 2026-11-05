@@ -9,10 +9,11 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { fetchCb, fetchCbMarket, fetchCbSeries } from '../api/extras';
+import { fetchCb, fetchCbMarket, fetchCbSeries, fetchCbConv } from '../api/extras';
 import { fetchNews } from '../api/news';
 import {
   cbStats, byIndustry, filterBonds, outPct, yi, ytp, ytm, putDate, convertible, daysBetween,
+  convPct, monthlyConv, bondFloor, cbasPrem, CBAS_RATE, type CbConv,
   marketRows, rankInHistory, loadCbFavs, saveCbFavs,
   BUCKETS, HIGH_BUCKETS, CB_SORTS, CB_PRESETS, MARKET_METRICS, ANY,
   type CbData, type CbBond, type CbSort, type CbStats, type CbFilter, type CbMarket, type CbSeriesPoint, type Range,
@@ -277,36 +278,82 @@ function RangeInput({ label, r, onChange, unit }: { label: string; r: Range; onC
   );
 }
 
-type Cond = Required<Pick<CbFilter, 'px' | 'prem' | 'cv' | 'out' | 'ytp' | 'ytm' | 'yrs'>> & {
+type Cond = Required<Pick<CbFilter, 'px' | 'prem' | 'cv' | 'out' | 'ytp' | 'ytm' | 'yrs' | 'conv' | 'cbas'>> & {
   putWithin: number | null; issuedWithin: number | null; guarantee: string | null;
   convertibleOnly: boolean; minVol: number | null; favOnly: boolean;
 };
 
 const EMPTY: Cond = {
-  px: ANY, prem: ANY, cv: ANY, out: ANY, ytp: ANY, ytm: ANY, yrs: ANY, putWithin: null, issuedWithin: null,
+  px: ANY, prem: ANY, cv: ANY, out: ANY, ytp: ANY, ytm: ANY, yrs: ANY, conv: ANY, cbas: ANY, putWithin: null, issuedWithin: null,
   guarantee: null, convertibleOnly: false, minVol: null, favOnly: false,
 };
 
 function condCount(c: Cond): number {
   const r = (x: Range) => (x.min !== null || x.max !== null ? 1 : 0);
-  return r(c.px) + r(c.prem) + r(c.cv) + r(c.out) + r(c.ytp) + r(c.ytm) + r(c.yrs) + (c.putWithin !== null ? 1 : 0)
+  return r(c.px) + r(c.prem) + r(c.cv) + r(c.out) + r(c.ytp) + r(c.ytm) + r(c.yrs) + r(c.conv) + r(c.cbas) + (c.putWithin !== null ? 1 : 0)
     + (c.issuedWithin !== null ? 1 : 0) + (c.guarantee ? 1 : 0) + (c.convertibleOnly ? 1 : 0)
     + (c.minVol !== null ? 1 : 0) + (c.favOnly ? 1 : 0);
 }
 
 /* ── 點一檔之後：債的細節、走勢、公司新聞 ─────────────────── */
 
+/**
+ * 轉換分析（參考 XQ）：每月底餘額減少的張數（柱）。減少多半是轉換成股票 —— 新股上市會變成標的的賣壓；
+ * 賣回那個月也會一次減少很多，看板沒分開。最多畫近 36 個月，點／指柱子看那個月。
+ */
+function ConvChart({ rows }: { rows: Array<[string, number]> }) {
+  const [hi, setHi] = useState<number | null>(null);
+  const mc = monthlyConv(rows).slice(-36);
+  if (mc.length < 2) return <p className="py-4 text-center text-[12px] text-muted">月資料還不夠畫圖。</p>;
+  const W = 320, H = 90;
+  const max = Math.max(1, ...mc.map(r => r[1]));
+  const bw = W / mc.length;
+  const sel = hi !== null ? mc[hi] : null;
+  const total = mc.reduce((a, r) => a + r[1], 0);
+  return (
+    <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+      <div className="flex justify-between gap-2 text-[11px] text-muted">
+        <span>每月轉換（餘額減少，張）</span>
+        <span className="tabular-nums">
+          {sel ? <>{sel[0]} <b className="font-mono text-ink">{sel[1].toLocaleString('zh-TW')}</b> 張</>
+               : <>近 {mc.length} 個月合計 <b className="font-mono text-ink">{total.toLocaleString('zh-TW')}</b> 張</>}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label="每月轉換張數" className="mt-1 h-24 w-full touch-pan-y"
+           onPointerLeave={() => setHi(null)}
+           onPointerMove={e => { const r = e.currentTarget.getBoundingClientRect(); setHi(Math.min(mc.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * mc.length)))); }}
+           onPointerDown={e => { const r = e.currentTarget.getBoundingClientRect(); setHi(Math.min(mc.length - 1, Math.max(0, Math.floor(((e.clientX - r.left) / r.width) * mc.length)))); }}>
+        {mc.map(([m, v], i) => {
+          const h = (v / max) * (H - 4);
+          return <rect key={m} x={i * bw + 1} y={H - h} width={Math.max(1, bw - 2)} height={h} rx="1"
+                       className={hi === i ? 'fill-ink' : 'fill-accent'} />;
+        })}
+      </svg>
+      <div className="flex justify-between text-[10.5px] tabular-nums text-faint">
+        <span>{mc[0][0]}</span><span>{mc[mc.length - 1][0]}</span>
+      </div>
+    </div>
+  );
+}
+
 function BondDetail({ b, news, asOf, fav, onFav }: {
   b: CbBond; news: NewsData | null | undefined; asOf: string; fav: boolean; onFav: () => void;
 }) {
   const [series, setSeries] = useState<CbSeriesPoint[] | null | undefined>(undefined);
   const [chart, setChart] = useState<'px' | 'prem' | 'sp'>('px');
+  const [conv, setConv] = useState<CbConv | null | undefined>(undefined);
   useEffect(() => {
     const ac = new AbortController();
     setSeries(undefined);
     fetchCbSeries(b.c, ac.signal).then(d => { if (!ac.signal.aborted) setSeries(d); });
     return () => ac.abort();
   }, [b.c]);
+  useEffect(() => {
+    if (conv !== undefined) return;
+    fetchCbConv().then(d => setConv(d)).catch(() => setConv(null));
+  }, [conv]);
+  const floor = bondFloor(b, asOf);
+  const cbas = cbasPrem(b, asOf);
   const items = news ? news.news.filter(x => x.all.includes(b.s) || x.codes.includes(b.s)).slice(0, 8) : [];
   const filings = news ? news.filings.filter(f => f.code === b.s).slice(0, 8) : [];
   const pts: Pt[] = (series ?? [])
@@ -332,6 +379,9 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
                 sub={pd && pd >= asOf ? `${md(pd)} 以 ${f2(b.putP)} 賣回` : '沒有尚未到期的賣回權'} />
           <Cell label="到期殖利率" value={pct(ytm(b, asOf))} sub="假設到期以 100 償還" />
           <Cell label="餘額／發行" value={yi(b.out)} sub={`${pct(outPct(b))}，原始 ${yi(b.tot)}`} />
+          <Cell label="近一月轉換" value={b.cv1 == null ? '—' : `${b.cv1.toLocaleString('zh-TW')} 張`}
+                sub={b.cv1 == null ? '月資料不夠' : `佔發行 ${pct(convPct(b))}${b.cvM ? `・${b.cvM} 月底` : ''}${b.cv3 != null ? `；近 3 月 ${b.cv3.toLocaleString('zh-TW')} 張` : ''}`} />
+          <Cell label="CBAS 權利金（粗估）" value={f2(cbas)} sub={floor === null ? '算不出債底' : `債底 ${f2(floor)}（年利率 ${CBAS_RATE * 100}% 折現）`} />
           <Cell label="轉換期間" value={md(b.convS)} sub={`至 ${md(b.convE)}${convertible(b, asOf) ? '・可轉換' : ''}`} />
           <Cell label="到期日" value={md(b.mat)} sub={`發行 ${md(b.issue)}　${b.g ?? ''}`} />
           {b.callS && <Cell label="強制贖回" value={md(b.callS)} sub={`價格 ${f2(b.callP)}`} />}
@@ -341,6 +391,17 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
         <p className="mt-2 text-[11.5px] text-faint">
           轉換價是櫃買資訊看板的「下次生效日之後」的轉換價；生效日還沒到時，今天適用的可能仍是舊的。
           殖利率不到 30 天的不算（年化後會失真）。
+        </p>
+      </Section>
+
+      <Section title="轉換分析" hint={conv?.[b.c]?.length ? `${conv[b.c][0][0]} 月底起` : undefined}>
+        {conv === undefined
+          ? <p className="py-6 text-center text-[12px] text-muted">載入轉換資料中…</p>
+          : <ConvChart rows={conv?.[b.c] ?? []} />}
+        <p className="mt-1 text-[11px] leading-relaxed text-faint">
+          取自櫃買資訊看板每月的「上月底發行餘額」（每月 6 日以後的看板才算上個月的數字）。餘額減少多半是轉換成股票，
+          轉出來的新股會變成標的股的賣壓；賣回或公司買回的月份也會一次減少很多，看板沒有分開。
+          CBAS 權利金粗估＝價格 − 債底（最近賣回價或到期 100，用 {CBAS_RATE * 100}% 折現），是拆出來的選擇權價值；券商實際報價還看信用與利率。
         </p>
       </Section>
 
@@ -435,7 +496,7 @@ export function CbPage() {
   const inds = useMemo(() => (data ? byIndustry(data.bonds, data.upcoming, data.meta.date) : []), [data]);
   const rows = useMemo(() => (data ? filterBonds(data.bonds, {
     q, bucket, ind, onlyTraded, sort, desc, asOf,
-    px: cond.px, prem: cond.prem, cv: cond.cv, out: cond.out, ytp: cond.ytp, ytm: cond.ytm, yrs: cond.yrs,
+    px: cond.px, prem: cond.prem, cv: cond.cv, out: cond.out, ytp: cond.ytp, ytm: cond.ytm, yrs: cond.yrs, conv: cond.conv, cbas: cond.cbas,
     putWithin: cond.putWithin, issuedWithin: cond.issuedWithin, guarantee: cond.guarantee,
     convertibleOnly: cond.convertibleOnly, minVol: cond.minVol, favs: cond.favOnly ? favs : null,
   }) : []), [data, q, bucket, ind, onlyTraded, sort, desc, asOf, cond, favs]);
@@ -458,7 +519,7 @@ export function CbPage() {
     const f = p.f;
     setCond({
       ...EMPTY, px: f.px ?? ANY, prem: f.prem ?? ANY, cv: f.cv ?? ANY, out: f.out ?? ANY, ytp: f.ytp ?? ANY,
-      ytm: f.ytm ?? ANY, yrs: f.yrs ?? ANY,
+      ytm: f.ytm ?? ANY, yrs: f.yrs ?? ANY, conv: f.conv ?? ANY, cbas: f.cbas ?? ANY,
       putWithin: f.putWithin ?? null, issuedWithin: f.issuedWithin ?? null, convertibleOnly: Boolean(f.convertibleOnly),
     });
     if (f.sort) { setSort(f.sort); setDesc(Boolean(f.desc)); }
@@ -546,6 +607,8 @@ export function CbPage() {
             <RangeInput label="賣回殖利率" r={cond.ytp} onChange={r => setC({ ytp: r })} unit="%" />
             <RangeInput label="到期殖利率" r={cond.ytm} onChange={r => setC({ ytm: r })} unit="%" />
             <RangeInput label="剩餘年期" r={cond.yrs} onChange={r => setC({ yrs: r })} unit="年" />
+            <RangeInput label="近一月轉換" r={cond.conv} onChange={r => setC({ conv: r })} unit="%" />
+            <RangeInput label="CBAS 權利金" r={cond.cbas} onChange={r => setC({ cbas: r })} />
             <RangeInput label="餘額比例" r={cond.out} onChange={r => setC({ out: r })} unit="%" />
             <label className="flex items-center gap-1.5 text-[12px] text-muted">
               <span className="w-[4.5rem] shrink-0">距賣回</span>
@@ -624,6 +687,8 @@ export function CbPage() {
                     <span className="font-mono text-[12px] text-muted">{b.c}</span>
                     <span className="ml-1.5 text-[13.5px] font-semibold text-ink">{b.n}</span>
                     <div className="truncate text-[11px] text-faint">
+                      {sort === 'conv' && <span className="font-semibold text-ink">近月轉換 {pct(convPct(b))}（{b.cv1 ?? '—'} 張）　</span>}
+                      {sort === 'cbas' && <span className="font-semibold text-ink">CBAS {f2(cbasPrem(b, asOf))}　</span>}
                       {b.ind}{pd && pd >= asOf ? `　賣回 ${md(pd)}（${daysBetween(asOf, pd)} 天）` : ''}　到期 {md(b.mat)}
                     </div>
                   </div>

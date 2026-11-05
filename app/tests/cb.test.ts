@@ -148,3 +148,26 @@ test('市場溫度計：欄位對應與歷史百分位', () => {
   assert.equal(MARKET_METRICS.find(m => m.id === 'avg')!.get(rows[0].r), 110.5);
   assert.equal(rankInHistory([1, 2, 3, 4], 3), 75);
 });
+
+test('轉換分析與 CBAS 權利金粗估、剩餘年期與新條件篩選', async () => {
+  const { convPct, monthlyConv, bondFloor, cbasPrem, yearsLeft } = await import('../src/lib/cb.ts');
+  // 發行 1 億＝1,000 張；近一月減少 50 張＝5%
+  assert.equal(convPct(bond({ cv1: 50 })), 5);
+  assert.equal(convPct(bond({ cv1: null })), null);
+  assert.deepEqual(monthlyConv([['2026-07', 1000], ['2026-08', 900], ['2026-09', 905], ['2026-10', 700]]),
+    [['2026-08', 100], ['2026-09', 0], ['2026-10', 205]]);
+  // 有賣回：一年後以 101 賣回，2% 折現 → 101 ÷ 1.02
+  const b = bond({ px: 105, putS: '2027-11-05', putE: '2027-11-05', putP: 101, mat: '2029-11-05' });
+  assert.ok(Math.abs((bondFloor(b, '2026-11-05') as number) - 101 / 1.02) < 1e-9);
+  assert.ok(Math.abs((cbasPrem(b, '2026-11-05') as number) - (105 - 101 / 1.02)) < 1e-9);
+  // 賣回日已過 → 用到期 100
+  const c = bond({ px: 99, putS: '2026-01-01', putE: '2026-01-10', putP: 101, mat: '2027-11-05' });
+  assert.ok(Math.abs((bondFloor(c, '2026-11-05') as number) - 100 / 1.02) < 1e-9);
+  assert.equal(bondFloor(bond({ mat: '2026-01-01' }), '2026-11-05'), null);
+  assert.ok(Math.abs((yearsLeft(bond({ mat: '2028-11-05' }), '2026-11-05') as number) - 731 / 365.25) < 1e-9);
+  const f: CbFilter = { q: '', bucket: null, ind: null, onlyTraded: false, sort: 'conv', desc: true, asOf: '2026-11-05',
+    conv: { min: 3, max: null } };
+  assert.deepEqual(filterBonds([bond({ c: 'A', cv1: 50 }), bond({ c: 'B', cv1: 10 }), bond({ c: 'C', cv1: null })], f).map(x => x.c), ['A']);
+  const g: CbFilter = { ...f, conv: undefined, sort: 'cbas', desc: false, cbas: { min: null, max: 10 } };
+  assert.deepEqual(filterBonds([b, bond({ c: 'D', px: 130, putS: '2027-11-05', putE: '2027-11-05', putP: 101 })], g).map(x => x.c), ['11011']);
+});

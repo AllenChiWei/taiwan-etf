@@ -11,7 +11,7 @@ import type { DivMixData } from '../lib/monthlyIncome.ts';
 import type { StockDividendData, EtfDividendData, YieldData } from '../lib/dividend.ts';
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
-import type { CbData, CbMarket, CbSeriesPoint } from '../lib/cb.ts';
+import type { CbData, CbMarket, CbSeriesPoint, CbConv } from '../lib/cb.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -74,6 +74,10 @@ export const fetchCbMarket = (signal?: AbortSignal) =>
   load<CbMarket>('cb_market.json', d => Array.isArray(d.rows) && Array.isArray(d.cols), signal);
 
 /** 單檔可轉債走勢：點開那一檔才抓 */
+/** 每月底餘額（轉換分析），點開某一檔才抓，全部一個檔（約百來 KB） */
+export const fetchCbConv = (signal?: AbortSignal) =>
+  load<CbConv>('cb_conv.json', d => typeof d === 'object' && d !== null && !Array.isArray(d), signal);
+
 export async function fetchCbSeries(code: string, signal?: AbortSignal): Promise<CbSeriesPoint[] | null> {
   try {
     const res = await fetch(`${BASE}data/cb_series/${encodeURIComponent(code)}.json`, { signal, cache: 'no-cache' });

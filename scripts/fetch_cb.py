@@ -62,7 +62,12 @@ TPEX_DAY = 'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_close_quotes
 OUT = os.path.join(DATA, 'cb.json')
 MARKET_OUT = os.path.join(DATA, 'cb_market.json')
 SERIES_DIR = os.path.join(DATA, 'cb_series')
+CONV_OUT = os.path.join(DATA, 'cb_conv.json')
 SEED = os.path.join(ROOT, 'scripts', 'data', 'cb_market_seed.json')
+# 2026-11-05 轉換分析（XQ 有）：每檔每月底餘額（張）。種子 `--seed-out 2017-03` 本機回補，之後部署時從當天看板接著記
+OUT_SEED = os.path.join(ROOT, 'scripts', 'data', 'cb_out_seed.json')
+# 看板的「上月底發行餘額」每月前幾天陸續更新（2026-10 實測：1～6 日在變、7 日起不動），6 日以後的看板才當上個月的數字
+OUT_FROM_DAY = 6
 STORE = os.path.join(ROOT, '.cache', 'cb_store.json')
 # 少於這麼多檔多半是檔案只下載了一部分，寧可不寫、讓網站沿用上一版（平常約 380 檔）
 MIN_ROWS = 200
@@ -222,6 +227,51 @@ def update_store(store, board_day, board):
     return filled
 
 
+def prev_month(day):
+    u"""'2026-11-08' -> '2026-10'（看板「上月底」是哪個月）。"""
+    y, m = int(day[:4]), int(day[5:7])
+    return '%04d-%02d' % ((y, m - 1) if m > 1 else (y - 1, 12))
+
+
+def month_outs(board):
+    u"""看板 → {代號: 上月底餘額（張，面額十萬一張）}。"""
+    out = {}
+    for b in board:
+        code, v = b.get(u'債券代碼'), num(b.get(u'上月底發行餘額'))
+        if code and v is not None:
+            out[code] = int(round(v / 1e5))
+    return out
+
+
+def record_outs(store, board_day, board):
+    u"""6 日以後的看板：記成上個月底的餘額（同一個月之後的看板會蓋掉，以最後一份為準）。"""
+    if int(board_day[8:10]) >= OUT_FROM_DAY:
+        store.setdefault('out', {})[prev_month(board_day)] = month_outs(board)
+
+
+def conv_history(store, codes):
+    u"""種子＋快取 → {代號: [[月, 餘額張], …]}（只留目前掛牌的；同一個月以快取為準）。"""
+    months = dict((load_json(OUT_SEED, {}) or {}).get('m') or {})
+    months.update(store.get('out') or {})
+    out = {}
+    for mth in sorted(months):
+        for code, v in months[mth].items():
+            if code in codes:
+                out.setdefault(code, []).append([mth, v])
+    return out
+
+
+def month_gap(a, b):
+    return (int(b[:4]) - int(a[:4])) * 12 + int(b[5:7]) - int(a[5:7])
+
+
+def conv_recent(rows, k):
+    u"""最近 k 個月餘額減少幾張（多半是轉換成股票；賣回那個月也會算進來）。月份不連續或資料不夠回 None。"""
+    if len(rows) < k + 1 or month_gap(rows[-k - 1][0], rows[-1][0]) != k:
+        return None
+    return max(0, rows[-k - 1][1] - rows[-1][1])
+
+
 def market_history(store):
     u"""種子（2017 起）＋快取每天的統計，同一天以快取為準。"""
     seed = load_json(SEED, {}) or {}
@@ -378,6 +428,7 @@ def build(today, store):
             'issue': iss.get('issue'), 'mat': iss.get('mat'), 'g': iss.get('g'),
         })
 
+    record_outs(store, board_day, board)
     filled = update_store(store, board_day, board)
     log(u'  走勢快取 %d 天（這次補抓 %d 天）' % (len(store.get('days', {})), filled))
     planned = update_planned(store, info, issued, quote_day)
@@ -414,13 +465,49 @@ def seed(start):
     return 0
 
 
+def seed_out(start):
+    u"""本機一次性：每個月取下個月 OUT_FROM_DAY 日起第一份看板的「上月底發行餘額」，寫 OUT_SEED（只留最新看板還掛牌的）。可中斷續跑。"""
+    have = dict((load_json(OUT_SEED, {}) or {}).get('m') or {})
+    today = datetime.now(TPE).date()
+    y, m = int(start[:4]), int(start[5:7])
+    todo = []
+    while (y, m) < (today.year, today.month):
+        todo.append('%04d-%02d' % (y, m))
+        y, m = (y, m + 1) if m < 12 else (y + 1, 1)
+    todo = [t for t in todo if t not in have]
+    log(u'回補每月底餘額：還要抓 %d 個月' % len(todo))
+    for i, mth in enumerate(todo, 1):
+        y, m = int(mth[:4]), int(mth[5:7])
+        first = datetime(y + (m == 12), m % 12 + 1, OUT_FROM_DAY).date()
+        for d in [first + timedelta(days=k) for k in range(10)]:
+            if d > today or d.weekday() >= 5:
+                continue
+            rows = get_csv('RSdrs001', d.strftime('%Y%m%d'), pause=0.8)
+            if rows:
+                have[mth] = month_outs(rows)
+                break
+        if i % 12 == 0 or i == len(todo):
+            write_json(OUT_SEED, {'m': have})
+            log(u'  %d/%d（%s）' % (i, len(todo), mth))
+    _, latest = latest_csv('RSdrs001', datetime.now(TPE).replace(tzinfo=None))
+    live = set(month_outs(latest or []))
+    if live:
+        have = {k: {c: v for c, v in row.items() if c in live} for k, row in have.items()}
+    write_json(OUT_SEED, {'m': {k: have[k] for k in sorted(have)}})
+    log(u'  共 %d 個月、掛牌中 %d 檔' % (len(have), len(live)))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('out', nargs='?', default=OUT)
     ap.add_argument('--seed', help=u'本機回補市場溫度計的起日 YYYY-MM-DD')
+    ap.add_argument('--seed-out', help=u'本機回補每月底餘額（轉換分析）的起月 YYYY-MM')
     a = ap.parse_args()
     if a.seed:
         return seed(datetime.strptime(a.seed, '%Y-%m-%d').date())
+    if a.seed_out:
+        return seed_out(a.seed_out)
 
     log(u'可轉債：櫃買行情＋資訊看板＋發行資料')
     store = load_json(STORE, {}) or {}
@@ -428,6 +515,12 @@ def main():
     if not d or len(d['bonds']) < MIN_ROWS:
         log(u'  只有 %d 檔，少於 %d，不寫檔' % (len(d['bonds']) if d else 0, MIN_ROWS))
         return 1
+    conv = conv_history(store, {b['c'] for b in d['bonds']})
+    for b in d['bonds']:
+        rows = conv.get(b['c']) or []
+        b['cv1'], b['cv3'] = conv_recent(rows, 1), conv_recent(rows, 3)
+        b['cvM'] = rows[-1][0] if rows else None
+    write_json(CONV_OUT, conv)
     write_json(STORE, store)
     write_json(a.out, d)
     market = market_history(store)

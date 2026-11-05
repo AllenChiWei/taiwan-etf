@@ -49,6 +49,10 @@ export interface CbBond {
   issue: string | null;
   mat: string | null;
   g: string | null;
+  /** 轉換分析（2026-11-05，參考 XQ）：最近 1／3 個月底餘額減少幾張（多半是轉換成股票，賣回那個月也算進來）、最近一筆是哪個月底 */
+  cv1?: number | null;
+  cv3?: number | null;
+  cvM?: string | null;
 }
 
 export interface CbUpcoming {
@@ -282,7 +286,7 @@ export function byIndustry(bonds: CbBond[], upcoming: CbUpcoming[], asOf: string
 
 /* ── 清單篩選與排序 ───────────────────────────────────────── */
 
-export type CbSort = 'code' | 'vol' | 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue' | 'ytp' | 'ytm' | 'put';
+export type CbSort = 'code' | 'vol' | 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue' | 'ytp' | 'ytm' | 'put' | 'conv' | 'cbas';
 
 export const CB_SORTS: Array<{ id: CbSort; label: string; desc: boolean }> = [
   { id: 'vol', label: '成交量', desc: true },
@@ -295,6 +299,8 @@ export const CB_SORTS: Array<{ id: CbSort; label: string; desc: boolean }> = [
   { id: 'ytm', label: '到期殖利率', desc: true },
   { id: 'put', label: '賣回日', desc: false },
   { id: 'outPct', label: '餘額比例', desc: false },
+  { id: 'conv', label: '近一月轉換', desc: true },
+  { id: 'cbas', label: 'CBAS 權利金', desc: false },
   { id: 'issue', label: '發行日', desc: true },
   { id: 'mat', label: '到期日', desc: false },
 ];
@@ -343,6 +349,37 @@ export function yearsLeft(b: CbBond, asOf: string): number | null {
   return b.mat && b.mat >= asOf ? daysBetween(asOf, b.mat) / 365.25 : null;
 }
 
+/** 近一個月轉換（餘額減少）佔原始發行的比例（%）；面額十萬一張 */
+export function convPct(b: CbBond): number | null {
+  return b.cv1 != null && b.tot ? (b.cv1 * 1e5 / b.tot) * 100 : null;
+}
+
+/** 每月底餘額（張），cb_conv.json：{代號: [[YYYY-MM, 張], …]} */
+export type CbConv = Record<string, Array<[string, number]>>;
+
+/** 每月轉換（餘額減少）張數：[[月, 張]]，第一個月沒有前一筆不算；餘額增加（極少見）記 0 */
+export function monthlyConv(rows: Array<[string, number]>): Array<[string, number]> {
+  return rows.slice(1).map(([m, v], i) => [m, Math.max(0, rows[i][1] - v)]);
+}
+
+/**
+ * CBAS 權利金粗估（每 100 元面額）＝ 可轉債價格 − 債底。債底＝最近一次賣回（有、而且還沒過）用賣回價、否則到期用 100，
+ * 以 CBAS_RATE 年利率折現到今天。CBAS（可轉債資產交換）買的就是這段「選擇權」，券商報價還會看信用、利率與流動性，所以只是粗估。
+ */
+export const CBAS_RATE = 0.02;
+
+export function bondFloor(b: CbBond, asOf: string, rate = CBAS_RATE): number | null {
+  const pd = putDate(b);
+  const [redeem, day] = pd && pd >= asOf && b.putP ? [b.putP, pd] : b.mat && b.mat >= asOf ? [100, b.mat] : [null, null];
+  if (redeem === null || day === null) return null;
+  return redeem / Math.pow(1 + rate, daysBetween(asOf, day) / 365);
+}
+
+export function cbasPrem(b: CbBond, asOf: string, rate = CBAS_RATE): number | null {
+  const f = bondFloor(b, asOf, rate);
+  return f === null || b.px === null ? null : b.px - f;
+}
+
 /** 已經進入轉換期間 */
 export function convertible(b: CbBond, asOf: string): boolean {
   return Boolean(b.convS && b.convS <= asOf && (!b.convE || b.convE >= asOf));
@@ -361,6 +398,8 @@ function sortKey(b: CbBond, s: CbSort, asOf: string): number | string | null {
     case 'issue': return b.issue;
     case 'ytp': return ytp(b, asOf);
     case 'ytm': return ytm(b, asOf);
+    case 'conv': return convPct(b);
+    case 'cbas': return cbasPrem(b, asOf);
     case 'put': { const d = putDate(b); return d && d >= asOf ? d : null; }
   }
 }
@@ -388,6 +427,10 @@ export interface CbFilter {
   ytm?: Range;
   /** 剩餘年期（年） */
   yrs?: Range;
+  /** 近一月轉換佔發行（%） */
+  conv?: Range;
+  /** CBAS 權利金粗估（每 100 元面額） */
+  cbas?: Range;
   /** 距最近賣回日幾天內（null＝不限） */
   putWithin?: number | null;
   /** 發行幾天內（null＝不限） */
@@ -443,6 +486,7 @@ export function filterBonds(bonds: CbBond[], f: CbFilter): CbBond[] {
     && inRange(b.px, f.px) && inRange(b.prem, f.prem) && inRange(b.cv, f.cv)
     && inRange(outPct(b), f.out) && inRange(ytp(b, asOf), f.ytp)
     && inRange(ytm(b, asOf), f.ytm) && inRange(yearsLeft(b, asOf), f.yrs)
+    && inRange(convPct(b), f.conv) && inRange(cbasPrem(b, asOf), f.cbas)
     && (f.putWithin == null || (() => { const d = putDate(b); return Boolean(d && d >= asOf && daysBetween(asOf, d) <= f.putWithin!); })())
     && (f.issuedWithin == null || Boolean(b.issue && b.issue <= asOf && daysBetween(b.issue, asOf) <= f.issuedWithin))
     && (!f.guarantee || b.g === f.guarantee)
