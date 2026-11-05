@@ -477,9 +477,12 @@ function MaintHistory({ hist, shorts, sbl }: {
   const [showAll, setShowAll] = useState(false);
   const [d0, cur] = hist[hist.length - 1];
   const cut = years ? `${Number(d0.slice(0, 4)) - years}${d0.slice(4)}` : '';
-  const shown = hist.filter(r => r[0] >= cut);
-  const step = Math.max(1, Math.ceil(shown.length / 500));      // 一天一點太密，最多畫 500 點
-  const pts = shown.filter((_, i) => i % step === 0 || i === shown.length - 1);
+  // 維持率、融券、借券共用日期軸（抽樣與刻度在 AlignedCharts／alignByDate 裡）
+  const charts = useMemo<AlignedChart[]>(() => [
+    { title: '維持率（%）· 虛線 140／130', rows: hist, digits: 1, guides: [140, 130] },
+    ...(shorts.length > 20 ? [{ title: '融券餘額（萬張，上市＋上櫃）', rows: shorts.map(r => [r[0], r[1] / 1e4] as [string, number]), digits: 1 }] : []),
+    ...(sbl.length > 20 ? [{ title: '借券賣出餘額（萬張，上市＋上櫃個股）', rows: sbl.map(r => [r[0], r[1] / 1e4] as [string, number]), digits: 0 }] : []),
+  ], [hist, shorts, sbl]);
   const below = hist.filter(r => r[1] <= cur).length;
   const rank = (below / hist.length) * 100;
   const eps = maintEpisodes(hist, 140, 10);
@@ -516,14 +519,8 @@ function MaintHistory({ hist, shorts, sbl }: {
           </button>
         ))}
       </div>
-      <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
-        <div className="flex justify-between text-[11px] text-muted">
-          <span>維持率（%）· 虛線 140／130</span>
-          <span className="tabular-nums">{pts[0][0]} ～ {d0}</span>
-        </div>
-        <Line values={pts.map(r => r[1])} guides={[140, 130]} height={110} />
-      </div>
-      {shorts.length > 20 && <ShortHistory shorts={shorts} sbl={sbl} cut={cut} />}
+      {/* 2026-11-05 站主：維持率、融券、借券也要有日期 → 三張共用日期軸，點一下同步標同一天 */}
+      <AlignedCharts charts={charts} cut={cut} />
       {eps.length > 0 && (
         <div className="mt-2 overflow-x-auto">
           <table className="w-full text-[12px] tabular-nums">
@@ -565,42 +562,6 @@ function MaintHistory({ hist, shorts, sbl }: {
         </>}
       </p>
     </div>
-  );
-}
-
-/**
- * 一條 [日期, 值] 的趨勢折線，只畫 cut（含）之後；一天一點太密，最多畫 500 點。
- * 站主 2026-11-04：「做折線圖看趨勢，我不要一堆數字」—— 標題旁只放最新一個值。
- */
-function TrendChart({ title, rows, cut, height = 110, guides, digits = 1 }: {
-  title: string; rows: Array<[string, number]>; cut: string; height?: number; guides?: number[]; digits?: number;
-}) {
-  const shown = rows.filter(r => r[0] >= cut);
-  if (shown.length < 2) return null;
-  const step = Math.max(1, Math.ceil(shown.length / 500));
-  const pts = shown.filter((_, i) => i % step === 0 || i === shown.length - 1);
-  const [d, v] = rows[rows.length - 1];
-  return (
-    <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
-      <div className="flex justify-between gap-2 text-[11px] text-muted">
-        <span>{title}</span>
-        <span className="shrink-0 tabular-nums">{d.slice(5)} <b className="font-mono font-semibold text-ink">{v.toFixed(digits)}</b></span>
-      </div>
-      <Line values={pts.map(r => r[1])} guides={guides} height={height} />
-      <div className="text-right text-[10.5px] tabular-nums text-faint">{pts[0][0]} ～ {d}</div>
-    </div>
-  );
-}
-
-/** 融券、借券賣出餘額折線，跟維持率同一個時間範圍：對照著看追繳之後有沒有軋空 */
-function ShortHistory({ shorts, sbl, cut }: { shorts: ShortRow[]; sbl: Array<[string, number]>; cut: string }) {
-  return (
-    <>
-      <TrendChart title="融券餘額（萬張，上市＋上櫃）" rows={shorts.map(r => [r[0], r[1] / 1e4])} cut={cut} />
-      {sbl.length > 20 && (
-        <TrendChart title="借券賣出餘額（萬張，上市＋上櫃個股）" rows={sbl.map(r => [r[0], r[1] / 1e4])} cut={cut} digits={0} />
-      )}
-    </>
   );
 }
 
