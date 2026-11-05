@@ -250,7 +250,94 @@ export function dropToReach(current: number, target: number): number | null {
   return current > target ? (1 - target / current) * 100 : null;
 }
 
-export type CreditRow = [string, number | null, number | null, number | null, number | null,
+/**
+ * 維持率分區（2026-11-05 使用者：研究結論放上網站、快到門檻時警示）。研究 `D:\ai\_tmp\scripts_iso\maint_accel.py`（2009～2026-11）：
+ * 跌的日子平均跌幅隨維持率往下放大（≥160 約 −0.7%，140～145 約 −1.6%）；150～140 是加速區（第一次跌破 145 後 10 天內再跌中位 −5%），
+ * 跌破 140 多半是斷頭賣完、之後 20 天平均反彈。
+ * level：0 正常、1 接近加速區（再跌 5% 以內就到 150）、2 加速區、3 斷頭區
+ */
+export const MAINT_ZONES = [
+  { id: 'calm', lo: 160, hi: Infinity, label: '160% 以上' },
+  { id: 'watch', lo: 150, hi: 160, label: '150～160%' },
+  { id: 'accel', lo: 140, hi: 150, label: '140～150%' },
+  { id: 'margin', lo: 0, hi: 140, label: '140% 以下' },
+] as const;
+
+export function maintLevel(cur: number): 0 | 1 | 2 | 3 {
+  if (cur < 140) return 3;
+  if (cur < 150) return 2;
+  return (dropToReach(cur, 150) ?? 0) <= 5 ? 1 : 0;
+}
+
+export interface MaintZoneStat {
+  label: string;
+  /** 天數、段數（間隔 > 20 個交易日算不同段） */
+  days: number;
+  episodes: number;
+  /** 隔天下跌的那些日子平均跌幅（%） */
+  downAvg: number | null;
+  /** 已經在跌（前 5 天跌 > 3%）的日子，之後 10 天內最大跌幅的中位數（%） */
+  ddAfterFall: number | null;
+}
+
+export interface MaintCross {
+  threshold: number;
+  /** 第一次跌破（之前 20 個交易日都在門檻以上）的次數、之後 10 天內最大跌幅中位數、之後 20 天平均報酬（%） */
+  n: number;
+  dd10: number | null;
+  ret20: number | null;
+}
+
+const median = (a: number[]) => {
+  if (!a.length) return null;
+  const s = [...a].sort((x, y) => x - y);
+  const m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+};
+
+/**
+ * 依維持率分區的歷史統計＋第一次跌破門檻之後（指數用 shortHist 的加權指數，日期對齊維持率）。
+ * 都是「當天收盤的維持率 → 之後的指數」，不偷看未來；跟 maint_accel.py 同一套定義。
+ */
+export function maintStats(hist: Array<[string, number]>, shorts: ShortRow[]): { zones: MaintZoneStat[]; cross: MaintCross[] } {
+  const px = new Map(shorts.filter(r => r[3] > 0).map(r => [r[0], r[3]]));
+  const rows = hist.filter(r => px.has(r[0])).map(r => ({ m: r[1], p: px.get(r[0]) as number }));
+  const n = rows.length;
+  const p = rows.map(r => r.p);
+  const m = rows.map(r => r.m);
+  const ret = (i: number, k: number) => (i + k < n ? (p[i + k] / p[i] - 1) * 100 : null);
+  const back5 = (i: number) => (i >= 5 ? (p[i] / p[i - 5] - 1) * 100 : null);
+  const minAfter = (i: number, k: number) => {
+    if (i + k >= n) return null;
+    let lo = Infinity;
+    for (let j = i + 1; j <= i + k; j++) lo = Math.min(lo, p[j]);
+    return (lo / p[i] - 1) * 100;
+  };
+  const episodes = (idx: number[]) => (idx.length ? 1 + idx.slice(1).filter((v, k) => v - idx[k] > 20).length : 0);
+  const zones = MAINT_ZONES.map(z => {
+    const idx = m.map((v, i) => (v >= z.lo && v < z.hi ? i : -1)).filter(i => i >= 0);
+    const downs = idx.map(i => ret(i, 1)).filter((v): v is number => v !== null && v < 0);
+    const dd = idx.filter(i => (back5(i) ?? 0) < -3).map(i => minAfter(i, 10)).filter((v): v is number => v !== null);
+    return {
+      label: z.label, days: idx.length, episodes: episodes(idx),
+      downAvg: downs.length ? downs.reduce((a, b) => a + b, 0) / downs.length : null,
+      ddAfterFall: median(dd),
+    };
+  });
+  const cross = [150, 145, 140].map(th => {
+    const ev: number[] = [];
+    for (let i = 20; i < n; i++) if (m[i] < th && Math.min(...m.slice(i - 20, i)) >= th) ev.push(i);
+    const r20 = ev.map(i => ret(i, 20)).filter((v): v is number => v !== null);
+    return {
+      threshold: th, n: ev.length,
+      dd10: median(ev.map(i => minAfter(i, 10)).filter((v): v is number => v !== null)),
+      ret20: r20.length ? r20.reduce((a, b) => a + b, 0) / r20.length : null,
+    };
+  });
+  return { zones, cross };
+}
+
+export type CreditRow =[string, number | null, number | null, number | null, number | null,
   number | null, number | null, number | null, number | null, number | null];
 
 /** 信用交易儀表板的欄位名，跟 CreditRow 的位置對應 */

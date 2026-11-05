@@ -13,7 +13,7 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, maintEpisodes, dropToReach,
+  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats,
   type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
@@ -338,6 +338,84 @@ function MarginSection({ data }: { data: ChipsData }) {
   );
 }
 
+const LEVEL_TEXT = ['正常區', '接近加速區', '加速區', '斷頭區'] as const;
+// 站上的色票：紅（up）當警示，跟維持率 < 140 的數字同色
+const LEVEL_CLASS = ['bg-sunken text-muted', 'border border-up/30 bg-up/5 text-ink',
+  'border border-up/50 bg-up/10 text-ink', 'border border-up/50 bg-up/10 text-ink'] as const;
+
+/** 現在在哪一區＋一句話（頁首警示與維持率區塊共用） */
+function maintMessage(cur: number, taiex: number | null): string {
+  const lv = maintLevel(cur);
+  const pts = (pct: number | null) => (pct !== null && taiex !== null ? `、約 ${nf0.format((taiex * pct) / 100)} 點` : '');
+  const to150 = dropToReach(cur, 150);
+  const to140 = dropToReach(cur, 140);
+  if (lv === 3) return '低於 140%：歷史上多半是斷頭賣壓湧現、接近底部的位置（之後 20 天多半反彈），但當下波動最大';
+  if (lv === 2) return `140～150% 加速區：歷史上這區下跌最兇、最容易連續殺盤；再跌約 ${nf1.format(to140 ?? 0)}%${pts(to140)} 到 140%`;
+  if (lv === 1) return `再跌約 ${nf1.format(to150 ?? 0)}%${pts(to150)} 就進入 150～140% 加速區`;
+  return `距離 150% 加速區還要跌約 ${nf1.format(to150 ?? 0)}%${pts(to150)}`;
+}
+
+/** 籌碼頁最上面的警示：維持率接近或進入加速區才出現（2026-11-05 使用者要求） */
+function MaintAlert({ data }: { data: ChipsData }) {
+  const hist = data.margin?.maintHist;
+  if (!hist?.length) return null;
+  const [d0, cur] = hist[hist.length - 1];
+  const lv = maintLevel(cur);
+  if (lv === 0) return null;
+  const taiex = [...(data.margin?.shortHist ?? [])].reverse().find(r => r[0] <= d0 && r[3] > 0)?.[3] ?? null;
+  return (
+    <button type="button" onClick={() => document.getElementById('sec-margin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            className={`mt-3 block w-full rounded-xl px-3.5 py-2.5 text-left text-[12.5px] leading-relaxed ${LEVEL_CLASS[lv]}`}>
+      <b>⚠ 大盤融資維持率 {nf1.format(cur)}%（{d0.slice(5)}）・{LEVEL_TEXT[lv]}</b>
+      <span className="block">{maintMessage(cur, taiex)}。點這裡看歷史統計。</span>
+    </button>
+  );
+}
+
+/** 維持率分區的歷史統計（研究結論，網站資料每天重算）：現在這一區標出來 */
+function MaintZones({ hist, shorts, cur, taiex }: { hist: Array<[string, number]>; shorts: ShortRow[]; cur: number; taiex: number | null }) {
+  const st = useMemo(() => maintStats(hist, shorts), [hist, shorts]);
+  const lv = maintLevel(cur);
+  const zi = cur >= 160 ? 0 : cur >= 150 ? 1 : cur >= 140 ? 2 : 3;
+  const c = (th: number) => st.cross.find(x => x.threshold === th);
+  const sg = (v: number | null) => (v === null ? '—' : `${v > 0 ? '+' : ''}${nf1.format(v)}%`);
+  const howTo = ['波動正常', '跌起來開始變兇', '最容易連續殺盤', '多半接近底部'];
+  return (
+    <div className="mt-2 rounded-lg border border-line bg-bg p-2.5">
+      <div className={`rounded-md px-2.5 py-1.5 text-[12px] leading-relaxed ${LEVEL_CLASS[lv]}`}>
+        <b>現在 {nf1.format(cur)}%・{LEVEL_TEXT[lv]}</b>：{maintMessage(cur, taiex)}
+      </div>
+      <table className="mt-2 w-full text-[12px] tabular-nums">
+        <thead className="text-left text-[11px] text-muted">
+          <tr>
+            <th className="py-1 pr-2 font-semibold">當天維持率</th>
+            <th className="py-1 pr-2 text-right font-semibold">下跌日平均跌</th>
+            <th className="py-1 pr-2 text-right font-semibold">在跌時再跌</th>
+            <th className="py-1 font-semibold">怎麼看</th>
+          </tr>
+        </thead>
+        <tbody>
+          {st.zones.map((z, i) => (
+            <tr key={z.label} className={`border-t border-line ${i === zi ? 'font-semibold text-ink' : 'text-muted'}`}>
+              <td className="whitespace-nowrap py-1.5 pr-2">{i === zi ? '▶ ' : ''}{z.label}</td>
+              <td className="py-1.5 pr-2 text-right font-mono">{sg(z.downAvg)}</td>
+              <td className="py-1.5 pr-2 text-right font-mono">{sg(z.ddAfterFall)}</td>
+              <td className="py-1.5">{howTo[i]}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+        結論：維持率越低，跌的日子跌得越兇；真正危險的是 150～140% 這段 ——
+        第一次跌破 145%（{c(145)?.n ?? 0} 次）之後 10 天內再跌中位 {sg(c(145)?.dd10 ?? null)}（2020-03、2025-03 跌破 150% 後 5 天各再跌 16%）。
+        跌破 140%（{c(140)?.n ?? 0} 次）多半是斷頭賣完，之後 20 天平均 {sg(c(140)?.ret20 ?? null)}。
+        「在跌時再跌」＝前 5 天已經跌超過 3% 的日子，之後 10 天內最大跌幅的中位數。
+        2009 起每天重算，但低維持率的日子只集中在十幾波，是歷史傾向、不是保證；維持率本身就跟著指數跌，兩者同時發生不代表因果。
+      </p>
+    </div>
+  );
+}
+
 /** 大盤融資維持率（上市＋上櫃）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破 140% 的時段 */
 function MaintHistory({ hist, shorts, sbl }: {
   hist: Array<[string, number]>; shorts: ShortRow[]; sbl: Array<[string, number]>;
@@ -376,6 +454,7 @@ function MaintHistory({ hist, shorts, sbl }: {
         <Stat label="粗估再跌多少到 130%" value={to130 === null ? '已低於' : `${nf1.format(to130)}%`} sub={inPoints(to130, '個股追繳線')} />
         <Stat label="跌破 140% 的次數" value={`${eps.length} 波`} sub={eps.length ? `最近一次 ${eps[0].low.slice(0, 7)}` : undefined} />
       </div>
+      {shorts.length > 20 && <MaintZones hist={hist} shorts={shorts} cur={cur} taiex={taiex} />}
       <div className="mt-2 flex gap-1.5">
         {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
           <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
@@ -1310,6 +1389,7 @@ export function ChipsPage() {
         <p className="mt-1 text-[11.5px] text-muted">{data.meta.note}</p>
       </div>
 
+      <MaintAlert data={data} />
       <SummaryStrip data={data} />
       <JumpNav />
       <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>

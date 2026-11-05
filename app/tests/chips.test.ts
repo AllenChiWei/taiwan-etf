@@ -513,3 +513,24 @@ test('alignByDate：幾條數列對到同一條日期軸，還沒開始的那段
   const c = alignByDate([[['2025-12-30', 1], ['2026-01-02', 2], ['2026-04-01', 3]]], '');
   assert.deepEqual(c.ticks, [[1, '2026'], [2, '4月']]);
 });
+
+test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
+  const { maintLevel, maintStats } = await import('../src/lib/chips.ts');
+  assert.equal(maintLevel(170), 0);
+  assert.equal(maintLevel(157), 1);        // 再跌 4.5% 到 150
+  assert.equal(maintLevel(158), 0);        // 再跌 5.1%
+  assert.equal(maintLevel(145), 2);
+  assert.equal(maintLevel(139.9), 3);
+  // 25 天在 160、第 26 天跌到 144（指數 −10%），之後 20 天指數回到 100
+  const days = Array.from({ length: 60 }, (_, i) => `2026-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`);
+  const hist: Array<[string, number]> = days.map((d, i) => [d, i < 25 ? 160 : 144]);
+  const shorts: Array<[string, number, number, number]> = days.map((d, i) => [d, 0, 0, i < 25 ? 100 : i < 30 ? 90 : 100]);
+  const st = maintStats(hist, shorts);
+  const c145 = st.cross.find(x => x.threshold === 145)!;
+  assert.equal(c145.n, 1);
+  assert.equal(c145.dd10, 0);              // 跌破那天 90，之後 10 天最低也是 90
+  assert.ok(Math.abs((c145.ret20 as number) - 100 * (100 / 90 - 1)) < 1e-9);
+  assert.equal(st.cross.find(x => x.threshold === 140)!.n, 0);
+  assert.equal(st.zones[0].days, 25);
+  assert.equal(st.zones[2].days, 35);
+});
