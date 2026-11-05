@@ -282,7 +282,7 @@ export function byIndustry(bonds: CbBond[], upcoming: CbUpcoming[], asOf: string
 
 /* ── 清單篩選與排序 ───────────────────────────────────────── */
 
-export type CbSort = 'code' | 'vol' | 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue' | 'ytp' | 'put';
+export type CbSort = 'code' | 'vol' | 'prem' | 'px' | 'cv' | 'val' | 'outPct' | 'mat' | 'issue' | 'ytp' | 'ytm' | 'put';
 
 export const CB_SORTS: Array<{ id: CbSort; label: string; desc: boolean }> = [
   { id: 'vol', label: '成交量', desc: true },
@@ -292,6 +292,7 @@ export const CB_SORTS: Array<{ id: CbSort; label: string; desc: boolean }> = [
   { id: 'px', label: '價格', desc: true },
   { id: 'cv', label: '轉換價值', desc: true },
   { id: 'ytp', label: '賣回殖利率', desc: true },
+  { id: 'ytm', label: '到期殖利率', desc: true },
   { id: 'put', label: '賣回日', desc: false },
   { id: 'outPct', label: '餘額比例', desc: false },
   { id: 'issue', label: '發行日', desc: true },
@@ -337,6 +338,11 @@ export function ytm(b: CbBond, asOf: string): number | null {
   return b.mat && b.mat >= asOf ? annualised(b.px, 100, asOf, b.mat) : null;
 }
 
+/** 剩餘年期（年，到期日 − 資料日）；XQ 的資料項也有這一欄（2026-11-05 使用者要參考 XQ） */
+export function yearsLeft(b: CbBond, asOf: string): number | null {
+  return b.mat && b.mat >= asOf ? daysBetween(asOf, b.mat) / 365.25 : null;
+}
+
 /** 已經進入轉換期間 */
 export function convertible(b: CbBond, asOf: string): boolean {
   return Boolean(b.convS && b.convS <= asOf && (!b.convE || b.convE >= asOf));
@@ -354,6 +360,7 @@ function sortKey(b: CbBond, s: CbSort, asOf: string): number | string | null {
     case 'mat': return b.mat;
     case 'issue': return b.issue;
     case 'ytp': return ytp(b, asOf);
+    case 'ytm': return ytm(b, asOf);
     case 'put': { const d = putDate(b); return d && d >= asOf ? d : null; }
   }
 }
@@ -377,6 +384,10 @@ export interface CbFilter {
   out?: Range;
   /** 賣回殖利率（%） */
   ytp?: Range;
+  /** 到期殖利率（%） */
+  ytm?: Range;
+  /** 剩餘年期（年） */
+  yrs?: Range;
   /** 距最近賣回日幾天內（null＝不限） */
   putWithin?: number | null;
   /** 發行幾天內（null＝不限） */
@@ -431,6 +442,7 @@ export function filterBonds(bonds: CbBond[], f: CbFilter): CbBond[] {
     && (!f.onlyTraded || b.close !== null)
     && inRange(b.px, f.px) && inRange(b.prem, f.prem) && inRange(b.cv, f.cv)
     && inRange(outPct(b), f.out) && inRange(ytp(b, asOf), f.ytp)
+    && inRange(ytm(b, asOf), f.ytm) && inRange(yearsLeft(b, asOf), f.yrs)
     && (f.putWithin == null || (() => { const d = putDate(b); return Boolean(d && d >= asOf && daysBetween(asOf, d) <= f.putWithin!); })())
     && (f.issuedWithin == null || Boolean(b.issue && b.issue <= asOf && daysBetween(b.issue, asOf) <= f.issuedWithin))
     && (!f.guarantee || b.g === f.guarantee)

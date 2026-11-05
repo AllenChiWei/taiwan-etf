@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-05',
     items: [
+      { kind: 'improve', to: '/cb',
+        text: '可轉債篩選器移到頁面最上方、條件預設展開，並新增「到期殖利率」「剩餘年期」兩個條件與到期殖利率排序；頁首加區塊捷徑可跳到統計看板、溫度計、待發行等。' },
       { kind: 'improve', to: '/chips',
         text: '大盤融資維持率「粗估再跌多少到 140%／130%」除了百分比，也換算成加權指數要跌幾點、跌到幾點，每天跟維持率一起更新。' },
       { kind: 'improve', to: '/chips',
