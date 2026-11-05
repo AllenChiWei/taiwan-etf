@@ -564,3 +564,13 @@ test('rangePosition：期間高低點之間的位置、離低點與高點幾 %',
   assert.deepEqual(r.pos.map(p => p[1]), [50, 0, 100, 20]);
   assert.equal(rangePosition([['a', 1]]), null);
 });
+
+test('marginVsIndex.roll：每天的過去 days 天漲跌幅，跟 gap 同一組日期', async () => {
+  const { marginVsIndex } = await import('../src/lib/chips.ts');
+  const money: Array<[string, number]> = [['d1', 100], ['d2', 110], ['d3', 121]];
+  const shorts: Array<[string, number, number, number]> = [['d1', 0, 0, 100], ['d2', 0, 0, 105], ['d3', 0, 0, 105]];
+  const r = marginVsIndex(money, shorts, 1);
+  assert.deepEqual(r.roll.m.map(x => x[0]), r.gap.map(x => x[0]));
+  assert.deepEqual(r.roll.m.map(x => Math.round(x[1] * 100) / 100), [10, 10]);
+  assert.deepEqual(r.roll.x.map(x => Math.round(x[1] * 100) / 100), [5, 0]);
+});

@@ -292,11 +292,17 @@ export function marginVsIndex(money: Array<[string, number]>, shorts: ShortRow[]
     m: w.map(r => [r[0], (r[1] / base[1] - 1) * 100] as [string, number]),
     x: w.map(r => [r[0], (r[2] / base[2] - 1) * 100] as [string, number]),
   } : { m: [], x: [] };
+  // roll：每天「過去 days 天」融資增幅、大盤漲幅（%），跟 gap 同一組日期 —— 兩張圖才能共用日期軸（站主 2026-11-05）
   const gap: Array<[string, number]> = [];
+  const roll = { m: [] as Array<[string, number]>, x: [] as Array<[string, number]> };
   for (let i = days; i < rows.length; i++) {
-    gap.push([rows[i][0], ((rows[i][1] / rows[i - days][1]) - (rows[i][2] / rows[i - days][2])) * 100]);
+    const mm = (rows[i][1] / rows[i - days][1] - 1) * 100;
+    const xx = (rows[i][2] / rows[i - days][2] - 1) * 100;
+    roll.m.push([rows[i][0], mm]);
+    roll.x.push([rows[i][0], xx]);
+    gap.push([rows[i][0], mm - xx]);
   }
-  return { cum, gap };
+  return { cum, gap, roll };
 }
 
 export interface RangePos {

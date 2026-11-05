@@ -354,12 +354,15 @@ function RelPosition({ money, shorts }: { money: Array<[string, number]>; shorts
  */
 function MarginVsIndex({ money, shorts }: { money: Array<[string, number]>; shorts: ShortRow[] }) {
   const [days, setDays] = useState(60);
-  const { cum, gap } = useMemo(() => marginVsIndex(money, shorts, days), [money, shorts, days]);
-  const recent = useMemo(() => {
-    const end = gap[gap.length - 1]?.[0] ?? '';
-    const cut = end ? `${Number(end.slice(0, 4)) - 3}${end.slice(4)}` : '';
-    return gap.filter(r => r[0] >= cut);
-  }, [gap]);
+  const [years, setYears] = useState(1);
+  const { cum, gap, roll } = useMemo(() => marginVsIndex(money, shorts, days), [money, shorts, days]);
+  // 站主 2026-11-05：下面兩張圖日期要對齊 → 都畫「每天的過去 N 天」，共用一條日期軸，顯示近 1／3 年
+  const charts = useMemo<AlignedChart[]>(() => [
+    { title: `過去 ${days} 天漲跌幅`, rows: roll.m, rows2: roll.x, label: '融資', label2: '大盤', digits: 1, unit: '%', guides: [0] },
+    { title: `融資增幅 − 大盤漲幅（百分點；虛線 0 與 +${MARGIN_GAP_HOT}）`, rows: gap, digits: 1, guides: [0, MARGIN_GAP_HOT] },
+  ], [roll, gap, days]);
+  const end = gap[gap.length - 1]?.[0] ?? '';
+  const cut = end ? `${Number(end.slice(0, 4)) - years}${end.slice(4)}` : '';
   if (cum.m.length < 2 || !gap.length) return null;
   const mNow = cum.m[cum.m.length - 1][1];
   const xNow = cum.x[cum.x.length - 1][1];
@@ -375,10 +378,17 @@ function MarginVsIndex({ money, shorts }: { money: Array<[string, number]>; shor
         <h3 className="text-[13px] font-bold text-ink">融資 vs 大盤 累積漲跌幅（上市＋上櫃融資金額）</h3>
         <span className="text-[11.5px] text-faint">最新 {cum.m[cum.m.length - 1][0]}</span>
       </div>
-      <div className="mt-2 flex gap-1.5">
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {[[20, '20 天'], [60, '60 天'], [120, '120 天']].map(([d, label]) => (
           <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d as number)}
                   className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${days === d ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+        <span className="mx-1 h-4 w-px bg-line" aria-hidden />
+        {[[1, '近 1 年'], [3, '近 3 年']].map(([y, label]) => (
+          <button key={`y${y}`} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
+                  className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${years === y ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
             {label}
           </button>
         ))}
@@ -387,15 +397,9 @@ function MarginVsIndex({ money, shorts }: { money: Array<[string, number]>; shor
         <b>近 {days} 個交易日：融資 {sg(mNow)}%、大盤 {sg(xNow)}%，差距 {sg(g)} 個百分點</b>
         <span className="block">{msg}</span>
       </div>
-      <AlignedCharts cut="" charts={[
-        { title: `近 ${days} 天累積漲跌幅`, rows: cum.m, rows2: cum.x, label: '融資', label2: '大盤', digits: 1, unit: '%', guides: [0] },
-      ]} />
-      <AlignedCharts cut="" charts={[
-        { title: `過去 ${days} 天融資增幅 − 大盤漲幅（百分點，近 3 年；虛線 0 與 +${MARGIN_GAP_HOT}）`, rows: recent, digits: 1,
-          guides: [0, MARGIN_GAP_HOT] },
-      ]} />
+      <AlignedCharts cut={cut} charts={charts} />
       <p className="mt-1 text-[11px] leading-relaxed text-faint">
-        藍線融資、灰色虛線大盤，從 {days} 個交易日前起算。融資金額是借的錢，不會因為股價漲跌而變，所以增幅比大盤快＝散戶加碼的速度超過行情。
+        上圖每一天都是「到那天為止過去 {days} 個交易日」的漲跌幅：藍線融資、灰色虛線大盤；下圖是兩者相減，超過 +{MARGIN_GAP_HOT} 那條虛線就是過熱。兩張同一條日期軸，點一下會同步標出同一天。融資金額是借的錢，不會因為股價漲跌而變，所以增幅比大盤快＝散戶加碼的速度超過行情。
         2009 起驗證：差距在 0 以下或 0～+{MARGIN_GAP_HOT} 時，之後 20 天大盤多半照常；超過 +{MARGIN_GAP_HOT}（20 天或 60 天）之後，
         20 天內最大跌幅中位約 −3%，比平常大一倍左右，但也只是機率較高、不是一定會跌。大盤急跌、融資還沒減時差距也會變大，那就是融資還沒洗出來。
       </p>
