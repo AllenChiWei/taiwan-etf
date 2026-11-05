@@ -147,6 +147,23 @@ export interface TwMood {
   breadth: Array<[string, number, number]>;
   /** 上市股票 [日期, 漲停家數, 跌停家數]（2009 起；2026-11-05 加，舊版沒有） */
   limits?: Array<[string, number, number]>;
+  /** 上櫃股票 [日期, 漲停家數, 跌停家數]（同上，2026-11-05 晚一點加） */
+  limitsOtc?: Array<[string, number, number]>;
+}
+
+/**
+ * 上市＋上櫃漲跌停家數按日期相加（站主 2026-11-05：要上市＋上櫃）。只算上市有資料的日子；
+ * 那天上櫃抓不到就只有上市（otc 為 null），畫面上會看得出來。
+ */
+export function combineLimits(twse: Array<[string, number, number]>, otc: Array<[string, number, number]> = []) {
+  const o = new Map(otc.map(r => [r[0], r] as const));
+  const rows = twse.map(([d, u, n]) => {
+    const x = o.get(d);
+    return [d, u + (x ? x[1] : 0), n + (x ? x[2] : 0)] as [string, number, number];
+  });
+  const last = twse[twse.length - 1];
+  const lastOtc = last ? o.get(last[0]) ?? null : null;
+  return { rows, twse: last ? [last[1], last[2]] as const : null, otc: lastOtc ? [lastOtc[1], lastOtc[2]] as const : null };
 }
 
 export interface LimitTrend {

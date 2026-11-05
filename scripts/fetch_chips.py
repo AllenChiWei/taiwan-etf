@@ -169,7 +169,7 @@ MONEY_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_money_seed.json')
 CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth', 'limits')
+HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth', 'limits', 'limitsOtc')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -180,6 +180,9 @@ BREADTH_SEED = os.path.join(ROOT, 'scripts', 'data', 'breadth_seed.json')
 # 上市股票漲停／跌停家數（2026-11-05 站主）——FinLab 收盤價對漲跌停價回推（10%，2015-06 以前 7%，升降單位取整），
 # 跟 MI_INDEX 括號內的數字抽查 8 天：近年差 0～5 家、2015 年少約一成（已下市的不在 FinLab 公司資料裡）；之後每天用證交所的
 LIMIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'limit_seed.json')
+# 上櫃股票漲停／跌停家數（2026-11-05 站主：要上市＋上櫃）——同樣 FinLab 回推；櫃買沒有家數統計，
+# 每天用收盤行情「前一個交易日的次日漲停價／次日跌停價」對今天收盤（抽查 8 天：近兩年差 0～20 家、2015 少約一成）
+LIMIT_OTC_SEED = os.path.join(ROOT, 'scripts', 'data', 'limit_otc_seed.json')
 # 台指期近月收盤（正逆價差）——期交所 futDataDown 回補 5 年
 BASIS_SEED = os.path.join(ROOT, 'scripts', 'data', 'basis_seed.json')
 # 臺指選擇權波動率指數：期交所只放近 3 個月的月檔（2026-08 起），之後靠累積
@@ -884,6 +887,39 @@ def breadth_today(day):
     return None
 
 
+def tpex_limit_rows(day):
+    u"""櫃買收盤行情的普通股（4 碼數字、非 00 開頭）{代號: (收盤, 次日漲停價, 次日跌停價)}。day 是 YYYY-MM-DD；拿不到回 {}。"""
+    try:
+        doc = json.loads(fetch(TPEX_PRICE % day.replace('-', '/')).decode('utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買收盤行情（漲跌停）：%s' % str(e)[:80])
+        return {}
+    for t in doc.get('tables') or []:
+        f = [x.strip() for x in t.get('fields') or []]
+        if u'收盤' not in f or u'次日漲停價' not in f:
+            continue
+        ci, ui, di = f.index(u'收盤'), f.index(u'次日漲停價'), f.index(u'次日跌停價')
+        return dict((r[0].strip(), (num(r[ci]), num(r[ui]), num(r[di]))) for r in t.get('data') or []
+                    if len(r[0].strip()) == 4 and r[0].strip().isdigit() and not r[0].strip().startswith('00'))
+    return {}
+
+
+def tpex_limits(day, prev):
+    u"""上櫃股票 (漲停, 跌停) 家數：今天收盤＝前一個交易日表上的次日漲停（跌停）價。兩天都要拿得到，否則 None。"""
+    if not prev:
+        return None
+    today, before = tpex_limit_rows(day), tpex_limit_rows(prev)
+    if not today or not before:
+        return None
+    up = dn = 0
+    for code, (c, _, _) in today.items():
+        if c <= 0 or code not in before:
+            continue
+        up += abs(c - before[code][1]) < 1e-6
+        dn += abs(c - before[code][2]) < 1e-6
+    return up, dn
+
+
 def sbl_history(day):
     u"""借券賣出餘額（個股，上市＋上櫃）每天一列 [日期, 張]：種子＋快取＋線上＋今天。"""
     rows = _seed_and_live(SBL_SEED, 'sblHist', list)
@@ -955,13 +991,20 @@ def tw_mood(day, shorts):
 
     breadth = _seed_and_live(BREADTH_SEED, 'breadth', list, 'tw')
     limits = _seed_and_live(LIMIT_SEED, 'limits', list, 'tw')
+    limits_otc = _seed_and_live(LIMIT_OTC_SEED, 'limitsOtc', list, 'tw')
     if day:
         b = breadth_today(day.replace('-', ''))
         if b:
             breadth[day] = [day, b[0], b[1]]
             limits[day] = [day, b[2], b[3]]
+        # 前一個交易日＝上市漲跌停歷史裡今天之前最近的一天（種子＋累積，含休市）
+        prev = max([d for d in limits if d < day] or [None], key=lambda x: x or '')
+        o = tpex_limits(day, prev)
+        if o:
+            limits_otc[day] = [day, o[0], o[1]]
     tw['breadth'] = [breadth[d] for d in sorted(breadth)][-MAINT_KEEP:]
     tw['limits'] = [limits[d] for d in sorted(limits)][-MAINT_KEEP:]
+    tw['limitsOtc'] = [limits_otc[d] for d in sorted(limits_otc)][-MAINT_KEEP:]
     return tw
 
 
@@ -1294,7 +1337,7 @@ def main():
 
     log(u'台股情緒：臺指 VIX、期貨正逆價差、漲跌家數…')
     tw = tw_mood(fut_day, margin['shortHist'])
-    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits'])))
+    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 上市 %d 天／上櫃 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits']), len(tw['limitsOtc'])))
     save_hist_cache(margin, tw)
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')

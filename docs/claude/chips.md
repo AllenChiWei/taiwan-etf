@@ -97,6 +97,7 @@
 | 台指期近月收盤 | `tw.basis` [日期, 期貨, 指數] | `basis_seed.json`，futDataDown TX，2021-10 起 | futDataDown 近 28 天，指數借 `shortHist` 的 | 排除週契約（W）與價差（/）；**期貨 13:45 收、指數 13:30 收**，單日價差 −240～+336 來回跳，前端畫 5 日平均 |
 | 上市漲跌家數 | `tw.breadth` [日期, 上漲, 下跌] | `breadth_seed.json`，FinLab 收盤價對前一日（上市普通股），2009 起 | MI_INDEX（type=ALL）「漲跌證券數合計」股票欄 | 跟官方每天差 0～4 家 |
 | 上市漲停／跌停家數（2026-11-05） | `tw.limits` [日期, 漲停, 跌停] | `limit_seed.json`，FinLab 收盤價對漲跌停價回推（10%，2015-06-01 以前 7%，升降單位取整），2009 起；抽查 8 天的證交所精確值覆蓋 | 同一張表括號內的數字（「438(20)」＝上漲 438、漲停 20），`breadth_today` 一起解析 | 抽查：近年差 0～5 家、2015 少約一成（已下市的不在 FinLab 公司資料）。產生腳本 `D:\ai\_tmp\scripts_iso\limit_seed.py`＋`limit_seed_write.py` |
+| 上櫃漲停／跌停家數（2026-11-05） | `tw.limitsOtc` [日期, 漲停, 跌停] | `limit_otc_seed.json`，同上回推（上櫃普通股：4 碼、非 00 開頭），抽查 8 天的櫃買精確值覆蓋 | 櫃買沒有家數統計：`tpex_limits(day, prev)`＝今天 afterTrading/otc 的收盤 vs **前一個交易日**表上的「次日漲停價／次日跌停價」（前一日＝`limits` 裡今天之前最近一天）；要兩天的表都拿到 | 抽查：近兩年差 0～20 家（11-04 完全相同 29／2）、2015 少約一成。前端 `combineLimits` 按日期和上市相加，上櫃缺的那天只有上市。產生腳本 `limit_seed.py otc`＋`limit_otc_seed_write.py`、核對 `tpex_limit_check.py` |
 
 研究腳本：`D:\ai\DashBoard_AI\research_chips_extra.py`（借券、漲跌家數）；VIX、正逆價差種子用 fetch_chips 本身的函式產生。
 

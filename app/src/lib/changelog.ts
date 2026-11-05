@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-05',
     items: [
+      { kind: 'improve', to: '/chips',
+        text: '漲跌停家數改成上市＋上櫃合計（數字下方分開列上市／上櫃），2009 年起的柱狀圖與 20 日平均也一起換成合計。' },
       { kind: 'new', to: '/chips',
         text: '台股情緒下方新增「漲跌停家數」：當天上市股票漲停、跌停各幾家（比前一天、20 日平均），加上兩張每天的柱狀圖與 20 日平均線看趨勢，2009 年起，跟著 1 年／5 年／全部切換。' },
       { kind: 'improve', to: '/chips',

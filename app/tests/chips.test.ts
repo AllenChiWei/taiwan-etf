@@ -538,6 +538,15 @@ test('alignByDate max／limitTrend：漲跌停家數的單日尖峰抽樣不會�
   assert.equal(limitTrend([]), null);
 });
 
+test('combineLimits：上市＋上櫃按日期相加，上櫃缺的那天只有上市', async () => {
+  const { combineLimits } = await import('../src/lib/chips.ts');
+  const c = combineLimits([['d1', 10, 1], ['d2', 20, 2], ['d3', 30, 3]], [['d1', 5, 7], ['d3', 9, 1], ['d9', 99, 99]]);
+  assert.deepEqual(c.rows, [['d1', 15, 8], ['d2', 20, 2], ['d3', 39, 4]]);
+  assert.deepEqual(c.twse, [30, 3]);
+  assert.deepEqual(c.otc, [9, 1]);
+  assert.equal(combineLimits([['d1', 1, 1]]).otc, null);
+});
+
 test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
   const { maintLevel, maintStats } = await import('../src/lib/chips.ts');
   assert.equal(maintLevel(170), 0);
