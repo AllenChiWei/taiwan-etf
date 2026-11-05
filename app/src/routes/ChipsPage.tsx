@@ -7,7 +7,7 @@
  * 再看誰在買什麼。
  */
 
-import { useEffect, useMemo, useState, type PointerEvent } from 'react';
+import { useEffect, useMemo, useState, type PointerEvent, type ReactNode } from 'react';
 import { fetchChips } from '../api/chips';
 import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
@@ -164,7 +164,7 @@ function Line({ values, guides = [], height = 56, min, max }: {
 }
 
 function Stat({ label, value, sub, tone }: {
-  label: string; value: string; sub?: string; tone?: string;
+  label: string; value: string; sub?: ReactNode; tone?: string;
 }) {
   return (
     <div className="rounded-lg border border-line bg-bg px-3 py-2">
@@ -354,6 +354,14 @@ function MaintHistory({ hist, shorts, sbl }: {
   const eps = maintEpisodes(hist, 140, 10);
   const to140 = dropToReach(cur, 140);
   const to130 = dropToReach(cur, 130);
+  // 換算成指數點數：用維持率同一天（沒有就往前最近一天）的加權指數收盤，跟維持率每天一起更新
+  const taiex = [...shorts].reverse().find(r => r[0] <= d0 && r[3] > 0)?.[3] ?? null;
+  const inPoints = (pct: number | null, what: string) => (
+    <>
+      {pct !== null && taiex !== null && <>約 {nf0.format((taiex * pct) / 100)} 點（指數 {nf0.format(taiex * (1 - pct / 100))}）<br /></>}
+      {what}
+    </>
+  );
   const tone = cur < 140 ? 'text-up' : cur < 150 ? 'text-ink' : 'text-ink';
   return (
     <div className="mt-3 border-t border-line pt-3">
@@ -364,8 +372,8 @@ function MaintHistory({ hist, shorts, sbl }: {
       <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <Stat label="大盤融資維持率" value={`${nf1.format(cur)}%`} tone={tone}
               sub={`比 ${nf0.format(rank)}% 的歷史日子高`} />
-        <Stat label="粗估再跌多少到 140%" value={to140 === null ? '已低於' : `${nf1.format(to140)}%`} sub="恐慌殺盤常見的水位" />
-        <Stat label="粗估再跌多少到 130%" value={to130 === null ? '已低於' : `${nf1.format(to130)}%`} sub="個股追繳線" />
+        <Stat label="粗估再跌多少到 140%" value={to140 === null ? '已低於' : `${nf1.format(to140)}%`} sub={inPoints(to140, '恐慌殺盤常見的水位')} />
+        <Stat label="粗估再跌多少到 130%" value={to130 === null ? '已低於' : `${nf1.format(to130)}%`} sub={inPoints(to130, '個股追繳線')} />
         <Stat label="跌破 140% 的次數" value={`${eps.length} 波`} sub={eps.length ? `最近一次 ${eps[0].low.slice(0, 7)}` : undefined} />
       </div>
       <div className="mt-2 flex gap-1.5">
@@ -417,7 +425,7 @@ function MaintHistory({ hist, shorts, sbl }: {
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         維持率＝融資買進的股票現值 ÷ 借的錢（上市＋上櫃全部有融資的證券，含 ETF）。個股跌破 130% 被追繳、補不足就斷頭賣出，
         大盤掉到 140% 以下多半已經是斷頭賣壓湧現的時候（2011 歐債、2015-08、2020-03、2025-04 都是）。
-        「再跌多少」是粗估：假設融資部位跟大盤同漲同跌、融資金額不變；融資股多半是中小型股、跌得比大盤兇，實際會更快到。
+        「再跌多少」是粗估：假設融資部位跟大盤同漲同跌、融資金額不變，點數用同一天的加權指數收盤換算；融資股多半是中小型股、跌得比大盤兇，實際會更快到。
         2009～2026/10/27 用 FinLab 的每檔融資餘額 × 收盤價 ÷ 交易所公佈的融資金額回補，之後每天用證交所與櫃買的官方資料接著算（2026/10/27 兩邊對帳一致：174.2%）。
         {shorts.length > 20 && <>
           {' '}融券：軋空是放空的人被迫回補，融券會往下掉、指數往上。歷次跌破 140% 之後，指數多半反彈，但融券大多還在增加，反彈主要是賣壓出清、不是空單回補。
