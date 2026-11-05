@@ -14,7 +14,7 @@ import {
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
   linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
-  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate,
+  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate, limitTrend,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -637,6 +637,10 @@ interface AlignedChart {
   label2?: string;
   /** 數字後面加的單位（例 %） */
   unit?: string;
+  /** 'max'＝抽樣時主數列取那段最大值（單日尖峰才不會被跳過）；預設取最後一筆 */
+  agg?: 'max';
+  /** 柱子固定顏色（漲停紅、跌停綠）；預設正紅負綠 */
+  tone?: 'up' | 'down';
 }
 
 /**
@@ -650,12 +654,14 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
   // 每張圖的數列攤平：第 k 張的主線在 idx[k][0]、第二條在 idx[k][1]
   const { al, idx } = useMemo(() => {
     const series: Array<Array<[string, number]>> = [];
+    const aggs: Array<'max' | undefined> = [];
     const idx = charts.map(c => {
       const a = series.push(c.rows) - 1;
+      aggs[a] = c.agg;
       const b = c.rows2 ? series.push(c.rows2) - 1 : -1;
       return [a, b] as const;
     });
-    return { al: alignByDate(series, cut), idx };
+    return { al: alignByDate(series, cut, 500, aggs), idx };
   }, [charts, cut]);
   const n = al.dates.length;
   if (n < 2) return null;
@@ -708,10 +714,18 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
                 <line key={`g${g}`} x1="0" x2={W} y1={y(g)} y2={y(g)} stroke="currentColor"
                       className="text-muted" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
               ))}
-              {bar ? vals.map((v, i) => (v === null || v === 0 ? null : (
-                <rect key={i} x={x(i) - bw / 2} width={bw} y={Math.min(y(v), y(0))} height={Math.abs(y(v) - y(0))}
-                      className={v > 0 ? 'fill-up' : 'fill-down'} />
-              ))) : (
+              {bar ? (
+                <>
+                  {vals.map((v, i) => (v === null || v === 0 ? null : (
+                    <rect key={i} x={x(i) - bw / 2} width={bw} y={Math.min(y(v), y(0))} height={Math.abs(y(v) - y(0))}
+                          className={(c.tone ?? (v > 0 ? 'up' : 'down')) === 'up' ? 'fill-up' : 'fill-down'} />
+                  )))}
+                  {pts2.length > 1 && (
+                    <path d={linePath(pts2)} fill="none" stroke="currentColor" strokeWidth="1.5"
+                          className="text-ink" vectorEffect="non-scaling-stroke" />
+                  )}
+                </>
+              ) : (
                 <>
                   {pts2.length > 1 && (
                     <path d={linePath(pts2)} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3"
@@ -759,7 +773,7 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
   const end = [tw.vix, tw.basis, tw.breadth].map(r => r[r.length - 1]?.[0] ?? '').sort().pop() as string;
   const cut = years ? `${Number(end.slice(0, 4)) - years}${end.slice(4)}` : '';
   return (
-    <Section title="台股情緒" hint="指數、騰落線、VIX、正逆價差">
+    <Section title="台股情緒" hint="指數、騰落線、VIX、正逆價差、漲跌停">
       <div className="mt-2 flex gap-1.5">
         {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
           <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
@@ -775,7 +789,43 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
         正逆價差＝台指期近月 − 加權指數，取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
         騰落線跟指數同向是普漲；指數創高、騰落線往下是少數權值股撐盤。
       </p>
+      {tw.limits && tw.limits.length > 1 && <LimitBlock rows={tw.limits} cut={cut} />}
     </Section>
+  );
+}
+
+/** 漲跌停家數（站主 2026-11-05）：今天的數字＋每天柱子與 20 日平均線，日期軸跟著上面的 1／5 年／全部 */
+function LimitBlock({ rows, cut }: { rows: Array<[string, number, number]>; cut: string }) {
+  const t = useMemo(() => limitTrend(rows, 20), [rows]);
+  if (!t) return null;
+  const [d, up, down] = t.last;
+  const vs = (now: number, before: number | undefined) => (before === undefined ? undefined : `較前日 ${signed(now - before)} 家`);
+  const avgAt = (a: Array<[string, number]>) => a[a.length - 1]?.[1];
+  const upAvg = avgAt(t.upAvg);
+  const downAvg = avgAt(t.downAvg);
+  return (
+    <div id="sec-limits" className="mt-3 scroll-mt-16 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">漲跌停家數（上市股票）</h3>
+        <span className="text-[11.5px] text-faint">最新 {d}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2.5">
+        <Stat label="漲停" value={`${nf0.format(up)} 家`} tone="text-up"
+              sub={<>{vs(up, t.prev?.[1])}{upAvg !== undefined && <> · 20 日平均 {nf1.format(upAvg)}</>}</>} />
+        <Stat label="跌停" value={`${nf0.format(down)} 家`} tone="text-down"
+              sub={<>{vs(down, t.prev?.[2])}{downAvg !== undefined && <> · 20 日平均 {nf1.format(downAvg)}</>}</>} />
+      </div>
+      <AlignedCharts cut={cut} charts={[
+        { title: '漲停家數', rows: t.up, rows2: t.upAvg, label: '當日', label2: '20 日平均', digits: 0, kind: 'bar', agg: 'max', tone: 'up' },
+        { title: '跌停家數', rows: t.down, rows2: t.downAvg, label: '當日', label2: '20 日平均', digits: 0, kind: 'bar', agg: 'max', tone: 'down' },
+      ]} />
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        柱子是每天的家數，黑線是 20 日平均（看趨勢用）；選 5 年或全部時一根柱子代表好幾天，取那幾天最多的一天，大跌那天不會被跳過。
+        跌停家數突然暴增（例：2025-04-07 關稅崩跌 937 家、2024-08-05 428 家）通常是恐慌殺盤；漲停多、跌停少是市場追價。
+        資料：證交所收盤行情「漲跌證券數合計」括號內的漲停／跌停數（股票）；2026-11-05 以前用 FinLab 收盤價對漲跌停價回推，
+        跟證交所抽查差 0～5 家，2015 年以前少算約一成（已下市的股票不在裡面）。
+      </p>
+    </div>
   );
 }
 

@@ -96,12 +96,15 @@
 | 臺指 VIX | `tw.vix` | `vix_seed.json`，期交所月檔，2026-08 起 | 期交所 `Dailydownload/vix/log2data/YYYYMMnew.txt`（只放近 3 個月，更舊 302） | 取 13:45 那列 |
 | 台指期近月收盤 | `tw.basis` [日期, 期貨, 指數] | `basis_seed.json`，futDataDown TX，2021-10 起 | futDataDown 近 28 天，指數借 `shortHist` 的 | 排除週契約（W）與價差（/）；**期貨 13:45 收、指數 13:30 收**，單日價差 −240～+336 來回跳，前端畫 5 日平均 |
 | 上市漲跌家數 | `tw.breadth` [日期, 上漲, 下跌] | `breadth_seed.json`，FinLab 收盤價對前一日（上市普通股），2009 起 | MI_INDEX（type=ALL）「漲跌證券數合計」股票欄 | 跟官方每天差 0～4 家 |
+| 上市漲停／跌停家數（2026-11-05） | `tw.limits` [日期, 漲停, 跌停] | `limit_seed.json`，FinLab 收盤價對漲跌停價回推（10%，2015-06-01 以前 7%，升降單位取整），2009 起；抽查 8 天的證交所精確值覆蓋 | 同一張表括號內的數字（「438(20)」＝上漲 438、漲停 20），`breadth_today` 一起解析 | 抽查：近年差 0～5 家、2015 少約一成（已下市的不在 FinLab 公司資料）。產生腳本 `D:\ai\_tmp\scripts_iso\limit_seed.py`＋`limit_seed_write.py` |
 
 研究腳本：`D:\ai\DashBoard_AI\research_chips_extra.py`（借券、漲跌家數）；VIX、正逆價差種子用 fetch_chips 本身的函式產生。
 
 **前端按日期對齊**（2026-11-05 使用者：各圖要按日期對齊才看得懂）：`ChipsPage` 的 `AlignedCharts` 用 `chips.ts` 的 `alignByDate()`
 把四條數列放到同一條日期軸（還沒資料的那段是空白，VIX 只在 2026-08 之後有線），共用刻度、點一下四張圖同步標同一天。
 加權指數合併 `margin.shortHist`（2009 起）與 `tw.basis`（2021-10 起），才能跟騰落線全程對照。要加新的情緒數列就加進 `charts`，不要再用各自撐滿寬度的 `TrendChart`。
+漲跌停家數（`LimitBlock`，錨點 `#sec-limits`）在台股情緒下方，跟著同一個 1／5 年／全部：柱子＋20 日平均線（`AlignedChart` 的 `kind: 'bar'` 加 `rows2` 會畫一條線），
+**`agg: 'max'`** 讓抽樣（最多 500 點）取那段最大值，不然 5 年／全部時 2025-04-07 那種 937 家的單日尖峰會被跳過；`tone` 固定柱子顏色（漲停紅、跌停綠）。
 
 ### 維持率分區與警示（2026-11-05 使用者：維持率低於多少下跌會加速？結論放網站、快到門檻要警示）
 

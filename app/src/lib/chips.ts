@@ -145,6 +145,41 @@ export interface TwMood {
   basis: Array<[string, number, number]>;
   /** 上市股票 [日期, 上漲家數, 下跌家數]（2009 起） */
   breadth: Array<[string, number, number]>;
+  /** 上市股票 [日期, 漲停家數, 跌停家數]（2009 起；2026-11-05 加，舊版沒有） */
+  limits?: Array<[string, number, number]>;
+}
+
+export interface LimitTrend {
+  up: Array<[string, number]>;
+  down: Array<[string, number]>;
+  /** n 日平均（不滿 n 天的前段不畫） */
+  upAvg: Array<[string, number]>;
+  downAvg: Array<[string, number]>;
+  last: [string, number, number];
+  prev: [string, number, number] | null;
+}
+
+/** 漲跌停家數拆成兩條＋各自 n 日平均（站主 2026-11-05：除了數字也要看漲跌停趨勢） */
+export function limitTrend(rows: Array<[string, number, number]>, n = 20): LimitTrend | null {
+  if (!rows.length) return null;
+  const avg = (k: 1 | 2) => {
+    const out: Array<[string, number]> = [];
+    let sum = 0;
+    rows.forEach((r, i) => {
+      sum += r[k];
+      if (i >= n) sum -= rows[i - n][k];
+      if (i >= n - 1) out.push([r[0], sum / n]);
+    });
+    return out;
+  };
+  return {
+    up: rows.map(r => [r[0], r[1]]),
+    down: rows.map(r => [r[0], r[2]]),
+    upAvg: avg(1),
+    downAvg: avg(2),
+    last: rows[rows.length - 1],
+    prev: rows.length > 1 ? rows[rows.length - 2] : null,
+  };
 }
 
 /** 騰落線：從第一天起累加（上漲 − 下跌）家數 */
@@ -178,19 +213,25 @@ export interface AlignedSeries {
 /**
  * 把幾條 [日期, 值] 數列對到同一條日期軸上（站主 2026-11-05：台股情緒各圖要按日期對齊才看得懂）。
  * 抽樣時每個軸點取「上一個軸點之後、到這一天為止」這條數列最後一筆，所以哪天缺一筆也不會斷線。
+ * aggs[k] = 'max'：第 k 條改取那段的最大值（漲跌停家數這種單日尖峰，5 年／全部抽樣時才不會被跳過）。
  */
-export function alignByDate(series: Array<Array<[string, number]>>, cut: string, maxPts = 500): AlignedSeries {
+export function alignByDate(series: Array<Array<[string, number]>>, cut: string, maxPts = 500,
+                            aggs: Array<'last' | 'max' | undefined> = []): AlignedSeries {
   const all = new Set<string>();
   for (const s of series) for (const [d] of s) if (d >= cut) all.add(d);
   const full = [...all].sort();
   const step = Math.max(1, Math.ceil(full.length / maxPts));
   const dates = full.filter((_, i) => i % step === 0 || i === full.length - 1);
-  const values = series.map(s => {
+  const values = series.map((s, k) => {
     const rows = s.filter(r => r[0] >= cut);
+    const max = aggs[k] === 'max';
     let j = 0;
     return dates.map(d => {
       let v: number | null = null;
-      while (j < rows.length && rows[j][0] <= d) v = rows[j++][1];
+      while (j < rows.length && rows[j][0] <= d) {
+        const x = rows[j++][1];
+        v = max && v !== null ? Math.max(v, x) : x;
+      }
       return v;
     });
   });

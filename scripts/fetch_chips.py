@@ -169,7 +169,7 @@ MONEY_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_money_seed.json')
 CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth')
+HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth', 'limits')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -177,6 +177,9 @@ TWSE_SBL = 'https://www.twse.com.tw/rwd/zh/marginTrading/TWT93U?date=%s&response
 TPEX_SBL = 'https://www.tpex.org.tw/www/zh-tw/margin/sbl'
 # 上市股票漲跌家數（騰落線）——FinLab 收盤價回補，跟 MI_INDEX「漲跌證券數合計」每天差 0～4 家
 BREADTH_SEED = os.path.join(ROOT, 'scripts', 'data', 'breadth_seed.json')
+# 上市股票漲停／跌停家數（2026-11-05 站主）——FinLab 收盤價對漲跌停價回推（10%，2015-06 以前 7%，升降單位取整），
+# 跟 MI_INDEX 括號內的數字抽查 8 天：近年差 0～5 家、2015 年少約一成（已下市的不在 FinLab 公司資料裡）；之後每天用證交所的
+LIMIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'limit_seed.json')
 # 台指期近月收盤（正逆價差）——期交所 futDataDown 回補 5 年
 BASIS_SEED = os.path.join(ROOT, 'scripts', 'data', 'basis_seed.json')
 # 臺指選擇權波動率指數：期交所只放近 3 個月的月檔（2026-08 起），之後靠累積
@@ -865,14 +868,19 @@ def sbl_today(day):
 
 
 def breadth_today(day):
-    u"""上市股票 (上漲, 下跌) 家數：證交所收盤行情的「漲跌證券數合計」股票欄。拿不到回 None。"""
+    u"""上市股票 (上漲, 下跌, 漲停, 跌停) 家數：證交所收盤行情的「漲跌證券數合計」股票欄，
+    格式「438(20)」＝上漲 438 家、其中漲停 20 家。拿不到回 None。"""
     for t in (twse_price_doc(day) or {}).get('tables') or []:
         if u'漲跌' not in (t.get('title') or '') or u'股票' not in (t.get('fields') or []):
             continue
         si = t['fields'].index(u'股票')
-        got = dict((r[0][:2], int(num(str(r[si]).split('(')[0]))) for r in t.get('data') or [])
+        got = {}
+        for r in t.get('data') or []:
+            m = re.match(r'\s*([\d,]+)\s*(?:\(([\d,]+)\))?', str(r[si]))
+            if m:
+                got[r[0][:2]] = (int(num(m.group(1))), int(num(m.group(2) or '0')))
         if u'上漲' in got and u'下跌' in got:
-            return got[u'上漲'], got[u'下跌']
+            return got[u'上漲'][0], got[u'下跌'][0], got[u'上漲'][1], got[u'下跌'][1]
     return None
 
 
@@ -946,11 +954,14 @@ def tw_mood(day, shorts):
     tw['basis'] = [basis[d] for d in sorted(basis)][-MAINT_KEEP:]
 
     breadth = _seed_and_live(BREADTH_SEED, 'breadth', list, 'tw')
+    limits = _seed_and_live(LIMIT_SEED, 'limits', list, 'tw')
     if day:
         b = breadth_today(day.replace('-', ''))
         if b:
             breadth[day] = [day, b[0], b[1]]
+            limits[day] = [day, b[2], b[3]]
     tw['breadth'] = [breadth[d] for d in sorted(breadth)][-MAINT_KEEP:]
+    tw['limits'] = [limits[d] for d in sorted(limits)][-MAINT_KEEP:]
     return tw
 
 
@@ -1283,7 +1294,7 @@ def main():
 
     log(u'台股情緒：臺指 VIX、期貨正逆價差、漲跌家數…')
     tw = tw_mood(fut_day, margin['shortHist'])
-    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth'])))
+    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits'])))
     save_hist_cache(margin, tw)
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')

@@ -522,6 +522,22 @@ test('alignByDate：幾條數列對到同一條日期軸，還沒開始的那段
   assert.ok(f.ticks.every(([i]) => ['01', '04', '07', '10'].includes(f.dates[i].slice(5, 7))));
 });
 
+test('alignByDate max／limitTrend：漲跌停家數的單日尖峰抽樣不會被跳過，20 日平均', async () => {
+  const { alignByDate, limitTrend } = await import('../src/lib/chips.ts');
+  const s: Array<[string, number]> = [['d1', 5], ['d2', 937], ['d3', 7], ['d4', 2]];
+  // 抽樣到 2 點：第二點涵蓋 d2～d3，取最後一筆會變 7、取最大是 937
+  assert.deepEqual(alignByDate([s], '', 2).values[0], [5, 7, 2]);
+  assert.deepEqual(alignByDate([s], '', 2, ['max']).values[0], [5, 937, 2]);
+  const t = limitTrend([['d1', 10, 0], ['d2', 20, 4], ['d3', 30, 2]], 2);
+  assert.ok(t);
+  assert.deepEqual(t.up, [['d1', 10], ['d2', 20], ['d3', 30]]);
+  assert.deepEqual(t.down, [['d1', 0], ['d2', 4], ['d3', 2]]);
+  assert.deepEqual(t.upAvg, [['d2', 15], ['d3', 25]]);
+  assert.deepEqual(t.downAvg, [['d2', 2], ['d3', 3]]);
+  assert.deepEqual(t.prev, ['d2', 20, 4]);
+  assert.equal(limitTrend([]), null);
+});
+
 test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
   const { maintLevel, maintStats } = await import('../src/lib/chips.ts');
   assert.equal(maintLevel(170), 0);
