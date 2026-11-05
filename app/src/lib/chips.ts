@@ -299,6 +299,40 @@ export function marginVsIndex(money: Array<[string, number]>, shorts: ShortRow[]
   return { cum, gap };
 }
 
+export interface RangePos {
+  /** 每天在期間高低點之間的位置（0＝期間最低、100＝期間最高） */
+  pos: Array<[string, number]>;
+  low: [string, number];
+  high: [string, number];
+  /** 最後一天的位置、離期間低點幾 %、離高點幾 % */
+  now: number;
+  fromLow: number;
+  fromHigh: number;
+}
+
+/**
+ * 相對位置（站主 2026-11-05：「指數已經接近 7 月低點，融資離 7 月低點還有一點位置」）：
+ * 一條數列在這段期間的高低點之間的位置，兩條不同單位的線（億、點）就能疊在一起比，不用雙 Y 軸。
+ */
+export function rangePosition(rows: Array<[string, number]>): RangePos | null {
+  if (rows.length < 2) return null;
+  let low = rows[0];
+  let high = rows[0];
+  for (const r of rows) {
+    if (r[1] < low[1]) low = r;
+    if (r[1] > high[1]) high = r;
+  }
+  const span = high[1] - low[1] || 1;
+  const last = rows[rows.length - 1][1];
+  return {
+    pos: rows.map(([d, v]) => [d, ((v - low[1]) / span) * 100]),
+    low, high,
+    now: ((last - low[1]) / span) * 100,
+    fromLow: (last / low[1] - 1) * 100,
+    fromHigh: (last / high[1] - 1) * 100,
+  };
+}
+
 /** 融資增幅超過大盤幾個百分點算過熱：2009 起，20 天差距 ≥ +10 之後 20 天下跌機率 47%、最大跌幅中位 −3.3%（其他約 −1.7%） */
 export const MARGIN_GAP_HOT = 10;
 

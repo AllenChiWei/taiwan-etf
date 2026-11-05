@@ -13,7 +13,7 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT,
+  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
   type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
@@ -297,6 +297,57 @@ function FuturesSection({ data }: { data: ChipsData }) {
 /* ── 融資 ───────────────────────────────────────────────── */
 
 /**
+ * 融資與指數的相對位置（站主 2026-11-05：想比「指數已經接近 7 月低點、融資離 7 月低點還有一段」）：
+ * 兩條各自換算成期間高低點之間的位置（0＝最低、100＝最高）疊在一起，單位不同也能比；下面一句寫低點日期與離低點幾 %。
+ * 融資用上市＋上櫃融資金額（moneyHist，才能選到半年、一年）。
+ */
+function RelPosition({ money, shorts }: { money: Array<[string, number]>; shorts: ShortRow[] }) {
+  const [days, setDays] = useState(120);
+  const { m, x } = useMemo(() => {
+    const px = new Map(shorts.filter(r => r[3] > 0).map(r => [r[0], r[3]]));
+    const both = money.filter(r => px.has(r[0]) && r[1] > 0).slice(-days);
+    return {
+      m: rangePosition(both.map(r => [r[0], r[1]] as [string, number])),
+      x: rangePosition(both.map(r => [r[0], px.get(r[0]) as number] as [string, number])),
+    };
+  }, [money, shorts, days]);
+  if (!m || !x) return null;
+  const sg = (v: number) => `${v > 0 ? '+' : ''}${nf1.format(v)}%`;
+  const line = (name: string, r: RangePos, unit: string) => (
+    <span className="block">
+      <b className="text-ink">{name}</b>：在區間 <b className="font-mono text-ink">{nf0.format(r.now)}</b>
+      （低點 {r.low[0].slice(5)} {nf0.format(r.low[1])}{unit}，現在離低點 {sg(r.fromLow)}；離高點 {r.high[0].slice(5)} {sg(r.fromHigh)}）
+    </span>
+  );
+  return (
+    <div className="mt-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">融資與指數的相對位置</h3>
+        <div className="flex gap-1.5">
+          {[[60, '3 個月'], [120, '半年'], [250, '1 年']].map(([d, label]) => (
+            <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d as number)}
+                    className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${days === d ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <AlignedCharts cut="" charts={[
+        { title: '在期間高低點之間的位置（0＝最低、100＝最高）', rows: m.pos, rows2: x.pos, label: '融資', label2: '指數', digits: 0 },
+      ]} />
+      <p className="mt-1 text-[11.5px] leading-relaxed text-muted">
+        {line('融資（上市＋上櫃）', m, ' 億')}
+        {line('加權指數', x, '')}
+      </p>
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        藍線融資、灰色虛線指數。兩條都換算成這段期間自己高低點之間的位置，所以單位不同也能放在一起：
+        例如指數已經貼近 0（快到期間低點）、融資還在高處，就代表融資還沒跟著下來。點一下圖可以看那天兩邊各在哪裡。
+      </p>
+    </div>
+  );
+}
+
+/**
  * 融資 vs 大盤累積漲跌幅（站主 2026-11-05 的想法：融資增幅 ≤ 大盤漲幅可接受；融資增加太快、超過大盤，行情可能洗融資甚至殺融資）。
  * 2009 起驗證（D:\ai\_tmp\scripts_iso\margin_vs_index.py）：只有超過很多（20 天差距 ≥ +10 個百分點）之後跌幅才明顯較大；
  * 小幅超過（0～+10）反而多半是融資跟著上漲加碼、之後續漲。所以警示線畫在 +10。
@@ -381,6 +432,7 @@ function MarginSection({ data }: { data: ChipsData }) {
         { title: '每日增減（億元，紅增綠減）', kind: 'bar', digits: 1,
           rows: m.dates.slice(1).map((d, i) => [d, daily[i + 1] as number] as [string, number]) },
       ]} />
+      {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <RelPosition money={m.moneyHist} shorts={m.shortHist} />}
       {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <MarginVsIndex money={m.moneyHist} shorts={m.shortHist} />}
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         融資是散戶借錢買股，餘額增加代表槓桿在加大。維持率＝融資買進的股票現值 ÷ 借的錢：

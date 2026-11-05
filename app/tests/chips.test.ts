@@ -552,3 +552,15 @@ test('marginVsIndex：融資與大盤從 days 天前起算的累積漲跌幅、�
   assert.equal(r.gap.length, 1);
   assert.ok(Math.abs(r.gap[0][1] - 16) < 1e-9);          // 融資 +21% − 大盤 +5%
 });
+
+test('rangePosition：期間高低點之間的位置、離低點與高點幾 %', async () => {
+  const { rangePosition } = await import('../src/lib/chips.ts');
+  const r = rangePosition([['07-01', 100], ['07-15', 80], ['08-01', 120], ['11-04', 88]])!;
+  assert.deepEqual(r.low, ['07-15', 80]);
+  assert.deepEqual(r.high, ['08-01', 120]);
+  assert.equal(r.now, 20);                      // (88 − 80) ÷ 40
+  assert.ok(Math.abs(r.fromLow - 10) < 1e-9);   // 88 ÷ 80 − 1
+  assert.ok(Math.abs(r.fromHigh + 26.666666666666668) < 1e-9);
+  assert.deepEqual(r.pos.map(p => p[1]), [50, 0, 100, 20]);
+  assert.equal(rangePosition([['a', 1]]), null);
+});

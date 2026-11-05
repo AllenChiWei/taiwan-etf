@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-05',
     items: [
+      { kind: 'new', to: '/chips',
+        text: '新增「融資與指數的相對位置」：可切 3 個月／半年／1 年，把融資與加權指數各自換算成期間高低點之間的位置疊在一起，並寫出兩邊的低點日期、現在離低點與高點幾 %，看指數接近低點時融資退了多少。' },
       { kind: 'improve', to: '/chips',
         text: '融資餘額圖下方加上同期的加權指數，兩張共用日期軸，點一下會同步標出同一天的融資餘額與指數，方便比較。' },
       { kind: 'improve', to: '/chips',
