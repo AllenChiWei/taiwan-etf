@@ -517,8 +517,8 @@ test('alignByDate：幾條數列對到同一條日期軸，還沒開始的那段
 test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
   const { maintLevel, maintStats } = await import('../src/lib/chips.ts');
   assert.equal(maintLevel(170), 0);
-  assert.equal(maintLevel(157), 1);        // 再跌 4.5% 到 150
-  assert.equal(maintLevel(158), 0);        // 再跌 5.1%
+  assert.equal(maintLevel(159.9), 1);      // 2026-11-05 站主：低於 160 就警示
+  assert.equal(maintLevel(160), 0);
   assert.equal(maintLevel(145), 2);
   assert.equal(maintLevel(139.9), 3);
   // 25 天在 160、第 26 天跌到 144（指數 −10%），之後 20 天指數回到 100
@@ -533,4 +533,14 @@ test('maintLevel／maintStats：維持率分區、第一次跌破之後', async 
   assert.equal(st.cross.find(x => x.threshold === 140)!.n, 0);
   assert.equal(st.zones[0].days, 25);
   assert.equal(st.zones[2].days, 35);
+});
+test('marginVsIndex：融資與大盤從 days 天前起算的累積漲跌幅、每天過去 days 天的差距', async () => {
+  const { marginVsIndex } = await import('../src/lib/chips.ts');
+  const money: Array<[string, number]> = [['d1', 100], ['d2', 110], ['d3', 121], ['dX', 999]];
+  const shorts: Array<[string, number, number, number]> = [['d1', 0, 0, 100], ['d2', 0, 0, 105], ['d3', 0, 0, 105]];
+  const r = marginVsIndex(money, shorts, 2);            // dX 沒有指數，不算
+  assert.deepEqual(r.cum.m.map(x => Math.round(x[1] * 100) / 100), [0, 10, 21]);
+  assert.deepEqual(r.cum.x.map(x => Math.round(x[1] * 100) / 100), [0, 5, 5]);
+  assert.equal(r.gap.length, 1);
+  assert.ok(Math.abs(r.gap[0][1] - 16) < 1e-9);          // 融資 +21% − 大盤 +5%
 });

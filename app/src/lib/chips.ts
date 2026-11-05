@@ -131,6 +131,8 @@ export interface MarginData {
   shortHist?: ShortRow[];
   /** 借券賣出餘額（個股，上市＋上櫃，不含 ETF）每天一列 [日期, 張]：2009 起。舊版沒有 */
   sblHist?: Array<[string, number]>;
+  /** 融資金額（上市＋上櫃，億元）每天一列 [日期, 億]：2009 起（2026-11-05）。舊版沒有 */
+  moneyHist?: Array<[string, number]>;
 }
 
 export type ShortRow = [string, number, number, number];
@@ -196,11 +198,12 @@ export function alignByDate(series: Array<Array<[string, number]>>, cut: string,
   if (dates.length > 1) {
     const years = (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / (365.25 * 864e5);
     const every = years <= 2 ? 0 : years <= 7 ? 1 : years <= 14 ? 2 : 4;
+    const monthly = years <= 0.6;            // 半年內（融資近 81 天）每個月都標
     dates.forEach((d, i) => {
       if (i === 0 || d.slice(0, 7) === dates[i - 1].slice(0, 7)) return;
       const y = Number(d.slice(0, 4));
       const m = Number(d.slice(5, 7));
-      if (every === 0 && m % 3 === 1) ticks.push([i, m === 1 ? String(y) : `${m}月`]);
+      if (every === 0 && (monthly || m % 3 === 1)) ticks.push([i, m === 1 ? String(y) : `${m}月`]);
       else if (every > 0 && d.slice(0, 4) !== dates[i - 1].slice(0, 4) && y % every === 0) ticks.push([i, String(y)]);
     });
   }
@@ -263,11 +266,36 @@ export const MAINT_ZONES = [
   { id: 'margin', lo: 0, hi: 140, label: '140% 以下' },
 ] as const;
 
+/** 站主 2026-11-05：維持率 < 160% 就開始在頁首警示（原本是再跌 5% 內到 150） */
 export function maintLevel(cur: number): 0 | 1 | 2 | 3 {
   if (cur < 140) return 3;
   if (cur < 150) return 2;
-  return (dropToReach(cur, 150) ?? 0) <= 5 ? 1 : 0;
+  return cur < 160 ? 1 : 0;
 }
+
+/**
+ * 融資 vs 大盤（站主 2026-11-05：融資增幅 ≤ 大盤漲幅可接受，超過太多可能洗／殺融資）。
+ * money＝融資金額 [日期, 億]（上市＋上櫃），指數取 shortHist 的加權指數；兩邊都有的日子才算。
+ * cum：從最近 days 個交易日的第一天起算的累積漲跌幅（%）；gap：每天「過去 days 天融資增幅 − 指數漲幅」（百分點）。
+ */
+export function marginVsIndex(money: Array<[string, number]>, shorts: ShortRow[], days: number) {
+  const px = new Map(shorts.filter(r => r[3] > 0).map(r => [r[0], r[3]]));
+  const rows = money.filter(r => px.has(r[0]) && r[1] > 0).map(r => [r[0], r[1], px.get(r[0]) as number] as const);
+  const w = rows.slice(-(days + 1));
+  const base = w[0];
+  const cum = base ? {
+    m: w.map(r => [r[0], (r[1] / base[1] - 1) * 100] as [string, number]),
+    x: w.map(r => [r[0], (r[2] / base[2] - 1) * 100] as [string, number]),
+  } : { m: [], x: [] };
+  const gap: Array<[string, number]> = [];
+  for (let i = days; i < rows.length; i++) {
+    gap.push([rows[i][0], ((rows[i][1] / rows[i - days][1]) - (rows[i][2] / rows[i - days][2])) * 100]);
+  }
+  return { cum, gap };
+}
+
+/** 融資增幅超過大盤幾個百分點算過熱：2009 起，20 天差距 ≥ +10 之後 20 天下跌機率 47%、最大跌幅中位 −3.3%（其他約 −1.7%） */
+export const MARGIN_GAP_HOT = 10;
 
 export interface MaintZoneStat {
   label: string;

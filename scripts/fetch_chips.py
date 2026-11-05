@@ -162,11 +162,14 @@ MAINT_KEEP = 6000
 # 融券（上市＋上櫃）的歷史 [日期, 融券張數, 融資張數, 加權指數]：同樣是 FinLab 種子＋每天累積。
 # 2026-11-04 站主要看「追繳之後容易軋空嗎」，所以跟維持率放一起、帶著指數
 SHORT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_short_seed.json')
+# 融資金額（上市＋上櫃，億元）[日期, 億]：2026-11-05 站主要比「融資累積增幅 vs 大盤累積漲幅」。
+# 種子＝margin_maint_seed 的 moneyYi（FinLab，2026-11-03 跟證交所＋櫃買對帳 7,963 億一致）＋11-04 官方，之後每天用維持率同一份資料
+MONEY_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_money_seed.json')
 # 追繳（信用交易儀表板）沒有回補來源，種子是 2026-11-04 當時線上累積的那幾十天，之後靠快取＋線上
 CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth')
+HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -781,26 +784,30 @@ def save_hist_cache(*sections):
 
 def maint_history(twse, day):
     u"""大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：種子（FinLab 回補）＋線上累積＋今天。
-    同時回傳融券的歷史 [日期, 融券張數, 融資張數, 加權指數]（SHORT_SEED 起頭，同一套累積）。
+    同時回傳融券的歷史 [日期, 融券張數, 融資張數, 加權指數]（SHORT_SEED 起頭，同一套累積）
+    與融資金額 [日期, 億]（MONEY_SEED 起頭）。
 
     今天要上市與上櫃都算得出來才加（只有一半的話跟歷史不是同一個口徑）。
     """
     rows = _seed_and_live(MAINT_SEED, 'maintHist', lambda r: [r[0], r[3]] if r[3] is not None else None)
     shorts = _seed_and_live(SHORT_SEED, 'shortHist', lambda r: list(r))
+    money = _seed_and_live(MONEY_SEED, 'moneyHist', lambda r: list(r))
     if twse and day:
         compact = day.replace('-', '')
         otc = tpex_maintenance(compact)
         if otc:
             ratio = (twse['value'] + otc['value']) / (twse['money'] + otc['money']) * 100
             rows[day] = [day, round(ratio, 1)]
-            log(u'  大盤融資維持率（上市＋上櫃）%s：%.1f%%' % (day, ratio))
+            money[day] = [day, int(round((twse['money'] + otc['money']) / 1e8))]
+            log(u'  大盤融資維持率（上市＋上櫃）%s：%.1f%%、融資金額 %s 億' % (day, ratio, money[day][1]))
             taiex = twse_taiex(compact)
             if None not in (twse.get('short'), twse.get('lots'), otc.get('short'), otc.get('lots'), taiex):
                 shorts[day] = [day, int(twse['short'] + otc['short']), int(twse['lots'] + otc['lots']), taiex]
                 log(u'  融券（上市＋上櫃）%s：%s 張，券資比 %.2f%%' % (
                     day, shorts[day][1], shorts[day][1] / float(shorts[day][2]) * 100))
     return ([rows[d] for d in sorted(rows)][-MAINT_KEEP:],
-            [shorts[d] for d in sorted(shorts)][-MAINT_KEEP:])
+            [shorts[d] for d in sorted(shorts)][-MAINT_KEEP:],
+            [money[d] for d in sorted(money)][-MAINT_KEEP:])
 
 
 def credit_risk():
@@ -1265,7 +1272,7 @@ def main():
             break
     log(u'  餘額 %d 天，維持率 %s%%' % (
         len(margin['dates']), margin['maint']['ratio'] if margin['maint'] else u'—'))
-    margin['maintHist'], margin['shortHist'] = maint_history(
+    margin['maintHist'], margin['shortHist'], margin['moneyHist'] = maint_history(
         margin['maint'], margin['maint']['date'] if margin['maint'] else None)
     log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()

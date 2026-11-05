@@ -13,7 +13,7 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats,
+  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT,
   type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
@@ -296,6 +296,62 @@ function FuturesSection({ data }: { data: ChipsData }) {
 
 /* ── 融資 ───────────────────────────────────────────────── */
 
+/**
+ * 融資 vs 大盤累積漲跌幅（站主 2026-11-05 的想法：融資增幅 ≤ 大盤漲幅可接受；融資增加太快、超過大盤，行情可能洗融資甚至殺融資）。
+ * 2009 起驗證（D:\ai\_tmp\scripts_iso\margin_vs_index.py）：只有超過很多（20 天差距 ≥ +10 個百分點）之後跌幅才明顯較大；
+ * 小幅超過（0～+10）反而多半是融資跟著上漲加碼、之後續漲。所以警示線畫在 +10。
+ */
+function MarginVsIndex({ money, shorts }: { money: Array<[string, number]>; shorts: ShortRow[] }) {
+  const [days, setDays] = useState(60);
+  const { cum, gap } = useMemo(() => marginVsIndex(money, shorts, days), [money, shorts, days]);
+  const recent = useMemo(() => {
+    const end = gap[gap.length - 1]?.[0] ?? '';
+    const cut = end ? `${Number(end.slice(0, 4)) - 3}${end.slice(4)}` : '';
+    return gap.filter(r => r[0] >= cut);
+  }, [gap]);
+  if (cum.m.length < 2 || !gap.length) return null;
+  const mNow = cum.m[cum.m.length - 1][1];
+  const xNow = cum.x[cum.x.length - 1][1];
+  const g = mNow - xNow;
+  const lv = g >= MARGIN_GAP_HOT ? 2 : g > 0 ? 1 : 0;
+  const sg = (v: number) => `${v > 0 ? '+' : ''}${nf1.format(v)}`;
+  const msg = lv === 2 ? `融資增幅超過大盤 ${MARGIN_GAP_HOT} 個百分點以上：歷史上之後比較容易洗融資（之後 20 天下跌機率約四到五成、20 天內最大跌幅中位約 −3%，平常約 −1.7%）`
+    : lv === 1 ? '融資增幅略快於大盤：歷史上這種時候多半是融資跟著上漲加碼、之後仍續漲，還不算過熱'
+    : '融資增幅沒有超過大盤：融資增加在可接受範圍';
+  return (
+    <div className="mt-3 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">融資 vs 大盤 累積漲跌幅（上市＋上櫃融資金額）</h3>
+        <span className="text-[11.5px] text-faint">最新 {cum.m[cum.m.length - 1][0]}</span>
+      </div>
+      <div className="mt-2 flex gap-1.5">
+        {[[20, '20 天'], [60, '60 天'], [120, '120 天']].map(([d, label]) => (
+          <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d as number)}
+                  className={`h-7 rounded-lg px-2.5 text-[12px] font-semibold ${days === d ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className={`mt-2 rounded-md px-2.5 py-1.5 text-[12px] leading-relaxed ${LEVEL_CLASS[lv]}`}>
+        <b>近 {days} 個交易日：融資 {sg(mNow)}%、大盤 {sg(xNow)}%，差距 {sg(g)} 個百分點</b>
+        <span className="block">{msg}</span>
+      </div>
+      <AlignedCharts cut="" charts={[
+        { title: `近 ${days} 天累積漲跌幅`, rows: cum.m, rows2: cum.x, label: '融資', label2: '大盤', digits: 1, unit: '%', guides: [0] },
+      ]} />
+      <AlignedCharts cut="" charts={[
+        { title: `過去 ${days} 天融資增幅 − 大盤漲幅（百分點，近 3 年；虛線 0 與 +${MARGIN_GAP_HOT}）`, rows: recent, digits: 1,
+          guides: [0, MARGIN_GAP_HOT] },
+      ]} />
+      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+        藍線融資、灰色虛線大盤，從 {days} 個交易日前起算。融資金額是借的錢，不會因為股價漲跌而變，所以增幅比大盤快＝散戶加碼的速度超過行情。
+        2009 起驗證：差距在 0 以下或 0～+{MARGIN_GAP_HOT} 時，之後 20 天大盤多半照常；超過 +{MARGIN_GAP_HOT}（20 天或 60 天）之後，
+        20 天內最大跌幅中位約 −3%，比平常大一倍左右，但也只是機率較高、不是一定會跌。大盤急跌、融資還沒減時差距也會變大，那就是融資還沒洗出來。
+      </p>
+    </div>
+  );
+}
+
 function MarginSection({ data }: { data: ChipsData }) {
   const m = data.margin;
   if (!m || m.dates.length < 2) return null;
@@ -316,16 +372,13 @@ function MarginSection({ data }: { data: ChipsData }) {
                 sub={`${m.maint.date} · 自算，${nf0.format(m.maint.n)} 檔`} />
         )}
       </div>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">融資餘額（億元，上市）</div>
-          <Line values={yi} />
-        </div>
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">每日增減（億元，紅增綠減）</div>
-          <Bars values={daily} />
-        </div>
-      </div>
+      {/* 2026-11-05 站主：看不到日期 → 改用共用日期軸的圖（月份刻度、點一下看那天） */}
+      <AlignedCharts cut="" charts={[
+        { title: '融資餘額（億元，上市）', rows: m.dates.map((d, i) => [d, yi[i]] as [string, number]), digits: 0 },
+        { title: '每日增減（億元，紅增綠減）', kind: 'bar', digits: 1,
+          rows: m.dates.slice(1).map((d, i) => [d, daily[i + 1] as number] as [string, number]) },
+      ]} />
+      {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <MarginVsIndex money={m.moneyHist} shorts={m.shortHist} />}
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         融資是散戶借錢買股，餘額增加代表槓桿在加大。維持率＝融資買進的股票現值 ÷ 借的錢：
         剛買進時約 166%（自備四成），個股跌破 130% 會被追繳，大盤維持率掉到 140% 以下
@@ -551,16 +604,39 @@ function ShortHistory({ shorts, sbl, cut }: { shorts: ShortRow[]; sbl: Array<[st
   );
 }
 
-interface AlignedChart { title: string; rows: Array<[string, number]>; digits: number; guides?: number[] }
+interface AlignedChart {
+  title: string;
+  rows: Array<[string, number]>;
+  digits: number;
+  guides?: number[];
+  /** 'bar'＝從 0 畫柱子（正紅負綠，每日增減用）；預設折線 */
+  kind?: 'line' | 'bar';
+  /** 第二條線（同一個單位，例：大盤累積漲跌幅），灰色虛線；label／label2 是圖例 */
+  rows2?: Array<[string, number]>;
+  label?: string;
+  label2?: string;
+  /** 數字後面加的單位（例 %） */
+  unit?: string;
+}
 
 /**
  * 幾張折線共用同一條日期軸：同一個左右位置就是同一天，有直線刻度對齊；
  * 指一張圖，每張圖都在同一天畫豎線、標題旁換成那天的值（站主 2026-11-05 要求按日期對齊）。
  * 手機上 touch-pan-y：上下滑還是捲頁面，點一下或左右拖才是看某一天。
+ * 2026-11-05 加柱狀（kind: 'bar'）與第二條線（rows2）：融資每日增減、融資 vs 大盤累積漲跌幅也用這個，才有日期。
  */
 function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string }) {
   const [hover, setHover] = useState<number | null>(null);
-  const al = useMemo(() => alignByDate(charts.map(c => c.rows), cut), [charts, cut]);
+  // 每張圖的數列攤平：第 k 張的主線在 idx[k][0]、第二條在 idx[k][1]
+  const { al, idx } = useMemo(() => {
+    const series: Array<Array<[string, number]>> = [];
+    const idx = charts.map(c => {
+      const a = series.push(c.rows) - 1;
+      const b = c.rows2 ? series.push(c.rows2) - 1 : -1;
+      return [a, b] as const;
+    });
+    return { al: alignByDate(series, cut), idx };
+  }, [charts, cut]);
   const n = al.dates.length;
   if (n < 2) return null;
   const W = 320;
@@ -570,27 +646,36 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
     const r = e.currentTarget.getBoundingClientRect();
     setHover(Math.max(0, Math.min(n - 1, Math.round(((e.clientX - r.left) / r.width) * (n - 1)))));
   };
+  const fmt = (v: number | null, c: AlignedChart) => (v === null ? '—' : `${v.toFixed(c.digits)}${c.unit ?? ''}`);
   return (
     <div onPointerLeave={() => setHover(null)}>
       {charts.map((c, k) => {
-        const vals = al.values[k];
-        const nums = vals.filter((v): v is number => v !== null);
+        const vals = al.values[idx[k][0]];
+        const vals2 = idx[k][1] >= 0 ? al.values[idx[k][1]] : null;
+        const nums = [...vals, ...(vals2 ?? [])].filter((v): v is number => v !== null);
         if (nums.length < 2) return null;
-        const lo = Math.min(...nums);
-        const span = Math.max(...nums) - lo || 1;
+        const bar = c.kind === 'bar';
+        let lo = Math.min(...nums);
+        let hi = Math.max(...nums);
+        if (bar) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+        const span = hi - lo || 1;
         const y = (v: number) => 3 + (1 - (v - lo) / span) * (H - 6);
         const pts = vals.flatMap((v, i) => (v === null ? [] : [{ x: x(i), y: y(v) }]));
+        const pts2 = vals2 ? vals2.flatMap((v, i) => (v === null ? [] : [{ x: x(i), y: y(v) }])) : [];
+        const bw = Math.max(1, W / n - 1);
         const last = c.rows[c.rows.length - 1];
-        const hv = hover === null ? null : vals[hover];
+        const last2 = c.rows2?.[c.rows2.length - 1];
+        const at = hover === null ? null : hover;
         return (
           <div key={c.title} className="mt-2 rounded-lg border border-line bg-bg p-2.5">
             <div className="flex justify-between gap-2 text-[11px] text-muted">
               <span>{c.title}</span>
-              <span className="shrink-0 tabular-nums">
-                {hover === null ? last[0].slice(5) : al.dates[hover]}{' '}
-                <b className="font-mono font-semibold text-ink">
-                  {hover === null ? last[1].toFixed(c.digits) : hv === null ? '—' : hv.toFixed(c.digits)}
-                </b>
+              <span className="shrink-0 text-right tabular-nums">
+                {at === null ? last[0].slice(5) : al.dates[at]}{' '}
+                {c.label && <span>{c.label} </span>}
+                <b className="font-mono font-semibold text-ink">{fmt(at === null ? last[1] : vals[at], c)}</b>
+                {vals2 && <> · {c.label2} <b className="font-mono font-semibold text-ink">
+                  {fmt(at === null ? last2?.[1] ?? null : vals2[at], c)}</b></>}
               </span>
             </div>
             <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={c.title}
@@ -599,12 +684,23 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
                 <line key={i} x1={x(i)} x2={x(i)} y1="0" y2={H} stroke="currentColor"
                       className="text-line" strokeWidth="1" vectorEffect="non-scaling-stroke" />
               ))}
-              {(c.guides ?? []).filter(g => g >= lo && g <= lo + span).map(g => (
+              {(c.guides ?? []).filter(g => g >= lo && g <= hi).map(g => (
                 <line key={`g${g}`} x1="0" x2={W} y1={y(g)} y2={y(g)} stroke="currentColor"
                       className="text-muted" strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
               ))}
-              <path d={linePath(pts)} fill="none" stroke="currentColor" strokeWidth="1.5"
-                    className="text-accent" vectorEffect="non-scaling-stroke" />
+              {bar ? vals.map((v, i) => (v === null || v === 0 ? null : (
+                <rect key={i} x={x(i) - bw / 2} width={bw} y={Math.min(y(v), y(0))} height={Math.abs(y(v) - y(0))}
+                      className={v > 0 ? 'fill-up' : 'fill-down'} />
+              ))) : (
+                <>
+                  {pts2.length > 1 && (
+                    <path d={linePath(pts2)} fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="4 3"
+                          className="text-muted" vectorEffect="non-scaling-stroke" />
+                  )}
+                  <path d={linePath(pts)} fill="none" stroke="currentColor" strokeWidth="1.5"
+                        className="text-accent" vectorEffect="non-scaling-stroke" />
+                </>
+              )}
               {hover !== null && (
                 <line x1={x(hover)} x2={x(hover)} y1="0" y2={H} stroke="currentColor"
                       className="text-ink" strokeWidth="1" vectorEffect="non-scaling-stroke" />
