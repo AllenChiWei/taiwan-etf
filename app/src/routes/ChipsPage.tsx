@@ -373,8 +373,11 @@ function MarginSection({ data }: { data: ChipsData }) {
         )}
       </div>
       {/* 2026-11-05 站主：看不到日期 → 改用共用日期軸的圖（月份刻度、點一下看那天） */}
-      <AlignedCharts cut="" charts={[
+      {/* 站主 2026-11-05：融資餘額要跟加權指數比較 → 指數放在正下方、共用日期軸（不用雙 Y 軸） */}
+      <AlignedCharts cut={m.dates[0]} charts={[
         { title: '融資餘額（億元，上市）', rows: m.dates.map((d, i) => [d, yi[i]] as [string, number]), digits: 0 },
+        ...(m.shortHist?.length ? [{ title: '加權指數', digits: 0,
+          rows: m.shortHist.filter(r => r[3] > 0).map(r => [r[0], r[3]] as [string, number]) }] : []),
         { title: '每日增減（億元，紅增綠減）', kind: 'bar', digits: 1,
           rows: m.dates.slice(1).map((d, i) => [d, daily[i + 1] as number] as [string, number]) },
       ]} />
