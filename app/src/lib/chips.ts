@@ -171,7 +171,7 @@ export interface AlignedSeries {
   dates: string[];
   /** 每條數列在每個軸點的值；那段還沒有資料就是 null（VIX 2026-08 才開始） */
   values: (number | null)[][];
-  /** 軸上的刻度 [軸點索引, 標籤]：兩年以內標季（1 月標年份），更長標年 */
+  /** 軸上的刻度 [軸點索引, 標籤]（1 月標年份；空字串＝只畫格線、不標字），疏密看區間長度 */
   ticks: Array<[number, string]>;
 }
 
@@ -197,14 +197,19 @@ export function alignByDate(series: Array<Array<[string, number]>>, cut: string,
   const ticks: Array<[number, string]> = [];
   if (dates.length > 1) {
     const years = (Date.parse(dates[dates.length - 1]) - Date.parse(dates[0])) / (365.25 * 864e5);
-    const every = years <= 2 ? 0 : years <= 7 ? 1 : years <= 14 ? 2 : 4;
-    const monthly = years <= 0.6;            // 半年內（融資近 81 天）每個月都標
+    // 站主 2026-11-05：「至少加上 6 月或 7 月，才抓得到日期」→ 格線加密、年中也標；標籤空字串＝只畫格線
+    // 半年內每月標；1 年每月格線、隔月標；2 年內每季標；7 年內每季格線、標年份與 7 月；更長每年格線、年份隔 2／4 年標
+    const yearEvery = years <= 14 ? 2 : 4;
     dates.forEach((d, i) => {
       if (i === 0 || d.slice(0, 7) === dates[i - 1].slice(0, 7)) return;
       const y = Number(d.slice(0, 4));
       const m = Number(d.slice(5, 7));
-      if (every === 0 && (monthly || m % 3 === 1)) ticks.push([i, m === 1 ? String(y) : `${m}月`]);
-      else if (every > 0 && d.slice(0, 4) !== dates[i - 1].slice(0, 4) && y % every === 0) ticks.push([i, String(y)]);
+      const name = m === 1 ? String(y) : `${m}月`;
+      if (years <= 0.6) ticks.push([i, name]);
+      else if (years <= 1.1) ticks.push([i, m % 2 === 1 ? name : '']);
+      else if (years <= 2.2) { if (m % 3 === 1) ticks.push([i, name]); }
+      else if (years <= 7) { if (m % 3 === 1) ticks.push([i, m === 1 || m === 7 ? name : '']); }
+      else if (m === 1) ticks.push([i, y % yearEvery === 0 ? String(y) : '']);
     });
   }
   return { dates, values, ticks };

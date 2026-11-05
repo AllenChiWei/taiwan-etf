@@ -672,7 +672,7 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
       })}
       {/* 共用的日期刻度：卡片內距跟上面一樣，位置才對得上 */}
       <div className="relative mx-2.5 h-4 text-[10.5px] tabular-nums text-faint">
-        {al.ticks.map(([i, label]) => (
+        {al.ticks.filter(t => t[1]).map(([i, label]) => (
           <span key={i} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: `${(i / (n - 1)) * 100}%` }}>{label}</span>
         ))}
       </div>
@@ -734,7 +734,8 @@ function CreditBlock({ rows }: { rows: CreditRow[] }) {
   const dKeep = keep !== null && prev?.[CREDIT.keep] != null ? keep - (prev[CREDIT.keep] as number) : null;
   const below = last[CREDIT.below];
   const dBelow = below !== null && prev?.[CREDIT.below] != null ? below - (prev[CREDIT.below] as number) : null;
-  const col = (i: number) => rows.map(r => r[i] as number | null);
+  // [日期, 值]，沒值的那天跳過（AlignedCharts 用日期對齊）
+  const col = (i: number) => rows.flatMap(r => (r[i] == null ? [] : [[r[CREDIT.d] as string, r[i] as number] as [string, number]]));
   return (
     <div className="mt-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -750,26 +751,13 @@ function CreditBlock({ rows }: { rows: CreditRow[] }) {
         <Stat label="追繳金額" value={money(last[CREDIT.callAmt])} sub="當日證券商通知應補繳" />
         <Stat label="處分" value={`${nf0.format(last[CREDIT.exe] ?? 0)} 戶`} sub={`金額 ${money(last[CREDIT.exeAmt])}`} />
       </div>
-      <div className="mt-2 grid gap-2 sm:grid-cols-2">
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">全市場擔保維持率（%）</div>
-          <Line values={col(CREDIT.keep)} guides={[130]} />
-        </div>
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">追繳戶數（整戶維持率低於 130%）</div>
-          <Bars values={col(CREDIT.below)} />
-        </div>
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">追繳金額（億元）</div>
-          <Bars values={col(CREDIT.callAmt).map(v => (v === null ? null : v / 1e8))} />
-        </div>
-        <div className="rounded-lg border border-line bg-bg p-2.5">
-          <div className="text-[11.5px] text-muted">
-            信用交易戶數（最新 {nf0.format(last[CREDIT.acc] ?? 0)} 戶，占 {last[CREDIT.accRate] ?? '—'}%）
-          </div>
-          <Bars values={col(CREDIT.acc)} />
-        </div>
-      </div>
+      {/* 2026-11-05 站主：圖要有日期 → 四張共用日期軸（月份刻度、點一下同步標同一天） */}
+      <AlignedCharts cut="" charts={[
+        { title: '全市場擔保維持率（%）', rows: col(CREDIT.keep), digits: 1, guides: [130] },
+        { title: '追繳戶數（整戶維持率低於 130%）', rows: col(CREDIT.below), digits: 0, kind: 'bar' },
+        { title: '追繳金額（億元）', rows: col(CREDIT.callAmt).map(([d, v]) => [d, v / 1e8] as [string, number]), digits: 2, kind: 'bar' },
+        { title: `信用交易戶數（占 ${last[CREDIT.accRate] ?? '—'}%）`, rows: col(CREDIT.acc), digits: 0 },
+      ]} />
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         官方數字，來自證交所「信用交易儀表板」。<b>擔保維持率是融資、融券合併計算</b>（全市場融資擔保品市值加融券保證金，
         除以融資金加融券標的市值），所以跟上面自算的「融資維持率」不同。追繳戶數＝截至當日整戶擔保維持率低於 130% 的戶數；

@@ -512,6 +512,14 @@ test('alignByDate：幾條數列對到同一條日期軸，還沒開始的那段
   // 刻度：跨年標年份
   const c = alignByDate([[['2025-12-30', 1], ['2026-01-02', 2], ['2026-04-01', 3]]], '');
   assert.deepEqual(c.ticks, [[1, '2026'], [2, '4月']]);
+  // 5 年：每季一條格線，標年份與 7 月（站主要能抓到年中）
+  const five: Array<[string, number]> = [];
+  for (let y = 2021; y <= 2026; y++) for (let m = 1; m <= 12; m++) five.push([`${y}-${String(m).padStart(2, '0')}-15`, m]);
+  const f = alignByDate([five.filter(r => r[0] >= '2021-11' && r[0] <= '2026-11')], '');
+  const labels = f.ticks.map(t => t[1]);
+  assert.ok(labels.includes('2024') && labels.includes('7月'));
+  assert.ok(f.ticks.filter(t => t[1] === '').every(([i]) => ['04', '10'].includes(f.dates[i].slice(5, 7))), '4、10 月只畫格線');
+  assert.ok(f.ticks.every(([i]) => ['01', '04', '07', '10'].includes(f.dates[i].slice(5, 7))));
 });
 
 test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
