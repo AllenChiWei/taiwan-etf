@@ -1,2 +1,2 @@
-# 本機工作排程推這個檔來觸發 GitHub Actions（見 D:i\.claude\skills\site-data-check	rigger_site.py）
-2026-11-04 初始
+# 本機工作排程推這個檔來觸發 GitHub Actions（見 D:\ai\.claude\skills\site-data-check\trigger_site.py）
+2026-11-05 19:05:05
