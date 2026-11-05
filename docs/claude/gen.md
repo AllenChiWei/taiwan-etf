@@ -17,3 +17,11 @@
 - 2026-11-04 起多商品：頁面上方切換「台指／NQ 小那斯達克」（`SETS`，localStorage `twetf.gen.set`）；台指＝`gen.enc`、NQ＝`gen_nq.enc`（`gen_export.py <json> --set nq`）。資料的 `unit`（「萬美元」，使用者要求不換匯）、`market`、`sessNotes`（NQ 是台灣時間 06:00 換日的 24 小時，「當沖」＝交易時段結束時平倉）由 QT `GenPipeline.Payload` 寫入；舊資料沒有就是「萬」與台指的盤別說明。一鍵組合還沒跑完時，可用 `--sgen-payload <價格檔> <名稱\t代號\t說明> <輸出> --inst NQ` 先把已錄取的推上來（不重跑防過擬合）。
 - 本機實測私人頁：`D:\ai\_tmp\scripts_iso\gen_verify.py`（v18 金鑰由程式從 .env 讀、塞進 localStorage 跑 site_verify，結束後還原 data/gen 並刪掉含金鑰的 Edge 設定檔）。
 - 私人頁不記「更新」頁（changelog）。
+
+## #/MAINT 融資維持率空方（2026-11-05，私人頁）
+- 站主：維持率空方策略再加幾支、放私人區、多一些統計；看空方策略績效與加入 #/GEN 產生器策略後的 Portfolio 效果。
+- 頁面 `app/src/routes/MaintPage.tsx`（入口在「我的工具」）；共用格式與 ECharts 掛載搬到 `lib/genChart.ts`，GenPage 的 Card／YearTable／YearBars／PlCode 匯出共用；組合用 `lib/genPortfolio.ts` 的 buildCombo 在前端算。
+- 資料 `data/gen/gen_maint.enc`（同 v18 密碼與 salt）：`strategies[]` 多了 `group`（maint／gen）、`desc`、`trades`（[進, 出, 萬]）、`ts`（交易統計）；另有 `maint`（維持率，對齊 dates）、`txf`（台指收盤）、`stress`（台指跌 ≥12% 期間）、`groups`。
+- 產生：`D:\ai\_tmp\scripts_iso\maint_web_qt.py`（QT `--sgen-payload --maint --maint-night-prev`，B～I＋GL01～15＋GS01）→ `maint_web_payload.py`（加 A、交易、維持率；先驗證統計算法和 QT 一致）→ `cd D:\ai\DashBoard_AI && uv run --python 3.12 gen_export.py D:\ai\_tmp\maint_web\payload.json --set maint`。
+- 頁面功能：三組合（原組合／維持率空方／合計）並排與加入後變化、維持率空方權重 ×0～×3 表（點列套用）、權益＋回撤（台指大跌期間淡紅底）、大跌期間表、每年（三組＋維持率<155 天數）、維持率走勢與進場點、每月熱圖、相關矩陣、策略表（勾選移出）、單支詳細（交易統計、權益＋回撤、每筆交易、防過擬合、PL）。
+- 本機實測：`gen_verify.py <payload> --set maint --route MAINT --expect 維持率空方要放多少`。

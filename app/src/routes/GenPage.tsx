@@ -16,6 +16,7 @@ import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Locked } from './QBPage';
 import { CATEGORY_COLORS } from '../lib/palette';
 import { buildCombo, corr, type Stats, type Year } from '../lib/genPortfolio';
+import { cssVar, r2, sign, useEChart, wan } from '../lib/genChart';
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/gen/`, 'twetf.v18.unlock');
 
@@ -54,11 +55,6 @@ const sideOf = (x: Strat): Side => x.side ?? 'short';
 /** 舊資料只有一組 combo（空 10 支），當成「空單」那組 */
 const combosOf = (d: GenData): Partial<Record<Group, Combo>> => d.combos ?? (d.combo ? { short: d.combo } : {});
 const inGroup = (x: Strat, g: Group) => g === 'both' || sideOf(x) === g;
-const wan = (x: number) => x.toLocaleString('zh-TW', { maximumFractionDigits: 0 });
-const r2 = (x: number | null | undefined) => (x == null ? '—' : x.toFixed(2));
-const sign = (x: number | null) => (x == null ? 'text-muted' : x >= 0 ? 'text-up' : 'text-down');
-/** ECharts 畫在 canvas 上，不認得 var(--x)：從目前主題取實際色值 */
-const cssVar = (v: string) => getComputedStyle(document.documentElement).getPropertyValue(v.replace(/^var\((.*)\)$/, '$1')).trim() || '#888';
 
 export function GenPage() {
   const [manifest, setManifest] = useState<VaultManifest | null>(null);
@@ -340,7 +336,7 @@ function Row({ id, sel, onSel, title, sub, st, robust, on, onToggle }: {
   );
 }
 
-function Card({ label, value, sub, cls = 'text-ink' }: { label: string; value: string; sub?: string; cls?: string }) {
+export function Card({ label, value, sub, cls = 'text-ink' }: { label: string; value: string; sub?: string; cls?: string }) {
   return (
     <div className="rounded-lg bg-sunken px-2.5 py-2">
       <div className="text-[11px] text-muted">{label}</div>
@@ -377,7 +373,7 @@ function StatCards({ stats, years, isYear, strat, combo }: { stats: Stats; years
   );
 }
 
-function YearTable({ years, isYear }: { years: Year[]; isYear: string }) {
+export function YearTable({ years, isYear }: { years: Year[]; isYear: string }) {
   const u = useContext(UnitCtx);
   return (
     <div className="mt-3 overflow-x-auto">
@@ -403,7 +399,7 @@ function YearTable({ years, isYear }: { years: Year[]; isYear: string }) {
   );
 }
 
-function PlCode({ id, code }: { id: string; code: string }) {
+export function PlCode({ id, code }: { id: string; code: string }) {
   const [done, setDone] = useState(false);
   return (
     <details className="mt-3 rounded-lg border border-line">
@@ -419,31 +415,8 @@ function PlCode({ id, code }: { id: string; code: string }) {
   );
 }
 
-type Chart = { setOption: (o: unknown, notMerge?: boolean) => void; resize: () => void; dispose: () => void };
-
-/** ECharts 共用：只建立一次，選項變了就 setOption */
-function useEChart(opt: unknown) {
-  const el = useRef<HTMLDivElement>(null);
-  const chart = useRef<Chart | null>(null);
-  const last = useRef(opt);
-  useEffect(() => {
-    let disposed = false;
-    import('echarts').then(ec => {
-      if (disposed || !el.current) return;
-      chart.current = ec.init(el.current) as unknown as Chart;
-      chart.current.setOption(last.current, true);
-    });
-    const onResize = () => chart.current?.resize();
-    window.addEventListener('resize', onResize);
-    return () => { disposed = true; window.removeEventListener('resize', onResize); chart.current?.dispose(); chart.current = null; };
-  }, []);
-  // 圖表是非同步載入的：最新選項先記著，載入完成時用它畫
-  useEffect(() => { last.current = opt; chart.current?.setOption(opt, true); }, [opt]);
-  return el;
-}
-
 /** 每年淨利長條圖：樣本內實心、樣本外淡色；虧損年用跌色 */
-function YearBars({ years, isYear }: { years: Year[]; isYear: number }) {
+export function YearBars({ years, isYear }: { years: Year[]; isYear: number }) {
   const u = useContext(UnitCtx);
   const opt = useMemo(() => {
     const ink = cssVar('--c-muted'), grid = cssVar('--c-border'), up = cssVar('--c-up'), down = cssVar('--c-down');

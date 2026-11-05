@@ -108,7 +108,7 @@ plus deleting the file and its three scripts.
 | `docs/claude/futures-statement.md` | 期貨對帳單分析 | 改對帳單頁（/futures） |
 | `docs/claude/budget.md` | 支出預估＋用 ETF 配息支付（私人頁） | 改支出預估頁（/budget）、lib/budget.ts、lib/ghSync.ts |
 | `docs/claude/dca.md` | 定期定額紀錄（私人頁） | 改定期定額頁（/dca）、lib/dca.ts |
-| `docs/claude/gen.md` | 策略產生器結果（私人頁） | 改 /GEN 頁、gen_export.py、產生器資料格式 |
+| `docs/claude/gen.md` | 策略產生器結果、融資維持率空方（私人頁） | 改 /GEN、/MAINT 頁、gen_export.py、產生器資料格式 |
 | `docs/claude/etf-holdings.md` | ETF 持股（主動式換股、前十大、即將上市） | 改主動式 ETF 換股、fetch_active_holdings.py、前十大持股、即將上市 |
 
 ## Verify changes
