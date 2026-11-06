@@ -167,9 +167,13 @@ SHORT_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_short_seed.json')
 MONEY_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_money_seed.json')
 # 追繳（信用交易儀表板）沒有回補來源，種子是 2026-11-04 當時線上累積的那幾十天，之後靠快取＋線上
 CREDIT_SEED = os.path.join(ROOT, 'scripts', 'data', 'credit_seed.json')
+# 不限用途款項借貸（2026-11-06 站主）：證交所臺股儀表板「融通餘額及擔保維持率」（/dashboard/zh/credit/general.html）背後的端點，
+# 2026-08-03 起才有、一次最多 60 天 → 種子（分段回補）＋每天累積，同追繳那份
+TWSE_ANYLOAN = 'https://www.twse.com.tw/rwd/zh/marginTrading/BFIJ4U_TREND?response=json&days=60'
+ANYLOAN_SEED = os.path.join(ROOT, 'scripts', 'data', 'anyloan_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'sblHist', 'vix', 'basis', 'breadth', 'limits', 'limitsOtc')
+HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'anyLoan', 'sblHist', 'vix', 'basis', 'breadth', 'limits', 'limitsOtc')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -840,6 +844,26 @@ def credit_risk():
     return [rows[d] for d in sorted(rows)][-CREDIT_KEEP:]
 
 
+def any_loan():
+    u"""證交所臺股儀表板的不限用途款項借貸：每天一列 [日期, 融通餘額(元), 擔保維持率%, 追繳戶數, 當日通知追繳戶數,
+    追繳金額(元), 處分戶數, 處分金額(元), 擔保品價值(元)]。
+
+    追繳戶數同信用交易那份取 belowAccNum（整戶擔保維持率低於 130% 的戶數）。擔保維持率＝擔保品價值 ÷ 融通餘額，
+    是全市場平均，跟融資的維持率、信用交易的擔保維持率都是不同的數字。端點只給近 60 天：種子＋快取＋線上合併累積。
+    """
+    rows = _seed_and_live(ANYLOAN_SEED, 'anyLoan', list)
+    doc = fetch_json(TWSE_ANYLOAN, u'證交所不限用途款項借貸')
+    if doc and doc.get('stat') == 'OK':
+        for r in doc.get('data') or []:
+            d = r.get('date') or ''
+            if len(d) != 8 or r.get('anyBalAmt') is None:
+                continue
+            day = '%s-%s-%s' % (d[:4], d[4:6], d[6:])
+            rows[day] = [day, r.get('anyBalAmt'), r.get('keepRate'), r.get('belowAccNum'), r.get('callAccNum'),
+                         r.get('callAmt'), r.get('exeAccNum'), r.get('exeAmt'), r.get('guaranteeAmt')]
+    return [rows[d] for d in sorted(rows)][-CREDIT_KEEP:]
+
+
 # ── 台股情緒與借券（2026-11-04）─────────────────────────────
 
 def _is_stock(code):
@@ -1331,6 +1355,8 @@ def main():
     log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
+    margin['anyLoan'] = any_loan()
+    log(u'  不限用途款項借貸（餘額、擔保維持率）%d 天' % len(margin['anyLoan']))
     mday = margin['maint']['date'] if margin['maint'] else None
     margin['sblHist'] = sbl_history(mday)
     log(u'  借券賣出餘額歷史 %d 天' % len(margin['sblHist']))

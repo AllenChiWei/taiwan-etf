@@ -13,8 +13,8 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
-  type SummaryTile, type CreditRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate, limitTrend, combineLimits,
+  linePath, CREDIT, ANYLOAN, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
+  type SummaryTile, type CreditRow, type AnyLoanRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate, limitTrend, combineLimits,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
@@ -446,6 +446,7 @@ function MarginSection({ data }: { data: ChipsData }) {
       </p>
       {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
+      {m.anyLoan && m.anyLoan.length > 0 && <AnyLoanBlock rows={m.anyLoan} />}
     </Section>
   );
 }
@@ -879,6 +880,49 @@ function CreditBlock({ rows }: { rows: CreditRow[] }) {
   );
 }
 
+/** 不限用途款項借貸（2026-11-06 站主）：證交所臺股儀表板「融通餘額及擔保維持率」，2026-08-03 起每天累積 */
+function AnyLoanBlock({ rows }: { rows: AnyLoanRow[] }) {
+  const last = rows[rows.length - 1];
+  const prev = rows.length > 1 ? rows[rows.length - 2] : null;
+  const diff = (i: number) => (last[i] != null && prev?.[i] != null ? (last[i] as number) - (prev[i] as number) : null);
+  const bal = last[ANYLOAN.bal], dBal = diff(ANYLOAN.bal);
+  const keep = last[ANYLOAN.keep], dKeep = diff(ANYLOAN.keep);
+  const below = last[ANYLOAN.below], dBelow = diff(ANYLOAN.below);
+  const first = rows.find(r => r[ANYLOAN.bal] != null);
+  const growth = first && bal != null ? (bal / (first[ANYLOAN.bal] as number) - 1) * 100 : null;
+  const col = (i: number, k = 1) => rows.flatMap(r => (r[i] == null ? [] : [[r[ANYLOAN.d] as string, (r[i] as number) / k] as [string, number]]));
+  return (
+    <div id="anyloan" className="mt-3 scroll-mt-16 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">不限用途款項借貸（證交所臺股儀表板）</h3>
+        <span className="text-[11.5px] text-faint">最新 {last[ANYLOAN.d]} · 近 {rows.length} 個交易日</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <Stat label="不限用途餘額" value={bal === null ? '—' : `${nf0.format(yuanToYi(bal))} 億`}
+              sub={`較前日 ${dBal === null ? '—' : `${dBal > 0 ? '+' : ''}${nf1.format(yuanToYi(dBal))} 億`}${growth === null ? '' : ` · ${first![ANYLOAN.d]} 起 ${growth > 0 ? '+' : ''}${nf1.format(growth)}%`}`}
+              tone={dBal === null ? undefined : TONE_CLASS[netTone(dBal)]} />
+        <Stat label="擔保維持率" value={keep === null ? '—' : `${nf1.format(keep)}%`}
+              sub={dKeep === null ? undefined : `較前日 ${dKeep > 0 ? '+' : ''}${nf1.format(dKeep)} 個百分點`}
+              tone={dKeep === null ? undefined : TONE_CLASS[netTone(dKeep)]} />
+        <Stat label="追繳戶數" value={below === null ? '—' : `${nf0.format(below)} 戶`}
+              sub={`較前日 ${dBelow === null ? '—' : signed(dBelow)} · 當日通知 ${nf0.format(last[ANYLOAN.call] ?? 0)} 戶 · ${money(last[ANYLOAN.callAmt])}`} />
+        <Stat label="處分" value={`${nf0.format(last[ANYLOAN.exe] ?? 0)} 戶`} sub={`金額 ${money(last[ANYLOAN.exeAmt])}`} />
+      </div>
+      <AlignedCharts cut="" charts={[
+        { title: '不限用途餘額（億元）', rows: col(ANYLOAN.bal, 1e8), digits: 0 },
+        { title: '擔保維持率（%；130% 追繳、166% 補足）', rows: col(ANYLOAN.keep), digits: 1, guides: [130, 166] },
+        { title: '追繳戶數（整戶維持率低於 130%）', rows: col(ANYLOAN.below), digits: 0, kind: 'bar' },
+        { title: '追繳金額（億元）', rows: col(ANYLOAN.callAmt, 1e8), digits: 2, kind: 'bar' },
+      ]} />
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        官方數字，來自證交所臺股儀表板「融通餘額及擔保維持率」（2026-08-03 起提供，每天累積）。不限用途款項借貸＝拿股票向券商借錢、
+        錢不限定買股票；<b>擔保維持率＝擔保品市值 ÷ 借貸餘額</b>，是全市場平均，跟上面的融資維持率、信用交易擔保維持率都是不同的數字。
+        個人整戶低於 130% 會被追繳，補到 166% 以上才解除；全市場平均高不代表個別帳戶安全。
+      </p>
+    </div>
+  );
+}
+
 /* ── 市場情緒：VIX 與自算恐懼貪婪 ─────────────────────────── */
 
 const MOOD_TONE: Record<Mood, string> = {
@@ -997,7 +1041,7 @@ function SummaryStrip({ data }: { data: ChipsData }) {
   if (tiles.length === 0 && !fg?.latest && !vix) return null;
   return (
     <section aria-label="今日摘要"
-             className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+             className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
       {tiles.map(t => (
         <div key={t.key} className="rounded-lg border border-line bg-surface px-2.5 py-2">
           <div className="text-[11px] text-muted">{t.label}</div>

@@ -125,6 +125,11 @@ export interface MarginData {
    *  處分戶數, 處分金額(元), 信用交易戶數, 信用交易戶數占比%, 信用交易成交值(元)]。舊版沒有。
    */
   credit?: CreditRow[];
+  /**
+   * 不限用途款項借貸（證交所臺股儀表板，2026-08-03 起），每天一列：
+   * [日期, 融通餘額(元), 擔保維持率%, 追繳戶數（整戶維持率 < 130%）, 當日通知追繳戶數, 追繳金額(元), 處分戶數, 處分金額(元), 擔保品價值(元)]。舊版沒有。
+   */
+  anyLoan?: AnyLoanRow[];
   /** 大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
   maintHist?: Array<[string, number]>;
   /** 融券（上市＋上櫃）每天一列 [日期, 融券張數, 融資張數, 加權指數]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
@@ -474,6 +479,12 @@ export type CreditRow =[string, number | null, number | null, number | null, num
 /** 信用交易儀表板的欄位名，跟 CreditRow 的位置對應 */
 export const CREDIT = { d: 0, keep: 1, below: 2, call: 3, callAmt: 4, exe: 5, exeAmt: 6, acc: 7, accRate: 8, amt: 9 } as const;
 
+export type AnyLoanRow = [string, number | null, number | null, number | null, number | null,
+  number | null, number | null, number | null, number | null];
+
+/** 不限用途款項借貸的欄位名，跟 AnyLoanRow 的位置對應（2026-11-06） */
+export const ANYLOAN = { d: 0, bal: 1, keep: 2, below: 3, call: 4, callAmt: 5, exe: 6, exeAmt: 7, guar: 8 } as const;
+
 /** 定期定額交易戶數。這是這一頁唯一一份「散戶在買什麼」的官方數字。 */
 export interface DcaRow {
   code: string;
@@ -719,6 +730,21 @@ export function summaryTiles(data: ChipsData): SummaryTile[] {
   if (m?.maint) {
     out.push({ key: 'maint', label: '融資維持率', value: m.maint.ratio,
       change: null, unit: 'pct', tone: 'none', hint: '上市，自算' });
+  }
+  // 2026-11-06 站主：不限用途款項借貸的餘額與擔保維持率（證交所官方）
+  const al = m?.anyLoan;
+  if (al && al.length) {
+    const last = al[al.length - 1], prev = al.length > 1 ? al[al.length - 2] : null;
+    const bal = last[ANYLOAN.bal], pb = prev?.[ANYLOAN.bal] ?? null;
+    if (bal !== null) {
+      out.push({ key: 'anyLoan', label: '不限用途餘額', value: yuanToYi(bal),
+        change: pb === null ? null : yuanToYi(bal - pb), unit: 'yi', tone: 'change', hint: '證交所' });
+    }
+    const keep = last[ANYLOAN.keep], pk = prev?.[ANYLOAN.keep] ?? null;
+    if (keep !== null) {
+      out.push({ key: 'anyLoanKeep', label: '不限用途維持率', value: keep,
+        change: pk === null ? null : keep - pk, unit: 'pct', tone: 'none', hint: '全市場擔保' });
+    }
   }
   return out;
 }

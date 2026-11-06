@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-06',
+    items: [
+      { kind: 'new', to: '/chips',
+        text: '融資融券新增「不限用途款項借貸」：證交所公布的全市場借貸餘額、擔保維持率、追繳戶數與金額、處分，2026-08-03 起的走勢（共用日期軸，點一下看那天）；最上面的每日摘要也多了不限用途餘額與維持率兩格。' },
+    ],
+  },
+  {
     date: '2026-11-05',
     items: [
       { kind: 'improve', to: '/chips',
