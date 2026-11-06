@@ -34,6 +34,7 @@ Where each field comes from, because it is not one source:
 | 定期定額人氣榜 | TWSE OpenAPI `ETFReport/ETFRank`（**月報**，ETF 與個股各前 20 名） |
 | 週選價平和 | 期交所每日選擇權行情 CSV（`dlOptDataDown`）——**累積式、進版控** |
 | 融資餘額／大盤融資維持率 | FinMind `TaiwanStockTotalMarginPurchaseShortSale`（上市）；維持率用 TWSE `MI_MARGN` × 收盤價**自己算** |
+| 不限用途款項借貸（餘額、擔保維持率、追繳） | TWSE `BFIJ4U_TREND`（臺股儀表板，2026-08-03 起；種子＋每天累積，見 docs/claude/chips.md） |
 | VIX、恐懼貪婪（自算七項） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD RSP）＋ CBOE 每日 Put/Call（種子 `scripts/seed/cboe_putcall.json`＋Actions 快取累積）——**不是 CNN 的數字** |
 | 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
 | 個股配息（配息試算） | 上市：TWSE `TWT49U`；上櫃：櫃買當日除息＋FinMind `TaiwanStockDividend` 分批回補（累積式、進版控） |
