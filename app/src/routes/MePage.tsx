@@ -132,11 +132,7 @@ export function MePage() {
         </Link>
         <Link to="/GEN" className={card}>
           <div className="text-sm font-bold text-ink">策略產生器</div>
-          <p className="mt-1 text-[12.5px] text-muted">QT 產生器做出的策略：淨利、淨利÷MDD、獲利因子、績效曲線、每年績效、樣本內外、PowerLanguage</p>
-        </Link>
-        <Link to="/MAINT" className={card}>
-          <div className="text-sm font-bold text-ink">融資維持率空方</div>
-          <p className="mt-1 text-[12.5px] text-muted">維持率低時才放空的 9 支策略：績效、崩跌期間表現、和產生器多單組合合併後的 Portfolio 效果</p>
+          <p className="mt-1 text-[12.5px] text-muted">台指多 15＋空 8 的組合（淨利÷MDD、MC 式回撤、每年績效、PowerLanguage）、融資維持率空方 9 支與崩跌期間表現、NQ</p>
         </Link>
         <Link to="/dca" className={card}>
           <div className="text-sm font-bold text-ink">定期定額</div>

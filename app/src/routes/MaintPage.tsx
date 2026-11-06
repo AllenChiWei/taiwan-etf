@@ -3,20 +3,16 @@
  *
  * 資料由使用者電腦產生（D:\ai\_tmp\scripts_iso\maint_web_qt.py → maint_web_payload.py），DashBoard_AI\gen_export.py --set maint 加密成 data/gen/gen_maint.enc。
  * 兩組策略：maint（A～I，維持率低於門檻才放空）、gen（#/GEN 台指的多 15＋空 1）。組合在前端用 lib/genPortfolio.ts 重算：
- *   勾選框移出／放回策略、維持率空方的權重（×0～×3，只影響「合計」），所有數字跟著變。金額萬元；樣本內 ≤ isEnd。 */
+ *   勾選框移出／放回策略、維持率空方的權重（×0～×3，只影響「合計」），所有數字跟著變。金額萬元；樣本內 ≤ isEnd。
+ * 2026-11-06 站主：和策略產生器併成一頁 → 載入與解鎖都在 GenPage（上方切換「融資維持率空方」），這裡只剩畫面 MaintBoard；
+ *   gen 組改成 #/GEN 台指的多 15＋空 8（D:\ai\_tmp\scripts_iso\maint_web1106_payload.py）。 */
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Fragment, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Vault, type VaultManifest } from '../lib/vault';
-import { useVaultExpiry } from '../hooks/useVaultExpiry';
-import { Locked } from './QBPage';
 import { CATEGORY_COLORS } from '../lib/palette';
 import { buildCombo, corr, toDaily, type ComboCalc, type Seg, type Stats, type Year } from '../lib/genPortfolio';
-import { Card, PlCode, YearBars, YearTable } from './GenPage';
+import { Card, GenPage, PlCode, YearBars, YearTable } from './GenPage';
 import { cssVar, r2, sign, useEChart, wan } from '../lib/genChart';
-
-const vault = new Vault(`${import.meta.env.BASE_URL}data/gen/`, 'twetf.v18.unlock');
-const FILE = 'gen_maint.enc';
 
 type GroupId = 'maint' | 'gen';
 type ComboId = GroupId | 'all';
@@ -32,7 +28,7 @@ interface Strat {
   /** [進場日, 出場日, 損益萬]；只有維持率空方與 GS01 有 */
   trades: [string, string, number][] | null; ts: TradeStats | null;
 }
-interface Data {
+export interface MaintData {
   generated: string; title: string; isEnd: string; notes: string[]; dates: string[];
   /** 當天晚上公布的維持率（%）；沒有＝null */
   maint: (number | null)[];
@@ -50,29 +46,9 @@ const COLOR: Record<ComboId, string> = { gen: CATEGORY_COLORS[0], maint: CATEGOR
 const WEIGHTS = [0, 0.5, 1, 1.5, 2, 3];
 const W_KEY = 'twetf.maint.w';
 
+/** 2026-11-06 站主：維持率和策略產生器併成一頁 → 舊網址 #/MAINT 直接開 #/GEN 的「融資維持率空方」 */
 export function MaintPage() {
-  const [manifest, setManifest] = useState<VaultManifest | null>(null);
-  const [state, setState] = useState<'loading' | 'missing' | 'locked' | 'ready' | 'error'>('loading');
-  const [d, setD] = useState<Data | null>(null);
-  const [msg, setMsg] = useState('');
-  const load = async () => {
-    try { setState('loading'); setD(await vault.fetchJson<Data>(FILE)); setState('ready'); }
-    catch (e) { setMsg(e instanceof Error ? e.message : String(e)); setState('error'); }
-  };
-  useEffect(() => {
-    vault.loadManifest().then(async m => {
-      if (!m) { setState('missing'); return; }
-      setManifest(m);
-      if (await vault.restore(m)) await load(); else setState('locked');
-    }).catch(e => { setMsg(String(e)); setState('error'); });
-  }, []);
-  useVaultExpiry(vault, state === 'ready', () => { setD(null); setState('locked'); });
-
-  if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有資料。</p>;
-  if (state === 'locked' && manifest) return <Locked vault={vault} title="融資維持率空方" manifest={manifest} onUnlock={() => load()} />;
-  if (state === 'loading') return <p className="py-16 text-center text-[13px] text-muted">載入中…</p>;
-  if (state === 'error' || !d) return <p className="py-16 text-center text-[13px] text-down">載入失敗：{msg}</p>;
-  return <Board key={d.generated} d={d} />;
+  return <GenPage initialSet="maint" />;
 }
 
 /** 權重放大一支策略（金額類 ×w；比值、交易數不變） */
@@ -113,7 +89,7 @@ function useOff(key: string) {
   return [off, save] as const;
 }
 
-function Board({ d }: { d: Data }) {
+export function MaintBoard({ d }: { d: MaintData }) {
   const [off, setOff] = useOff(d.generated);
   const [w, setW] = useState<number>(() => {
     try { const v = Number(localStorage.getItem(W_KEY)); return WEIGHTS.includes(v) && localStorage.getItem(W_KEY) != null ? v : 1; } catch { return 1; }
@@ -152,7 +128,7 @@ function Board({ d }: { d: Data }) {
     <div className="mt-3 min-w-0">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
         <h1 className="text-base font-bold text-ink">{d.title}</h1>
-        <span className="text-[11.5px] text-faint">更新於 {d.generated}　·　<Link to="/GEN" className="hover:text-ink">策略產生器</Link>　·　<Link to="/me" className="hover:text-ink">← 我的工具</Link></span>
+        <span className="text-[11.5px] text-faint">更新於 {d.generated}　·　<Link to="/me" className="hover:text-ink">← 我的工具</Link></span>
       </div>
       <details className="mb-3 rounded-xl border border-line bg-surface p-3 text-[12.5px] text-muted">
         <summary className="cursor-pointer font-semibold text-ink">怎麼做出來的、數字怎麼看</summary>
@@ -211,7 +187,7 @@ function Section({ title, sub, children }: { title: string; sub?: string; childr
 }
 
 /** 最上面：三組合並排＋加入維持率空方後的變化 */
-function Summary({ d, combos, w }: { d: Data; combos: Record<ComboId, ComboCalc | null>; w: number }) {
+function Summary({ d, combos, w }: { d: MaintData; combos: Record<ComboId, ComboCalc | null>; w: number }) {
   const g = combos.gen, a = combos.all;
   const delta = (x: number | null | undefined, y: number | null | undefined, k = 2, invert = false) => {
     if (x == null || y == null) return null;
@@ -268,7 +244,7 @@ function Summary({ d, combos, w }: { d: Data; combos: Record<ComboId, ComboCalc 
 }
 
 /** 維持率空方放多少：×0（不放）～×3，合計的變化一次看完 */
-function WeightTable({ d, rows, w, onPick }: { d: Data; rows: { w: number; c: ComboCalc | null }[]; w: number; onPick: (w: number) => void }) {
+function WeightTable({ d, rows, w, onPick }: { d: MaintData; rows: { w: number; c: ComboCalc | null }[]; w: number; onPick: (w: number) => void }) {
   return (
     <Section title="維持率空方要放多少" sub="合計＝原組合＋維持率空方 × 倍數（每支口數乘上倍數）。點一列套用到整頁的「合計」。">
       <div className="mt-2 overflow-x-auto">
@@ -305,17 +281,17 @@ function WeightTable({ d, rows, w, onPick }: { d: Data; rows: { w: number; c: Co
 }
 
 /** 台指跌 ≥12% 的期間：淡紅底 markArea（共用） */
-function crashArea(d: Data) {
+function crashArea(d: MaintData) {
   return {
     silent: true, itemStyle: { color: 'rgba(214,69,69,0.08)' },
     data: d.stress.map(x => [{ xAxis: x.a }, { xAxis: x.b }]),
   };
 }
-const isLine = (d: Data) => {
+const isLine = (d: MaintData) => {
   const cut = d.dates.find(x => x > d.isEnd);
   return cut ? { silent: true, symbol: 'none', lineStyle: { type: 'dashed', color: cssVar('--c-muted'), width: 1 }, label: { show: false }, data: [{ xAxis: cut }] } : undefined;
 };
-const axisBase = (d: Data) => {
+const axisBase = (d: MaintData) => {
   const ink = cssVar('--c-muted'), grid = cssVar('--c-border');
   return {
     xAxis: { type: 'category', data: d.dates, axisLabel: { fontSize: 10, color: ink }, axisLine: { lineStyle: { color: grid } } },
@@ -324,7 +300,7 @@ const axisBase = (d: Data) => {
   };
 };
 
-function ComboEquity({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc | null> }) {
+function ComboEquity({ d, combos }: { d: MaintData; combos: Record<ComboId, ComboCalc | null> }) {
   const opt = useMemo(() => {
     const { xAxis, yAxis, ink } = axisBase(d);
     const ks = (['all', 'gen', 'maint'] as ComboId[]).filter(k => combos[k]);
@@ -344,7 +320,7 @@ function ComboEquity({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc
   return <div ref={el} className="mt-2 h-[300px] w-full overflow-hidden sm:h-[380px]" />;
 }
 
-function Underwater({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc | null> }) {
+function Underwater({ d, combos }: { d: MaintData; combos: Record<ComboId, ComboCalc | null> }) {
   const opt = useMemo(() => {
     const { xAxis, yAxis, ink } = axisBase(d);
     const ks = (['all', 'gen', 'maint'] as ComboId[]).filter(k => combos[k]);
@@ -364,7 +340,7 @@ function Underwater({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc 
   return <div ref={el} className="mt-3 h-[200px] w-full overflow-hidden sm:h-[230px]" />;
 }
 
-function StressTable({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc | null> }) {
+function StressTable({ d, combos }: { d: MaintData; combos: Record<ComboId, ComboCalc | null> }) {
   const at = (x: string) => d.dates.indexOf(x);
   const pnl = (c: ComboCalc | null, a: number, b: number) => (c ? c.eq[b] - c.eq[a] : null);
   const ks: ComboId[] = ['gen', 'maint', 'all'];
@@ -403,7 +379,7 @@ function StressTable({ d, combos }: { d: Data; combos: Record<ComboId, ComboCalc
   );
 }
 
-function YearGroupBars({ d, combos, isYear }: { d: Data; combos: Record<ComboId, ComboCalc | null>; isYear: number }) {
+function YearGroupBars({ d, combos, isYear }: { d: MaintData; combos: Record<ComboId, ComboCalc | null>; isYear: number }) {
   const opt = useMemo(() => {
     const { ink } = axisBase(d);
     const grid = cssVar('--c-border');
@@ -425,7 +401,7 @@ function YearGroupBars({ d, combos, isYear }: { d: Data; combos: Record<ComboId,
   return <div ref={el} className="mt-2 h-[240px] w-full overflow-hidden" />;
 }
 
-function YearGroupTable({ d, combos, isYear }: { d: Data; combos: Record<ComboId, ComboCalc | null>; isYear: number }) {
+function YearGroupTable({ d, combos, isYear }: { d: MaintData; combos: Record<ComboId, ComboCalc | null>; isYear: number }) {
   const ks: ComboId[] = ['gen', 'maint', 'all'];
   const years = (combos.all ?? combos.gen ?? combos.maint)?.years ?? [];
   const low = (y: number) => d.maint.filter((v, i) => v != null && v < 155 && d.dates[i].startsWith(String(y))).length;
@@ -462,7 +438,7 @@ function YearGroupTable({ d, combos, isYear }: { d: Data; combos: Record<ComboId
 }
 
 /** 維持率走勢：155／160 線、低於 155 的期間、選取策略的進場點 */
-function MaintChart({ d, s, off }: { d: Data; s: Strat; off: Set<string> }) {
+function MaintChart({ d, s, off }: { d: MaintData; s: Strat; off: Set<string> }) {
   const opt = useMemo(() => {
     const { xAxis, yAxis, ink } = axisBase(d);
     const up = cssVar('--c-up'), down = cssVar('--c-down');
@@ -515,7 +491,7 @@ function MaintChart({ d, s, off }: { d: Data; s: Strat; off: Set<string> }) {
   return <div ref={el} className="mt-2 h-[280px] w-full overflow-hidden sm:h-[320px]" />;
 }
 
-function MonthHeat({ d, combos, s }: { d: Data; combos: Record<ComboId, ComboCalc | null>; s: Strat }) {
+function MonthHeat({ d, combos, s }: { d: MaintData; combos: Record<ComboId, ComboCalc | null>; s: Strat }) {
   const [k, setK] = useState<string>('all');
   const opts: [string, string][] = [['all', LABEL.all], ['maint', LABEL.maint], ['gen', LABEL.gen], [s.id, `選取：${s.id}`]];
   const eq = k === 'all' || k === 'maint' || k === 'gen' ? combos[k as ComboId]?.eq : s.eq;
@@ -568,7 +544,7 @@ function MonthHeat({ d, combos, s }: { d: Data; combos: Record<ComboId, ComboCal
   );
 }
 
-function CorrMatrix({ d, off, gen }: { d: Data; off: Set<string>; gen: ComboCalc | null }) {
+function CorrMatrix({ d, off, gen }: { d: MaintData; off: Set<string>; gen: ComboCalc | null }) {
   const cols = useMemo(() => {
     const c: { id: string; daily: number[] }[] = d.strategies.filter(x => x.group === 'maint' && !off.has(x.id)).map(x => ({ id: x.id, daily: toDaily(x.eq) }));
     if (gen) c.push({ id: '原組合', daily: toDaily(gen.eq) });
@@ -601,7 +577,7 @@ function CorrMatrix({ d, off, gen }: { d: Data; off: Set<string>; gen: ComboCalc
 }
 
 function StratTable({ d, off, sel, onSel, onToggle }: {
-  d: Data; off: Set<string>; sel: string; onSel: (id: string) => void; onToggle: (ids: string[], on: boolean) => void;
+  d: MaintData; off: Set<string>; sel: string; onSel: (id: string) => void; onToggle: (ids: string[], on: boolean) => void;
 }) {
   const head = ['策略', '淨利（萬）', '淨利÷MDD', '獲利因子', '樣本內 ÷MDD', '樣本外 ÷MDD', '交易／勝率', '平均持有', '防過擬合'];
   return (
@@ -665,7 +641,7 @@ function StratTable({ d, off, sel, onSel, onToggle }: {
   );
 }
 
-function Detail({ d, s, off, isYear }: { d: Data; s: Strat; off: boolean; isYear: number }) {
+function Detail({ d, s, off, isYear }: { d: MaintData; s: Strat; off: boolean; isYear: number }) {
   const t = s.ts;
   const uw = useMemo(() => underwater(s.eq, d.dates), [s, d]);
   return (
@@ -703,7 +679,7 @@ function Detail({ d, s, off, isYear }: { d: Data; s: Strat; off: boolean; isYear
 }
 
 /** 單支：權益（上）＋回撤（下），同一條時間軸 */
-function StratEquity({ d, s, dd }: { d: Data; s: Strat; dd: number[] }) {
+function StratEquity({ d, s, dd }: { d: MaintData; s: Strat; dd: number[] }) {
   const opt = useMemo(() => {
     const { xAxis, yAxis, ink } = axisBase(d);
     return {
@@ -725,7 +701,7 @@ function StratEquity({ d, s, dd }: { d: Data; s: Strat; dd: number[] }) {
   return <div ref={el} className="mt-3 h-[320px] w-full overflow-hidden sm:h-[380px]" />;
 }
 
-function Trades({ d, s }: { d: Data; s: Strat }) {
+function Trades({ d, s }: { d: MaintData; s: Strat }) {
   const rows = [...(s.trades ?? [])].reverse();
   const mAt = (x: string) => {
     const i = d.dates.findIndex(v => v >= x);

@@ -7,7 +7,9 @@
  * DashBoard_AI\gen_export.py 用 v18 的 salt 與密碼加密成 data/gen/gen.enc 才推上來。
  * 金額單位萬元；樣本內（用來挑策略）到 isEnd，之後是樣本外。ECharts 只在這一頁才載入。
  * 2026-11-04 站主：NQ（小那斯達克）也放上來 → 上方切換商品（台指＝gen.enc、NQ＝gen_nq.enc），
- *   資料的 unit（例「萬美元」，不換匯）、sessNotes（盤別說明）依商品；舊資料沒有就是台指的「萬」。 */
+ *   資料的 unit（例「萬美元」，不換匯）、sessNotes（盤別說明）依商品；舊資料沒有就是台指的「萬」。
+ * 2026-11-06 站主：維持率和策略產生器併成一頁 → 上方多「融資維持率空方」（gen_maint.enc，畫面是 MaintPage 的 MaintBoard；舊網址 #/MAINT 也開這裡）；
+ *   台指改成多 15＋空 8（空單用「淨利÷MC 式 MDD＞5」挑），單支多了 MC 式 MDD（stats.*.mddMc／ndMc，D:\ai\_tmp\scripts_iso\gen_web1106.py）。 */
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
@@ -17,6 +19,7 @@ import { Locked } from './QBPage';
 import { CATEGORY_COLORS } from '../lib/palette';
 import { buildCombo, corr, type Stats, type Year } from '../lib/genPortfolio';
 import { cssVar, r2, sign, useEChart, wan } from '../lib/genChart';
+import { MaintBoard, type MaintData } from './MaintPage';
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/gen/`, 'twetf.v18.unlock');
 
@@ -39,7 +42,11 @@ interface GenData {
 }
 
 /** 商品切換：檔名對應 DashBoard_AI\gen_export.py 的 --set（沒有＝gen.enc） */
-const SETS = [{ id: 'txf', label: '台指', file: 'gen.enc' }, { id: 'nq', label: 'NQ 小那斯達克', file: 'gen_nq.enc' }] as const;
+const SETS = [
+  { id: 'txf', label: '台指 產生器', file: 'gen.enc' },
+  { id: 'maint', label: '融資維持率空方', file: 'gen_maint.enc' },
+  { id: 'nq', label: 'NQ 小那斯達克', file: 'gen_nq.enc' },
+] as const;
 const SET_KEY = 'twetf.gen.set';
 /** 金額單位（萬／萬美元），給表格、統計卡、圖表的提示用 */
 const UnitCtx = createContext('萬');
@@ -56,25 +63,31 @@ const sideOf = (x: Strat): Side => x.side ?? 'short';
 const combosOf = (d: GenData): Partial<Record<Group, Combo>> => d.combos ?? (d.combo ? { short: d.combo } : {});
 const inGroup = (x: Strat, g: Group) => g === 'both' || sideOf(x) === g;
 
-export function GenPage() {
+export function GenPage({ initialSet }: { initialSet?: string } = {}) {
   const [manifest, setManifest] = useState<VaultManifest | null>(null);
   const [state, setState] = useState<'loading' | 'missing' | 'locked' | 'ready' | 'error'>('loading');
   const [d, setD] = useState<GenData | null>(null);
+  const [md, setMd] = useState<MaintData | null>(null);
   const [msg, setMsg] = useState('');
   const [setId, setSetId] = useState<string>(() => {
+    if (initialSet) return initialSet;
     try { return localStorage.getItem(SET_KEY) ?? SETS[0].id; } catch { return SETS[0].id; }
   });
   const cur = SETS.find(x => x.id === setId) ?? SETS[0];
 
-  const load = async (file: string = cur.file) => {
-    try { setState('loading'); setD(await vault.fetchJson<GenData>(file)); setState('ready'); }
-    catch (e) { setMsg(e instanceof Error ? e.message : String(e)); setState('error'); }
+  const load = async (s: (typeof SETS)[number] = cur) => {
+    try {
+      setState('loading');
+      if (s.id === 'maint') setMd(await vault.fetchJson<MaintData>(s.file));
+      else setD(await vault.fetchJson<GenData>(s.file));
+      setState('ready');
+    } catch (e) { setMsg(e instanceof Error ? e.message : String(e)); setState('error'); }
   };
   const pickSet = (id: string) => {
     const s = SETS.find(x => x.id === id) ?? SETS[0];
     setSetId(s.id);
     try { localStorage.setItem(SET_KEY, s.id); } catch { /* 存不了就算了 */ }
-    if (state === 'ready' || state === 'error') void load(s.file);
+    if (state === 'ready' || state === 'error') void load(s);
   };
   useEffect(() => {
     vault.loadManifest().then(async m => {
@@ -83,7 +96,7 @@ export function GenPage() {
       if (await vault.restore(m)) await load(); else setState('locked');
     }).catch(e => { setMsg(String(e)); setState('error'); });
   }, []);
-  useVaultExpiry(vault, state === 'ready', () => { setD(null); setState('locked'); });
+  useVaultExpiry(vault, state === 'ready', () => { setD(null); setMd(null); setState('locked'); });
 
   if (state === 'missing') return <p className="py-16 text-center text-[13px] text-muted">還沒有策略產生器的資料。</p>;
   if (state === 'locked' && manifest) return <Locked vault={vault} title="策略產生器" manifest={manifest} onUnlock={() => load()} />;
@@ -99,7 +112,8 @@ export function GenPage() {
     </div>
   );
   if (state === 'loading') return <>{picker}<p className="py-16 text-center text-[13px] text-muted">載入中…</p></>;
-  if (state === 'error' || !d) return <>{picker}<p className="py-16 text-center text-[13px] text-down">{cur.id === 'txf' ? `載入失敗：${msg}` : `${cur.label} 還沒有資料或載入失敗：${msg}`}</p></>;
+  if (cur.id === 'maint' && state === 'ready' && md) return <>{picker}<MaintBoard key={md.generated} d={md} /></>;
+  if (state === 'error' || !d || cur.id === 'maint') return <>{picker}<p className="py-16 text-center text-[13px] text-down">{cur.id === 'txf' ? `載入失敗：${msg}` : `${cur.label} 還沒有資料或載入失敗：${msg}`}</p></>;
   return (
     <UnitCtx.Provider value={d.unit ?? '萬'}>
       {picker}
@@ -175,6 +189,8 @@ function Board({ d }: { d: GenData }) {
     return `兩兩相關中位 ${c.corrMedian}、最高 ${c.corrMax}${c.corrLS != null ? `｜多單組合 vs 空單組合 ${c.corrLS}` : ''}`;
   };
   const listOn = list.filter(x => !off.has(x.id)).length;
+  /** 2026-11-06 起的資料單支有 MC 式 MDD：表格多一欄 */
+  const hasMc = d.strategies.some(x => x.stats.all.ndMc != null);
   return (
     <div className="mt-3 min-w-0">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
@@ -188,6 +204,28 @@ function Board({ d }: { d: GenData }) {
           <li>每列前面的勾選框可以把策略移出組合，上面的合計、曲線、每年績效會用開著的策略重算，並和「全部開著」比較（記在這台瀏覽器）。</li>
         </ul>
       </details>
+
+      {/* 2026-11-06 站主「重新整理績效、優化頁面」：三組合的重點先放最上面，點卡片切到那一組 */}
+      {groups.length > 1 && (
+        <div className="mb-3 grid gap-2 sm:grid-cols-3">
+          {groups.map(g => {
+            const c = combos[g];
+            return (
+              <button key={g} type="button" onClick={() => pickTab(g)} aria-pressed={tab === g}
+                      className={`rounded-xl border bg-surface p-2.5 text-left transition-colors ${tab === g ? 'border-accent' : 'border-line hover:bg-hover'}`}>
+                <div className="text-[12px] font-semibold text-muted">{GROUP_LABEL[g]} {nOn(g)} 支</div>
+                {c ? <>
+                  <div className="mt-0.5 flex items-baseline gap-1.5">
+                    <span className="text-[20px] font-bold tabular-nums text-ink">{r2(c.stats.all.nd)}</span>
+                    <span className="text-[11px] text-faint">淨利÷MDD（樣本外 {r2(c.stats.os.nd)}）</span>
+                  </div>
+                  <div className="text-[11.5px] tabular-nums text-muted">淨利 {wan(c.stats.all.net)} {u}・MDD {wan(c.stats.all.mdd)} {u}</div>
+                </> : <div className="mt-1 text-[12px] text-muted">全部關掉了</div>}
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {groups.length > 1 && (
         <div role="tablist" aria-label="策略組" className="mb-2 flex gap-1 border-b border-line">
@@ -215,6 +253,7 @@ function Board({ d }: { d: GenData }) {
               <th className="px-2 py-2 text-left font-semibold">策略</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">淨利（{u}）</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">淨利÷MDD</th>
+              {hasMc && <th className="px-2 py-2 text-right font-semibold whitespace-nowrap" title="MDD 用 MC 報表的 Max Strategy Drawdown（K 棒內最不利價、含持倉浮盈回吐）">MC 式 ÷MDD</th>}
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">獲利因子</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">樣本內 ÷MDD</th>
               <th className="px-2 py-2 text-right font-semibold whitespace-nowrap">樣本外 ÷MDD</th>
@@ -226,10 +265,10 @@ function Board({ d }: { d: GenData }) {
           <tbody>
             {comboRows.map(g => (
               <Row key={g} id={comboId(g)} sel={sel} onSel={pick} title={comboTitle(g)} sub={comboSub(g)}
-                   st={combos[g]?.stats ?? null} robust={null} />
+                   st={combos[g]?.stats ?? null} robust={null} mc={hasMc} />
             ))}
             {list.map(x => (
-              <Row key={x.id} id={x.id} sel={sel} onSel={pick} title={x.id}
+              <Row key={x.id} id={x.id} sel={sel} onSel={pick} title={x.id} mc={hasMc}
                    sub={`${x.tf >= 1440 ? '日K' : `${x.tf}分`}｜${x.entry}｜${x.filter}｜${x.exit}${sessOf(x, d.sessNotes) ? `｜${sessOf(x, d.sessNotes)}` : ''}`}
                    st={x.stats} robust={x.robust} on={!off.has(x.id)} onToggle={v => toggle([x.id], v)} />
             ))}
@@ -307,9 +346,9 @@ function Impact({ groups, cur, base, off, onReset }: {
   );
 }
 
-function Row({ id, sel, onSel, title, sub, st, robust, on, onToggle }: {
+function Row({ id, sel, onSel, title, sub, st, robust, on, onToggle, mc }: {
   id: string; sel: string; onSel: (id: string) => void; title: string; sub: string; st: Stats | null; robust: Strat['robust'];
-  on?: boolean; onToggle?: (v: boolean) => void;
+  on?: boolean; onToggle?: (v: boolean) => void; mc?: boolean;
 }) {
   const active = id === sel;
   return (
@@ -325,13 +364,16 @@ function Row({ id, sel, onSel, title, sub, st, robust, on, onToggle }: {
       {st ? <>
         <td className={`px-2 text-right ${sign(st.all.net)}`}>{wan(st.all.net)}</td>
         <td className="px-2 text-right text-ink">{r2(st.all.nd)}</td>
+        {mc && <td className="px-2 text-right text-ink" title={st.all.mddMc != null ? `MC 式 MDD ${wan(st.all.mddMc)}；樣本內 ${r2(st.is.ndMc)}／樣本外 ${r2(st.os.ndMc)}` : '組合沒有 MC 式（要在 MC Portfolio 看）'}>
+          {r2(st.all.ndMc)}
+        </td>}
         <td className="px-2 text-right text-ink">{r2(st.all.pf)}</td>
         <td className="px-2 text-right text-ink">{r2(st.is.nd)}</td>
         <td className={`px-2 text-right ${sign(st.os.nd)}`}>{r2(st.os.nd)}</td>
         <td className="px-2 text-right text-ink">{r2(st.os.pf)}</td>
         <td className="px-2 text-right text-muted whitespace-nowrap">{st.all.trades}／{st.all.win ?? '—'}%</td>
         <td className="px-2 text-right text-muted">{robust ? `${robust.passed}/${robust.total}` : '—'}</td>
-      </> : <td colSpan={8} className="px-2 text-center text-muted">—</td>}
+      </> : <td colSpan={mc ? 9 : 8} className="px-2 text-center text-muted">—</td>}
     </tr>
   );
 }
@@ -356,8 +398,11 @@ function StatCards({ stats, years, isYear, strat, combo }: { stats: Stats; years
   const u = useContext(UnitCtx);
   return (
     <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-      <Card label="全期淨利" value={`${wan(stats.all.net)} ${u}`} cls={sign(stats.all.net)} sub={`MDD ${wan(stats.all.mdd)} ${u}`} />
-      <Card label="淨利÷MDD" value={r2(stats.all.nd)} sub={`樣本內 ${r2(stats.is.nd)}／樣本外 ${r2(stats.os.nd)}`} />
+      <Card label="全期淨利" value={`${wan(stats.all.net)} ${u}`} cls={sign(stats.all.net)}
+            sub={`MDD ${wan(stats.all.mdd)} ${u}${stats.all.mddMc != null ? `｜MC 式 ${wan(stats.all.mddMc)}` : ''}`} />
+      {stats.all.ndMc != null
+        ? <Card label="淨利÷MDD（MC 式）" value={r2(stats.all.ndMc)} sub={`樣本內 ${r2(stats.is.ndMc)}／樣本外 ${r2(stats.os.ndMc)}｜每日收盤 ${r2(stats.all.nd)}`} />
+        : <Card label="淨利÷MDD" value={r2(stats.all.nd)} sub={`樣本內 ${r2(stats.is.nd)}／樣本外 ${r2(stats.os.nd)}`} />}
       <Card label="獲利因子" value={r2(stats.all.pf)} sub={`樣本內 ${r2(stats.is.pf)}／樣本外 ${r2(stats.os.pf)}`} />
       <Card label="交易次數／勝率" value={stats.all.trades.toLocaleString('zh-TW')} sub={stats.all.win == null ? '' : `勝率 ${stats.all.win}%`} />
       <Card label="樣本內每年淨利" value={`${wan(stats.is.net / isYrs)} ${u}`} sub={`MDD ${wan(stats.is.mdd)} ${u}`} />

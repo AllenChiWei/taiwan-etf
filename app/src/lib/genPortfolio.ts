@@ -9,6 +9,8 @@ export interface Seg {
   net: number; mdd: number; nd: number | null; pf: number | null; trades: number; win: number | null;
   /** 獲利交易合計、虧損交易合計（萬）；2026-11-03 起的資料才有 */
   gp?: number; gl?: number;
+  /** MC 式最大回撤（比照 MC Max Strategy Drawdown：K 棒內最不利價、含持倉浮盈回吐）與淨利÷它；2026-11-06 起單支才有，組合沒有 */
+  mddMc?: number; ndMc?: number | null;
 }
 export interface Year extends Seg { y: number }
 export interface Stats { all: Seg; is: Seg; os: Seg }
