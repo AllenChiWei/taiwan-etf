@@ -8,11 +8,13 @@ name: 部署到 GitHub Pages
 # 追繳資料最晚約 21:30 才公布，19:00 那次每日更新常抓不到當天的（2026-11-04 站主告知）。
 # 主要由站主電腦的工作排程「TaiwanETF晚間部署觸發」21:45 推 .github/trigger/evening-deploy.txt 觸發；
 # 21:50 的 GitHub 排程是備援（GitHub 排程常延遲好幾小時，多部署一次無妨）。
+# 2026-11-07 站主：證交所有時更晚才公布（11-06 大跌那天 21:45 還沒有）→ 本機排程與 GitHub 備援都多一次 23:55。
 # 這次不重抓 FinLab（排程事件沒有 inputs，REFRESH_FINLAB 是 false），只是讓部署時才產生的
 # 籌碼等資料拿到當天的。
 on:
   schedule:
     - cron: '50 13 * * 1-5'
+    - cron: '55 15 * * 1-5'
   push:
     branches: [main]
     paths:
