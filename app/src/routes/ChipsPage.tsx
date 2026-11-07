@@ -13,7 +13,7 @@ import {
   WHO_ORDER, toYi, yuanToYi, sharesToLots, netTone, sharePct,
   contractSeries, bars, zeroY, lastValue, prepareLarge, contractAmount, joinDca,
   retailLatest, retailRatioSeries, txEquivalent, txEquivalentLatest, summaryTiles, lastTwo,
-  linePath, CREDIT, ANYLOAN, maintEpisodes, dropToReach, maintLevel, maintStats, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
+  linePath, CREDIT, ANYLOAN, maintEpisodes, dropToReach, maintLevel, maintStats, maintSeries, MAINT_T, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
   type SummaryTile, type CreditRow, type AnyLoanRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate, limitTrend, combineLimits,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
 } from '../lib/chips';
@@ -422,10 +422,16 @@ function MarginSection({ data }: { data: ChipsData }) {
               tone={TONE_CLASS[netTone(daily[last]!)]} />
         <Stat label="融券餘額（上市）" value={`${nf0.format(m.short[last])} 張`}
               sub={`較前日 ${signed(shortChange)} 張`} />
-        {m.maint && (
-          <Stat label="融資維持率（上市）" value={`${nf1.format(m.maint.ratio)}%`}
-                sub={`${m.maint.date} · 自算，${nf0.format(m.maint.n)} 檔`} />
-        )}
+        {(() => {
+          // 2026-11-07 站主：維持率一致化 → 這裡也用證交所口徑，自算的融資維持率放在下面一行參考
+          const ks = maintSeries(m);
+          if (!ks.rows.length) return null;
+          const [kd, kv] = ks.rows[ks.rows.length - 1];
+          return (
+            <Stat label="大盤維持率（證交所口徑）" value={`${nf1.format(kv)}%`}
+                  sub={`${kd} · ${ks.official.has(kd) ? '證交所公布' : '推估'}${m.maint ? `｜自算融資維持率（上市）${nf1.format(m.maint.ratio)}%` : ''}`} />
+          );
+        })()}
       </div>
       {/* 2026-11-05 站主：看不到日期 → 改用共用日期軸的圖（月份刻度、點一下看那天） */}
       {/* 站主 2026-11-05：融資餘額要跟加權指數比較 → 指數放在正下方、共用日期軸（不用雙 Y 軸） */}
@@ -444,7 +450,7 @@ function MarginSection({ data }: { data: ChipsData }) {
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
       </p>
-      {m.maintHist && m.maintHist.length > 20 && <MaintHistory hist={m.maintHist} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
+      {maintSeries(m).rows.length > 20 && <MaintHistory ks={maintSeries(m)} cal={m.keepCal ?? null} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
       {m.anyLoan && m.anyLoan.length > 0 && <AnyLoanBlock rows={m.anyLoan} />}
     </Section>
@@ -460,18 +466,20 @@ const LEVEL_CLASS = ['bg-sunken text-muted', 'border border-up/30 bg-up/5 text-i
 function maintMessage(cur: number, taiex: number | null): string {
   const lv = maintLevel(cur);
   const pts = (pct: number | null) => (pct !== null && taiex !== null ? `、約 ${nf0.format((taiex * pct) / 100)} 點` : '');
-  const to150 = dropToReach(cur, 150);
-  const to140 = dropToReach(cur, 140);
-  if (lv === 3) return '低於 140%：歷史上多半是斷頭賣壓湧現、接近底部的位置（之後 20 天多半反彈），但當下波動最大';
-  if (lv === 2) return `140～150% 加速區：歷史上這區下跌最兇、最容易連續殺盤；再跌約 ${nf1.format(to140 ?? 0)}%${pts(to140)} 到 140%`;
-  if (lv === 1) return `再跌約 ${nf1.format(to150 ?? 0)}%${pts(to150)} 就進入 150～140% 加速區`;
-  return `距離 150% 加速區還要跌約 ${nf1.format(to150 ?? 0)}%${pts(to150)}`;
+  const { accel, sell } = MAINT_T;
+  const toA = dropToReach(cur, accel);
+  const toS = dropToReach(cur, sell);
+  if (lv === 3) return `低於 ${sell}%：歷史上多半是斷頭賣壓湧現、接近底部的位置（之後 20 天多半反彈），但當下波動最大`;
+  if (lv === 2) return `${sell}～${accel}% 加速區：歷史上這區下跌最兇、最容易連續殺盤；再跌約 ${nf1.format(toS ?? 0)}%${pts(toS)} 到 ${sell}%`;
+  if (lv === 1) return `再跌約 ${nf1.format(toA ?? 0)}%${pts(toA)} 就進入 ${accel}～${sell}% 加速區`;
+  return `距離 ${accel}% 加速區還要跌約 ${nf1.format(toA ?? 0)}%${pts(toA)}`;
 }
 
 /** 籌碼頁最上面的警示：維持率接近或進入加速區才出現（2026-11-05 使用者要求） */
 function MaintAlert({ data }: { data: ChipsData }) {
-  const hist = data.margin?.maintHist;
-  if (!hist?.length) return null;
+  const ks = maintSeries(data.margin);
+  const hist = ks.rows;
+  if (!hist.length) return null;
   const [d0, cur] = hist[hist.length - 1];
   const lv = maintLevel(cur);
   if (lv === 0) return null;
@@ -479,7 +487,7 @@ function MaintAlert({ data }: { data: ChipsData }) {
   return (
     <button type="button" onClick={() => document.getElementById('sec-margin')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
             className={`mt-3 block w-full rounded-xl px-3.5 py-2.5 text-left text-[12.5px] leading-relaxed ${LEVEL_CLASS[lv]}`}>
-      <b>⚠ 大盤融資維持率 {nf1.format(cur)}%（{d0.slice(5)}）・{LEVEL_TEXT[lv]}</b>
+      <b>⚠ 大盤維持率 {nf1.format(cur)}%（{d0.slice(5)}，{ks.official.has(d0) ? '證交所' : '推估'}）・{LEVEL_TEXT[lv]}</b>
       <span className="block">{maintMessage(cur, taiex)}。點這裡看歷史統計。</span>
     </button>
   );
@@ -489,7 +497,7 @@ function MaintAlert({ data }: { data: ChipsData }) {
 function MaintZones({ hist, shorts, cur, taiex }: { hist: Array<[string, number]>; shorts: ShortRow[]; cur: number; taiex: number | null }) {
   const st = useMemo(() => maintStats(hist, shorts), [hist, shorts]);
   const lv = maintLevel(cur);
-  const zi = cur >= 160 ? 0 : cur >= 150 ? 1 : cur >= 140 ? 2 : 3;
+  const zi = cur >= MAINT_T.calm ? 0 : cur >= MAINT_T.accel ? 1 : cur >= MAINT_T.sell ? 2 : 3;
   const c = (th: number) => st.cross.find(x => x.threshold === th);
   const sg = (v: number | null) => (v === null ? '—' : `${v > 0 ? '+' : ''}${nf1.format(v)}%`);
   const howTo = ['波動正常', '跌起來開始變兇', '最容易連續殺盤', '多半接近底部'];
@@ -519,9 +527,10 @@ function MaintZones({ hist, shorts, cur, taiex }: { hist: Array<[string, number]
         </tbody>
       </table>
       <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
-        結論：維持率越低，跌的日子跌得越兇；真正危險的是 150～140% 這段 ——
-        第一次跌破 145%（{c(145)?.n ?? 0} 次）之後 10 天內再跌中位 {sg(c(145)?.dd10 ?? null)}（2020-03、2025-03 跌破 150% 後 5 天各再跌 16%）。
-        跌破 140%（{c(140)?.n ?? 0} 次）多半是斷頭賣完，之後 20 天平均 {sg(c(140)?.ret20 ?? null)}。
+        結論：維持率越低，跌的日子跌得越兇；真正危險的是 {MAINT_T.accel}～{MAINT_T.sell}% 這段 ——
+        第一次跌破 {MAINT_T.mid}%（{c(MAINT_T.mid)?.n ?? 0} 次）之後 10 天內再跌中位 {sg(c(MAINT_T.mid)?.dd10 ?? null)}（2020-03、2025-03 跌破 {MAINT_T.accel}% 後 5 天各再跌 16%）。
+        跌破 {MAINT_T.sell}%（{c(MAINT_T.sell)?.n ?? 0} 次）多半是斷頭賣完，之後 20 天平均 {sg(c(MAINT_T.sell)?.ret20 ?? null)}。
+        門檻是證交所口徑（自算融資維持率的 160／150／145／140 換算過來）。
         「在跌時再跌」＝前 5 天已經跌超過 3% 的日子，之後 10 天內最大跌幅的中位數。
         2009 起每天重算，但低維持率的日子只集中在十幾波，是歷史傾向、不是保證；維持率本身就跟著指數跌，兩者同時發生不代表因果。
       </p>
@@ -529,25 +538,32 @@ function MaintZones({ hist, shorts, cur, taiex }: { hist: Array<[string, number]
   );
 }
 
-/** 大盤融資維持率（上市＋上櫃）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破 140% 的時段 */
-function MaintHistory({ hist, shorts, sbl }: {
-  hist: Array<[string, number]>; shorts: ShortRow[]; sbl: Array<[string, number]>;
+/**
+ * 大盤維持率（證交所口徑）2009 起：判斷斷頭賣壓的歷史位置與歷次跌破門檻的時段。
+ * 2026-11-07 站主「全部維持率一致化」：08-05 起是證交所公布的全市場擔保維持率，之前用自算融資維持率（上市＋上櫃）換算。
+ */
+function MaintHistory({ ks, cal, shorts, sbl }: {
+  ks: { rows: Array<[string, number]>; official: Set<string> };
+  cal: { a: number; b: number; n: number; sd: number | null; max: number | null; from: string | null } | null;
+  shorts: ShortRow[]; sbl: Array<[string, number]>;
 }) {
+  const hist = ks.rows;
+  const { sell, call } = MAINT_T;
   const [years, setYears] = useState(5);
   const [showAll, setShowAll] = useState(false);
   const [d0, cur] = hist[hist.length - 1];
   const cut = years ? `${Number(d0.slice(0, 4)) - years}${d0.slice(4)}` : '';
   // 維持率、融券、借券共用日期軸（抽樣與刻度在 AlignedCharts／alignByDate 裡）
   const charts = useMemo<AlignedChart[]>(() => [
-    { title: '維持率（%）· 虛線 140／130', rows: hist, digits: 1, guides: [140, 130] },
+    { title: `維持率（%，證交所口徑）· 虛線 ${MAINT_T.sell}／${MAINT_T.call}`, rows: hist, digits: 1, guides: [MAINT_T.sell, MAINT_T.call] },
     ...(shorts.length > 20 ? [{ title: '融券餘額（萬張，上市＋上櫃）', rows: shorts.map(r => [r[0], r[1] / 1e4] as [string, number]), digits: 1 }] : []),
     ...(sbl.length > 20 ? [{ title: '借券賣出餘額（萬張，上市＋上櫃個股）', rows: sbl.map(r => [r[0], r[1] / 1e4] as [string, number]), digits: 0 }] : []),
   ], [hist, shorts, sbl]);
   const below = hist.filter(r => r[1] <= cur).length;
   const rank = (below / hist.length) * 100;
-  const eps = maintEpisodes(hist, 140, 10);
-  const to140 = dropToReach(cur, 140);
-  const to130 = dropToReach(cur, 130);
+  const eps = maintEpisodes(hist, sell, 10);
+  const toS = dropToReach(cur, sell);
+  const toC = dropToReach(cur, call);
   // 換算成指數點數：用維持率同一天（沒有就往前最近一天）的加權指數收盤，跟維持率每天一起更新
   const taiex = [...shorts].reverse().find(r => r[0] <= d0 && r[3] > 0)?.[3] ?? null;
   const inPoints = (pct: number | null, what: string) => (
@@ -556,19 +572,19 @@ function MaintHistory({ hist, shorts, sbl }: {
       {what}
     </>
   );
-  const tone = cur < 140 ? 'text-up' : cur < 150 ? 'text-ink' : 'text-ink';
+  const tone = cur < sell ? 'text-up' : 'text-ink';
   return (
     <div className="mt-3 border-t border-line pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[13px] font-bold text-ink">大盤融資維持率歷史（上市＋上櫃）</h3>
-        <span className="text-[11.5px] text-faint">{hist[0][0]} 起 · 最新 {d0}</span>
+        <h3 className="text-[13px] font-bold text-ink">大盤維持率歷史（證交所口徑）</h3>
+        <span className="text-[11.5px] text-faint">{hist[0][0]} 起 · 最新 {d0}（{ks.official.has(d0) ? '證交所公布' : '推估'}）</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-        <Stat label="大盤融資維持率" value={`${nf1.format(cur)}%`} tone={tone}
+        <Stat label="大盤維持率" value={`${nf1.format(cur)}%`} tone={tone}
               sub={`比 ${nf0.format(rank)}% 的歷史日子高`} />
-        <Stat label="粗估再跌多少到 140%" value={to140 === null ? '已低於' : `${nf1.format(to140)}%`} sub={inPoints(to140, '恐慌殺盤常見的水位')} />
-        <Stat label="粗估再跌多少到 130%" value={to130 === null ? '已低於' : `${nf1.format(to130)}%`} sub={inPoints(to130, '個股追繳線')} />
-        <Stat label="跌破 140% 的次數" value={`${eps.length} 波`} sub={eps.length ? `最近一次 ${eps[0].low.slice(0, 7)}` : undefined} />
+        <Stat label={`粗估再跌多少到 ${sell}%`} value={toS === null ? '已低於' : `${nf1.format(toS)}%`} sub={inPoints(toS, '恐慌殺盤常見的水位')} />
+        <Stat label={`粗估再跌多少到 ${call}%`} value={toC === null ? '已低於' : `${nf1.format(toC)}%`} sub={inPoints(toC, '大盤平均到個股追繳線附近')} />
+        <Stat label={`跌破 ${sell}% 的次數`} value={`${eps.length} 波`} sub={eps.length ? `最近一次 ${eps[0].low.slice(0, 7)}` : undefined} />
       </div>
       {shorts.length > 20 && <MaintZones hist={hist} shorts={shorts} cur={cur} taiex={taiex} />}
       <div className="mt-2 flex gap-1.5">
@@ -586,9 +602,9 @@ function MaintHistory({ hist, shorts, sbl }: {
           <table className="w-full text-[12px] tabular-nums">
             <thead className="text-left align-bottom text-muted">
               <tr>
-                <th className="py-1 pr-2 font-semibold">最低那天<div className="text-[10.5px] font-normal text-faint">跌破 140% 的時段</div></th>
+                <th className="py-1 pr-2 font-semibold">最低那天<div className="text-[10.5px] font-normal text-faint">跌破 {sell}% 的時段</div></th>
                 <th className="py-1 pr-2 text-right font-semibold">最低</th>
-                <th className="py-1 text-right font-semibold">低於 140 的天數</th>
+                <th className="py-1 text-right font-semibold">低於 {sell} 的天數</th>
               </tr>
             </thead>
             <tbody>
@@ -612,10 +628,14 @@ function MaintHistory({ hist, shorts, sbl }: {
         </div>
       )}
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        維持率＝融資買進的股票現值 ÷ 借的錢（上市＋上櫃全部有融資的證券，含 ETF）。個股跌破 130% 被追繳、補不足就斷頭賣出，
-        大盤掉到 140% 以下多半已經是斷頭賣壓湧現的時候（2011 歐債、2015-08、2020-03、2025-04 都是）。
-        「再跌多少」是粗估：假設融資部位跟大盤同漲同跌、融資金額不變，點數用同一天的加權指數收盤換算；融資股多半是中小型股、跌得比大盤兇，實際會更快到。
-        2009～2026/10/27 用 FinLab 的每檔融資餘額 × 收盤價 ÷ 交易所公佈的融資金額回補，之後每天用證交所與櫃買的官方資料接著算（2026/10/27 兩邊對帳一致：174.2%）。
+        全部用<b>證交所口徑</b>（2026-11-07 起一致化）：{cal?.from ?? '2026-08-05'} 起是證交所公布的「全市場擔保維持率」（融資＋融券合併，就是下面追繳區塊那個數字）；
+        之前證交所沒有公布，用自算的融資維持率（上市＋上櫃全部有融資的證券，融資買進的股票現值 ÷ 借的錢）換算：
+        證交所口徑 ≈ {cal ? `${nf2.format(cal.a)} ＋ ${cal.b.toFixed(3)}` : '23.55 ＋ 0.885'} × 自算
+        {cal?.sd != null && <>（用 {cal.n} 天重疊估，誤差標準差 {nf2.format(cal.sd)}、最大 {nf2.format(cal.max ?? 0)} 個百分點；每次更新重估）</>}。
+        自算最低到 130% 左右，換算的範圍比重疊期間（150～200%）低，越低的地方越不準。
+        個股整戶跌破 130% 被追繳、補不足就斷頭賣出，大盤掉到 {sell}% 以下多半已經是斷頭賣壓湧現的時候（2011 歐債、2015-08、2020-03、2025-04 都是）。
+        「再跌多少」是粗估：假設融資部位跟大盤同漲同跌、融資金額不變，點數用同一天的加權指數收盤換算；融資股多半是中小型股、跌得比大盤兇，實際會更快到，但斷頭讓融資金額下降又會把維持率撐住一點（2026-11-06 就是）。
+        自算：2009～2026/10/27 用 FinLab 的每檔融資餘額 × 收盤價 ÷ 交易所公佈的融資金額回補，之後每天用證交所與櫃買的官方資料接著算。
         {shorts.length > 20 && <>
           {' '}融券：軋空是放空的人被迫回補，融券會往下掉、指數往上。歷次跌破 140% 之後，指數多半反彈，但融券大多還在增加，反彈主要是賣壓出清、不是空單回補。
           每年約 4～8 月股東會、除權息前會強制回補，那時融券下降不算軋空。
@@ -873,7 +893,7 @@ function CreditBlock({ rows }: { rows: CreditRow[] }) {
       ]} />
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         官方數字，來自證交所「信用交易儀表板」。<b>擔保維持率是融資、融券合併計算</b>（全市場融資擔保品市值加融券保證金，
-        除以融資金加融券標的市值），所以跟上面自算的「融資維持率」不同。追繳戶數＝截至當日整戶擔保維持率低於 130% 的戶數；
+        除以融資金加融券標的市值）。2026-11-07 起網站的「大盤維持率」全部用這個數字（之前的日子用自算融資維持率換算）。追繳戶數＝截至當日整戶擔保維持率低於 130% 的戶數；
         「當日通知」是當天證券商發出追繳通知的戶數。證交所只提供近 60 個交易日，這裡每天累積，之後會越來越長。
       </p>
     </div>

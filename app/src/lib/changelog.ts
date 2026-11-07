@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-07',
+    items: [
+      { kind: 'improve', to: '/chips',
+        text: '大盤維持率全部改成證交所口徑：08-05 起直接用證交所公布的全市場擔保維持率，之前的日子用自算融資維持率換算（和官方重疊的 63 天誤差約 0.5 個百分點）；頁首警示、每日摘要、融資融券、歷史走勢與分區統計都是同一個數字，門檻也換成同一個口徑（165／156／152／147／139%）。' },
+    ],
+  },
+  {
     date: '2026-11-06',
     items: [
       { kind: 'new', to: '/chips',

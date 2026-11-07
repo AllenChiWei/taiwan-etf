@@ -844,6 +844,37 @@ def credit_risk():
     return [rows[d] for d in sorted(rows)][-CREDIT_KEEP:]
 
 
+def keep_history(maint_hist, credit):
+    u"""大盤維持率統一成證交所口徑（2026-11-07 站主：預測要貼近證交所公布的、全部維持率一致化）。
+
+    證交所「全市場擔保維持率」（credit 第 2 欄，BFIJ3U）2026-08-05 起才有；之前用自算的大盤融資維持率（maintHist，
+    上市＋上櫃、只有融資）換算：官方 ≈ a + b × 自算，a、b 每次部署用兩者重疊的日子最小平方重估。
+    2026-11-07 用 63 天估：a 23.55、b 0.885，誤差標準差 0.55、最大 1.78 個百分點；前 2/3 估、後 1/3 驗也是 0.50／1.59
+    （加券資比、融資金額變化都沒有更準，研究 D:\\ai\\_tmp\\scripts_iso\\maint_calib2.py）。
+    回傳 ([日期, %, 1＝官方／0＝換算], 校準資訊)；重疊不到 20 天就用 11-07 的係數。
+    """
+    off = {r[0]: r[1] for r in credit or [] if r[1] is not None}
+    pairs = [(v, off[d]) for d, v in maint_hist if d in off]
+    a, b = 23.55, 0.885
+    if len(pairs) >= 20:
+        n = float(len(pairs))
+        mx = sum(p[0] for p in pairs) / n
+        my = sum(p[1] for p in pairs) / n
+        sxx = sum((p[0] - mx) ** 2 for p in pairs)
+        if sxx > 0:
+            b = sum((p[0] - mx) * (p[1] - my) for p in pairs) / sxx
+            a = my - b * mx
+    err = [p[1] - (a + b * p[0]) for p in pairs]
+    sd = (sum(e * e for e in err) / len(err)) ** 0.5 if err else None
+    rows = [[d, round(off[d], 2), 1] if d in off else [d, round(a + b * v, 1), 0] for d, v in maint_hist]
+    seen = {r[0] for r in rows}
+    rows += [[d, round(v, 2), 1] for d, v in off.items() if d not in seen]       # 官方有、自算還沒有的日子
+    rows.sort(key=lambda r: r[0])
+    cal = {'a': round(a, 3), 'b': round(b, 4), 'n': len(pairs), 'sd': round(sd, 2) if sd is not None else None,
+           'max': round(max(abs(e) for e in err), 2) if err else None, 'from': min(off) if off else None}
+    return rows, cal
+
+
 def any_loan():
     u"""證交所臺股儀表板的不限用途款項借貸：每天一列 [日期, 融通餘額(元), 擔保維持率%, 追繳戶數, 當日通知追繳戶數,
     追繳金額(元), 處分戶數, 處分金額(元), 擔保品價值(元)]。
@@ -1355,6 +1386,9 @@ def main():
     log(u'  大盤融資維持率歷史 %d 天、融券歷史 %d 天' % (len(margin['maintHist']), len(margin['shortHist'])))
     margin['credit'] = credit_risk()
     log(u'  信用交易儀表板（擔保維持率、追繳）%d 天' % len(margin['credit']))
+    margin['keepHist'], margin['keepCal'] = keep_history(margin.get('maintHist') or [], margin['credit'])
+    log(u'  大盤維持率（證交所口徑）%d 天；換算 官方 ≈ %.2f + %.3f × 自算（%d 天重疊，誤差標準差 %s）' % (
+        len(margin['keepHist']), margin['keepCal']['a'], margin['keepCal']['b'], margin['keepCal']['n'], margin['keepCal']['sd']))
     margin['anyLoan'] = any_loan()
     log(u'  不限用途款項借貸（餘額、擔保維持率）%d 天' % len(margin['anyLoan']))
     mday = margin['maint']['date'] if margin['maint'] else None

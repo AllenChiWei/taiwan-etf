@@ -130,6 +130,12 @@ export interface MarginData {
    * [日期, 融通餘額(元), 擔保維持率%, 追繳戶數（整戶維持率 < 130%）, 當日通知追繳戶數, 追繳金額(元), 處分戶數, 處分金額(元), 擔保品價值(元)]。舊版沒有。
    */
   anyLoan?: AnyLoanRow[];
+  /**
+   * 大盤維持率統一成證交所口徑（2026-11-07 站主）：每天一列 [日期, %, 1＝證交所官方（全市場擔保維持率，08-05 起）／0＝用自算換算]。
+   * 換算＝a + b × 自算融資維持率，係數每次部署用重疊日子重估（keepCal）。舊版沒有 → 用 maintHist。
+   */
+  keepHist?: Array<[string, number, number]>;
+  keepCal?: { a: number; b: number; n: number; sd: number | null; max: number | null; from: string | null };
   /** 大盤融資維持率（上市＋上櫃）每天一列 [日期, %]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
   maintHist?: Array<[string, number]>;
   /** 融券（上市＋上櫃）每天一列 [日期, 融券張數, 融資張數, 加權指數]：2009 起 FinLab 回補＋每天累積。舊版沒有 */
@@ -327,18 +333,32 @@ export function dropToReach(current: number, target: number): number | null {
  * 跌破 140 多半是斷頭賣完、之後 20 天平均反彈。
  * level：0 正常、1 接近加速區（再跌 5% 以內就到 150）、2 加速區、3 斷頭區
  */
+/**
+ * 2026-11-07 站主「全部維持率一致化」：門檻改成證交所口徑。原本研究是自算融資維持率的 160／150／145／140／130，
+ * 用 11-07 的換算（官方 ≈ 23.55 + 0.885 × 自算）＝165.2／156.3／151.9／147.4／138.6 → 取整數 165／156／152／147／139。
+ */
+export const MAINT_T = { calm: 165, accel: 156, mid: 152, sell: 147, call: 139 } as const;
+
 export const MAINT_ZONES = [
-  { id: 'calm', lo: 160, hi: Infinity, label: '160% 以上' },
-  { id: 'watch', lo: 150, hi: 160, label: '150～160%' },
-  { id: 'accel', lo: 140, hi: 150, label: '140～150%' },
-  { id: 'margin', lo: 0, hi: 140, label: '140% 以下' },
+  { id: 'calm', lo: MAINT_T.calm, hi: Infinity, label: `${MAINT_T.calm}% 以上` },
+  { id: 'watch', lo: MAINT_T.accel, hi: MAINT_T.calm, label: `${MAINT_T.accel}～${MAINT_T.calm}%` },
+  { id: 'accel', lo: MAINT_T.sell, hi: MAINT_T.accel, label: `${MAINT_T.sell}～${MAINT_T.accel}%` },
+  { id: 'margin', lo: 0, hi: MAINT_T.sell, label: `${MAINT_T.sell}% 以下` },
 ] as const;
 
-/** 站主 2026-11-05：維持率 < 160% 就開始在頁首警示（原本是再跌 5% 內到 150） */
+/** 站主 2026-11-05：低於最上面那條（原 160、證交所口徑 165）就開始在頁首警示 */
 export function maintLevel(cur: number): 0 | 1 | 2 | 3 {
-  if (cur < 140) return 3;
-  if (cur < 150) return 2;
-  return cur < 160 ? 1 : 0;
+  if (cur < MAINT_T.sell) return 3;
+  if (cur < MAINT_T.accel) return 2;
+  return cur < MAINT_T.calm ? 1 : 0;
+}
+
+/** 頁面上所有「大盤維持率」都用這條（證交所口徑：官方＋換算）；舊資料沒有 keepHist 才退回自算 */
+export function maintSeries(m: MarginData | undefined): { rows: Array<[string, number]>; official: Set<string> } {
+  if (m?.keepHist?.length) {
+    return { rows: m.keepHist.map(r => [r[0], r[1]] as [string, number]), official: new Set(m.keepHist.filter(r => r[2] === 1).map(r => r[0])) };
+  }
+  return { rows: m?.maintHist ?? [], official: new Set() };
 }
 
 /**
@@ -460,7 +480,7 @@ export function maintStats(hist: Array<[string, number]>, shorts: ShortRow[]): {
       ddAfterFall: median(dd),
     };
   });
-  const cross = [150, 145, 140].map(th => {
+  const cross = [MAINT_T.accel, MAINT_T.mid, MAINT_T.sell].map(th => {
     const ev: number[] = [];
     for (let i = 20; i < n; i++) if (m[i] < th && Math.min(...m.slice(i - 20, i)) >= th) ev.push(i);
     const r20 = ev.map(i => ret(i, 20)).filter((v): v is number => v !== null);
@@ -727,9 +747,13 @@ export function summaryTiles(data: ChipsData): SummaryTile[] {
       change: mvPrev === null ? null : yuanToYi(mv! - mvPrev), unit: 'yi', tone: 'change',
       hint: '上市' });
   }
-  if (m?.maint) {
-    out.push({ key: 'maint', label: '融資維持率', value: m.maint.ratio,
-      change: null, unit: 'pct', tone: 'none', hint: '上市，自算' });
+  // 2026-11-07 站主：維持率一致化 → 摘要也用證交所口徑（官方有就用官方）
+  const ks = maintSeries(m);
+  if (ks.rows.length) {
+    const [kd, kv] = ks.rows[ks.rows.length - 1];
+    const kp = ks.rows.length > 1 ? ks.rows[ks.rows.length - 2][1] : null;
+    out.push({ key: 'maint', label: '大盤維持率', value: kv,
+      change: kp === null ? null : kv - kp, unit: 'pct', tone: 'none', hint: ks.official.has(kd) ? '證交所' : '推估' });
   }
   // 2026-11-06 站主：不限用途款項借貸的餘額與擔保維持率（證交所官方）
   const al = m?.anyLoan;

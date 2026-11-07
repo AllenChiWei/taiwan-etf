@@ -547,25 +547,36 @@ test('combineLimits：上市＋上櫃按日期相加，上櫃缺的那天只有�
   assert.equal(combineLimits([['d1', 1, 1]]).otc, null);
 });
 
-test('maintLevel／maintStats：維持率分區、第一次跌破之後', async () => {
-  const { maintLevel, maintStats } = await import('../src/lib/chips.ts');
+test('maintLevel／maintStats：維持率分區、第一次跌破之後（2026-11-07 起證交所口徑 165／156／152／147）', async () => {
+  const { maintLevel, maintStats, MAINT_T } = await import('../src/lib/chips.ts');
+  assert.deepEqual([MAINT_T.calm, MAINT_T.accel, MAINT_T.mid, MAINT_T.sell, MAINT_T.call], [165, 156, 152, 147, 139]);
   assert.equal(maintLevel(170), 0);
-  assert.equal(maintLevel(159.9), 1);      // 2026-11-05 站主：低於 160 就警示
-  assert.equal(maintLevel(160), 0);
-  assert.equal(maintLevel(145), 2);
-  assert.equal(maintLevel(139.9), 3);
-  // 25 天在 160、第 26 天跌到 144（指數 −10%），之後 20 天指數回到 100
+  assert.equal(maintLevel(164.9), 1);      // 低於最上面那條就警示（原自算 160）
+  assert.equal(maintLevel(165), 0);
+  assert.equal(maintLevel(150), 2);
+  assert.equal(maintLevel(146.9), 3);
+  // 25 天在 165、第 26 天跌到 151（指數 −10%），之後 20 天指數回到 100
   const days = Array.from({ length: 60 }, (_, i) => `2026-${String(1 + Math.floor(i / 28)).padStart(2, '0')}-${String(1 + (i % 28)).padStart(2, '0')}`);
-  const hist: Array<[string, number]> = days.map((d, i) => [d, i < 25 ? 160 : 144]);
+  const hist: Array<[string, number]> = days.map((d, i) => [d, i < 25 ? 165 : 151]);
   const shorts: Array<[string, number, number, number]> = days.map((d, i) => [d, 0, 0, i < 25 ? 100 : i < 30 ? 90 : 100]);
   const st = maintStats(hist, shorts);
-  const c145 = st.cross.find(x => x.threshold === 145)!;
-  assert.equal(c145.n, 1);
-  assert.equal(c145.dd10, 0);              // 跌破那天 90，之後 10 天最低也是 90
-  assert.ok(Math.abs((c145.ret20 as number) - 100 * (100 / 90 - 1)) < 1e-9);
-  assert.equal(st.cross.find(x => x.threshold === 140)!.n, 0);
+  const cMid = st.cross.find(x => x.threshold === 152)!;
+  assert.equal(cMid.n, 1);
+  assert.equal(cMid.dd10, 0);              // 跌破那天 90，之後 10 天最低也是 90
+  assert.ok(Math.abs((cMid.ret20 as number) - 100 * (100 / 90 - 1)) < 1e-9);
+  assert.equal(st.cross.find(x => x.threshold === 147)!.n, 0);
   assert.equal(st.zones[0].days, 25);
   assert.equal(st.zones[2].days, 35);
+});
+
+test('maintSeries：有證交所口徑（keepHist）就用它、標出官方日子；舊資料退回自算', async () => {
+  const { maintSeries } = await import('../src/lib/chips.ts');
+  const m = { maintHist: [['08-04', 160], ['08-05', 162]], keepHist: [['08-04', 165.1, 0], ['08-05', 167.2, 1]] } as never;
+  const s = maintSeries(m);
+  assert.deepEqual(s.rows, [['08-04', 165.1], ['08-05', 167.2]]);
+  assert.ok(s.official.has('08-05') && !s.official.has('08-04'));
+  assert.deepEqual(maintSeries({ maintHist: [['08-04', 160]] } as never).rows, [['08-04', 160]]);
+  assert.equal(maintSeries(undefined).rows.length, 0);
 });
 test('marginVsIndex：融資與大盤從 days 天前起算的累積漲跌幅、每天過去 days 天的差距', async () => {
   const { marginVsIndex } = await import('../src/lib/chips.ts');
