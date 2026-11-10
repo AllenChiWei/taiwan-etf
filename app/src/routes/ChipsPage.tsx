@@ -738,7 +738,7 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
               {bar ? (
                 <>
                   {vals.map((v, i) => (v === null || v === 0 ? null : (
-                    <rect key={i} x={Math.max(0, Math.min(W - bw, x(i) - bw / 2))} width={bw} y={Math.min(y(v), y(0))} height={Math.abs(y(v) - y(0))}
+                    <rect key={i} x={(i * (W - bw)) / (n - 1)} width={bw} y={Math.min(y(v), y(0))} height={Math.abs(y(v) - y(0))}
                           className={(c.tone ?? (v > 0 ? 'up' : 'down')) === 'up' ? 'fill-up' : 'fill-down'} />
                   )))}
                   {pts2.length > 1 && (
