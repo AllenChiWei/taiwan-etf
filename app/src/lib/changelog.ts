@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-10',
+    items: [
+      { kind: 'fix', to: '/chips',
+        text: '籌碼頁的柱狀圖（追繳戶數、追繳金額、融資每日增減、漲跌停家數等）最新一天（最右邊）和最舊一天的柱子不再被切掉一半。' },
+    ],
+  },
+  {
     date: '2026-11-07',
     items: [
       { kind: 'improve', to: '/chips',
