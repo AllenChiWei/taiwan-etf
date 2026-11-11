@@ -44,6 +44,10 @@
 經理人會把每一檔同比例加一點。先取兩天都有的持股「股數比值的中位數」當資金進出比例 `f`，
 偏離它超過 0.5% 才算加碼／減碼。**實測 f 一直是 0**（這幾檔多數日子股數完全不動，資金先放現金），
 所以它是保險：哪天有經理人改成同比例攤入，清單也不會整排變成加碼。
+例外是**新上市的建倉期**：新 ETF 第一次出現時往回查 25 天，會抓到上市前分批建倉（2026-11-11 上市的 00418A：11-02 f＝+63.6%、11-05 +54%）。
+`tests/active.test.ts` 的「單日 |f| ≥ 50% 代表比錯日子」原本一律擋，這筆一進累積資料，**每天的「主動式換股」都會被擱置**（11-11 第一次發生）；
+caf5f72 改成每檔前 10 筆只擋大量流出（f ≤ −50%），流入不設上限。本機重現：`PYTHONIOENCODING=utf-8 python scripts/fetch_active_holdings.py`
+→ `cd app && node --test tests/active.test.ts`，跑完 `git checkout -- app/public/data/active_holdings.json`（腳本會改寫這個檔）。
 
 **估值、換股成效、持股損益**（2026-10-26 站主要求，參考籌碼小宇；`prices_and_books()` 與 `lib/active.ts`）：
 - 價格＝證交所 `MI_INDEX`／櫃買 `afterTrading/otc` 的每日行情（`fetch_chips.py` 同一組），均價＝成交金額 ÷ 成交股數。
