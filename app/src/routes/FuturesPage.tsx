@@ -32,7 +32,7 @@ import { Vault } from '../lib/vault';
 /* 私人：當年度對帳單（2026-10-28 使用者要求放進私人頁）。DashBoard_AI\statement_export.py 把 EasyWin 匯出的
  * 已實現損益列原樣加密上傳（密碼、salt 同 v18），這裡解鎖狀態下自動載入、用同一個 parseSheet 解析。
  * 對帳單最後一天之後只有元大 API 的每日合計（沒有逐筆），另外列出、不混進下面的勝率與曲線。
- * 從 since 開始（使用者要求補上 2025-11、12 月），所以「今年合計」只算 year 那一年的列。
+ * 從 since 開始（2026-11-12 起 2025-01-01，和實盤權益一樣含 2025 整年），所以「今年合計」只算 year 那一年的列。
  * 沒解鎖的人什麼都看不到，上傳功能照舊。 */
 const statementVault = new Vault(`${import.meta.env.BASE_URL}data/statement/`, 'twetf.v18.unlock');
 const STATEMENT_LABEL = '已存對帳單・';
