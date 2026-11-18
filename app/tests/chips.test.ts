@@ -13,6 +13,7 @@ import {
   contractAmount, joinDca, retailLatest, retailRatioSeries,
   txEquivalent, txEquivalentLatest, lastTwo, summaryTiles,
   type ChipsData, type DcaRow,
+  distView, type DistRow,
 } from '../src/lib/chips.ts';
 
 test('單位換算', async (t) => {
@@ -609,4 +610,29 @@ test('marginVsIndex.roll：每天的過去 days 天漲跌幅，跟 gap 同一組
   assert.deepEqual(r.roll.m.map(x => x[0]), r.gap.map(x => x[0]));
   assert.deepEqual(r.roll.m.map(x => Math.round(x[1] * 100) / 100), [10, 10]);
   assert.deepEqual(r.roll.x.map(x => Math.round(x[1] * 100) / 100), [5, 0]);
+});
+
+test('個股融資維持率分布：家數、比例、在歷史的位置', () => {
+  const rows: DistRow[] = [
+    ['2026-11-13', 1000, 100, 200, 300, 400],
+    ['2026-11-16', 1000, 300, 400, 500, 600],
+    ['2026-11-17', 800, 200, 300, 400, 500],
+  ];
+  const v = distView(rows, 130)!;
+  assert.deepEqual(v.count.map(r => r[1]), [100, 300, 200]);
+  assert.deepEqual(v.pct.map(r => r[1]), [10, 30, 25]);          // 比例用當天的融資股數當分母
+  assert.equal(v.last.diff, -100);
+  assert.equal(Math.round(v.last.rank), 67);                     // 25% 在 10／30／25 裡比 2 天多（含今天）
+  assert.equal(distView(rows, 150)!.last.count, 400);
+  assert.equal(distView(rows, 135), null);                       // 不是四個門檻之一
+  assert.equal(distView(rows.slice(0, 1), 130), null);
+});
+
+test('真實 chips.json 的個股融資維持率分布：門檻越高家數越多、不超過融資股數', () => {
+  const p = 'public/data/chips.json';
+  if (!existsSync(p)) return;
+  const d = JSON.parse(readFileSync(p, 'utf8')) as ChipsData;
+  for (const r of d.margin?.distHist ?? []) {
+    assert.ok(r[2] <= r[3] && r[3] <= r[4] && r[4] <= r[5] && r[5] <= r[1], r.join(','));
+  }
 });

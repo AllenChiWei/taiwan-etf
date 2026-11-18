@@ -16,6 +16,7 @@ import {
   linePath, CREDIT, ANYLOAN, maintEpisodes, dropToReach, maintLevel, maintStats, maintSeries, MAINT_T, marginVsIndex, MARGIN_GAP_HOT, rangePosition, type RangePos,
   type SummaryTile, type CreditRow, type AnyLoanRow, type ShortRow, type TwMood, adLine, basisPoints, alignByDate, limitTrend, combineLimits,
   type ChipsData, type LargeRow, type TopByWho, type TopRow, type DcaJoined,
+  distView, DIST_TH, type DistRow,
 } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { fearGreed, vixView, COMPONENT_LABEL, type Mood } from '../lib/sentiment';
@@ -451,6 +452,7 @@ function MarginSection({ data }: { data: ChipsData }) {
         只有上市；FinMind 的現成數字要付費。
       </p>
       {maintSeries(m).rows.length > 20 && <MaintHistory ks={maintSeries(m)} cal={m.keepCal ?? null} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
+      {m.distHist && m.distHist.length > 20 && <MarginDist rows={m.distHist} shorts={m.shortHist ?? []} />}
       {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
       {m.anyLoan && m.anyLoan.length > 0 && <AnyLoanBlock rows={m.anyLoan} />}
     </Section>
@@ -645,6 +647,70 @@ function MaintHistory({ ks, cal, shorts, sbl }: {
   );
 }
 
+/**
+ * 個股融資維持率分布（2026-11-18 站主：「維持率低於 130／140／150／160% 的股票有幾檔」，參考老墨 MOFI 的市場廣度儀表板）。
+ * 大盤維持率是平均，平均 160% 時可能已經有三分之一的融資股跌破 130% 在被追繳 —— 這裡看的是「有多少檔已經在斷頭線附近」。
+ */
+function MarginDist({ rows, shorts }: { rows: DistRow[]; shorts: ShortRow[] }) {
+  const [th, setTh] = useState<number>(130);
+  const [years, setYears] = useState(1);
+  const v = useMemo(() => distView(rows, th), [rows, th]);
+  const all = useMemo(() => DIST_TH.map(t => distView(rows, t)), [rows]);
+  const charts = useMemo<AlignedChart[]>(() => v ? [
+    ...(shorts.length > 20 ? [{ title: '加權指數', digits: 0,
+      rows: shorts.filter(r => r[3] > 0).map(r => [r[0], r[3]] as [string, number]) }] : []),
+    { title: `維持率 < ${th}% 的股票（家）`, rows: v.count, digits: 0, agg: 'max' as const },
+    { title: `占融資股的比例（%）`, rows: v.pct, digits: 1, unit: '%', agg: 'max' as const },
+  ] : [], [v, th, shorts]);
+  if (!v) return null;
+  const d0 = v.last.date;
+  const cut = years ? `${Number(d0.slice(0, 4)) - years}${d0.slice(4)}` : '';
+  const btn = (on: boolean) => `h-7 rounded-lg px-2.5 text-[12px] font-semibold ${on ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`;
+  return (
+    <div id="sec-margin-dist" className="mt-3 scroll-mt-16 border-t border-line pt-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">個股融資維持率分布（家數）</h3>
+        <span className="text-[11.5px] text-faint">{rows[0][0]} 起 · 最新 {d0} · 融資股 {nf0.format(v.last.n)} 檔</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        {DIST_TH.map((t, i) => {
+          const a = all[i];
+          if (!a) return null;
+          return (
+            <Stat key={t} label={`維持率 < ${t}%`} value={`${nf0.format(a.last.count)} 檔`}
+                  tone={a.last.rank >= 90 ? 'text-up' : undefined}
+                  sub={<>占 {nf1.format(a.last.pct)}%{a.last.diff !== null && <>｜較前日 {signed(a.last.diff)}</>}<br />比 {nf0.format(a.last.rank)}% 的歷史日子多</>} />
+          );
+        })}
+      </div>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {DIST_TH.map(t => (
+          <button key={t} type="button" aria-pressed={th === t} onClick={() => setTh(t)} className={btn(th === t)}>&lt; {t}%</button>
+        ))}
+        <span className="mx-1 self-center text-faint">·</span>
+        {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
+          <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)} className={btn(years === y)}>{label}</button>
+        ))}
+      </div>
+      <AlignedCharts charts={charts} cut={cut} />
+      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        <b>怎麼看：</b>上面的大盤維持率是全市場平均，這裡數的是<b>每一檔</b>：融資買進的人平均成本算出來，維持率低於門檻的有幾檔。
+        個股跌破 130% 會被追繳、補不足就斷頭賣出，所以「&lt; 130%」的家數暴增＝很多股票同時有斷頭賣壓。
+        歷次恐慌的高點：2020-03-19 有 1,013 檔（融資股的七成）、2025-04-09 有 1,160 檔（七成二）低於 130%；2026-11-13 是 352 檔，連跌兩天後 11-17 變 616 檔。
+        比例比家數好比：融資股的總數從 2016 年的一千三百多檔增加到現在的一千七百多檔。數字標紅＝比 90% 的歷史日子多。
+      </p>
+      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+        <b>算法與驗證：</b>每檔的融資成本線用 XQ 公開的公式逐日更新：成本 ＝（昨日成本 ×（融資餘額 − 融資買進）＋ 收盤價 × 融資買進）÷ 融資餘額，
+        個股維持率 ＝ 收盤價 ÷（成本 × 0.6）（融資自備四成）。只算上市＋上櫃普通股（不含 ETF），當天有收盤價、融資餘額大於 0 的才算。
+        成本線從 2016 年初開始累積，前 90 個交易日暖機不列；融資餘額歸零的股票保留原本的成本線，之後再有融資就接著算。
+        2016～2026/11/17 用 FinLab 的個股融資餘額、融資買進與收盤價回補，之後每天用證交所與櫃買公布的個股融資資料接著算（11-17 兩種來源算出來的家數完全相同）。
+        跟老墨 MOFI 市場廣度儀表板公開的數字逐日比對（2021-07～2026-11，1,308 天），平均只差 0.2 檔。
+        這是「假設融資戶照平均成本」的估計，實際每個人的成本不同；當沖與融資買進後賣出的部位會讓成本線偏離。
+      </p>
+    </div>
+  );
+}
+
 interface AlignedChart {
   title: string;
   rows: Array<[string, number]>;
@@ -786,6 +852,11 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
     return [
       { title: '加權指數', rows: [...idx].sort((a, b) => (a[0] < b[0] ? -1 : 1)), digits: 0 },
       { title: '騰落線（上市股票，累計上漲 − 下跌家數）', rows: adLine(tw.breadth), digits: 0 },
+      ...(tw.maBreadth && tw.maBreadth.length > 20 ? [{
+        title: '站上均線的個股比例（%，上市＋上櫃）', digits: 1, unit: '%', guides: [50],
+        rows: tw.maBreadth.map(r => [r[0], r[1]] as [string, number]), label: '20 日線',
+        rows2: tw.maBreadth.map(r => [r[0], r[2]] as [string, number]), label2: '60 日線',
+      }] : []),
       { title: '臺指 VIX（期交所，2026-08 起累積）', rows: tw.vix, digits: 2 },
       { title: '期貨正逆價差（點，5 日平均）', rows: basisPoints(tw.basis), digits: 0, guides: [0] },
     ];
@@ -794,7 +865,7 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
   const end = [tw.vix, tw.basis, tw.breadth].map(r => r[r.length - 1]?.[0] ?? '').sort().pop() as string;
   const cut = years ? `${Number(end.slice(0, 4)) - years}${end.slice(4)}` : '';
   return (
-    <Section title="台股情緒" hint="指數、騰落線、VIX、正逆價差、漲跌停">
+    <Section title="台股情緒" hint="指數、騰落線、站上均線比例、VIX、正逆價差、漲跌停">
       <div className="mt-2 flex gap-1.5">
         {[[1, '1 年'], [5, '5 年'], [0, '全部']].map(([y, label]) => (
           <button key={y} type="button" aria-pressed={years === y} onClick={() => setYears(y as number)}
@@ -805,10 +876,12 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
       </div>
       <AlignedCharts charts={charts} cut={cut} />
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        四張圖用同一條日期軸，上下同一個位置就是同一天；點一下或左右拖，每張圖都會標出那一天的值。
+        這幾張圖用同一條日期軸，上下同一個位置就是同一天；點一下或左右拖，每張圖都會標出那一天的值。
         臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積，前面是空白。
         正逆價差＝台指期近月 − 加權指數，取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
         騰落線跟指數同向是普漲；指數創高、騰落線往下是少數權值股撐盤。
+        站上均線的比例：收盤價在 20 日（約一個月）／60 日（約一季）均線之上的個股占幾成（上市＋上櫃普通股，用還原股價，除息不會被算成跌破）；
+        指數漲、比例卻往下也是少數股撐盤，比例掉到一兩成通常是全面殺盤（2026-11-17 是 12%／13%）。
       </p>
       {tw.limits && tw.limits.length > 1 && <LimitBlock twse={tw.limits} otc={tw.limitsOtc} cut={cut} />}
     </Section>

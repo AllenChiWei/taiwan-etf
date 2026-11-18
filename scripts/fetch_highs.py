@@ -89,6 +89,30 @@ def load_names():
     return names
 
 
+# 站上 20／60 日均線的個股比例（2026-11-18 站主：市場廣度）。放在 calc/ 底下，跟試算資料一起被 deploy 的快取帶著走，
+# 不需要 FinLab 的那幾次部署也拿得到；fetch_chips.py 讀它併進 chips.json 的 tw.maBreadth。
+MA_OUT = os.path.join(ROOT, 'app', 'public', 'data', 'calc', 'ma_breadth.json')
+MA_START = '2016-01-01'
+
+
+def ma_breadth_rows(adj, start=MA_START):
+    u"""[日期, 站上 MA20 %, 站上 MA60 %, 算進去的檔數]：上市＋上櫃普通股（4 碼、非 0 開頭），還原收盤價。
+    分母＝當天有收盤價、而且 60 日均線算得出來的檔數（MA20 的比例也用同一個分母的那群，兩條線才能比）。"""
+    cols = [c for c in adj.columns if len(c) == 4 and c.isdigit() and not c.startswith('0')]
+    px = adj[cols]
+    ma20 = px.rolling(20, min_periods=20).mean()
+    ma60 = px.rolling(60, min_periods=60).mean()
+    ok = px.notna() & ma60.notna()
+    n = ok.sum(axis=1)
+    p20 = ((px > ma20) & ok).sum(axis=1) / n * 100
+    p60 = ((px > ma60) & ok).sum(axis=1) / n * 100
+    out = []
+    for d in px.index[px.index >= start]:
+        if n[d] >= 100:
+            out.append([d.date().isoformat(), round(float(p20[d]), 1), round(float(p60[d]), 1), int(n[d])])
+    return out
+
+
 def main():
     from finlab_client import login
     login()
@@ -191,6 +215,14 @@ def main():
     }
     write_json(OUT, payload)
     log(u'完成：%s（%.0f KB）' % (OUT, os.path.getsize(OUT) / 1024.0))
+    # 市場廣度：同一份還原股價順便算，失敗不影響創新高
+    try:
+        mb = ma_breadth_rows(adj)
+        write_json(MA_OUT, {'note': u'站上 20／60 日均線的個股比例（上市＋上櫃普通股，還原收盤價），[日期, %20, %60, 檔數]',
+                            'rows': mb})
+        log(u'  站上均線比例 %d 天，最新 %s' % (len(mb), mb[-1] if mb else u'—'))
+    except Exception as e:                                     # noqa: BLE001
+        log(u'  站上均線比例失敗：%s' % str(e)[:120])
     for w in WINDOWS:
         log(u'  %d 日：創新高 %d 檔、創新低 %d 檔'
             % (w, counts[w]['high'], counts[w]['low']))

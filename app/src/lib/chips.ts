@@ -144,6 +144,34 @@ export interface MarginData {
   sblHist?: Array<[string, number]>;
   /** 融資金額（上市＋上櫃，億元）每天一列 [日期, 億]：2009 起（2026-11-05）。舊版沒有 */
   moneyHist?: Array<[string, number]>;
+  /** 個股融資維持率分布（上市＋上櫃普通股）每天一列 [日期, 融資股數, <130, <140, <150, <160]：2016-05 起（2026-11-18）。舊版沒有 */
+  distHist?: DistRow[];
+}
+
+export type DistRow = [string, number, number, number, number, number];
+/** 個股融資維持率分布的四個門檻（%），順序＝DistRow 第 2～5 欄 */
+export const DIST_TH = [130, 140, 150, 160] as const;
+
+/**
+ * 個股融資維持率「低於 th% 的家數」：家數、占融資股的比例（%）走勢，與最新一天的比例在歷史裡的位置。
+ * 比例比家數好比：融資股的總數十年來從一千三到一千七，只看家數會高估近年。rows 照日期排好、至少兩天才回傳。
+ */
+export function distView(rows: DistRow[], th: number): {
+  count: Array<[string, number]>; pct: Array<[string, number]>;
+  last: { date: string; n: number; count: number; pct: number; diff: number | null; rank: number };
+} | null {
+  const k = (DIST_TH as readonly number[]).indexOf(th);
+  if (k < 0 || rows.length < 2) return null;
+  const at = (r: DistRow) => r[k + 2] as number;
+  const count = rows.map(r => [r[0], at(r)] as [string, number]);
+  const pct = rows.map(r => [r[0], r[1] > 0 ? (at(r) / r[1]) * 100 : 0] as [string, number]);
+  const [d, n] = rows[rows.length - 1];
+  const p = pct[pct.length - 1][1];
+  const c = count[count.length - 1][1];
+  const prev = count[count.length - 2][1];
+  // 比 rank% 的歷史日子高（含今天）：跟大盤維持率那格同一種寫法
+  const rank = (pct.filter(r => r[1] <= p).length / pct.length) * 100;
+  return { count, pct, last: { date: d, n, count: c, pct: p, diff: c - prev, rank } };
 }
 
 export type ShortRow = [string, number, number, number];
@@ -160,6 +188,8 @@ export interface TwMood {
   limits?: Array<[string, number, number]>;
   /** 上櫃股票 [日期, 漲停家數, 跌停家數]（同上，2026-11-05 晚一點加） */
   limitsOtc?: Array<[string, number, number]>;
+  /** 上市＋上櫃普通股 [日期, 站上 20 日均線 %, 站上 60 日均線 %, 檔數]（還原收盤價，2016 起；2026-11-18 加，舊版沒有） */
+  maBreadth?: Array<[string, number, number, number]>;
 }
 
 /**

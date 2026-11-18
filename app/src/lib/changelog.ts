@@ -34,6 +34,15 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-18',
+    items: [
+      { kind: 'new', to: '/chips',
+        text: '籌碼頁「融資」加上「個股融資維持率分布」：每天有幾檔股票的融資維持率低於 130%、140%、150%、160%（上市＋上櫃，2016 起），可切換門檻與 1 年／5 年／全部，跟加權指數同一條日期軸；附算法與驗證說明。' },
+      { kind: 'new', to: '/chips',
+        text: '籌碼頁「台股情緒」加上「站上 20 日／60 日均線的個股比例」，看是普漲還是少數股撐盤。' },
+    ],
+  },
+  {
     date: '2026-11-10',
     items: [
       { kind: 'fix', to: '/chips',

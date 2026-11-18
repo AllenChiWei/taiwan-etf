@@ -127,6 +127,20 @@
 漲跌停家數（`LimitBlock`，錨點 `#sec-limits`）在台股情緒下方，跟著同一個 1／5 年／全部：柱子＋20 日平均線（`AlignedChart` 的 `kind: 'bar'` 加 `rows2` 會畫一條線），
 **`agg: 'max'`** 讓抽樣（最多 500 點）取那段最大值，不然 5 年／全部時 2025-04-07 那種 937 家的單日尖峰會被跳過；`tone` 固定柱子顏色（漲停紅、跌停綠）。
 
+### 個股融資維持率分布（家數）與站上均線比例（2026-11-18 站主：參考老墨 MOFI「維持率低於 X% 的股票數」）
+- **`margin.distHist`** [日期, 融資股數, <130, <140, <150, <160]（上市＋上櫃普通股 `_is_stock`），2016-05-23 起；畫面 `MarginDist`（錨點 `#sec-margin-dist`），在大盤維持率歷史下面：
+  四個門檻的家數格（比 90% 歷史日子多才標紅）、門檻切換、1／5 年／全部，跟加權指數共用日期軸；`lib/chips.ts` 的 `distView()`。
+- 算法（XQ 公開公式）：成本 ＝（昨日成本 ×（今日餘額 − 融資買進）＋ 收盤 × 融資買進）÷ 今日餘額（買進以餘額為上限）；第一次有餘額成本＝收盤；
+  **餘額歸零不重置成本**（重置會比 MOFI 少約 5% 家數，不重置逐日平均差 0.2 檔）；維持率＝收盤 ÷（成本 × 0.6）。當天沒收盤價的不算、成本也不動。
+- 種子 `scripts/data/margin_dist_seed.json`（rows＋`state` 每檔成本，產生腳本 `D:\ai\DashBoard_AI\research_margin_dist_seed.py`，FinLab 2016-01 起、前 90 天暖機）。
+  每天 `margin_dist()`：成本線狀態 **`margin.distState`** {d, c} 取種子／Actions 快取／線上 chips.json 日期最新的，逐個平日補到融資表那天
+  （`dist_day()`：MI_MARGN 個股「買進／今日餘額」第一組＝融資＋MI_INDEX 收盤＋櫃買 `margin/balance` 的「資買／資餘額」＋櫃買收盤；
+  證交所說沒資料＝休市跳過；任一邊拿不到就停在前一天、下次補——**不能跳過交易日**，否則那天的融資買進沒進成本線）。最多一次補 `DIST_MAX_DAYS`＝25 個平日。
+  2026-11-17 驗證：FinLab 11-16 狀態＋官方 11-17 資料＝FinLab 11-17（四個門檻差 0；`D:\ai\_tmp\scripts_iso\mdist_verify.py`）。
+- **`tw.maBreadth`** [日期, 站上 MA20 %, 站上 MA60 %, 檔數]：`fetch_highs.py` 的 `ma_breadth_rows()` 用 `etl:adj_close`（同一次下載、不多花流量）寫 `calc/ma_breadth.json`
+  （放 calc/ 是因為 deploy 的 FinLab 快取帶著它走，不重抓 FinLab 的部署也有），`fetch_chips.py` 的 `ma_breadth()` 跟快取／線上合併。分母＝有收盤且 MA60 算得出來的普通股。
+  用還原價（除息不算跌破），跟 MOFI（原始收盤）差 1～3 個百分點、相關 0.99。台股情緒的第三張圖（20 日線實線、60 日線虛線）。
+
 ### 維持率分區與警示（2026-11-05 使用者：維持率低於多少下跌會加速？結論放網站、快到門檻要警示）
 
 研究 `D:\ai\_tmp\scripts_iso\maint_accel.py`（報告 `D:\ai\_tmp\maint_accel\report.txt`）。前端 `chips.ts` 的 `maintStats()` 用同一套定義每天重算，

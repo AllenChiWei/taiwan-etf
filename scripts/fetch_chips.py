@@ -173,7 +173,16 @@ TWSE_ANYLOAN = 'https://www.twse.com.tw/rwd/zh/marginTrading/BFIJ4U_TREND?respon
 ANYLOAN_SEED = os.path.join(ROOT, 'scripts', 'data', 'anyloan_seed.json')
 # 三份累積歷史的 Actions 快取（deploy.yml 取回／存下），防「某次讀不到線上那份就整段遺失」
 HIST_CACHE = os.path.join(ROOT, '.cache', 'chips_hist.json')
-HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'anyLoan', 'sblHist', 'vix', 'basis', 'breadth', 'limits', 'limitsOtc')
+HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'anyLoan', 'sblHist', 'vix', 'basis', 'breadth', 'limits', 'limitsOtc',
+             'distHist', 'distState', 'maBreadth')
+# 個股融資維持率分布（家數，2026-11-18 站主：「維持率低於 130／140／150／160% 的股票有幾檔」）——
+# XQ 公開的融資成本公式，種子 FinLab 2016 起（D:\ai\DashBoard_AI\research_margin_dist_seed.py），之後每天用證交所 MI_MARGN
+# ＋櫃買融資融券餘額的個股「融資買進／今日餘額」與收盤價接著算；每檔的成本線存在 margin.distState 帶到下一次部署
+DIST_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_dist_seed.json')
+DIST_TH = (130, 140, 150, 160)
+DIST_MAX_DAYS = 25            # 狀態落後時一次最多補幾個平日（證交所、櫃買都能依日期查）
+# 站上 20／60 日均線的個股比例：fetch_highs.py 用 FinLab 還原收盤價算好放這裡（不多花流量），這支只是併進 chips.json
+MA_BREADTH = os.path.join(ROOT, 'app', 'public', 'data', 'calc', 'ma_breadth.json')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -925,6 +934,138 @@ def sbl_today(day):
     return int(round((twse + sum(num(r[12]) for r in rows if _is_stock(r[0].strip()))) / 1000))
 
 
+def dist_step(cost, rows, closes):
+    u"""個股融資維持率往前走一天（XQ 公式）。cost {代號: 融資成本} 原地更新；回傳 [融資股數, <130, <140, <150, <160]。
+
+    rows {代號: (融資買進, 融資今日餘額)}（張）、closes {代號: 收盤價}；只算個股（_is_stock），當天有收盤價且餘額 > 0 才算。
+      成本 = (昨日成本 × (餘額 − 買進) + 收盤價 × 買進) ÷ 餘額；買進 > 餘額時以餘額為上限
+      第一次有餘額那天成本 = 收盤價；**餘額歸零不重置**（之後接著用舊成本——和 XQ／mofi 對上的關鍵，重置會少約 5% 的家數）
+      維持率 = 收盤價 ÷ (成本 × 0.6) × 100
+    """
+    ms = []
+    for code, (buy, bal) in rows.items():
+        c = closes.get(code)
+        if not _is_stock(code) or not c or bal <= 0:
+            continue
+        old = cost.get(code)
+        if old is None:
+            cost[code] = c
+        else:
+            y = min(buy, bal)
+            cost[code] = (old * (bal - y) + c * y) / bal
+        ms.append(c / (cost[code] * 0.6) * 100)
+    return [len(ms)] + [sum(1 for m in ms if m < k) for k in DIST_TH]
+
+
+_DIST_DOCS = {}
+
+
+def _tpex_post(url, day, label):
+    u"""櫃買的 POST 端點（day＝YYYYMMDD），同一天只抓一次；失敗回 None。"""
+    key = (url, day)
+    if key not in _DIST_DOCS:
+        try:
+            body = urllib.parse.urlencode({'date': '%s/%s/%s' % (day[:4], day[4:6], day[6:]), 'response': 'json'}).encode()
+            req = urllib.request.Request(url, data=body, headers={'User-Agent': UA})
+            _DIST_DOCS[key] = json.loads(urllib.request.urlopen(req, timeout=TIMEOUT).read().decode('utf-8'))
+            time.sleep(DELAY)
+        except Exception as e:                                # noqa: BLE001
+            note(u'%s：%s' % (label, str(e)[:80]))
+            _DIST_DOCS[key] = None
+    return _DIST_DOCS[key]
+
+
+def dist_day(day):
+    u"""一天的個股融資（上市＋上櫃）：({代號: (融資買進, 今日餘額)}, {代號: 收盤價})。day 是 YYYYMMDD。
+    證交所說那天沒資料（休市）回 'holiday'；任一邊拿不到回 None（不能跳過那天，否則成本線會少算一天的買進）。"""
+    doc = fetch_json(TWSE_MARGIN % day, u'證交所融資融券彙總（個股維持率）')
+    if not doc:
+        return None
+    if doc.get('stat') != 'OK':
+        return 'holiday'
+    rows = {}
+    for t in doc.get('tables') or []:
+        f = t.get('fields') or []
+        if u'代號' in f and u'買進' in f and u'今日餘額' in f:
+            bi, li = f.index(u'買進'), f.index(u'今日餘額')     # 第一組是融資（第二組是融券）
+            for r in t.get('data') or []:
+                rows[r[0].strip()] = (num(r[bi]), num(r[li]))
+    closes = twse_closes(day)
+    otc = _tpex_post(TPEX_MARGIN, day, u'櫃買融資餘額（個股維持率）')
+    t = ((otc or {}).get('tables') or [{}])[0]
+    f = [x.strip() for x in t.get('fields') or []]
+    if not rows or not closes or u'資買' not in f or u'資餘額' not in f or not t.get('data'):
+        return None
+    bi, li = f.index(u'資買'), f.index(u'資餘額')
+    for r in t['data']:
+        rows[r[0].strip()] = (num(r[bi]), num(r[li]))
+    roc = '%d/%s/%s' % (int(day[:4]) - 1911, day[4:6], day[6:])
+    n0 = len(closes)
+    try:
+        pdoc = json.loads(fetch(TPEX_PRICE % roc).decode('utf-8'))
+        for pt in pdoc.get('tables') or []:
+            pf = [x.strip() for x in pt.get('fields') or []]
+            if u'收盤' in pf:
+                ci = pf.index(u'收盤')
+                for r in pt.get('data') or []:
+                    c = num(r[ci])
+                    if c > 0:
+                        closes[r[0].strip()] = float(c)
+    except Exception as e:                                    # noqa: BLE001
+        note(u'櫃買收盤行情（個股維持率）：%s' % str(e)[:80])
+    return None if len(closes) == n0 else (rows, dict(closes))
+
+
+def margin_dist(day):
+    u"""個股融資維持率分布每天一列 [日期, 融資股數, <130, <140, <150, <160] 與成本線狀態 {'d': 日期, 'c': {代號: 成本}}。
+
+    狀態取種子／Actions 快取／線上 chips.json 裡日期最新的那份，從它的下一個平日走到 day（休市跳過、某天拿不到就停在前一天，
+    下次部署再補）。day 是 YYYY-MM-DD（融資表那天）。"""
+    rows = _seed_and_live(DIST_SEED, 'distHist', list)
+    states = []
+    try:
+        states.append(json.load(io.open(DIST_SEED, encoding='utf-8')).get('state'))
+    except Exception:                                         # noqa: BLE001
+        pass
+    states.append(_hist_cache().get('distState'))
+    states.append((_live_section('margin') or {}).get('distState'))
+    states = [s for s in states if s and s.get('d') and s.get('c')]
+    if not states:
+        note(u'個股融資維持率：沒有成本線狀態（種子也讀不到）')
+        return [rows[d] for d in sorted(rows)], None
+    st = max(states, key=lambda s: s['d'])
+    cost = {k: float(v) for k, v in st['c'].items()}
+    cur = st['d']
+    if day and day > cur:
+        d0 = datetime.strptime(cur, '%Y-%m-%d').date()
+        d1 = datetime.strptime(day, '%Y-%m-%d').date()
+        todo = [d0 + timedelta(days=i) for i in range(1, (d1 - d0).days + 1)]
+        todo = [d for d in todo if d.weekday() < 5]
+        if len(todo) > DIST_MAX_DAYS:
+            note(u'個股融資維持率：成本線停在 %s，落後 %d 個平日，只補最近 %d 天（中間的融資買進沒算到）' % (cur, len(todo), DIST_MAX_DAYS))
+            todo = todo[-DIST_MAX_DAYS:]
+        for d in todo:
+            ds = d.isoformat()
+            got = dist_day(ds.replace('-', ''))
+            if got == 'holiday':
+                continue
+            if got is None:
+                note(u'個股融資維持率：%s 的個股融資或收盤價拿不到，停在 %s' % (ds, cur))
+                break
+            rows[ds] = [ds] + dist_step(cost, got[0], got[1])
+            cur = ds
+            log(u'  個股融資維持率 %s：融資股 %d 檔，<130%% %d、<140%% %d、<150%% %d、<160%% %d' % tuple([ds] + rows[ds][1:]))
+    state = {'d': cur, 'c': {k: round(v, 3) for k, v in cost.items()}}
+    return [rows[d] for d in sorted(rows)][-MAINT_KEEP:], state
+
+
+def ma_breadth():
+    u"""站上 20／60 日均線的個股比例 [日期, %20, %60, 檔數]：fetch_highs.py 寫好的 calc/ma_breadth.json，
+    再跟快取／線上累積的合併（FinLab 某天失敗也不會少掉歷史）。"""
+    rows = _seed_and_live(MA_BREADTH, 'maBreadth', list, 'tw')
+    return [rows[d] for d in sorted(rows)][-MAINT_KEEP:]
+
+
 def breadth_today(day):
     u"""上市股票 (上漲, 下跌, 漲停, 跌停) 家數：證交所收盤行情的「漲跌證券數合計」股票欄，
     格式「438(20)」＝上漲 438 家、其中漲停 20 家。拿不到回 None。"""
@@ -1394,10 +1535,14 @@ def main():
     mday = margin['maint']['date'] if margin['maint'] else None
     margin['sblHist'] = sbl_history(mday)
     log(u'  借券賣出餘額歷史 %d 天' % len(margin['sblHist']))
+    log(u'個股融資維持率分布（家數）…')
+    margin['distHist'], margin['distState'] = margin_dist(mday)
+    log(u'  %d 天，成本線到 %s' % (len(margin['distHist']), (margin['distState'] or {}).get('d', u'—')))
 
     log(u'台股情緒：臺指 VIX、期貨正逆價差、漲跌家數…')
     tw = tw_mood(fut_day, margin['shortHist'])
-    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 上市 %d 天／上櫃 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits']), len(tw['limitsOtc'])))
+    tw['maBreadth'] = ma_breadth()
+    log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 上市 %d 天／上櫃 %d 天、站上均線比例 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits']), len(tw['limitsOtc']), len(tw['maBreadth'])))
     save_hist_cache(margin, tw)
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
