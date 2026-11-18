@@ -234,6 +234,8 @@ favourites live in `localStorage`.
   numeric column appears in both.
 - Sorting flattens the sections (`flat={Boolean(sort)}`) — otherwise it looks like it only
   sorted within one category.
+- 導覽列兩層（2026-11-18）：`components/AppShell.tsx` 的 `GROUPS`（商品／市場／工具／其他，各 3～4 頁）＋右邊「🔒 私人」。
+  **新的公開分頁要放進其中一組**；不在任何一組的路徑（ETF 詳情等）會標在「商品」。
 
 ### Verifying mobile
 

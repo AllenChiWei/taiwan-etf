@@ -15,28 +15,24 @@ import { ScrollTopButton } from './ScrollTopButton';
 import { StaleBanner } from './StaleBanner';
 import { CommandPalette } from './CommandPalette';
 
-const TABS = [
-  { to: '/', label: '台股' },
-  { to: '/us', label: '美股' },
-  { to: '/favorites', label: '收藏' },
-  { to: '/calc', label: '試算' },
-  { to: '/dividend', label: '配息' },
-  { to: '/futures', label: '對帳單' },
-  { to: '/chips', label: '籌碼' },
-  { to: '/news', label: '新聞' },
-  { to: '/macro', label: '總經' },
-  { to: '/calendar', label: '行事曆' },
-  { to: '/stock', label: '個股' },
-  { to: '/cb', label: '可轉債' },
-  { to: '/poker', label: '撲克' },
-  { to: '/changelog', label: '更新' },
-  { to: '/about', label: '說明' },
-  // v18、QT 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口
-  { to: '/me', label: '🔒 私人' },
+/**
+ * 導覽分兩層（2026-11-18 站主：內容更流暢簡潔）：15 個分頁在手機上折成三、四行 → 上排 4 組＋私人，下排只放目前那組的分頁。
+ * 點組名直接到那組的第一頁；不在任何一組的頁面（ETF 詳情等）歸「商品」。
+ */
+const GROUPS = [
+  { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/cb', label: '可轉債' }] },
+  { key: '市場', tabs: [{ to: '/chips', label: '籌碼' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
+  { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/dividend', label: '配息' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
+  { key: '其他', tabs: [{ to: '/poker', label: '撲克' }, { to: '/changelog', label: '更新' }, { to: '/about', label: '說明' }] },
 ] as const;
 
-/** 從私人入口點進去的頁面，選單上仍標示在「私人」 */
+/** 從私人入口點進去的頁面，選單上仍標示在「私人」（v18、QT 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口） */
 const PRIVATE = new Set(['/me', '/v18', '/QT', '/QTA', '/QTW', '/QTV', '/QTX', '/QTF', '/EQ', '/QTG']);
+
+function groupOf(pathname: string): string | null {
+  if (PRIVATE.has(pathname)) return null;
+  return GROUPS.find(g => g.tabs.some(t => t.to === pathname))?.key ?? '商品';
+}
 
 export function AppShell() {
   const state = useDataset();
@@ -108,30 +104,54 @@ export function AppShell() {
           </div>
         </div>
 
-        <nav aria-label="主要導覽" className="mx-auto flex w-full max-w-6xl flex-wrap gap-0.5 px-3 sm:flex-nowrap sm:gap-1 sm:px-4">
-          {TABS.map(t => {
-            const active = pathname === t.to || (t.to === '/me' && PRIVATE.has(pathname));
-            return (
-              <Link
-                key={t.to}
-                to={t.to}
-                className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2 py-2.5 text-sm font-semibold sm:px-3.5
-                  ${active ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'}`}
-                aria-current={active ? 'page' : undefined}
-              >
-                {t.label}
-                {t.to === '/changelog' && changelog.unseen && (
-                  <span className="h-2 w-2 rounded-full bg-up" aria-label="有新的更新" />
-                )}
-                {t.to === '/favorites' && favorites.count > 0 && (
-                  <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent
-                                   px-1.5 font-mono text-[11px] font-bold text-accent-ink">
-                    {favorites.count}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+        <nav aria-label="主要導覽" className="mx-auto w-full max-w-6xl px-3 sm:px-4">
+          <div className="flex gap-1 border-b border-line">
+            {GROUPS.map(g => {
+              const on = groupOf(pathname) === g.key;
+              return (
+                <Link key={g.key} to={g.tabs[0].to}
+                      className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-bold sm:px-4
+                        ${on ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'}`}>
+                  {g.key}
+                  {g.key === '其他' && changelog.unseen && (
+                    <span className="h-2 w-2 rounded-full bg-up" aria-label="有新的更新" />
+                  )}
+                </Link>
+              );
+            })}
+            <Link to="/me" aria-current={PRIVATE.has(pathname) ? 'page' : undefined}
+                  className={`ml-auto flex shrink-0 items-center border-b-2 px-2 py-2.5 text-sm font-semibold sm:px-3
+                    ${PRIVATE.has(pathname) ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'}`}>
+              🔒 私人
+            </Link>
+          </div>
+          {groupOf(pathname) && (
+            <div className="flex flex-wrap gap-0.5 sm:gap-1">
+              {GROUPS.find(g => g.key === groupOf(pathname))!.tabs.map(t => {
+                const active = pathname === t.to;
+                return (
+                  <Link
+                    key={t.to}
+                    to={t.to}
+                    className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2 text-[13.5px] font-semibold sm:px-3.5
+                      ${active ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}
+                    aria-current={active ? 'page' : undefined}
+                  >
+                    {t.label}
+                    {t.to === '/changelog' && changelog.unseen && (
+                      <span className="h-2 w-2 rounded-full bg-up" aria-label="有新的更新" />
+                    )}
+                    {t.to === '/favorites' && favorites.count > 0 && (
+                      <span className="grid h-[18px] min-w-[18px] place-items-center rounded-full bg-accent
+                                       px-1.5 font-mono text-[11px] font-bold text-accent-ink">
+                        {favorites.count}
+                      </span>
+                    )}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </nav>
       </header>
 

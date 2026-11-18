@@ -9,7 +9,7 @@
  * 計算全部在 lib/stock.ts。
  */
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   periodLabel, singleQuarter, ratios, sumInst, instTotals, toLots,
   moneyFromThousands, moneyFromYuan, isoDate, instDaily, periodReturns,
@@ -20,6 +20,7 @@ import {
 import { bars, zeroY, netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
 import { Radar, Donut, type RadarAxis } from './Radar';
+import { fetchMarginState } from '../api/market';
 
 export const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 export const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
@@ -501,8 +502,23 @@ export function InstDailySection({ data }: { data: StockData }) {
   );
 }
 
+/** 這檔的融資維持率（自算，跟籌碼頁「個股融資維持率分布」同一條成本線；2026-11-18） */
+function useMarginMaint(code: string): { d: string; v: number } | null {
+  const [got, setGot] = useState<{ d: string; v: number } | null>(null);
+  useEffect(() => {
+    let live = true;
+    setGot(null);
+    fetchMarginState().then(s => {
+      if (live && s && s.m[code] !== undefined) setGot({ d: s.d, v: s.m[code] });
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [code]);
+  return got;
+}
+
 export function ChipsSection({ data }: { data: StockData }) {
   const c = data.chips;
+  const mm = useMarginMaint(data.code);
   const d1 = sumInst(c, 1);
   const d5 = sumInst(c, 5);
   const d20 = sumInst(c, 20);
@@ -564,7 +580,11 @@ export function ChipsSection({ data }: { data: StockData }) {
               sub={c.tdccDate ? `集保 ${c.tdccDate}` : undefined} />
       </div>
 
-      <div className="mt-2 grid grid-cols-2 gap-2">
+      <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        {mm && (
+          <Cell label="融資維持率（估）" value={`${mm.v.toFixed(1)}%`}
+                sub={`${mm.d.slice(5)}｜${mm.v < 130 ? '低於 130% 追繳線' : mm.v < 150 ? '接近追繳線' : '融資平均成本推算'}`} />
+        )}
         <Cell label="400 張以上持股" value={c.tdcc?.big === null || c.tdcc?.big === undefined
           ? '—' : `${nf2.format(c.tdcc.big)}%`} sub="占集保庫存" />
         <Cell label="集保股東人數" value={c.tdcc?.holders

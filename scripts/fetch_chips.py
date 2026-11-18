@@ -177,12 +177,17 @@ HIST_KEYS = ('maintHist', 'shortHist', 'moneyHist', 'credit', 'anyLoan', 'sblHis
              'distHist', 'distState', 'maBreadth')
 # 個股融資維持率分布（家數，2026-11-18 站主：「維持率低於 130／140／150／160% 的股票有幾檔」）——
 # XQ 公開的融資成本公式，種子 FinLab 2016 起（D:\ai\DashBoard_AI\research_margin_dist_seed.py），之後每天用證交所 MI_MARGN
-# ＋櫃買融資融券餘額的個股「融資買進／今日餘額」與收盤價接著算；每檔的成本線存在 margin.distState 帶到下一次部署
+# ＋櫃買融資融券餘額的個股「融資買進／今日餘額」與收盤價接著算；每檔的成本線存在 margin_state.json（＋Actions 快取 distState）帶到下一次部署
 DIST_SEED = os.path.join(ROOT, 'scripts', 'data', 'margin_dist_seed.json')
 DIST_TH = (130, 140, 150, 160)
 DIST_MAX_DAYS = 25            # 狀態落後時一次最多補幾個平日（證交所、櫃買都能依日期查）
 # 站上 20／60 日均線的個股比例：fetch_highs.py 用 FinLab 還原收盤價算好放這裡（不多花流量），這支只是併進 chips.json
 MA_BREADTH = os.path.join(ROOT, 'app', 'public', 'data', 'calc', 'ma_breadth.json')
+# 成本線狀態＋每檔最新維持率（個股頁用）另存一份，不放 chips.json（2026-11-18：chips.json 已經 1 MB 多）
+STATE_OUT = os.path.join(ROOT, 'app', 'public', 'data', 'margin_state.json')
+LIVE_STATE = 'https://allenchiwei.github.io/taiwan-etf/data/margin_state.json'
+# 首頁的市場溫度（大盤維持率、維持率 < 130% 家數、站上 20 日線比例），幾百位元組
+TEMP_OUT = os.path.join(ROOT, 'app', 'public', 'data', 'market_temp.json')
 # 2026-11-04 台股情緒與借券（站主要「還欠缺什麼可參考的數據」）：
 # 借券賣出餘額（個股，上市＋上櫃；ETF 的是造市避險，不算）——FinLab 回補，2026-11-03 跟官方逐檔一致
 SBL_SEED = os.path.join(ROOT, 'scripts', 'data', 'sbl_seed.json')
@@ -934,8 +939,9 @@ def sbl_today(day):
     return int(round((twse + sum(num(r[12]) for r in rows if _is_stock(r[0].strip()))) / 1000))
 
 
-def dist_step(cost, rows, closes):
+def dist_step(cost, rows, closes, out=None):
     u"""個股融資維持率往前走一天（XQ 公式）。cost {代號: 融資成本} 原地更新；回傳 [融資股數, <130, <140, <150, <160]。
+    out（dict）有給就順便填每檔當天的維持率 {代號: %}（個股頁用）。
 
     rows {代號: (融資買進, 融資今日餘額)}（張）、closes {代號: 收盤價}；只算個股（_is_stock），當天有收盤價且餘額 > 0 才算。
       成本 = (昨日成本 × (餘額 − 買進) + 收盤價 × 買進) ÷ 餘額；買進 > 餘額時以餘額為上限
@@ -954,6 +960,8 @@ def dist_step(cost, rows, closes):
             y = min(buy, bal)
             cost[code] = (old * (bal - y) + c * y) / bal
         ms.append(c / (cost[code] * 0.6) * 100)
+        if out is not None:
+            out[code] = round(ms[-1], 1)
     return [len(ms)] + [sum(1 for m in ms if m < k) for k in DIST_TH]
 
 
@@ -1017,10 +1025,11 @@ def dist_day(day):
 
 
 def margin_dist(day):
-    u"""個股融資維持率分布每天一列 [日期, 融資股數, <130, <140, <150, <160] 與成本線狀態 {'d': 日期, 'c': {代號: 成本}}。
+    u"""個股融資維持率分布每天一列 [日期, 融資股數, <130, <140, <150, <160] 與狀態
+    {'d': 日期, 'c': {代號: 融資成本}, 'm': {代號: 那天的維持率%}}（m 給個股頁）。
 
-    狀態取種子／Actions 快取／線上 chips.json 裡日期最新的那份，從它的下一個平日走到 day（休市跳過、某天拿不到就停在前一天，
-    下次部署再補）。day 是 YYYY-MM-DD（融資表那天）。"""
+    狀態取種子／Actions 快取／線上 margin_state.json（2026-11-18 從 chips.json 搬出來，舊的 margin.distState 也讀）裡日期最新的那份，
+    從它的下一個平日走到 day（休市跳過、某天拿不到就停在前一天，下次部署再補）。day 是 YYYY-MM-DD（融資表那天）。"""
     rows = _seed_and_live(DIST_SEED, 'distHist', list)
     states = []
     try:
@@ -1028,6 +1037,10 @@ def margin_dist(day):
     except Exception:                                         # noqa: BLE001
         pass
     states.append(_hist_cache().get('distState'))
+    try:
+        states.append(json.loads(fetch(LIVE_STATE).decode('utf-8')))
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  線上 margin_state.json 讀不到（%s）' % str(e)[:50])
     states.append((_live_section('margin') or {}).get('distState'))
     states = [s for s in states if s and s.get('d') and s.get('c')]
     if not states:
@@ -1035,6 +1048,7 @@ def margin_dist(day):
         return [rows[d] for d in sorted(rows)], None
     st = max(states, key=lambda s: s['d'])
     cost = {k: float(v) for k, v in st['c'].items()}
+    maint = dict(st.get('m') or {})
     cur = st['d']
     if day and day > cur:
         d0 = datetime.strptime(cur, '%Y-%m-%d').date()
@@ -1052,11 +1066,29 @@ def margin_dist(day):
             if got is None:
                 note(u'個股融資維持率：%s 的個股融資或收盤價拿不到，停在 %s' % (ds, cur))
                 break
-            rows[ds] = [ds] + dist_step(cost, got[0], got[1])
+            maint = {}
+            rows[ds] = [ds] + dist_step(cost, got[0], got[1], maint)
             cur = ds
             log(u'  個股融資維持率 %s：融資股 %d 檔，<130%% %d、<140%% %d、<150%% %d、<160%% %d' % tuple([ds] + rows[ds][1:]))
-    state = {'d': cur, 'c': {k: round(v, 3) for k, v in cost.items()}}
+    state = {'d': cur, 'c': {k: round(v, 3) for k, v in cost.items()}, 'm': maint}
     return [rows[d] for d in sorted(rows)][-MAINT_KEEP:], state
+
+
+def market_temp(margin, tw):
+    u"""首頁的三個市場溫度數字（2026-11-18）：首頁不用為了三個數字下載 1 MB 的 chips.json。
+    {'keep': [日期, 大盤維持率%, 1＝官方], 'dist': [日期, 融資股數, <130 家數, <130 占比%, 比幾 % 的歷史日子多], 'ma': [日期, %20, %60]}"""
+    out = {}
+    if margin.get('keepHist'):
+        out['keep'] = margin['keepHist'][-1]
+    dh = margin.get('distHist') or []
+    if len(dh) > 1:
+        pct = [r[2] / float(r[1]) * 100 for r in dh if r[1]]
+        p = pct[-1]
+        out['dist'] = [dh[-1][0], dh[-1][1], dh[-1][2], round(p, 1), round(sum(1 for x in pct if x <= p) / float(len(pct)) * 100)]
+    mb = tw.get('maBreadth') or []
+    if mb:
+        out['ma'] = mb[-1][:3]
+    return out
 
 
 def ma_breadth():
@@ -1536,14 +1568,18 @@ def main():
     margin['sblHist'] = sbl_history(mday)
     log(u'  借券賣出餘額歷史 %d 天' % len(margin['sblHist']))
     log(u'個股融資維持率分布（家數）…')
-    margin['distHist'], margin['distState'] = margin_dist(mday)
-    log(u'  %d 天，成本線到 %s' % (len(margin['distHist']), (margin['distState'] or {}).get('d', u'—')))
+    margin['distHist'], dist_state = margin_dist(mday)
+    log(u'  %d 天，成本線到 %s' % (len(margin['distHist']), (dist_state or {}).get('d', u'—')))
 
     log(u'台股情緒：臺指 VIX、期貨正逆價差、漲跌家數…')
     tw = tw_mood(fut_day, margin['shortHist'])
     tw['maBreadth'] = ma_breadth()
     log(u'  VIX %d 天、正逆價差 %d 天、漲跌家數 %d 天、漲跌停 上市 %d 天／上櫃 %d 天、站上均線比例 %d 天' % (len(tw['vix']), len(tw['basis']), len(tw['breadth']), len(tw['limits']), len(tw['limitsOtc']), len(tw['maBreadth'])))
-    save_hist_cache(margin, tw)
+    save_hist_cache(margin, tw, {'distState': dist_state} if dist_state else {})
+    if dist_state:
+        write_json(STATE_OUT, dist_state)
+    write_json(TEMP_OUT, market_temp(margin, tw))
+    log(u'  個股維持率狀態 %d 檔、市場溫度 %s' % (len((dist_state or {}).get('c') or {}), json.dumps(market_temp(margin, tw), ensure_ascii=False)))
 
     log(u'美股：VIX 與恐懼貪婪原料（FinMind）…')
     us = us_series(datetime.now(TPE).date())

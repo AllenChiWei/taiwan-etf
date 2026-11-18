@@ -9,6 +9,7 @@ import { fetchRetail } from '../api/retail';
 import { retailPoints, backtest, type RetailData } from '../lib/retail';
 import { netTone } from '../lib/chips';
 import { TONE_CLASS } from '../lib/format';
+import { Fold } from './Fold';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -137,14 +138,14 @@ export function RetailSection() {
         </table>
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>怎麼看：「最偏多」那組明顯比基準差，散戶多空比才算反向指標</>}>
         每一天依散戶多空比由低到高排序、切成五組，看各組之後 {h} 個交易日加權指數的漲跌。
         要跟最後一列的基準比：這段期間指數漲很多，每一組平均都可能是正的；
         「比基準」紅色是之後表現比平常好、綠色是比平常差。
         如果「最偏多」那組明顯比基準差，散戶多空比才算得上反向指標。
         相鄰日子的「之後 {h} 日」大部分是同一段行情，實際獨立的樣本比天數少很多，
         看方向就好。散戶是推算的：全市場未平倉扣掉三大法人。
-      </p>
+      </Fold>
     </section>
   );
 }

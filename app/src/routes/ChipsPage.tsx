@@ -26,6 +26,7 @@ import { AtmSection } from '../components/AtmSection';
 import { AtmIntradaySection } from '../components/AtmIntradaySection';
 import { SellerDecisionCard } from '../components/SellerDecisionCard';
 import { RetailSection } from '../components/RetailSection';
+import { Fold } from '../components/Fold';
 import { StockSheet } from '../components/StockSheet';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -52,11 +53,47 @@ function Section({ title, hint, children }: {
   );
 }
 
-/** 這一頁十幾個區塊、手機上超過一萬像素高（2026-11-04），頂端放一排捷徑。橫向捲動，不撐寬頁面。 */
+/** 這一頁十幾個區塊、手機上超過一萬像素高（2026-11-04），頂端放一排捷徑。橫向捲動，不撐寬頁面。
+ *  2026-11-18 依商品分成五段，捷徑跟著改成五段（各區塊原本的 sec-* 錨點都還在，舊連結照樣能用）。 */
 const JUMPS: Array<[string, string]> = [
-  ['fut', '期貨法人'], ['retail', '散戶'], ['pc', 'P/C'], ['margin', '融資融券'], ['tw', '台股情緒'], ['us', '美股情緒'],
-  ['opt', '選擇權法人'], ['atm', '價平和'], ['large', '大額交易人'], ['sector', '類股'], ['top', '買賣超'], ['dca', '定期定額'],
+  ['g-today', '今日重點'], ['g-fut', '期貨'], ['g-opt', '選擇權'], ['g-credit', '信用交易'], ['g-mood', '情緒與資金'],
 ];
+
+/** 一段（同一類商品的幾個區塊）的標題列 */
+function Group({ id, title, hint, children }: { id: string; title: string; hint?: string; children: ReactNode }) {
+  return (
+    <div id={`sec-g-${id}`} className="mt-6 scroll-mt-16">
+      <div className="flex flex-wrap items-baseline gap-x-2 border-b-2 border-accent/40 pb-1">
+        <h2 className="text-[15px] font-bold text-ink">{title}</h2>
+        {hint && <span className="text-[11.5px] text-faint">{hint}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 今日重點的「極端值」一行（2026-11-18）：只挑歷史上少見的狀態，平常不出現。
+ * 個股融資維持率 < 130% 的占比在歷史前 10%、站上 20 日線的比例 ≤ 15% 或 ≥ 85%。
+ */
+function ExtremeLine({ data }: { data: ChipsData }) {
+  const items: string[] = [];
+  const dv = data.margin?.distHist ? distView(data.margin.distHist, 130) : null;
+  if (dv && dv.last.rank >= 90) {
+    items.push(`維持率 < 130% 的股票 ${nf0.format(dv.last.count)} 檔（占融資股 ${nf1.format(dv.last.pct)}%，比 ${nf0.format(dv.last.rank)}% 的歷史日子多）`);
+  }
+  const mb = data.tw?.maBreadth;
+  const ml = mb?.[mb.length - 1];
+  if (ml && (ml[1] <= 15 || ml[1] >= 85)) {
+    items.push(`站上 20 日線的股票${ml[1] >= 85 ? '高達' : '只剩'} ${nf1.format(ml[1])}%`);
+  }
+  if (!items.length) return null;
+  return (
+    <div className="mt-2 rounded-lg border border-up/30 bg-up/5 px-3 py-2 text-[12.5px] leading-relaxed text-ink">
+      <b>極端值：</b>{items.join('；')}
+    </div>
+  );
+}
 
 function JumpNav() {
   return (
@@ -340,10 +377,10 @@ function RelPosition({ money, shorts }: { money: Array<[string, number]>; shorts
         {line('融資（上市＋上櫃）', m, ' 億')}
         {line('加權指數', x, '')}
       </p>
-      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>怎麼看：兩條線各在近期高低點之間的位置；指數已到低檔、融資還在高處＝融資還沒洗出來</>}>
         藍線融資、灰色虛線指數。兩條都換算成這段期間自己高低點之間的位置，所以單位不同也能放在一起：
         例如指數已經貼近 0（快到期間低點）、融資還在高處，就代表融資還沒跟著下來。點一下圖可以看那天兩邊各在哪裡。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -399,11 +436,11 @@ function MarginVsIndex({ money, shorts }: { money: Array<[string, number]>; shor
         <span className="block">{msg}</span>
       </div>
       <AlignedCharts cut={cut} charts={charts} />
-      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>融資增幅減大盤漲幅超過 +{MARGIN_GAP_HOT} 算過熱：之後 20 天最大跌幅中位約 −3%，比平常大一倍（機率較高、不是一定）</>}>
         上圖每一天都是「到那天為止過去 {days} 個交易日」的漲跌幅：藍線融資、灰色虛線大盤；下圖是兩者相減，超過 +{MARGIN_GAP_HOT} 那條虛線就是過熱。兩張同一條日期軸，點一下會同步標出同一天。融資金額是借的錢，不會因為股價漲跌而變，所以增幅比大盤快＝散戶加碼的速度超過行情。
         2009 起驗證：差距在 0 以下或 0～+{MARGIN_GAP_HOT} 時，之後 20 天大盤多半照常；超過 +{MARGIN_GAP_HOT}（20 天或 60 天）之後，
         20 天內最大跌幅中位約 −3%，比平常大一倍左右，但也只是機率較高、不是一定會跌。大盤急跌、融資還沒減時差距也會變大，那就是融資還沒洗出來。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -445,17 +482,51 @@ function MarginSection({ data }: { data: ChipsData }) {
       ]} />
       {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <RelPosition money={m.moneyHist} shorts={m.shortHist} />}
       {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <MarginVsIndex money={m.moneyHist} shorts={m.shortHist} />}
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>融資＝散戶借錢買股；個股維持率跌破 130% 會被追繳，大盤掉到 140% 以下常是恐慌殺盤</>}>
         融資是散戶借錢買股，餘額增加代表槓桿在加大。維持率＝融資買進的股票現值 ÷ 借的錢：
         剛買進時約 166%（自備四成），個股跌破 130% 會被追繳，大盤維持率掉到 140% 以下
         常出現在恐慌殺盤。這裡的維持率是用證交所每檔的融資餘額乘上收盤價自己加總的，
         只有上市；FinMind 的現成數字要付費。
-      </p>
-      {maintSeries(m).rows.length > 20 && <MaintHistory ks={maintSeries(m)} cal={m.keepCal ?? null} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
-      {m.distHist && m.distHist.length > 20 && <MarginDist rows={m.distHist} shorts={m.shortHist ?? []} />}
-      {m.credit && m.credit.length > 0 && <CreditBlock rows={m.credit} />}
-      {m.anyLoan && m.anyLoan.length > 0 && <AnyLoanBlock rows={m.anyLoan} />}
+      </Fold>
+      <MaintTabs m={m} />
     </Section>
+  );
+}
+
+/**
+ * 四種維持率合成一個區塊、用分頁切換（2026-11-18 站主：內容更流暢簡潔）。
+ * 之前四塊往下排，「維持率」出現四十幾次，讀的人分不出哪個是哪個 → 每個分頁第一句先講「這是什麼、跟另外三個差在哪」。
+ */
+const MAINT_TABS = ['大盤（證交所口徑）', '個股分布', '追繳', '不限用途'] as const;
+type MaintTab = (typeof MAINT_TABS)[number];
+const MAINT_TAB_NOTE: Record<MaintTab, string> = {
+  '大盤（證交所口徑）': '全市場平均的維持率（證交所公布；之前的日子用自算換算），看整體斷頭賣壓到了歷史上的哪個位置。',
+  '個股分布': '每一檔各自的融資維持率（自算），數有幾檔已經低於 130／140／150／160%——大盤平均還正常時，也可能已經很多檔在被追繳。',
+  '追繳': '證交所信用交易儀表板的官方數字：整戶維持率低於 130% 的戶數、追繳與處分金額；這裡的擔保維持率是融資＋融券合併算的。',
+  '不限用途': '拿股票向券商借錢、錢不限定買股票的另一種借貸（2026-08 起才有資料）；它的擔保維持率跟上面三個都不同。',
+};
+
+function MaintTabs({ m }: { m: NonNullable<ChipsData['margin']> }) {
+  const ks = maintSeries(m);
+  const has: Record<MaintTab, boolean> = {
+    '大盤（證交所口徑）': ks.rows.length > 20,
+    '個股分布': (m.distHist?.length ?? 0) > 20,
+    '追繳': (m.credit?.length ?? 0) > 0,
+    '不限用途': (m.anyLoan?.length ?? 0) > 0,
+  };
+  const tabs = MAINT_TABS.filter(t => has[t]);
+  const [tab, setTab] = useState<MaintTab>(tabs[0] ?? '大盤（證交所口徑）');
+  if (!tabs.length) return null;
+  return (
+    <div id="sec-maint" className="mt-4 scroll-mt-16 border-t-2 border-line pt-3">
+      <h3 className="text-[13.5px] font-bold text-ink">維持率與追繳</h3>
+      <Switch options={tabs} value={tab} onChange={setTab} label="維持率種類" />
+      <p className="mt-1.5 text-[12px] leading-relaxed text-muted">{MAINT_TAB_NOTE[tab]}</p>
+      {tab === '大盤（證交所口徑）' && <MaintHistory ks={ks} cal={m.keepCal ?? null} shorts={m.shortHist ?? []} sbl={m.sblHist ?? []} />}
+      {tab === '個股分布' && m.distHist && <MarginDist rows={m.distHist} shorts={m.shortHist ?? []} />}
+      {tab === '追繳' && m.credit && <CreditBlock rows={m.credit} />}
+      {tab === '不限用途' && m.anyLoan && <AnyLoanBlock rows={m.anyLoan} />}
+    </div>
   );
 }
 
@@ -528,14 +599,14 @@ function MaintZones({ hist, shorts, cur, taiex }: { hist: Array<[string, number]
           ))}
         </tbody>
       </table>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>結論：維持率越低跌得越兇，真正危險的是 {MAINT_T.accel}～{MAINT_T.sell}% 這段</>}>
         結論：維持率越低，跌的日子跌得越兇；真正危險的是 {MAINT_T.accel}～{MAINT_T.sell}% 這段 ——
         第一次跌破 {MAINT_T.mid}%（{c(MAINT_T.mid)?.n ?? 0} 次）之後 10 天內再跌中位 {sg(c(MAINT_T.mid)?.dd10 ?? null)}（2020-03、2025-03 跌破 {MAINT_T.accel}% 後 5 天各再跌 16%）。
         跌破 {MAINT_T.sell}%（{c(MAINT_T.sell)?.n ?? 0} 次）多半是斷頭賣完，之後 20 天平均 {sg(c(MAINT_T.sell)?.ret20 ?? null)}。
         門檻是證交所口徑（自算融資維持率的 160／150／145／140 換算過來）。
         「在跌時再跌」＝前 5 天已經跌超過 3% 的日子，之後 10 天內最大跌幅的中位數。
         2009 起每天重算，但低維持率的日子只集中在十幾波，是歷史傾向、不是保證；維持率本身就跟著指數跌，兩者同時發生不代表因果。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -629,7 +700,7 @@ function MaintHistory({ ks, cal, shorts, sbl }: {
           )}
         </div>
       )}
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>全部用證交所口徑；{cal?.from ?? '2026-08-05'} 以前是用自算融資維持率換算的，越低越不準</>}>
         全部用<b>證交所口徑</b>（2026-11-07 起一致化）：{cal?.from ?? '2026-08-05'} 起是證交所公布的「全市場擔保維持率」（融資＋融券合併，就是下面追繳區塊那個數字）；
         之前證交所沒有公布，用自算的融資維持率（上市＋上櫃全部有融資的證券，融資買進的股票現值 ÷ 借的錢）換算：
         證交所口徑 ≈ {cal ? `${nf2.format(cal.a)} ＋ ${cal.b.toFixed(3)}` : '23.55 ＋ 0.885'} × 自算
@@ -642,7 +713,7 @@ function MaintHistory({ ks, cal, shorts, sbl }: {
           {' '}融券：軋空是放空的人被迫回補，融券會往下掉、指數往上。歷次跌破 140% 之後，指數多半反彈，但融券大多還在增加，反彈主要是賣壓出清、不是空單回補。
           每年約 4～8 月股東會、除權息前會強制回補，那時融券下降不算軋空。
         </>}
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -693,20 +764,20 @@ function MarginDist({ rows, shorts }: { rows: DistRow[]; shorts: ShortRow[] }) {
         ))}
       </div>
       <AlignedCharts charts={charts} cut={cut} />
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>怎麼看：數的是每一檔；「&lt; 130%」家數暴增＝很多股票同時有斷頭賣壓</>}>
         <b>怎麼看：</b>上面的大盤維持率是全市場平均，這裡數的是<b>每一檔</b>：融資買進的人平均成本算出來，維持率低於門檻的有幾檔。
         個股跌破 130% 會被追繳、補不足就斷頭賣出，所以「&lt; 130%」的家數暴增＝很多股票同時有斷頭賣壓。
         歷次恐慌的高點：2020-03-19 有 1,013 檔（融資股的七成）、2025-04-09 有 1,160 檔（七成二）低於 130%；2026-11-13 是 352 檔，連跌兩天後 11-17 變 616 檔。
         比例比家數好比：融資股的總數從 2016 年的一千三百多檔增加到現在的一千七百多檔。數字標紅＝比 90% 的歷史日子多。
-      </p>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+      </Fold>
+      <Fold summary={<>算法與驗證：XQ 公開的融資成本公式，和老墨 MOFI 公開的數字逐日比平均差 0.2 檔</>}>
         <b>算法與驗證：</b>每檔的融資成本線用 XQ 公開的公式逐日更新：成本 ＝（昨日成本 ×（融資餘額 − 融資買進）＋ 收盤價 × 融資買進）÷ 融資餘額，
         個股維持率 ＝ 收盤價 ÷（成本 × 0.6）（融資自備四成）。只算上市＋上櫃普通股（不含 ETF），當天有收盤價、融資餘額大於 0 的才算。
         成本線從 2016 年初開始累積，前 90 個交易日暖機不列；融資餘額歸零的股票保留原本的成本線，之後再有融資就接著算。
         2016～2026/11/17 用 FinLab 的個股融資餘額、融資買進與收盤價回補，之後每天用證交所與櫃買公布的個股融資資料接著算（11-17 兩種來源算出來的家數完全相同）。
         跟老墨 MOFI 市場廣度儀表板公開的數字逐日比對（2021-07～2026-11，1,308 天），平均只差 0.2 檔。
         這是「假設融資戶照平均成本」的估計，實際每個人的成本不同；當沖與融資買進後賣出的部位會讓成本線偏離。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -875,14 +946,14 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
         ))}
       </div>
       <AlignedCharts charts={charts} cut={cut} />
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>怎麼看：上下同一位置是同一天；指數漲、騰落線或站上均線比例卻往下＝少數股撐盤，VIX 越高越恐慌</>}>
         這幾張圖用同一條日期軸，上下同一個位置就是同一天；點一下或左右拖，每張圖都會標出那一天的值。
         臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積，前面是空白。
         正逆價差＝台指期近月 − 加權指數，取 5 日平均：台指期 13:45 才收、指數 13:30 就收，單日價差會被最後 15 分鐘的漲跌帶著跳。6～8 月除權息旺季會有固定的逆價差（期貨要扣掉預期配息），那段不代表看空。
         騰落線跟指數同向是普漲；指數創高、騰落線往下是少數權值股撐盤。
         站上均線的比例：收盤價在 20 日（約一個月）／60 日（約一季）均線之上的個股占幾成（上市＋上櫃普通股，用還原股價，除息不會被算成跌破）；
         指數漲、比例卻往下也是少數股撐盤，比例掉到一兩成通常是全面殺盤（2026-11-17 是 12%／13%）。
-      </p>
+      </Fold>
       {tw.limits && tw.limits.length > 1 && <LimitBlock twse={tw.limits} otc={tw.limitsOtc} cut={cut} />}
     </Section>
   );
@@ -915,13 +986,13 @@ function LimitBlock({ twse, otc, cut }: { twse: Array<[string, number, number]>;
         { title: '漲停家數', rows: t.up, rows2: t.upAvg, label: '當日', label2: '20 日平均', digits: 0, kind: 'bar', agg: 'max', tone: 'up' },
         { title: '跌停家數', rows: t.down, rows2: t.downAvg, label: '當日', label2: '20 日平均', digits: 0, kind: 'bar', agg: 'max', tone: 'down' },
       ]} />
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>跌停家數暴增通常是恐慌殺盤；漲停多、跌停少是市場追價</>}>
         柱子是每天的家數，黑線是 20 日平均（看趨勢用）；選 5 年或全部時一根柱子代表好幾天，取那幾天最多的一天，大跌那天不會被跳過。
         跌停家數突然暴增（例：2025-04-07 關稅崩跌上市＋上櫃 1,703 家、2024-08-05 799 家）通常是恐慌殺盤；漲停多、跌停少是市場追價。
         資料：上市用證交所收盤行情「漲跌證券數合計」括號內的漲停／跌停數（股票）；上櫃用櫃買收盤行情，今天收盤等於前一個交易日公布的
         次日漲停（跌停）價就算（普通股，不含 ETF）。2026-11-05 以前用 FinLab 收盤價對漲跌停價回推，跟官方抽查差 0～20 家，
         2015 年以前少算約一成（已下市的股票不在裡面）。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -964,11 +1035,11 @@ function CreditBlock({ rows }: { rows: CreditRow[] }) {
         { title: '追繳金額（億元）', rows: col(CREDIT.callAmt).map(([d, v]) => [d, v / 1e8] as [string, number]), digits: 2, kind: 'bar' },
         { title: `信用交易戶數（占 ${last[CREDIT.accRate] ?? '—'}%）`, rows: col(CREDIT.acc), digits: 0 },
       ]} />
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>官方數字；這個擔保維持率是融資、融券合併算的，跟自算的融資維持率不是同一個</>}>
         官方數字，來自證交所「信用交易儀表板」。<b>擔保維持率是融資、融券合併計算</b>（全市場融資擔保品市值加融券保證金，
         除以融資金加融券標的市值）。2026-11-07 起網站的「大盤維持率」全部用這個數字（之前的日子用自算融資維持率換算）。追繳戶數＝截至當日整戶擔保維持率低於 130% 的戶數；
         「當日通知」是當天證券商發出追繳通知的戶數。證交所只提供近 60 個交易日，這裡每天累積，之後會越來越長。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -1007,11 +1078,11 @@ function AnyLoanBlock({ rows }: { rows: AnyLoanRow[] }) {
         { title: '追繳戶數（整戶維持率低於 130%）', rows: col(ANYLOAN.below), digits: 0, kind: 'bar' },
         { title: '追繳金額（億元）', rows: col(ANYLOAN.callAmt, 1e8), digits: 2, kind: 'bar' },
       ]} />
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>官方數字；不限用途借貸的擔保維持率是全市場平均，個人整戶低於 130% 才追繳</>}>
         官方數字，來自證交所臺股儀表板「融通餘額及擔保維持率」（2026-08-03 起提供，每天累積）。不限用途款項借貸＝拿股票向券商借錢、
         錢不限定買股票；<b>擔保維持率＝擔保品市值 ÷ 借貸餘額</b>，是全市場平均，跟上面的融資維持率、信用交易擔保維持率都是不同的數字。
         個人整戶低於 130% 會被追繳，補到 166% 以上才解除；全市場平均高不代表個別帳戶安全。
-      </p>
+      </Fold>
     </div>
   );
 }
@@ -1091,7 +1162,7 @@ function SentimentSection({ data }: { data: ChipsData }) {
           </div>
         )}
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>這不是 CNN 的恐懼貪婪指數，是照它公開的七項方法自己算的</>}>
         <strong className="text-muted">這不是 CNN 的恐懼貪婪指數。</strong>
         CNN 的資料不開放給程式抓，這裡照它公開的七項方法自己算：S&amp;P 500 相對
         125 日均線、離 52 週高點多遠（代替新高新低家數）、等權重 vs 市值權重 S&amp;P 500
@@ -1099,7 +1170,7 @@ function SentimentSection({ data }: { data: ChipsData }) {
         公債報酬、高收益債 vs 投資級債報酬。每項換成「在過去一年排第幾」（0–100）後平均。
         對過去 CNN 的數字校正過，平均約差 10 分，看方向就好。
         資料：FinMind（含息還原價）、CBOE。
-      </p>
+      </Fold>
     </Section>
   );
 }
@@ -1306,11 +1377,11 @@ function OptionsSection({ data }: { data: ChipsData }) {
         ))}
       </div>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>買方、賣方是各自的部位，不是同一筆的兩端；淨額＝買方 − 賣方</>}>
         欄位對應期交所「三大法人－臺指選擇權買賣權分計」。買方與賣方是各自的部位，
         不是同一筆的兩端；買賣淨額 = 買方 − 賣方。選擇權的買賣方風險不對稱，
         金額大不等於部位大，口數與金額要一起看。
-      </p>
+      </Fold>
     </Section>
   );
 }
@@ -1375,16 +1446,18 @@ function LargeTable({ rows }: { rows: LargeRow[] }) {
 const LARGE_KIND = ['期貨', '選擇權'] as const;
 const LARGE_WHO = ['全部交易人', '特定法人'] as const;
 
-function LargeSection({ data }: { data: ChipsData }) {
-  const [kind, setKind] = useState<(typeof LARGE_KIND)[number]>('期貨');
+/** 2026-11-18 籌碼頁依商品分段：期貨段、選擇權段各放一份，各自固定商品類別（kind），就不再顯示商品切換 */
+function LargeSection({ data, kind: fixed }: { data: ChipsData; kind?: (typeof LARGE_KIND)[number] }) {
+  const [pick, setKind] = useState<(typeof LARGE_KIND)[number]>('期貨');
+  const kind = fixed ?? pick;
   const [who, setWho] = useState<(typeof LARGE_WHO)[number]>('全部交易人');
   const all = kind === '期貨' ? data.large.fut : data.large.opt;
   const rows = useMemo(
     () => prepareLarge(all.filter(r => r.who === who)), [all, who]);
 
   return (
-    <Section title="大額交易人未沖銷部位" hint="括號是佔全市場未沖銷部位的比例">
-      <Switch options={LARGE_KIND} value={kind} onChange={setKind} label="商品類別" />
+    <Section title={fixed ? `大額交易人未沖銷部位（${fixed}）` : '大額交易人未沖銷部位'} hint="括號是佔全市場未沖銷部位的比例">
+      {!fixed && <Switch options={LARGE_KIND} value={kind} onChange={setKind} label="商品類別" />}
       <Switch options={LARGE_WHO} value={who} onChange={setWho} label="交易人類別" />
       <LargeTable rows={rows} />
       <p className="mt-2 text-[11px] text-faint">
@@ -1609,11 +1682,11 @@ function DcaSection({ data, onPick }: {
         ))}
       </ol>
 
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>戶數是有設定定期定額的帳戶數，不是投入金額</>}>
         戶數是「有設定定期定額的帳戶數」，不是投入金額，所以一檔便宜的 ETF
         會比一檔貴的容易衝高。近一年報酬取自台股 ETF 清單，個股榜沒有這一欄。
         {dca.modified && `　資料更新：${dca.modified}`}
-      </p>
+      </Fold>
     </section>
   );
 }
@@ -1683,25 +1756,38 @@ export function ChipsPage() {
         <p className="mt-1 text-[11.5px] text-muted">{data.meta.note}</p>
       </div>
 
-      <MaintAlert data={data} />
-      <SummaryStrip data={data} />
       <JumpNav />
-      <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>
-      <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
-      <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
-      <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
-      <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
-      <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
-      <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
-      <div id="sec-atm" className="scroll-mt-16">
-        <AtmSection />
-        <SellerDecisionCard />
-        <AtmIntradaySection />
-      </div>
-      <div id="sec-large" className="scroll-mt-16"><LargeSection data={data} /></div>
-      <div id="sec-sector" className="scroll-mt-16"><SectorSection data={data} /></div>
-      <div id="sec-top" className="scroll-mt-16"><TopSection data={data} onPick={setSheet} /></div>
-      <div id="sec-dca" className="scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
+      {/* 2026-11-18 站主：依商品分五段（之前期貨、選擇權、現貨交錯排）。各區塊原本的 sec-* 錨點保留 */}
+      <Group id="today" title="今日重點">
+        <MaintAlert data={data} />
+        <ExtremeLine data={data} />
+        <SummaryStrip data={data} />
+      </Group>
+      <Group id="fut" title="期貨" hint="法人、散戶、大額交易人">
+        <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>
+        <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
+        <div id="sec-large" className="scroll-mt-16"><LargeSection data={data} kind="期貨" /></div>
+      </Group>
+      <Group id="opt" title="選擇權" hint="Put/Call、法人、價平和、大額交易人">
+        <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
+        <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
+        <div id="sec-atm" className="scroll-mt-16">
+          <AtmSection />
+          <SellerDecisionCard />
+          <AtmIntradaySection />
+        </div>
+        <div id="sec-large-opt" className="scroll-mt-16"><LargeSection data={data} kind="選擇權" /></div>
+      </Group>
+      <Group id="credit" title="信用交易" hint="融資、融券、借券、維持率與追繳">
+        <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
+      </Group>
+      <Group id="mood" title="市場情緒與資金" hint="台股、美股情緒，類股、法人、定期定額">
+        <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
+        <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
+        <div id="sec-sector" className="scroll-mt-16"><SectorSection data={data} /></div>
+        <div id="sec-top" className="scroll-mt-16"><TopSection data={data} onPick={setSheet} /></div>
+        <div id="sec-dca" className="scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
+      </Group>
 
       <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
         籌碼資料為交易所與期交所的公開統計，僅供參考，不構成投資建議。

@@ -12,6 +12,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAtm } from '../api/atm';
+import { Fold } from './Fold';
 import {
   weekdayAverages, latestOf, recentOf, weekdayOf,
   expectedRange, straddleOutcomes, summarise, weekdayNow,
@@ -453,12 +454,12 @@ export function AtmSection() {
         </div>
       )}
 
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <Fold summary={<>價平和＝價平履約價的 Call＋Put（一般時段收盤價）</>}>
         價平履約價取 |Call−Put| 最小者，價平和為該履約價的 Call＋Put，採一般交易時段
         收盤價（無成交時用結算價）。週三系列含月選 —— 月選到期那一週沒有週選合約。
         遇連假時到期日會移位（例如中秋那週的週五合約落在星期二），所以分類看的是
         合約系列而不是到期日的星期。{data.meta.source}。
-      </p>
+      </Fold>
     </section>
   );
 }

@@ -5,6 +5,7 @@ import { useFilterState } from '../hooks/useFilterState';
 import { filterEtfs, sortEtfs } from '../lib/filters';
 import { NUMERIC_LABEL } from '../lib/format';
 import { StatCards } from '../components/StatCards';
+import { MarketTemp } from '../components/MarketTemp';
 import { FilterBar } from '../components/FilterBar';
 import { EtfListing } from '../components/EtfListing';
 import { EmptyState } from '../components/EmptyState';
@@ -72,6 +73,7 @@ function EtfList() {
   return (
     <>
       <ViewTabs view="" />
+      <MarketTemp />
       <div className="pt-4">
         <StatCards
           sections={data.sections}
