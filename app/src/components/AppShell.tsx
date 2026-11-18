@@ -18,11 +18,13 @@ import { CommandPalette } from './CommandPalette';
 /**
  * 導覽分兩層（2026-11-18 站主：內容更流暢簡潔）：15 個分頁在手機上折成三、四行 → 上排 4 組＋私人，下排只放目前那組的分頁。
  * 點組名直接到那組的第一頁；不在任何一組的頁面（ETF 詳情等）歸「商品」。
+ * 「配息」站主很常用（11-18）→ 單獨放上排、一鍵直達；只有一頁的組不顯示下排。
  */
 const GROUPS = [
   { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/cb', label: '可轉債' }] },
+  { key: '配息', tabs: [{ to: '/dividend', label: '配息' }] },
   { key: '市場', tabs: [{ to: '/chips', label: '籌碼' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
-  { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/dividend', label: '配息' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
+  { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
   { key: '其他', tabs: [{ to: '/poker', label: '撲克' }, { to: '/changelog', label: '更新' }, { to: '/about', label: '說明' }] },
 ] as const;
 
@@ -109,7 +111,7 @@ export function AppShell() {
             {GROUPS.map(g => {
               const on = groupOf(pathname) === g.key;
               return (
-                <Link key={g.key} to={g.tabs[0].to}
+                <Link key={g.key} to={g.tabs[0].to} aria-current={on && g.tabs.length === 1 ? 'page' : undefined}
                       className={`flex shrink-0 items-center gap-1.5 border-b-2 px-3 py-2.5 text-sm font-bold sm:px-4
                         ${on ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-ink'}`}>
                   {g.key}
@@ -125,7 +127,7 @@ export function AppShell() {
               🔒 私人
             </Link>
           </div>
-          {groupOf(pathname) && (
+          {groupOf(pathname) && GROUPS.find(g => g.key === groupOf(pathname))!.tabs.length > 1 && (
             <div className="flex flex-wrap gap-0.5 sm:gap-1">
               {GROUPS.find(g => g.key === groupOf(pathname))!.tabs.map(t => {
                 const active = pathname === t.to;
