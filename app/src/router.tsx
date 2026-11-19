@@ -39,6 +39,7 @@ const CalendarPage = lazyRoute(() => import('./routes/CalendarPage'), m => m.Cal
 const CbPage = lazyRoute(() => import('./routes/CbPage'), m => m.CbPage);
 const StockPage = lazyRoute(() => import('./routes/StockPage'), m => m.StockPage);
 const EtfPage = lazyRoute(() => import('./routes/EtfPage'), m => m.EtfPage);
+const ComparePage = lazyRoute(() => import('./routes/ComparePage'), m => m.ComparePage);
 const DividendPage = lazyRoute(
   () => import('./routes/DividendPage'), m => m.DividendPage);
 // 對帳單頁還會在使用者選檔時動態載入 SheetJS（約 400 KB），所以更不該
@@ -176,6 +177,14 @@ const etfRoute = createRoute({
   component: EtfPage,
 });
 
+/** 兩檔 ETF 持股比對：#/compare?a=0050&b=006208（2026-11-19） */
+const compareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/compare',
+  validateSearch: (search: Record<string, unknown>) => ({ a: str(search.a).toUpperCase(), b: str(search.b).toUpperCase() }),
+  component: ComparePage,
+});
+
 const pokerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/poker',
@@ -288,7 +297,7 @@ const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
 }));
 
 const routeTree = rootRoute.addChildren(
-  [listRoute, favoritesRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
+  [listRoute, favoritesRoute, compareRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, newsRoute, macroRoute, calendarRoute, cbRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
    v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, guideRoute, budgetRoute, dcaRoute, genRoute, maintRoute, meRoute, ...oldQbRoutes]);
 

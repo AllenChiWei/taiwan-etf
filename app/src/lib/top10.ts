@@ -32,7 +32,7 @@ export interface Top10View {
  * 雙幣別或分級的交易代號（00625K、00687C、00980T 之類）跟本尊是同一檔基金，
  * 公會只登記一個代號。查不到時退回去掉最後一個英文字母的代號。
  */
-function lookupMonthly(data: Top10Data, code: string) {
+export function lookupMonthly(data: Top10Data, code: string) {
   return data.etfs[code] ?? (/[A-Z]$/.test(code) ? data.etfs[code.slice(0, -1)] : undefined);
 }
 

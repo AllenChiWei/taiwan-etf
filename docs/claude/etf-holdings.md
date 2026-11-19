@@ -85,6 +85,15 @@ robots.txt 檔頭聲明禁止未經同意的資料探勘 —— 要做需站主�
 **查不到的**：槓桿／反向、期貨、不動產、平衡型 —— 公會那幾個類型的查詢回空的（它們主要
 持有期貨、現金或受益憑證），畫面依分區說明原因（`missingReason()`）。
 
+### 兩檔持股比對（`#/compare?a=&b=`，2026-11-19）
+
+站主：任選兩檔 ETF 比共同持股與比例。`routes/ComparePage.tsx` 只呈現，算法在 `lib/overlap.ts` 的
+`holdingsOf()`／`compareHoldings()`（`tests/compare.test.ts`）。每檔挑最完整的來源：主動式（`active_holdings.json`
+有的）用投信每日持股（不只前十大，各檔約 30～75 檔），其他用公會月報前十大；**期貨不算持股**（`active.ts` 的
+`isStock`，和「合計持股」同一條）。重疊度＝Σ 共同持股 min(甲, 乙)，只算看得到的部分，是下限；兩邊來源不同時畫面
+提示日期不同。代號比對（同一檔股票各家名稱不同，名稱取短的）。收藏頁的「持股重疊」（`OverlapSection`）是同一概念的
+兩兩版、只用月報前十大，沒有改。
+
 ## 即將上市（其實是「還沒上市」）
 
 台股頁的「即將上市」分頁，`scripts/fetch_upcoming.py` → `upcoming.json`（部署時產生）。

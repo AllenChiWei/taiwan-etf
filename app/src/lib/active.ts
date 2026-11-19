@@ -242,7 +242,7 @@ export interface Aggregate {
 }
 
 /** 期貨部位不算（台指期是避險或曝險調整，不是「持有哪檔股票」）。 */
-function isStock(name: string): boolean {
+export function isStock(name: string): boolean {
   return !/期貨|期指/.test(name);
 }
 

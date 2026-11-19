@@ -15,7 +15,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 };
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
-export type SitePath = '/' | '/us' | '/favorites' | '/calc' | '/dividend' | '/futures'
+export type SitePath = '/' | '/us' | '/favorites' | '/compare' | '/calc' | '/dividend' | '/futures'
   | '/chips' | '/news' | '/macro' | '/calendar' | '/cb' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
@@ -33,6 +33,13 @@ export interface ChangeDay {
 
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
+  {
+    date: '2026-11-19',
+    items: [
+      { kind: 'new', to: '/compare',
+        text: '新增「ETF 持股比對」（工具 → 比對）：任選兩檔 ETF，列出共同持股與各自佔淨值的比例、重疊度，以及只有其中一檔有的持股。主動式 ETF 用投信每日公告的持股，其他用公會月報前十大；網址會記住這兩檔，可以直接分享。' },
+    ],
+  },
   {
     date: '2026-11-18',
     items: [

@@ -24,7 +24,7 @@ const GROUPS = [
   { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/cb', label: '可轉債' }] },
   { key: '配息', tabs: [{ to: '/dividend', label: '配息' }] },
   { key: '市場', tabs: [{ to: '/chips', label: '籌碼' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
-  { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
+  { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/compare', label: '比對' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
   { key: '其他', tabs: [{ to: '/poker', label: '撲克' }, { to: '/changelog', label: '更新' }, { to: '/about', label: '說明' }] },
 ] as const;
 
