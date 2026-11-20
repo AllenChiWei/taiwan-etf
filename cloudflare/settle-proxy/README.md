@@ -5,7 +5,7 @@
 
 - 只接受 `GET /taiex`；上游寫死（證交所看盤最新指數＋當天每分鐘走勢，失敗時改 Yahoo ^TWII）。
 - CORS 只放行 `https://allenchiwei.github.io` 和本機預覽（127.0.0.1／localhost）。
-- 不需要任何金鑰或環境變數；免費方案每天 10 萬次請求，一個人看一場結算約 400 次。
+- 不需要任何金鑰；KV 綁定（SETTLE_KV）可有可無，見下方「每 5 秒取樣」。
 
 ## 部署（Cloudflare 網頁，不用裝任何東西）
 1. 登入 https://dash.cloudflare.com （沒有帳號就免費註冊）。
@@ -14,5 +14,14 @@
 4. 網址會是 `https://twetf-settle.<你的子網域>.workers.dev`。打開 `…/taiex` 應該看到 `{"ok":true,"src":"mis",…}`。
 5. 網址 `https://twetf-settle.weiwei840c.workers.dev`（2026-11-21 部署）已填進 `app/src/api/settle.ts` 的 `SETTLE_ORIGIN` 與 `app/vite-plugins.ts` 的 `connect-src`；換網址兩處一起改。
 
+## 4 秒快取與每 5 秒取樣（2026-11-21）
+- **快取**：不用設定。4 秒內的請求共用同一份（記憶體），看的人再多也只打證交所一次。
+- **每 5 秒取樣（要在 Cloudflare 多設定）**：沒設定也能用，只是 13:00 後才打開網頁的人要靠每分鐘資料內插。
+  1. Workers & Pages → **KV** → **Create namespace**，名稱 `twetf-settle-samples`。
+  2. 回到 `twetf-settle` → **Settings → Bindings → Add → KV namespace**：Variable name 填 `SETTLE_KV`，選剛建的 namespace → Deploy。
+  3. 同頁 **Settings → Trigger events（Triggers）→ Add → Cron Triggers**，加兩條（UTC，＝台北 12:59～13:30 平日）：`59 4 * * 1-5`、`0-30 5 * * 1-5`。
+  4. 打開 `…/taiex` 看到 `"kv":true` 就是綁好了；平日 13:01 以後 `samples` 會開始有東西。
+- 免費方案用量：排程每天 32 次、KV 寫 32 次、讀約 1 千次以內（額度：每天 10 萬次請求、KV 寫 1 千／讀 10 萬）。
+
 ## 本機測試
-`node D:/ai/_tmp/settle/worker_test.mjs`（用 Node 直接呼叫 worker 的 fetch，檢查來源、CORS、錯誤路徑）。
+`node D:/ai/_tmp/settle/worker_test.mjs`（真實網路：來源、CORS、錯誤路徑）；`node D:/ai/_tmp/settle/worker_test2.mjs`（假上游＋假 KV＋假時鐘：快取次數、排程取樣、samples 讀回）。

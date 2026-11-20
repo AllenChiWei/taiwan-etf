@@ -41,6 +41,10 @@ export interface Prediction {
   interpolated: number;
   /** 收盤指數已出來：rounded 就是自算的最後結算價 */
   final: boolean;
+  /** 已確定那幾筆的合計（含收盤那筆，若已收盤） */
+  fixedSum: number;
+  /** 還沒到的筆數（TOTAL − fixed）；每 1 點「剩下的指數平均」變動，結算價動 remaining ÷ 301 點 */
+  remaining: number;
 }
 
 /**
@@ -53,7 +57,7 @@ export function predictSettle(points: Point[], cur: Point): Prediction {
   const known = [...map.entries()].sort((a, b) => a[0] - b[0]);
   const final = cur.sec >= CLOSE_SEC;
 
-  let sum = 0, fixed = 0, interpolated = 0, j = 0;
+  let sum = 0, fixedSum = 0, fixed = 0, interpolated = 0, j = 0;
   for (let s = SLOT_FIRST; s <= SLOT_LAST; s += 5) {
     if (s > cur.sec) { sum += cur.v; continue; }
     fixed++;
@@ -70,11 +74,73 @@ export function predictSettle(points: Point[], cur: Point): Prediction {
       interpolated++;
     }
     sum += v;
+    fixedSum += v;
   }
   // 收盤那一筆：13:30 以後 cur 就是收盤指數（收市撮合延緩時是拿得到的最後一筆）；之前用目前指數估
-  if (final) fixed++;
+  if (final) { fixed++; fixedSum += cur.v; }
   const value = (sum + cur.v) / TOTAL;
-  return { value, rounded: Math.floor(value + 0.5), fixed, interpolated, final };
+  return { value, rounded: Math.floor(value + 0.5), fixed, interpolated, final, fixedSum, remaining: TOTAL - fixed };
+}
+
+/** 臺指選擇權履約價間距（週選、近月都是 50 點） */
+export const STRIKE_STEP = 50;
+
+/**
+ * 某個履約價 K 的翻轉門檻：剩下還沒到的那幾筆，平均要多少，結算價才會「高於 K」或「低於 K」。
+ * 四捨五入：結算價 > K ⇔ 平均 ≥ K + 0.5；結算價 < K ⇔ 平均 < K − 0.5。
+ * 已收盤（remaining＝0）回 null。
+ */
+export function strikeNeed(p: Pick<Prediction, 'fixedSum' | 'remaining'>, K: number): { above: number; below: number } | null {
+  if (p.remaining <= 0) return null;
+  return {
+    above: ((K + 0.5) * TOTAL - p.fixedSum) / p.remaining,
+    below: ((K - 0.5) * TOTAL - p.fixedSum) / p.remaining,
+  };
+}
+
+/** 預測結算價附近的履約價：下面兩檔、上面兩檔（預測剛好等於履約價時，那一檔也列進來）。 */
+export function strikesAround(rounded: number, step = STRIKE_STEP): number[] {
+  const lo = Math.floor(rounded / step) * step;
+  return [lo - step, lo, lo + step, lo + 2 * step].filter(k => k > 0);
+}
+
+export interface CurvePoint {
+  sec: number;
+  /** 那個時間的加權指數（沒抓到的用前後內插） */
+  v: number;
+  /** 站在那個時間點看的預測結算價（四捨五入） */
+  p: number;
+}
+
+/**
+ * 13:00:00 起每 5 秒畫一點，到 untilSec（含）為止：指數、和「當時」的預測結算價。
+ * 和 predictSettle 同一套算法（同樣的內插），所以最後一點就是 predictSettle 的結果。
+ */
+export function settleCurve(points: Point[], untilSec: number): CurvePoint[] {
+  const map = new Map<number, number>();
+  for (const p of points) if (Number.isFinite(p.sec) && p.v > 0) map.set(p.sec, p.v);
+  const known = [...map.entries()].sort((a, b) => a[0] - b[0]);
+  if (!known.length) return [];
+  let j = 0;
+  const valAt = (s: number): number => {
+    while (j < known.length && known[j][0] < s) j++;
+    const next = known[j], prev = j > 0 ? known[j - 1] : null;
+    if (next && next[0] === s) return next[1];
+    if (prev && next) return prev[1] + (next[1] - prev[1]) * (s - prev[0]) / (next[0] - prev[0]);
+    return (prev ?? next)[1];
+  };
+  const out: CurvePoint[] = [];
+  let fixedSum = 0, fixed = 0;
+  const end = Math.min(untilSec, CLOSE_SEC);
+  for (let s = SLOT_FIRST - 5; s <= end; s += 5) {
+    const v = valAt(s);
+    if (s >= SLOT_FIRST && s <= SLOT_LAST) { fixedSum += v; fixed++; }
+    const p = s >= CLOSE_SEC
+      ? (fixedSum + v) / TOTAL
+      : (fixedSum + v * (TOTAL - fixed)) / TOTAL;
+    out.push({ sec: s, v, p: Math.floor(p + 0.5) });
+  }
+  return out;
 }
 
 /** atm.json 的列 → 所有結算日（YYYY-MM-DD，週三系列含月選、週五系列）。 */

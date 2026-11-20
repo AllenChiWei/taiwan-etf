@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import {
-  hmsSec, secLabel, predictSettle, settleDates, nextSettle, taipeiNow,
+  hmsSec, secLabel, predictSettle, settleDates, nextSettle, taipeiNow, strikeNeed, strikesAround, settleCurve,
   SLOT_FIRST, SLOT_LAST, CLOSE_SEC, TOTAL, type Point,
 } from '../src/lib/settle.ts';
 
@@ -83,4 +83,47 @@ test('台北時間', () => {
   assert.equal(t.date, '2026-11-20');
   assert.equal(t.sec, SLOT_LAST);
   assert.equal(taipeiNow(new Date('2026-11-20T16:30:00Z')).date, '2026-11-21');
+});
+
+test('履約價門檻：剩下的平均剛好到門檻就翻過去，差一點就不會', () => {
+  for (const d of DAYS) {
+    const all = pointsOf(d);
+    const cut = hmsSec('13:15:00');
+    const pts = all.filter(p => p.sec <= cut);
+    const p = predictSettle(pts.slice(0, -1), pts[pts.length - 1]);
+    assert.equal(p.fixed + p.remaining, TOTAL);
+    assert.equal(p.remaining, 301 - 180);
+    for (const K of strikesAround(p.rounded)) {
+      const n = strikeNeed(p, K)!;
+      const settleIf = (avg: number) => Math.floor((p.fixedSum + avg * p.remaining) / TOTAL + 0.5);
+      assert.ok(settleIf(n.above) > K && settleIf(n.above - 0.01) <= K, `${d.date} K${K} above`);
+      assert.ok(settleIf(n.below - 0.01) < K && settleIf(n.below) >= K, `${d.date} K${K} below`);
+    }
+    // 剩下的平均＝目前指數時，就是 predictSettle 的預測
+    assert.equal(Math.floor((p.fixedSum + pts[pts.length - 1].v * p.remaining) / TOTAL + 0.5), p.rounded);
+  }
+  const fin = predictSettle([], { sec: CLOSE_SEC, v: 100 });
+  assert.equal(fin.remaining, 0);
+  assert.equal(strikeNeed(fin, 100), null);
+});
+
+test('附近履約價：50 點一檔，下兩檔上兩檔', () => {
+  assert.deepEqual(strikesAround(35840), [35750, 35800, 35850, 35900]);
+  assert.deepEqual(strikesAround(35800), [35750, 35800, 35850, 35900]);
+});
+
+test('預測曲線：最後一點＝期交所公告，中途每一點＝當時的 predictSettle', () => {
+  for (const d of DAYS) {
+    const pts = pointsOf(d);
+    const c = settleCurve(pts, CLOSE_SEC);
+    assert.equal(c[0].sec, SLOT_FIRST - 5);
+    assert.equal(c[c.length - 1].sec, CLOSE_SEC);
+    assert.equal(c[c.length - 1].p, d.fsp, d.date);
+    for (const sec of [hmsSec('13:03:20'), hmsSec('13:12:00'), SLOT_LAST, hmsSec('13:27:00')]) {
+      const upTo = pts.filter(p => p.sec <= sec);
+      const want = predictSettle(upTo.slice(0, -1), upTo[upTo.length - 1]).rounded;
+      assert.equal(c.find(x => x.sec === sec)!.p, want, `${d.date} ${secLabel(sec)}`);
+    }
+  }
+  assert.deepEqual(settleCurve([], CLOSE_SEC), []);
 });

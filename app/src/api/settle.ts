@@ -18,6 +18,27 @@ export interface TaiexLive {
   y: number | null;
   /** 12:55 以後每分鐘的收盤（時間標在那一分鐘結束）：[HHMMSS, 指數] */
   bars: Array<[number, number]>;
+  /** 轉接站排程自己存的證交所揭示值（12:59～13:30，時間＝揭示時間）：[HHMMSS, 指數]；沒綁 KV 時是空的 */
+  samples?: Array<[number, number]>;
+}
+
+/** settle.json：過去結算日（scripts/fetch_settle.py 每日更新流程累積） */
+export interface SettleHistRow {
+  d: string;
+  c: string[];
+  /** 證交所每 5 秒資料自算 */
+  settle: number;
+  /** 期交所公告（抓得到才有） */
+  fsp?: number;
+  /** 13:00:00～13:30:00 每 5 秒指數（361 筆），只有最近幾十個結算日有 */
+  v?: number[];
+}
+
+export async function fetchSettleHistory(signal?: AbortSignal): Promise<SettleHistRow[]> {
+  const res = await fetch(`${import.meta.env.BASE_URL}data/settle.json`, { signal, cache: 'no-cache' });
+  if (!res.ok) return [];
+  const j = (await res.json().catch(() => null)) as { rows?: SettleHistRow[] } | null;
+  return Array.isArray(j?.rows) ? j.rows : [];
 }
 
 /**

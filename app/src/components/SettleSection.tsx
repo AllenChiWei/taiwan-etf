@@ -7,10 +7,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { fetchAtm } from '../api/atm';
-import { fetchTaiex5s, fetchTaiexLive, type TaiexLive } from '../api/settle';
+import { fetchSettleHistory, fetchTaiex5s, fetchTaiexLive, type SettleHistRow, type TaiexLive } from '../api/settle';
 import {
-  CLOSE_SEC, SLOT_FIRST, TOTAL, hmsSec, nextSettle, predictSettle, settleDates, taipeiNow, type Point,
+  CLOSE_SEC, SLOT_FIRST, TOTAL, hmsSec, nextSettle, predictSettle, secLabel, settleCurve, settleDates, strikeNeed, strikesAround,
+  taipeiNow, type Point, type Prediction,
 } from '../lib/settle';
+import { SettleChart } from './SettleChart';
 import { WEEKDAY_LABEL, weekdayOf } from '../lib/atm';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -49,6 +51,13 @@ export function SettleSection({ page = false }: { page?: boolean }) {
   const [live, setLive] = useState<TaiexLive | null>(null);
   const [error, setError] = useState<string | null>(null);
   const samples = useRef(new Map<number, number>());   // 這頁開著時抓到的每 5 秒指數
+  const [hist, setHist] = useState<SettleHistRow[]>([]);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchSettleHistory(ac.signal).then(r => { if (!ac.signal.aborted) setHist(r); }).catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -74,7 +83,17 @@ export function SettleSection({ page = false }: { page?: boolean }) {
   const demo = useMemo(() => { try { return localStorage.getItem('twetf.settleDemo') === '1'; } catch { return false; } }, []);
   const next = dates ? nextSettle(dates, now.date) : null;
   const isToday = demo || next === now.date;
-  const liveToday = live && (demo || `${live.d.slice(0, 4)}-${live.d.slice(4, 6)}-${live.d.slice(6)}` === now.date) ? live : null;
+  // 驗證用：再加 twetf.settleDemoAt=13:15:00 時，把資料截到那個時間（看收盤前才有的履約價表與半條曲線）
+  const demoAt = useMemo(() => {
+    try { return demo ? hmsSec(localStorage.getItem('twetf.settleDemoAt') ?? '') : NaN; } catch { return NaN; }
+  }, [demo]);
+  const liveToday = useMemo(() => {
+    if (!live || !(demo || `${live.d.slice(0, 4)}-${live.d.slice(4, 6)}-${live.d.slice(6)}` === now.date)) return null;
+    if (!Number.isFinite(demoAt)) return live;
+    const bars = live.bars.filter(b => hmsSec(b[0]) <= demoAt);
+    return { ...live, t: secLabel(demoAt), z: bars.at(-1)?.[1] ?? live.z, bars,
+             samples: (live.samples ?? []).filter(s => hmsSec(s[0]) <= demoAt) };
+  }, [live, demo, demoAt, now.date]);
   const finalDone = !!liveToday && hmsSec(liveToday.t) >= CLOSE_SEC;
   const polling = isToday && (demo || now.sec >= START) && !finalDone;
 
@@ -100,12 +119,17 @@ export function SettleSection({ page = false }: { page?: boolean }) {
     return () => { stop = true; ac.abort(); clearInterval(id); };
   }, [polling]);
 
-  const pred0 = useMemo(() => {
+  // 已知的指數：每分鐘資料 → 轉接站排程存的每 5 秒（13:00 後才打開也有）→ 這頁自己抓到的（後蓋前）
+  const livePts = useMemo(() => {
     if (!liveToday) return null;
     const pts: Point[] = liveToday.bars.map(([ts, v]) => ({ sec: hmsSec(ts), v }));
+    for (const [ts, v] of liveToday.samples ?? []) pts.push({ sec: hmsSec(ts), v });
     for (const [sec, v] of samples.current) pts.push({ sec, v });
-    return predictSettle(pts, { sec: hmsSec(liveToday.t), v: liveToday.z });
+    return pts;
   }, [liveToday]);
+  const pred0 = useMemo(
+    () => (livePts && liveToday ? predictSettle(livePts, { sec: hmsSec(liveToday.t), v: liveToday.z }) : null),
+    [livePts, liveToday]);
 
   // 收盤後還有內插的：改用證交所每 5 秒資料（收盤後才公布）重算，和期交所一模一樣；還沒公布就每 2 分鐘再試
   const [exact, setExact] = useState<Point[] | null>(null);
@@ -125,6 +149,18 @@ export function SettleSection({ page = false }: { page?: boolean }) {
     const close = exact.filter(p => p.sec >= CLOSE_SEC)[0];
     return close ? predictSettle(exact.filter(p => p.sec < CLOSE_SEC), close) : pred0;
   }, [exact, pred0]);
+
+  // 小圖：今天有 13:00 以後的資料就畫今天；否則畫前一次結算日（settle.json）
+  const todayCurve = useMemo(() => {
+    if (exact) return settleCurve(exact, CLOSE_SEC);
+    if (!livePts || !liveToday) return [];
+    const cur = { sec: hmsSec(liveToday.t), v: liveToday.z };
+    return settleCurve([...livePts, cur], cur.sec);
+  }, [exact, livePts, liveToday]);
+  const lastHist = useMemo(() => {
+    const r = [...hist].reverse().find(h => h.v?.length === 361 && h.d < now.date);
+    return r ? { row: r, curve: settleCurve(r.v!.map((v, i) => ({ sec: 13 * 3600 + i * 5, v })), CLOSE_SEC) } : null;
+  }, [hist, now.date]);
 
   if (dates === null) return null;
 
@@ -150,6 +186,8 @@ export function SettleSection({ page = false }: { page?: boolean }) {
             {liveToday.src === 'yahoo' && ' · 來源 Yahoo'}
           </div>
           {error && <div className="mt-1 text-[11.5px] text-ink">⚠ {error}，5 秒後重試</div>}
+          {!pred.final && <StrikeTable pred={pred} z={liveToday.z} />}
+          {todayCurve.length > 1 && <SettleChart curve={todayCurve} />}
         </div>
       ) : (
         <div className="mt-2 rounded-lg border border-line bg-bg px-3 py-2.5 text-[12.5px] text-muted">
@@ -160,6 +198,24 @@ export function SettleSection({ page = false }: { page?: boolean }) {
           ) : next ? (
             <>下一個結算日 <b className="text-ink">{dayLabel(next)}</b>，當天 13:00 起每 5 秒即時預測。</>
           ) : '目前查不到下一個結算日。'}
+        </div>
+      )}
+
+      {!(pred && liveToday && todayCurve.length > 1) && lastHist && (
+        <div className="mt-3">
+          <h2 className="text-[13px] font-bold text-ink">
+            前次結算 {dayLabel(lastHist.row.d)}：<span className="font-mono tabular-nums">{nf0.format(lastHist.row.settle)}</span>
+          </h2>
+          <p className="text-[11.5px] text-muted">
+            {lastHist.row.fsp === undefined ? '期交所公告還沒抓到'
+              : lastHist.row.fsp === lastHist.row.settle ? `期交所公告 ${nf0.format(lastHist.row.fsp)}，和自算相同`
+              : `期交所公告 ${nf0.format(lastHist.row.fsp)}（自算不同，以公告為準）`}
+            {' · '}{lastHist.row.c.join('／')}
+          </p>
+          <SettleChart curve={lastHist.curve} />
+          <p className="mt-0.5 text-[11px] text-faint">
+            細線是加權指數，粗線是站在當時看的預測結算價：越接近 13:25 越定，最後一點就是結算價。
+          </p>
         </div>
       )}
 
@@ -181,9 +237,58 @@ export function SettleSection({ page = false }: { page?: boolean }) {
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         期交所算法：結算日 13:00（不含）～13:25（含）每 5 秒的加權指數 300 筆，加 13:30 收盤指數，
         共 301 筆平均、四捨五入到 1 點。預測＝已過的取樣＋目前指數 × 還沒到的筆數。
-        用 2026-10-02～11-20 共 15 個結算日核對，算法和公告結算價全部相同；網頁 13:00 後才打開時，
-        漏掉的部分先用每分鐘資料補（可能差幾點），收盤後證交所公布每 5 秒資料時自動校正。
+        用 2025-12-12～2026-11-20 共 95 個結算日核對，算法和公告結算價全部相同。網頁 13:00 後才打開時，
+        前面每 5 秒的指數由轉接站補上（轉接站平日 13:00～13:30 自己每 5 秒記一次）；轉接站也沒有的部分
+        用每分鐘資料補（可能差幾點），收盤後證交所公布每 5 秒資料時自動校正。
       </p>
     </section>
+  );
+}
+
+/** 附近履約價：結算價現在在哪一邊、剩下的指數平均要多少才會翻過去。 */
+function StrikeTable({ pred, z }: { pred: Prediction; z: number }) {
+  const per100 = Math.round((pred.remaining / TOTAL) * 100);
+  const diff = (v: number) => {
+    const d = Math.round(v - z);
+    return `${d >= 0 ? '+' : '−'}${nf0.format(Math.abs(d))}`;
+  };
+  return (
+    <div className="mt-2.5 border-t border-line pt-2">
+      <p className="text-[11.5px] text-muted">
+        還沒到的有 <b className="font-mono tabular-nums text-ink">{pred.remaining}</b>／{TOTAL} 筆：
+        剩下的指數平均每差 100 點，結算價只差約 <b className="font-mono tabular-nums text-ink">{per100}</b> 點。
+      </p>
+      <table className="mt-1.5 w-full text-[12px]">
+        <thead>
+          <tr className="text-left text-[11px] text-faint">
+            <th className="py-0.5 font-normal">履約價</th>
+            <th className="py-0.5 font-normal">現在預測</th>
+            <th className="py-0.5 text-right font-normal">剩下的指數平均要（比目前）</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {strikesAround(pred.rounded).map(K => {
+            const n = strikeNeed(pred, K);
+            if (!n) return null;
+            const side = pred.rounded > K ? '高於' : pred.rounded < K ? '低於' : '等於';
+            return (
+              <tr key={K}>
+                <td className="py-1 font-mono tabular-nums text-ink">{nf0.format(K)}</td>
+                <td className={`py-1 ${side === '高於' ? 'text-up' : side === '低於' ? 'text-down' : 'text-muted'}`}>
+                  {side}{side === '高於' ? '（買權價內）' : side === '低於' ? '（賣權價內）' : ''}
+                </td>
+                <td className="py-1 text-right font-mono tabular-nums text-muted">
+                  {/* 結算價 > K ⇔ 平均 ≥ above；結算價 < K ⇔ 平均 < below */}
+                  {side === '高於' && <>&lt; {nf0.format(n.above)}（{diff(n.above)}）才不高於</>}
+                  {side === '低於' && <>≥ {nf0.format(n.below)}（{diff(n.below)}）才不低於</>}
+                  {side === '等於' && <>≥ {nf0.format(n.above)}（{diff(n.above)}）才高於<br />
+                    &lt; {nf0.format(n.below)}（{diff(n.below)}）才低於</>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
   );
 }

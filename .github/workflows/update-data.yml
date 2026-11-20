@@ -32,7 +32,7 @@ concurrency:
 #   配息   dividends.json, yields.json          交易所公告，不碰 FinLab／MoneyDJ
 #   台股   etfs.json, taiwan_etf_list.html      名單 + MoneyDJ + FinLab 報酬率
 #   美股   us_etfs.json                         Nasdaq 名單 + FinLab 價格
-#   價平和 atm.json                             期交所選擇權行情（累積式）
+#   價平和 atm.json, settle.json                期交所選擇權行情、結算價歷史（累積式）
 #   個股   fin_history.json                     公開資訊觀測站（累積式）
 #   散戶   retail.json                          期交所三大法人＋全市場未沖銷（累積式）
 #   換股   active_holdings.json                 各投信官網的主動式 ETF 持股（累積式）
@@ -77,7 +77,7 @@ jobs:
       DIV_FILES: app/public/data/dividends.json app/public/data/yields.json
       TW_FILES: app/public/data/etfs.json taiwan_etf_list.html
       US_FILES: app/public/data/us_etfs.json
-      ATM_FILES: app/public/data/atm.json
+      ATM_FILES: app/public/data/atm.json app/public/data/settle.json
       STOCK_FILES: app/public/data/fin_history.json
       RETAIL_FILES: app/public/data/retail.json
       HOLD_FILES: app/public/data/active_holdings.json
@@ -250,6 +250,9 @@ jobs:
         run: |
           set -e
           python scripts/fetch_atm.py
+          # 結算價歷史（settle.json，網站結算價預測頁的前次結算與走勢）：靠 atm.json 的到期日，
+          # 抓不到不擋價平和（下次會補）
+          python scripts/fetch_settle.py || echo "::warning title=結算價歷史::fetch_settle.py 失敗，settle.json 保留前一版"
           cd app && node --test tests/atm.test.ts
 
       # ── 區塊五：個股財報 ───────────────────────────────────────────────
