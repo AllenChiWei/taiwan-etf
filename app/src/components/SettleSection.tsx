@@ -5,6 +5,7 @@
  * 網頁晚開時，漏掉的取樣點用證交所每分鐘資料內插。結算日來自 atm.json 的合約到期日（假日順延已含）。 */
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { fetchAtm } from '../api/atm';
 import { fetchTaiex5s, fetchTaiexLive, type TaiexLive } from '../api/settle';
 import {
@@ -22,8 +23,28 @@ function dayLabel(iso: string): string {
   return `${iso.slice(5).replace('-', '/')}${wd === null ? '' : `（${WEEKDAY_LABEL[wd]}）`}`;
 }
 
-export function SettleSection() {
+/** 合約代號 → 系列名稱：202611W4 週三週選、202611F3 週五週選、202611 月選 */
+function seriesOf(c: string): string {
+  if (/W\d$/.test(c)) return `週三週選 ${c.slice(-2)}`;
+  if (/F\d$/.test(c)) return `週五週選 ${c.slice(-2)}`;
+  return '月選';
+}
+
+/** 籌碼頁價平和下方的入口（2026-11-21 改成獨立頁 #/settle 後留一行連結） */
+export function SettleLink() {
+  return (
+    <Link to="/settle"
+          className="mt-3 flex items-center justify-between rounded-xl border border-line bg-surface px-3.5 py-3 text-[13px] hover:border-accent">
+      <span><b className="text-ink">結算價預測</b><span className="ml-2 text-muted">週三／週五結算日 13:00 起每 5 秒即時更新</span></span>
+      <span className="font-semibold text-accent">前往 →</span>
+    </Link>
+  );
+}
+
+/** page＝獨立頁面（#/settle）：數字放大、列出接下來的結算日；否則是籌碼頁裡的小卡 */
+export function SettleSection({ page = false }: { page?: boolean }) {
   const [dates, setDates] = useState<string[] | null>(null);
+  const [upcoming, setUpcoming] = useState<Array<{ e: string; c: string }>>([]);
   const [now, setNow] = useState(() => taipeiNow());
   const [live, setLive] = useState<TaiexLive | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -32,7 +53,14 @@ export function SettleSection() {
   useEffect(() => {
     const ac = new AbortController();
     fetchAtm(ac.signal)
-      .then(d => { if (!ac.signal.aborted) setDates(settleDates(d?.rows ?? [])); })
+      .then(d => {
+        if (ac.signal.aborted) return;
+        const rows = d?.rows ?? [];
+        setDates(settleDates(rows));
+        const m = new Map<string, string>();
+        for (const r of rows) if (r.e && r.c && !m.has(r.e)) m.set(r.e, r.c);
+        setUpcoming([...m].map(([e, c]) => ({ e, c })).sort((x, y) => x.e.localeCompare(y.e)));
+      })
       .catch(() => { if (!ac.signal.aborted) setDates([]); });
     return () => ac.abort();
   }, []);
@@ -103,7 +131,7 @@ export function SettleSection() {
   return (
     <section id="sec-settle" className="mt-3 scroll-mt-16 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex items-baseline justify-between gap-2">
-        <h2 className="text-sm font-bold text-ink">結算價預測</h2>
+        {page ? <h1 className="text-base font-bold text-ink">結算價預測</h1> : <h2 className="text-sm font-bold text-ink">結算價預測</h2>}
         <span className="text-[11.5px] text-muted">週三／週五選擇權（含月選）</span>
       </div>
 
@@ -112,7 +140,7 @@ export function SettleSection() {
           <div className="text-[11.5px] text-muted">
             {pred.final ? '今天的最後結算價（自算，以期交所公告為準）' : '預測最後結算價'}
           </div>
-          <div className="mt-0.5 font-mono text-[28px] font-bold tabular-nums text-ink">{nf0.format(pred.rounded)}</div>
+          <div className={`mt-0.5 font-mono font-bold tabular-nums text-ink ${page ? 'text-[48px] leading-tight' : 'text-[28px]'}`}>{nf0.format(pred.rounded)}</div>
           <div className="mt-1 text-[11.5px] text-faint">
             加權指數 <span className="font-mono tabular-nums text-muted">{nf2.format(liveToday.z)}</span>
             {' · '}{liveToday.t}
@@ -132,6 +160,21 @@ export function SettleSection() {
           ) : next ? (
             <>下一個結算日 <b className="text-ink">{dayLabel(next)}</b>，當天 13:00 起每 5 秒即時預測。</>
           ) : '目前查不到下一個結算日。'}
+        </div>
+      )}
+
+      {page && upcoming.some(u => u.e >= now.date) && (
+        <div className="mt-3">
+          <h2 className="text-[13px] font-bold text-ink">接下來的結算日</h2>
+          <ul className="mt-1 divide-y divide-line rounded-lg border border-line bg-bg text-[12.5px]">
+            {upcoming.filter(u => u.e >= now.date).slice(0, 6).map(u => (
+              <li key={u.e} className="flex items-baseline justify-between gap-2 px-3 py-1.5">
+                <span className={u.e === now.date ? 'font-bold text-ink' : 'text-ink'}>{dayLabel(u.e)}{u.e === now.date && ' 今天'}</span>
+                <span className="text-muted">{seriesOf(u.c)}<span className="ml-1.5 font-mono text-faint">{u.c}</span></span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px] text-faint">來自期交所每日選擇權行情的合約到期日（遇假日順延已含），每個交易日收盤後更新。</p>
         </div>
       )}
 

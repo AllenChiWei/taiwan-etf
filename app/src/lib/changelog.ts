@@ -15,7 +15,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 };
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
-export type SitePath = '/' | '/us' | '/favorites' | '/compare' | '/calc' | '/dividend' | '/futures'
+export type SitePath = '/' | '/us' | '/favorites' | '/compare' | '/calc' | '/dividend' | '/futures' | '/settle'
   | '/chips' | '/news' | '/macro' | '/calendar' | '/cb' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
@@ -36,8 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-21',
     items: [
-      { kind: 'new', to: '/chips',
-        text: '籌碼頁「選擇權」加上「結算價預測」：週三、週五選擇權（含月選）結算日 13:00 起，每 5 秒用期交所算法（13:00～13:25 每 5 秒指數＋收盤，共 301 筆平均）即時算出預測結算價，13:30 收盤後就是當天的結算價。算法用 15 個結算日核對過，和期交所公告全部相同。' },
+      { kind: 'new', to: '/settle',
+        text: '新增「結算價預測」頁（市場 → 結算價）：週三、週五選擇權（含月選）結算日 13:00 起，每 5 秒用期交所算法（13:00～13:25 每 5 秒指數＋收盤，共 301 筆平均）即時算出預測結算價，13:30 收盤後就是當天的結算價；下方列出接下來的結算日與合約。算法用 15 個結算日核對過，和期交所公告全部相同。籌碼頁價平和下方也有入口。' },
     ],
   },
   {

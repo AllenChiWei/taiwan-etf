@@ -23,7 +23,7 @@ import { fearGreed, vixView, COMPONENT_LABEL, type Mood } from '../lib/sentiment
 import { EmptyState } from '../components/EmptyState';
 import { useEtfData } from '../context/AppContext';
 import { AtmSection } from '../components/AtmSection';
-import { SettleSection } from '../components/SettleSection';
+import { SettleLink } from '../components/SettleSection';
 import { AtmIntradaySection } from '../components/AtmIntradaySection';
 import { SellerDecisionCard } from '../components/SellerDecisionCard';
 import { RetailSection } from '../components/RetailSection';
@@ -1722,7 +1722,7 @@ export function ChipsPage() {
       <>
         <p className="py-16 text-center text-[13px] text-muted">載入籌碼資料中…</p>
         <AtmSection />
-        <SettleSection />
+        <SettleLink />
         <SellerDecisionCard />
         <AtmIntradaySection />
         <RetailSection />
@@ -1739,7 +1739,7 @@ export function ChipsPage() {
           <EmptyState title="籌碼資料載入失敗" hint={message} />
         )}
         <AtmSection />
-        <SettleSection />
+        <SettleLink />
         <SellerDecisionCard />
         <AtmIntradaySection />
         <RetailSection />
@@ -1771,12 +1771,12 @@ export function ChipsPage() {
         <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
         <div id="sec-large" className="scroll-mt-16"><LargeSection data={data} kind="期貨" /></div>
       </Group>
-      <Group id="opt" title="選擇權" hint="Put/Call、法人、價平和、結算價預測、大額交易人">
+      <Group id="opt" title="選擇權" hint="Put/Call、法人、價平和、大額交易人">
         <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
         <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
         <div id="sec-atm" className="scroll-mt-16">
           <AtmSection />
-          <SettleSection />
+          <SettleLink />
           <SellerDecisionCard />
           <AtmIntradaySection />
         </div>

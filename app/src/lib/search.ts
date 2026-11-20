@@ -61,6 +61,7 @@ export const PAGES: SearchItem[] = [
   { kind: 'page', name: '配息規劃', to: '/dividend', keywords: '配息 月配 股息 存股 規劃' },
   { kind: 'page', name: '期貨對帳單', to: '/futures', keywords: '對帳單 期貨 元大' },
   { kind: 'page', name: '籌碼（法人、選擇權）', to: '/chips', keywords: '籌碼 法人 外資 投信 選擇權 put call 大額 散戶 價平和' },
+  { kind: 'page', name: '結算價預測（週三／週五選擇權）', to: '/settle', keywords: '結算價 結算 預測 選擇權 週選 月選 TXO 最後結算價' },
   { kind: 'page', name: '新聞與重大訊息', to: '/news', keywords: '新聞 公告 重大訊息' },
   { kind: 'page', name: '美國總經', to: '/macro', keywords: '總經 通膨 就業 利率 殖利率曲線 cpi' },
   { kind: 'page', name: '行事曆（除權息、股東會）', to: '/calendar', keywords: '行事曆 除權息 除息 股東會 法說會 結算' },
