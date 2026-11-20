@@ -32,6 +32,7 @@ const PILL: Record<FreqLabel, string> = {
   '季配': 'pill-quarterly',
   '半年配': 'pill-semi',
   '年配': 'pill-annual',
+  '不定期': 'pill-irregular',
   '—': 'pill-none',
 };
 

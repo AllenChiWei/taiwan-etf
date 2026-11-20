@@ -4,7 +4,7 @@ export interface Etf {
   name: string;
   /** 保管銀行，無資料時是全形破折號 — */
   cust: string;
-  /** 配息頻率：月配 / 雙月配 / 季配 / 半年配 / 年配 / — */
+  /** 配息頻率：月配 / 雙月配 / 季配 / 半年配 / 年配 / 不定期 / — */
   freq: FreqLabel;
   /** 殖利率，數字字串或 'N/A' */
   yield: string;
@@ -32,7 +32,7 @@ export type SectionId =
   | 'cat-futures'
   | 'cat-leveraged-futures';
 
-export type FreqLabel = '月配' | '雙月配' | '季配' | '半年配' | '年配' | '—';
+export type FreqLabel = '月配' | '雙月配' | '季配' | '半年配' | '年配' | '不定期' | '—';
 
 export interface Section {
   id: SectionId;

@@ -102,9 +102,10 @@ FREQ_CLASS = {
     u'季配':   'freq-quarterly',
     u'半年配': 'freq-semi',
     u'年配':   'freq-annual',
+    u'不定期': 'freq-irregular',   # 2026-11-20 MoneyDJ 把 009804 改標「不定期」，不認得就整塊台股清單擱置
     DASH:      'freq-unknown',
 }
-FREQ_ORDER = [u'月配', u'雙月配', u'季配', u'半年配', u'年配']
+FREQ_ORDER = [u'月配', u'雙月配', u'季配', u'半年配', u'年配', u'不定期']
 
 
 def norm_freq(f):

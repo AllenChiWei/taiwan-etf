@@ -45,6 +45,7 @@
   --c-freq-quarterly-bg: #e6f4ea;  --c-freq-quarterly-fg: #1a7f42;
   --c-freq-semi-bg:      #fff4e5;  --c-freq-semi-fg:      #b26a00;
   --c-freq-annual-bg:    #fce8e6;  --c-freq-annual-fg:    #c5221f;
+  --c-freq-irregular-bg: #e0f4f1;  --c-freq-irregular-fg: #0f6b62;
   --c-freq-none-bg:      #eceef2;  --c-freq-none-fg:      #6b7280;
 
   color-scheme: light;
@@ -83,6 +84,7 @@
     --c-freq-quarterly-bg: #12301f;  --c-freq-quarterly-fg: #5fcf8e;
     --c-freq-semi-bg:      #33260f;  --c-freq-semi-fg:      #e0a33c;
     --c-freq-annual-bg:    #3a1a19;  --c-freq-annual-fg:    #ff8a80;
+    --c-freq-irregular-bg: #0f2e2b;  --c-freq-irregular-fg: #5fd0c2;
     --c-freq-none-bg:      #1d222a;  --c-freq-none-fg:      #8b949e;
 
     color-scheme: dark;
@@ -120,6 +122,7 @@
   --c-freq-quarterly-bg: #12301f;  --c-freq-quarterly-fg: #5fcf8e;
   --c-freq-semi-bg:      #33260f;  --c-freq-semi-fg:      #e0a33c;
   --c-freq-annual-bg:    #3a1a19;  --c-freq-annual-fg:    #ff8a80;
+  --c-freq-irregular-bg: #0f2e2b;  --c-freq-irregular-fg: #5fd0c2;
   --c-freq-none-bg:      #1d222a;  --c-freq-none-fg:      #8b949e;
 
   color-scheme: dark;
@@ -190,4 +193,5 @@
 .pill-quarterly { background: var(--c-freq-quarterly-bg); color: var(--c-freq-quarterly-fg); }
 .pill-semi      { background: var(--c-freq-semi-bg);      color: var(--c-freq-semi-fg); }
 .pill-annual    { background: var(--c-freq-annual-bg);    color: var(--c-freq-annual-fg); }
+.pill-irregular { background: var(--c-freq-irregular-bg); color: var(--c-freq-irregular-fg); }
 .pill-none      { background: var(--c-freq-none-bg);      color: var(--c-freq-none-fg); }

@@ -156,7 +156,7 @@ describe('顏色慣例（台股：紅漲綠跌）', () => {
   });
 
   test('每個配息頻率都有對應的標籤樣式', () => {
-    for (const f of ['月配', '雙月配', '季配', '半年配', '年配', '—'] as const) {
+    for (const f of ['月配', '雙月配', '季配', '半年配', '年配', '不定期', '—'] as const) {
       assert.match(freqPillClass(f), /^pill-/, `${f} 沒有樣式`);
     }
   });

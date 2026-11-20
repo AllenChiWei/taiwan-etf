@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-20',
+    items: [
+      { kind: 'fix', to: '/',
+        text: 'ETF 清單的配息頻率新增「不定期」標籤（MoneyDJ 把 009804 聯邦台精彩50 改標成不定期），篩選也能選。之前不認得這個標籤，11-20 晚上的台股清單因此沒有更新。' },
+    ],
+  },
+  {
     date: '2026-11-19',
     items: [
       { kind: 'new', to: '/compare',
