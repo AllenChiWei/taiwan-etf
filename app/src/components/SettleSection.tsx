@@ -85,7 +85,10 @@ export function SettleSection({ page = false }: { page?: boolean }) {
   const isToday = demo || next === now.date;
   // 驗證用：再加 twetf.settleDemoAt=13:15:00 時，把資料截到那個時間（看收盤前才有的履約價表與半條曲線）
   const demoAt = useMemo(() => {
-    try { return demo ? hmsSec(localStorage.getItem('twetf.settleDemoAt') ?? '') : NaN; } catch { return NaN; }
+    try {
+      const at = demo ? localStorage.getItem('twetf.settleDemoAt') : null;
+      return at ? hmsSec(at) : NaN;              // 注意 hmsSec('') 是 0，沒設定要明確給 NaN
+    } catch { return NaN; }
   }, [demo]);
   const liveToday = useMemo(() => {
     if (!live || !(demo || `${live.d.slice(0, 4)}-${live.d.slice(4, 6)}-${live.d.slice(6)}` === now.date)) return null;
