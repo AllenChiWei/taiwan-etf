@@ -163,8 +163,12 @@ real function and exercises it against a stub DOM, so run it after editing the J
 **Payout.** Blank 配息頻率 on MoneyDJ means no distribution → the page's `—`. The parser
 must stop at the next label, or a blank field swallows the 經理費 value sitting after it;
 that is what `NEIGHBOURS` in `etfdata.py` is for. A new label (beyond 月配/雙月配/季配/
-半年配/年配) needs three things: `FREQ_CLASS`, `FREQ_ORDER`, and a `.freq-*` CSS rule in
-the page. `build_page.py` refuses to write rather than emit an unstyled pill.
+半年配/年配/不定期) needs `FREQ_CLASS`, `FREQ_ORDER`, and a `.freq-*` CSS rule in the page,
+plus the React side: `PILL` in `app/src/lib/format.ts`, a `.pill-*` rule with light/dark
+tokens in `app/src/styles.css`, `FreqLabel` in `app/src/types.ts`, and the list in
+`app/tests/filters.test.ts`. `build_data.py`/`build_page.py` refuse to write rather than emit
+an unstyled pill, so an unknown label holds back the whole 台股清單 block (2026-11-20:
+MoneyDJ relabelled 009804 from blank to 不定期; fixed in b2ad937).
 
 ## Validating a change to the pipeline
 
