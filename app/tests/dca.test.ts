@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   monthlyOf, monthTotal, byBroker, byPerson, actualDay, monthDeductions, upcoming, parseDays, daysText, peopleOf, cleanDca, type DcaPlan,
-  summarize, compareHoldings, cleanHoldings, renamePerson, type DcaHolding, type Quote,
+  summarize, compareHoldings, cleanHoldings, renamePerson, convergePlan, type DcaHolding, type Quote,
 } from '../src/lib/dca.ts';
 
 const plan = (o: Partial<DcaPlan>): DcaPlan => ({ id: 'x', who: '我', code: '0050', name: '元大台灣50', days: [6], amount: 3000, broker: '華南', ...o });
@@ -108,4 +108,48 @@ test('持股清理與改名', () => {
   assert.equal(r.holdings[0].who, '莎莎');
   // 改成已經存在的名字＝合併
   assert.deepEqual(renamePerson({ people: ['莎莎', '小孩'], plans: [], holdings: [] }, '小孩', '莎莎').people, ['莎莎']);
+});
+
+test('拉近計畫：每一檔落後的人補差距，領先的人不動；照現在幾個月追平', () => {
+  const q = new Map<string, Quote>([['0050', { price: 50, perYear: 0 }], ['0056', { price: 40, perYear: 0 }], ['00878', { price: 20, perYear: 0 }]]);
+  const hs: DcaHolding[] = [
+    { id: '1', who: '莎莎', code: '0050', name: '元大台灣50', shares: 2000 },    // 莎莎多 1000 股 × 50 = 50,000
+    { id: '2', who: 'QQ', code: '0050', name: '元大台灣50', shares: 1000 },
+    { id: '3', who: 'QQ', code: '0056', name: '元大高股息', shares: 500 },       // QQ 多 500 股 × 40 = 20,000
+    { id: '4', who: '莎莎', code: '00878', name: '國泰永續高股息', shares: 100 },  // 一樣
+    { id: '5', who: 'QQ', code: '00878', name: '國泰永續高股息', shares: 100 },
+  ];
+  const ps = [
+    plan({ id: 'p1', who: '莎莎', code: '0050', amount: 3000 }),
+    plan({ id: 'p2', who: 'QQ', code: '0050', amount: 5000 }),               // QQ 每月多 2,000 → 25 個月追平
+    plan({ id: 'p3', who: 'QQ', code: '0056', name: '元大高股息', amount: 1000 }),   // 莎莎沒扣 0056 → 追不上
+    plan({ id: 'p4', who: '莎莎', code: '00878', name: '國泰永續高股息', amount: 999, off: true }),  // 暫停的不算
+  ];
+  const r = convergePlan('莎莎', 'QQ', hs, ps, q, 12);
+  const by = new Map(r.rows.map(x => [x.code, x]));
+  const a = by.get('0050')!;
+  assert.equal(a.gap, 50000);
+  assert.equal(a.lagger, 'b');
+  assert.equal(a.monthsNow, 25);
+  assert.equal(a.need, 3000 + Math.ceil(50000 / 12 / 100) * 100);     // 領先的 3,000 ＋ 差距÷12 個月（百元進位）
+  const b = by.get('0056')!;
+  assert.equal(b.lagger, 'a');
+  assert.equal(b.monthsNow, null);
+  assert.equal(b.need, 1000 + Math.ceil(20000 / 12 / 100) * 100);
+  assert.equal(by.get('00878')!.lagger, null);
+  assert.equal(by.get('00878')!.a.monthly, 0);
+  assert.equal(r.allNow, null);
+  assert.equal(r.aNow, 3000);
+  assert.equal(r.bNow, 6000);
+  assert.equal(r.aNew, 3000 + b.need!);
+  assert.equal(r.bNew, a.need! + 1000);
+  // 期限放寬到 25 個月以上：0050 照現在就追得上，不用改
+  assert.equal(convergePlan('莎莎', 'QQ', hs, ps, q, 30).rows.find(x => x.code === '0050')!.need, null);
+});
+
+test('拉近計畫：沒有報價的不算，列出來', () => {
+  const r = convergePlan('莎莎', 'QQ', [{ id: '1', who: '莎莎', code: '9999', name: '不知道', shares: 10 }], [], new Map(), 12);
+  assert.deepEqual(r.noQuote, ['9999']);
+  assert.equal(r.rows[0].need, null);
+  assert.equal(r.allNow, 0);
 });

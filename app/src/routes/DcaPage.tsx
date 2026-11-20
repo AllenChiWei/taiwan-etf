@@ -15,7 +15,7 @@ import { Locked } from './QBPage';
 import { ghWrite, readEncrypted, readToken, type Src } from '../lib/ghSync';
 import {
   BROKERS, byBroker, byPerson, cleanDca, compareHoldings, daysInMonth, daysText, monthDeductions, monthlyOf, monthTotal, newId, parseDays, peopleOf,
-  renamePerson, summarize, upcoming,
+  renamePerson, summarize, upcoming, convergePlan,
   type DcaData, type DcaHolding, type DcaPlan, type PersonSummary, type Quote,
 } from '../lib/dca';
 
@@ -677,40 +677,120 @@ function Compare({ people, holdings, plans, quotes, asof, colorOf }: {
         </table>
       </div>
       {cmp.rows.length > 0 && (
-        <>
-          <h3 className="mt-3 text-[13px] font-bold text-ink">逐檔對照</h3>
-          <p className="text-[11.5px] text-muted">
-            兩人都有 {cmp.both} 檔
-            {cmp.onlyA.length > 0 && <>；只有{a}有：{cmp.onlyA.join('、')}</>}
-            {cmp.onlyB.length > 0 && <>；只有{b}有：{cmp.onlyB.join('、')}</>}
-          </p>
-          <div className="mt-1 overflow-x-auto">
-            <table className="w-full text-[12.5px]">
-              <thead><tr className="text-left text-[11px] text-muted">
-                <th className="py-1 pr-2 font-normal">ETF</th>
-                <th className="py-1 pr-2 text-right font-normal">{a} 股數／市值／占比</th>
-                <th className="py-1 text-right font-normal">{b} 股數／市值／占比</th>
-              </tr></thead>
-              <tbody>
-                {cmp.rows.map(r => (
-                  <tr key={r.code} className="border-t border-line">
-                    <td className="py-1 pr-2 text-ink"><span className="font-mono text-muted">{r.code}</span> {r.name}</td>
-                    {[r.a, r.b].map((x, i) => (
-                      <td key={i} className="py-1 pr-2 text-right font-mono text-ink">
-                        {x ? <>{money(x.shares)}<span className="text-muted">／{x.mv > 0 ? money(x.mv) : '—'}／{(x.share * 100).toFixed(0)}%</span></> : <span className="text-faint">—</span>}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </>
+        <p className="mt-3 text-[11.5px] text-muted">
+          兩人都有 {cmp.both} 檔
+          {cmp.onlyA.length > 0 && <>；只有{a}有：{cmp.onlyA.join('、')}</>}
+          {cmp.onlyB.length > 0 && <>；只有{b}有：{cmp.onlyB.join('、')}</>}
+        </p>
       )}
+      <Converge a={a} b={b} holdings={holdings} plans={plans} quotes={quotes} colorOf={colorOf} />
       {(A.noQuote.length > 0 || B.noQuote.length > 0) && (
         <p className="mt-1 text-[11px] text-faint">沒有報價、市值沒算進去：{[...A.noQuote, ...B.noQuote].join('、')}</p>
       )}
       <p className="mt-1 text-[11px] text-faint">市值與年配息用網站收盤價{asof ? `（${asof}）` : ''}與最近一次配息估；報酬率只算有填成本的持股。</p>
     </section>
+  );
+}
+
+// ───── 逐檔差額與拉近計畫（2026-11-21：看清楚每一檔差多少，用定期定額讓兩人持股接近）─────
+
+const HORIZONS = [12, 24, 36, 60];
+
+export function Converge({ a, b, holdings, plans, quotes, colorOf }: {
+  a: string; b: string; holdings: DcaHolding[]; plans: DcaPlan[]; quotes: Map<string, Quote>; colorOf: (w: string) => string;
+}) {
+  const [months, setMonths] = useState(24);
+  const plan = useMemo(() => convergePlan(a, b, holdings, plans, quotes, months), [a, b, holdings, plans, quotes, months]);
+  if (a === b || plan.rows.length === 0) return null;
+  const name = (w: 'a' | 'b') => (w === 'a' ? a : b);
+  const dot = (w: string) => <span className="mr-1 inline-block h-2 w-2 rounded-full align-middle" style={{ background: colorOf(w) }} />;
+  const priced = plan.rows.filter(r => r.price !== null);
+  const behind = priced.filter(r => r.lagger !== null);
+  const stuck = priced.filter(r => r.monthsNow === null).length;
+  const changed = plan.aNew !== plan.aNow || plan.bNew !== plan.bNow;
+  return (
+    <>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="text-[13px] font-bold text-ink">逐檔差額與拉近計畫</h3>
+        <div className="flex items-center gap-1 text-[12px] text-muted">
+          <span>幾個月內追平</span>
+          {HORIZONS.map(m => (
+            <button key={m} type="button" aria-pressed={months === m} onClick={() => setMonths(m)}
+                    className={`h-7 rounded-lg px-2 font-semibold ${months === m ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted'}`}>{m}</button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-1.5 rounded-lg border border-line bg-bg p-2.5 text-[12.5px] leading-relaxed text-ink">
+        {behind.length === 0 ? '每一檔兩人的股數都一樣。' : (
+          <>
+            <div>照現在的扣款：{plan.allNow === null
+              ? <>有 <b>{stuck}</b> 檔落後的人每月扣得沒有比較多，<b>永遠追不上</b></>
+              : <><b className="font-mono">{plan.allNow}</b> 個月後每一檔都追平</>}。</div>
+            {changed ? (
+              <div className="mt-0.5">要在 <b>{months}</b> 個月內每一檔都追平，每月扣款改成：
+                {(['a', 'b'] as const).map(w => (
+                  <span key={w} className="ml-1 whitespace-nowrap">{dot(name(w))}{name(w)}{' '}
+                    <span className="font-mono">{money(w === 'a' ? plan.aNow : plan.bNow)}</span> →{' '}
+                    <b className="font-mono">{money(w === 'a' ? plan.aNew : plan.bNew)}</b></span>
+                ))}
+              </div>
+            ) : <div className="mt-0.5">現在的扣款已經能在 {months} 個月內追平，不用改。</div>}
+          </>
+        )}
+      </div>
+
+      <ul className="mt-2 space-y-2">
+        {plan.rows.map(r => {
+          const va = r.price ? r.a.shares * r.price : 0, vb = r.price ? r.b.shares * r.price : 0;
+          const tot = va + vb;
+          const lead = r.lagger === 'a' ? 'b' : 'a';
+          return (
+            <li key={r.code} className="rounded-lg border border-line bg-bg p-2.5 text-[12.5px]">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-ink"><span className="font-mono text-muted">{r.code}</span> {r.name}</span>
+                {r.price !== null && <span className="text-[11px] text-faint">收盤 {r.price}</span>}
+              </div>
+              <div className="mt-1 grid grid-cols-2 gap-2">
+                {(['a', 'b'] as const).map(w => (
+                  <div key={w}>
+                    <div className="text-[11px] text-muted">{dot(name(w))}{name(w)}</div>
+                    <div className="font-mono text-ink">{money(r[w].shares)} 股{r.price !== null && <span className="text-muted">・{money(w === 'a' ? va : vb)} 元</span>}</div>
+                    <div className="text-[11px] text-faint">每月扣 {r[w].monthly > 0 ? money(r[w].monthly) : '—'}</div>
+                  </div>
+                ))}
+              </div>
+              {tot > 0 && (
+                <div className="mt-1.5 flex h-2 overflow-hidden rounded-full bg-sunken" aria-hidden>
+                  <div style={{ width: `${(va / tot) * 100}%`, background: colorOf(a) }} />
+                  <div style={{ width: `${(vb / tot) * 100}%`, background: colorOf(b) }} />
+                </div>
+              )}
+              {r.price === null ? (
+                <div className="mt-1.5 text-[11.5px] text-faint">沒有報價，算不出差額</div>
+              ) : r.lagger === null ? (
+                <div className="mt-1.5 font-semibold text-muted">差額：兩人一樣</div>
+              ) : (
+                <>
+                  <div className="mt-1.5 text-[13px] font-bold text-ink">
+                    差額：{name(lead)} 多 <span className="font-mono">{money(Math.abs(r.a.shares - r.b.shares))}</span> 股
+                    （<span className="font-mono">{money(Math.abs(r.gap))}</span> 元）
+                  </div>
+                  <div className="mt-0.5 text-[11.5px] text-muted">
+                    照現在：{r.monthsNow === null ? <>{name(r.lagger)} 每月扣得沒有比較多，追不上</> : <><span className="font-mono">{r.monthsNow}</span> 個月後追平</>}
+                    {r.need !== null && <>；要 {months} 個月追平：<b className="text-ink">{name(r.lagger)} 每月扣 <span className="font-mono">{money(r.need)}</span></b>
+                      （現在 {money(r[r.lagger].monthly)}，多 {money(r.need - r[r.lagger].monthly)}）</>}
+                  </div>
+                </>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <p className="mt-1 text-[11px] text-faint">
+        差額＝股數差 × 收盤價。同一檔價格一樣，追平市值就是追平股數。計畫假設價格不變、扣款買零股、不算配息；
+        領先的人扣款不動，只加落後的人，金額百元進位。
+      </p>
+    </>
   );
 }

@@ -194,6 +194,82 @@ export function compareHoldings(a: PersonSummary, b: PersonSummary) {
   return { rows, both: rows.filter(r => r.a && r.b).length, onlyA: rows.filter(r => r.a && !r.b).map(r => r.code), onlyB: rows.filter(r => !r.a && r.b).map(r => r.code) };
 }
 
+/* ── 拉近計畫（2026-11-21 使用者：讓兩個小孩透過定期定額，最終彼此的持股接近）──
+ * 每一檔各自看：市值少的那個人是「落後」，用定期定額補差距；領先的人的扣款不動。
+ * 同一檔 ETF 價格一樣，所以「市值一樣」＝「股數一樣」。
+ * 假設：價格不變、扣款買零股、不管配息（兩人同一檔配息率一樣，追平後也一樣）。 */
+
+export interface ConvergeRow {
+  code: string;
+  name: string;
+  /** 收盤價；沒有報價時 null（這一檔不算） */
+  price: number | null;
+  a: { shares: number; monthly: number };
+  b: { shares: number; monthly: number };
+  /** 市值差 a−b（元） */
+  gap: number;
+  /** 落後的人；差不到一股算一樣（null） */
+  lagger: 'a' | 'b' | null;
+  /** 照現在的扣款幾個月後追平：0＝已經一樣、null＝追不上（落後的人每月扣得沒有比領先的人多） */
+  monthsNow: number | null;
+  /** 要在指定月數內追平，落後的人這檔每月要扣多少（百元進位）；現在的扣款已經夠快就是 null */
+  need: number | null;
+}
+
+export interface ConvergePlan {
+  rows: ConvergeRow[];
+  /** 兩人現在的每月扣款合計，與照建議調整後的合計 */
+  aNow: number; bNow: number; aNew: number; bNew: number;
+  /** 照現在的扣款，全部追平要幾個月（有一檔追不上就是 null） */
+  allNow: number | null;
+  noQuote: string[];
+}
+
+const keyOf = (code: string, name: string) => (code || name).toUpperCase();
+
+export function convergePlan(
+  a: string, b: string, holdings: readonly DcaHolding[], plans: readonly DcaPlan[], quotes: ReadonlyMap<string, Quote>, months: number,
+): ConvergePlan {
+  const m = new Map<string, ConvergeRow>();
+  const row = (code: string, name: string) => {
+    const k = keyOf(code, name);
+    if (!m.has(k)) {
+      m.set(k, { code: k, name: name || k, price: quotes.get(k)?.price ?? null,
+        a: { shares: 0, monthly: 0 }, b: { shares: 0, monthly: 0 }, gap: 0, lagger: null, monthsNow: 0, need: null });
+    }
+    return m.get(k)!;
+  };
+  for (const h of holdings) {
+    if (h.who === a) row(h.code, h.name).a.shares += h.shares;
+    else if (h.who === b) row(h.code, h.name).b.shares += h.shares;
+  }
+  for (const p of active(plans, null)) {
+    if (p.who === a) row(p.code, p.name).a.monthly += monthlyOf(p);
+    else if (p.who === b) row(p.code, p.name).b.monthly += monthlyOf(p);
+  }
+
+  const span = Math.max(1, Math.round(months));
+  const noQuote: string[] = [];
+  for (const r of m.values()) {
+    if (r.price === null || !(r.price > 0)) { r.monthsNow = null; noQuote.push(r.code); continue; }
+    r.gap = (r.a.shares - r.b.shares) * r.price;
+    if (Math.abs(r.a.shares - r.b.shares) < 1) { r.lagger = null; r.monthsNow = 0; continue; }
+    r.lagger = r.gap > 0 ? 'b' : 'a';
+    const lag = r[r.lagger], lead = r[r.lagger === 'a' ? 'b' : 'a'];
+    const speed = lag.monthly - lead.monthly;                 // 每個月縮小多少
+    r.monthsNow = speed > 0 ? Math.ceil(Math.abs(r.gap) / speed) : null;
+    const need = Math.ceil((lead.monthly + Math.abs(r.gap) / span) / 100) * 100;
+    r.need = r.monthsNow !== null && r.monthsNow <= span ? null : need;
+  }
+
+  const rows = [...m.values()].sort((x, y) => Math.abs(y.gap) - Math.abs(x.gap));
+  const sum = (who: 'a' | 'b', adjusted: boolean) => rows.reduce(
+    (s, r) => s + (adjusted && r.lagger === who && r.need !== null ? r.need : r[who].monthly), 0);
+  const priced = rows.filter(r => r.price !== null);
+  const allNow = priced.some(r => r.monthsNow === null) ? null : Math.max(0, ...priced.map(r => r.monthsNow ?? 0));
+  return { rows, aNow: sum('a', false), bNow: sum('b', false), aNew: sum('a', true), bNew: sum('b', true), allNow, noQuote };
+}
+
 /** 從加密檔解出來的持股逐筆檢查 */
 export function cleanHoldings(raw: unknown): DcaHolding[] {
   const out: DcaHolding[] = [];
