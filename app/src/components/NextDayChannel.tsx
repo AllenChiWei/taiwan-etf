@@ -48,6 +48,7 @@ export function NextDayChannel({ series }: { series: NextPoint[] }) {
   const yTicks = [0, 0.25, 0.5, 0.75, 1].map(f => lo + (hi - lo) * f);
   const xTicks = [0, Math.floor((pts.length - 1) / 2), pts.length - 1];
   const fmtDay = (d: string) => (n >= 250 ? d.slice(2, 7).replace('-', '/') : d.slice(5).replace('-', '/'));
+  const last = pts[pts.length - 1];
   const active = hover ?? pts.length - 1;
   const cur = pts[active];
   const br = pointBreach(cur);
@@ -102,11 +103,17 @@ export function NextDayChannel({ series }: { series: NextPoint[] }) {
                            className={b.side === 'up' ? 'fill-up' : 'fill-down'} />;
           })}
           {/* 明天：通道的最後一段用虛線框起來 */}
-          {pts[pts.length - 1].f && (
+          {/* 2026-11-21 使用者：預測點位太不明顯 → 明天的 95% 上下緣畫短橫線並標數字（字加底色描邊，壓在 K 棒上也看得清楚） */}
+          {last.f && (
             <g>
-              <line x1={x(pts.length - 1)} x2={x(pts.length - 1)} y1={y(pts[pts.length - 1].u99)} y2={y(pts[pts.length - 1].d99)}
+              <line x1={x(pts.length - 1)} x2={x(pts.length - 1)} y1={y(last.u99)} y2={y(last.d99)}
                     className="stroke-accent" strokeWidth={2} strokeDasharray="3 2" />
-              <text x={x(pts.length - 1) - 3} y={y(pts[pts.length - 1].u99) - 3} textAnchor="end" className="fill-accent" fontSize={FONT}>明天</text>
+              <line x1={x(pts.length - 1) - 10} x2={x(pts.length - 1)} y1={y(last.u95)} y2={y(last.u95)} className="stroke-up" strokeWidth={2.5} />
+              <line x1={x(pts.length - 1) - 10} x2={x(pts.length - 1)} y1={y(last.d95)} y2={y(last.d95)} className="stroke-down" strokeWidth={2.5} />
+              <text x={x(pts.length - 1) - 13} y={y(last.u95) + 4} textAnchor="end" className="fill-up stroke-surface" strokeWidth={3}
+                    style={{ paintOrder: 'stroke' }} fontSize={12} fontWeight={700}>明天 {nf0.format(last.u95)}</text>
+              <text x={x(pts.length - 1) - 13} y={y(last.d95) + 4} textAnchor="end" className="fill-down stroke-surface" strokeWidth={3}
+                    style={{ paintOrder: 'stroke' }} fontSize={12} fontWeight={700}>明天 {nf0.format(last.d95)}</text>
             </g>
           )}
           {xTicks.map(i => (

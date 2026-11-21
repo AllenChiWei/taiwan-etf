@@ -39,7 +39,8 @@ export function NextDaySection() {
         <h1 className="text-base font-bold text-ink">隔日漲跌幅：明天加權指數可能到哪</h1>
         <span className="text-[11.5px] text-faint">{m.date} 收盤</span>
       </div>
-      <p className="mt-1 text-[12px] text-muted">
+      <Hero d={d} />
+      <p className="mt-2 text-[12px] text-muted">
         以 {dayLabel(m.date)} 收盤 <b className="font-mono text-ink">{nf0.format(close)}</b> 為基準，
         看下一個交易日 <b className="text-ink">{dayLabel(m.next)}</b>
         {m.regime !== 'normal' && <span className="ml-1 rounded bg-sunken px-1.5 py-0.5 text-[11px] text-ink">{REGIME_LABEL[m.regime]}，波動通常比較大</span>}
@@ -158,6 +159,57 @@ export function NextDaySection() {
         週選到期結算看的是結算價（13:00～13:30 平均），盤中最高最低影響的是保證金與停損。履約價以 50 點取整，實際掛牌以期交所為準。僅供參考，不構成投資建議。
       </p>
     </section>
+  );
+}
+
+/** 明天的預測點位，大字放最上面（2026-11-21 使用者：預測點位太不明顯）。
+ * 主數字＝95%；下面小字 90%／99%。頂到漲跌停時各機率會變同一個數，另列「未加狀態調整」的 95% 讓人看得出差別。 */
+function Hero({ d }: { d: NextdayData }) {
+  const m = d.meta, close = m.close;
+  const band = (p: number) => d.bands.find(b => b.p === p);
+  const b90 = band(0.9), b95 = band(0.95), b99 = band(0.99);
+  if (!b95) return null;
+  const card = (side: 'dn' | 'up') => {
+    const isDn = side === 'dn';
+    const v = (b: NonNullable<typeof b95>) => (isDn ? b.dn : b.up);
+    const capped = (x: number) => (isDn ? x <= -m.limit + 1e-9 : x >= m.limit - 1e-9);
+    const lv = (x: number) => levelOf(close, x);
+    const strike = (x: number) => (isDn ? `賣權 ${nf0.format(putStrikeBelow(lv(x)))} 以下` : `買權 ${nf0.format(callStrikeAbove(lv(x)))} 以上`);
+    const main = v(b95);
+    const raw = isDn ? b95.dn0 : b95.up0;
+    const color = isDn ? 'text-down' : 'text-up';
+    const small = (lab: string, b?: typeof b95) => b && (
+      <span className="whitespace-nowrap">{lab} <b className={`font-mono ${color}`}>{nf0.format(lv(v(b)))}</b>{capped(v(b)) && <span className="text-faint">（{isDn ? '跌停' : '漲停'}）</span>}</span>
+    );
+    return (
+      <div className="min-w-0 rounded-lg border border-line bg-sunken/40 px-2.5 py-2">
+        <div className="text-[11.5px] font-semibold text-muted">{isDn ? '明天最低不跌破' : '明天最高不超過'}<span className="ml-1 font-normal text-faint">95%</span></div>
+        <div className={`mt-0.5 font-mono text-[26px] font-bold leading-tight tabular-nums ${color}`}>{nf0.format(lv(main))}</div>
+        <div className="font-mono text-[12px] tabular-nums text-muted">
+          {pct(main)}{capped(main) && <span className="ml-1 font-sans text-faint">＝{isDn ? '跌停' : '漲停'}價</span>}
+        </div>
+        <div className="mt-1 text-[12.5px] font-semibold text-ink">{isDn ? '賣 Put：' : '賣 Call：'}{strike(main)}</div>
+        <div className="mt-1 flex flex-wrap gap-x-2.5 gap-y-0.5 text-[11.5px] text-muted">
+          {small('90%', b90)}
+          {small('99%', b99)}
+        </div>
+        {raw !== undefined && Math.abs(raw - main) > 1e-6 && (
+          <div className="mt-0.5 text-[11px] text-faint">未加狀態調整 95%：<span className="font-mono">{nf0.format(lv(raw))}</span>（{pct(raw)}）</div>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div className="mt-2">
+      <div className="grid grid-cols-2 gap-2">
+        {card('dn')}
+        {card('up')}
+      </div>
+      <p className="mt-1 text-[11px] text-faint">
+        {dayLabel(m.next)}盤中，依過去同類日子有 95% 機會守在這兩個數之間；履約價取 50 點整數往外。
+        {b95.dn <= -m.limit + 1e-9 && b95.up >= m.limit - 1e-9 && ' 今天波動極大，95% 已經頂到漲跌停 —— 參考「未加狀態調整」與 90%，並把部位縮小。'}
+      </p>
+    </div>
   );
 }
 
