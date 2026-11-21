@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAtm } from '../api/atm';
 import { fetchSettleHistory } from '../api/settle';
-import { Fold } from './Fold';
+import { Fold, MoreFold } from './Fold';
 import {
   weekdayAverages, latestOf, recentOf, weekdayOf,
   expectedRange, straddleOutcomes, summarise, weekdayNow,
@@ -361,6 +361,8 @@ export function AtmSection() {
         </div>
       )}
 
+      {/* 2026-11-21 站主：籌碼頁太雜 → 星期對照、近期明細、驗收、賣方統計收進「更多」 */}
+      <MoreFold summary="更多：各星期價平和對照、近期明細、定價準不準、賣方抱到結算">
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {BASIS_OPTIONS.map(o => (
           <Chip key={o.id} active={basis === o.id} onClick={() => setBasis(o.id)}>
@@ -476,6 +478,7 @@ export function AtmSection() {
       )}
 
       {shortStats.length > 0 && <ShortStraddleBlock stats={shortStats} recent={shorts[0].slice(0, 8)} />}
+      </MoreFold>
 
       <Fold summary={<>價平和＝價平履約價的 Call＋Put（一般時段收盤價）</>}>
         價平履約價取 |Call−Put| 最小者，價平和為該履約價的 Call＋Put，採一般交易時段

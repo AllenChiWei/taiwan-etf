@@ -27,7 +27,9 @@ import { SettleLink } from '../components/SettleSection';
 import { AtmIntradaySection } from '../components/AtmIntradaySection';
 import { SellerDecisionCard } from '../components/SellerDecisionCard';
 import { RetailSection } from '../components/RetailSection';
-import { Fold } from '../components/Fold';
+import { Fold, MoreFold } from '../components/Fold';
+import { Link } from '@tanstack/react-router';
+import { headline, marketItems } from '../lib/marketSummary';
 import { StockSheet } from '../components/StockSheet';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -93,6 +95,22 @@ function ExtremeLine({ data }: { data: ChipsData }) {
     <div className="mt-2 rounded-lg border border-up/30 bg-up/5 px-3 py-2 text-[12.5px] leading-relaxed text-ink">
       <b>極端值：</b>{items.join('；')}
     </div>
+  );
+}
+
+/** 今日重點最上面：市場總覽的一句總結＋警戒項目（規則同 #/market），點了到總覽頁看每項的白話 */
+function MarketLine({ data }: { data: ChipsData }) {
+  const items = useMemo(() => marketItems(data), [data]);
+  const hl = useMemo(() => headline(items), [items]);
+  if (!items.length) return null;
+  return (
+    <Link to="/market" className="mt-2 block rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[12.5px] leading-relaxed hover:border-accent">
+      <b className="text-ink">{hl.text}</b>
+      <span className="block text-muted">
+        警戒 {hl.warn.length}・注意 {hl.watch.length}{hl.warn.length ? `：${hl.warn.map(i => i.label).join('、')}` : ''}
+        <span className="ml-1 font-semibold text-accent">看市場總覽 →</span>
+      </span>
+    </Link>
   );
 }
 
@@ -481,8 +499,12 @@ function MarginSection({ data }: { data: ChipsData }) {
         { title: '每日增減（億元，紅增綠減）', kind: 'bar', digits: 1,
           rows: m.dates.slice(1).map((d, i) => [d, daily[i + 1] as number] as [string, number]) },
       ]} />
-      {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <RelPosition money={m.moneyHist} shorts={m.shortHist} />}
-      {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && <MarginVsIndex money={m.moneyHist} shorts={m.shortHist} />}
+      {m.moneyHist && m.moneyHist.length > 130 && m.shortHist && (
+        <MoreFold summary="更多：融資與指數的相對位置、融資 vs 大盤累積漲跌">
+          <RelPosition money={m.moneyHist} shorts={m.shortHist} />
+          <MarginVsIndex money={m.moneyHist} shorts={m.shortHist} />
+        </MoreFold>
+      )}
       <Fold summary={<>融資＝散戶借錢買股；個股維持率跌破 130% 會被追繳，大盤掉到 140% 以下常是恐慌殺盤</>}>
         融資是散戶借錢買股，餘額增加代表槓桿在加大。維持率＝融資買進的股票現值 ÷ 借的錢：
         剛買進時約 166%（自備四成），個股跌破 130% 會被追繳，大盤維持率掉到 140% 以下
@@ -1455,12 +1477,18 @@ function LargeSection({ data, kind: fixed }: { data: ChipsData; kind?: (typeof L
   const all = kind === '期貨' ? data.large.fut : data.large.opt;
   const rows = useMemo(
     () => prepareLarge(all.filter(r => r.who === who)), [all, who]);
+  // 2026-11-21 站主：籌碼頁太雜 → 先選契約，一次只看一個（所有契約＋各月份）
+  const products = useMemo(() => Array.from(new Set(rows.map(r => `${r.name}${r.cp ? ' ' + r.cp : ''}`))), [rows]);
+  const [prod, setProd] = useState<string | null>(null);
+  const cur = prod && products.includes(prod) ? prod : products[0];
+  const shown = rows.filter(r => `${r.name}${r.cp ? ' ' + r.cp : ''}` === cur);
 
   return (
     <Section title={fixed ? `大額交易人未沖銷部位（${fixed}）` : '大額交易人未沖銷部位'} hint="括號是佔全市場未沖銷部位的比例">
       {!fixed && <Switch options={LARGE_KIND} value={kind} onChange={setKind} label="商品類別" />}
       <Switch options={LARGE_WHO} value={who} onChange={setWho} label="交易人類別" />
-      <LargeTable rows={rows} />
+      {products.length > 1 && cur && <Switch options={products} value={cur} onChange={setProd} label="契約" />}
+      <LargeTable rows={shown} />
       <p className="mt-2 text-[11px] text-faint">
         「特定法人」是大額交易人裡的法人部分，與「全部交易人」是包含關係，不能相減。
         期交所的臺股期貨含小型臺指與微型臺指的換算口數。
@@ -1490,7 +1518,7 @@ function SectorSection({ data }: { data: ChipsData }) {
       )}
 
       <ul className="mt-2 space-y-1">
-        {details.slice(0, 15).map(r => (
+        {details.slice(0, 6).map(r => (
           <li key={r.n} className="grid grid-cols-[5.5em_1fr_4em] items-center gap-2">
             <span className="truncate text-[12px] text-muted">{r.n}</span>
             <span className="h-4 rounded bg-sunken">
@@ -1503,6 +1531,24 @@ function SectorSection({ data }: { data: ChipsData }) {
           </li>
         ))}
       </ul>
+      {details.length > 6 && (
+        <MoreFold summary={`更多：第 7～${Math.min(15, details.length)} 名類股`} className="mt-2">
+      <ul className="mt-2 space-y-1">
+        {details.slice(6, 15).map(r => (
+          <li key={r.n} className="grid grid-cols-[5.5em_1fr_4em] items-center gap-2">
+            <span className="truncate text-[12px] text-muted">{r.n}</span>
+            <span className="h-4 rounded bg-sunken">
+              <span className="block h-4 rounded bg-accent/70"
+                    style={{ width: `${Math.max(2, (r.pct / max) * 100)}%` }} />
+            </span>
+            <span className="text-right font-mono text-[11.5px] tabular-nums text-ink">
+              {nf2.format(r.pct)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+        </MoreFold>
+      )}
 
       <p className="mt-2 text-[11px] text-faint">
         比重的分母是各細類的合計。「電子」與「化學生技醫療」是彙總類（等於底下幾個
@@ -1763,8 +1809,11 @@ export function ChipsPage() {
       {/* 2026-11-18 站主：依商品分五段（之前期貨、選擇權、現貨交錯排）。各區塊原本的 sec-* 錨點保留 */}
       <Group id="today" title="今日重點">
         <MaintAlert data={data} />
-        <ExtremeLine data={data} />
-        <SummaryStrip data={data} />
+        <MarketLine data={data} />
+        <MoreFold summary="更多：今日數字一覽（外資、散戶、P/C、融資、維持率、VIX、恐懼貪婪）與極端值">
+          <ExtremeLine data={data} />
+          <SummaryStrip data={data} />
+        </MoreFold>
       </Group>
       <Group id="fut" title="期貨" hint="法人、散戶、大額交易人">
         <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>

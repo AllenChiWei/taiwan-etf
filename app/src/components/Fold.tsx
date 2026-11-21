@@ -19,3 +19,16 @@ export function Fold({ summary, children, className = 'mt-2' }: {
     </details>
   );
 }
+
+/** 區塊裡次要的內容（2026-11-21 站主：籌碼頁太雜）：預設收起，標題是一行「▸ 更多：…」按鈕。內容不刪，只是先藏起來 */
+export function MoreFold({ summary, children, className = 'mt-3' }: { summary: ReactNode; children: ReactNode; className?: string }) {
+  return (
+    <details className={`group rounded-lg border border-line bg-bg ${className}`}>
+      <summary className="cursor-pointer list-none px-3 py-2 text-[12.5px] font-semibold text-accent hover:bg-sunken/50 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden className="mr-1 inline-block transition-transform group-open:rotate-90">▸</span>
+        {summary}
+      </summary>
+      <div className="px-2.5 pb-2.5">{children}</div>
+    </details>
+  );
+}
