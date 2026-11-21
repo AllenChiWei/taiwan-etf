@@ -72,11 +72,25 @@ export function NextDaySection() {
               </tr>
             );
           })}
+          {/* 2026-11-21 使用者：加上前收 ×1.1／×0.9（漲跌停價）—— 指數一天不可能超過，賣在這之外理論上碰不到 */}
+          <tr className="bg-sunken/50 text-right font-mono tabular-nums">
+            <td className="py-1.5 pr-2 text-left font-sans font-semibold text-ink">
+              漲跌停<div className="text-[10.5px] font-normal text-muted">前收 ×1.1／×0.9</div>
+            </td>
+            <td className="py-1.5 pr-2">
+              <div className="font-semibold text-up">{nf0.format(levelOf(close, m.limit))} <span className="text-[11px]">{pct(m.limit, 0)}</span></div>
+              <div className="text-[11px] text-muted">買權 {nf0.format(callStrikeAbove(levelOf(close, m.limit)))} 以上</div>
+            </td>
+            <td className="py-1.5">
+              <div className="font-semibold text-down">{nf0.format(levelOf(close, -m.limit))} <span className="text-[11px]">{pct(-m.limit, 0)}</span></div>
+              <div className="text-[11px] text-muted">賣權 {nf0.format(putStrikeBelow(levelOf(close, -m.limit)))} 以下</div>
+            </td>
+          </tr>
         </tbody>
       </table>
       <p className="mt-1 text-[11px] leading-snug text-faint">
         「99%」＝依過去同類型的日子，明天盤中最高有 99% 機會不超過這個數（最低同理）。
-        指數一天最多約 ±{(m.limit * 100).toFixed(0)}%（個股漲跌停）：{nf0.format(levelOf(close, m.limit))}／{nf0.format(levelOf(close, -m.limit))}。
+        「漲跌停」＝個股漲跌停 ±{(m.limit * 100).toFixed(0)}%，加權指數一天不會超過（實際上要所有權值股同時漲停／跌停才會碰到）。
         歷史最大：隔日最高 {pct(d.extremes.H.v)}（{d.extremes.H.d1}）、最低 {pct(d.extremes.L.v)}（{d.extremes.L.d1}）。
       </p>
 
