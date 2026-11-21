@@ -36,6 +36,7 @@ const ChipsPage = lazyRoute(() => import('./routes/ChipsPage'), m => m.ChipsPage
 const NewsPage = lazyRoute(() => import('./routes/NewsPage'), m => m.NewsPage);
 const SettlePage = lazyRoute(() => import('./routes/SettlePage'), m => m.SettlePage);
 const NextDayPage = lazyRoute(() => import('./routes/NextDayPage'), m => m.NextDayPage);
+const MarketPage = lazyRoute(() => import('./routes/MarketPage'), m => m.MarketPage);
 const MacroPage = lazyRoute(() => import('./routes/MacroPage'), m => m.MacroPage);
 const CalendarPage = lazyRoute(() => import('./routes/CalendarPage'), m => m.CalendarPage);
 const CbPage = lazyRoute(() => import('./routes/CbPage'), m => m.CbPage);
@@ -143,6 +144,12 @@ const settleRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settle',
   component: SettlePage,
+});
+
+const marketRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/market',
+  component: MarketPage,
 });
 
 const nextdayRoute = createRoute({
@@ -312,7 +319,7 @@ const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
 
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, compareRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
-   chipsRoute, settleRoute, nextdayRoute, newsRoute, macroRoute, calendarRoute, cbRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
+   chipsRoute, marketRoute, settleRoute, nextdayRoute, newsRoute, macroRoute, calendarRoute, cbRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
    v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, guideRoute, budgetRoute, dcaRoute, genRoute, maintRoute, meRoute, ...oldQbRoutes]);
 
 export const router = createRouter({

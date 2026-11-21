@@ -47,7 +47,9 @@ PS = [0.90, 0.95, 0.99, 0.995, 0.999]
 CHECK_YEARS = 3
 SERIES_DAYS = 500              # 通道推移圖：最近幾個交易日
 LIMIT = 0.10                     # 個股漲跌停 10%，指數一天不會超過
-MAINT_LOW = 160                  # 融資維持率低於這個數＝低維持率日（2026-11-21 研究：門檻 155～160 樣本外改善 95% 下緣）
+MAINT_LOW = 165                  # 大盤融資維持率（證交所口徑）低於這個數＝低維持率日；網站 11-07 起維持率一律證交所口徑，
+                                 # 研究的自算 160 換算（官方 ≈ 23.55＋0.885×自算）＝165＝籌碼頁「正常區」下緣 MAINT_T.calm
+MAINT_CALL = 139                 # 同上換算自算 140＝籌碼頁 MAINT_T.call（斷頭區）
 CHIPS_URL = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 ATM_PATH = os.path.join(ROOT, 'app', 'public', 'data', 'atm.json')
 
@@ -117,10 +119,11 @@ def quantile(xs, p):
 
 
 def load_maint():
-    u"""{日期: 大盤融資維持率}，從網站 chips.json 的 margin.maintHist（部署流程每天更新，2009 起）。抓不到回 {}（不做維持率調整）"""
+    u"""{日期: 大盤融資維持率（證交所口徑）}，從網站 chips.json 的 margin.keepHist（官方＋換算，2009 起；網站所有維持率都用這個）。
+    抓不到回 {}（不做維持率調整）"""
     try:
         doc = get_json(CHIPS_URL)
-        return dict((d, float(v)) for d, v in (doc.get('margin') or {}).get('maintHist') or [] if v)
+        return dict((r[0], float(r[1])) for r in (doc.get('margin') or {}).get('keepHist') or [] if r[1])
     except Exception as e:                                    # noqa: BLE001
         log(u'  ⚠ 融資維持率抓不到（%s），不做維持率調整' % str(e)[:60])
         return {}
@@ -344,10 +347,11 @@ def build(rows, hol, today=None, maint=None, iv=None):
             'value': m_now, 'date': md[-1], 'thr': MAINT_LOW, 'low': low_now,
             'factors': dict((str(p), [round(fac_all[p][0], 3), round(fac_all[p][1], 3)]) for p in PS),
             'lowDays': sum(1 for o in obs if o['low'] and o['reg'] != 'holiday'),
-            'below140': {'days': len([o for o in obs if o['m'] is not None and o['m'] < 140]),
-                         'avgC': round(sum(o['C'] for o in obs if o['m'] is not None and o['m'] < 140)
-                                       / max(1, len([o for o in obs if o['m'] is not None and o['m'] < 140])), 5)},
-            'source': u'網站籌碼資料 margin.maintHist（大盤融資維持率＝Σ融資餘額×收盤÷融資金額，2009 起）',
+            'below140': {'days': len([o for o in obs if o['m'] is not None and o['m'] < MAINT_CALL]),
+                         'avgC': round(sum(o['C'] for o in obs if o['m'] is not None and o['m'] < MAINT_CALL)
+                                       / max(1, len([o for o in obs if o['m'] is not None and o['m'] < MAINT_CALL])), 5)},
+            'call': MAINT_CALL,
+            'source': u'網站籌碼資料 margin.keepHist（大盤融資維持率，證交所口徑：官方＋換算，2009 起）',
         },
         'extremes': {'H': ext('H', max), 'L': ext('L', min), 'Cup': ext('C', max), 'Cdn': ext('C', min)},
     }

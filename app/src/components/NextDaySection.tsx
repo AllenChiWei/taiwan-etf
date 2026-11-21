@@ -191,7 +191,9 @@ function MaintBox({ d }: { d: NextdayData }) {
         </p>
       )}
       <p className="mt-1 text-[11px] text-faint">
-        維持率低於 140 的日子 2009 年起只有 {mt.below140.days} 天，隔日收盤平均 {pct(mt.below140.avgC, 2)}（斷頭賣完常反彈），樣本太少不另外調整。
+        {mt.below140.days > 0
+          ? <>維持率低於 {mt.call ?? 139}（斷頭區）的日子 2009 年起只有 {mt.below140.days} 天，隔日收盤平均 {pct(mt.below140.avgC, 2)}（斷頭賣完常反彈），樣本太少不另外調整。</>
+          : <>維持率（證交所口徑）2009 年起從沒跌破 {mt.call ?? 139}（斷頭區），真的跌破就是沒有歷史可參考的狀態；籌碼頁的研究顯示跌破斷頭區後多半是賣壓尾聲、但波動極大。</>}
       </p>
     </div>
   );

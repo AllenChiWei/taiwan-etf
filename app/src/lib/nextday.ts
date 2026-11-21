@@ -29,7 +29,9 @@ export interface NextMaint {
   /** {機率: [上緣係數, 下緣係數]}（全部歷史：低維持率日的倍數分位 ÷ 全部） */
   factors: Record<string, [number, number]>;
   lowDays: number;
+  /** 低於 call（斷頭區，證交所口徑 139）的日子；欄位名沿用 below140 */
   below140: { days: number; avgC: number };
+  call?: number;
 }
 
 export interface NextRecent {

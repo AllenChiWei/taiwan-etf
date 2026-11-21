@@ -23,7 +23,7 @@ import { CommandPalette } from './CommandPalette';
 const GROUPS = [
   { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/cb', label: '可轉債' }] },
   { key: '配息', tabs: [{ to: '/dividend', label: '配息' }] },
-  { key: '市場', tabs: [{ to: '/chips', label: '籌碼' }, { to: '/settle', label: '結算價' }, { to: '/nextday', label: '隔日漲跌' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
+  { key: '市場', tabs: [{ to: '/market', label: '總覽' }, { to: '/chips', label: '籌碼' }, { to: '/settle', label: '結算價' }, { to: '/nextday', label: '隔日漲跌' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
   { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/compare', label: '比對' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },
   { key: '其他', tabs: [{ to: '/poker', label: '撲克' }, { to: '/changelog', label: '更新' }, { to: '/about', label: '說明' }] },
 ] as const;
@@ -135,7 +135,7 @@ export function AppShell() {
                   <Link
                     key={t.to}
                     to={t.to}
-                    className={`flex shrink-0 items-center gap-1.5 border-b-2 px-2.5 py-2 text-[13.5px] font-semibold sm:px-3.5
+                    className={`flex shrink-0 items-center gap-1.5 border-b-2 px-[6px] py-2 text-[13.5px] font-semibold min-[400px]:px-2.5 sm:px-3.5
                       ${active ? 'border-accent text-ink' : 'border-transparent text-muted hover:text-ink'}`}
                     aria-current={active ? 'page' : undefined}
                   >
