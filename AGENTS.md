@@ -116,7 +116,7 @@ taiwan_etf_list.html    original single-file page, still served at its old URL
   both answer `Disallow: /` for everyone. FinMind (`Allow: /`, already used here) is
   the free Taiwan source we do use. Don't swap a source without reading its robots.
 - 主動式 ETF 換股 (`scripts/fetch_active_holdings.py` → `active_holdings.json`, committed): daily holdings
-  from each issuer's own site (統一、復華、中信、群益、元大、凱基、野村; 國泰 and 富邦 refuse bots — don't
+  from each issuer's own site (統一、復華、中信、群益、元大、凱基、野村、台新; 國泰、富邦 and 安聯 refuse bots — don't
   impersonate a browser). Since 2026-10-26 it also stores per-day VWAP/close (`px`, from TWSE `MI_INDEX` and
   TPEx `afterTrading/otc`), per-change valuation `v` = Δshares × VWAP (an **estimate** — share changes can be
   creations/redemptions), and a moving-average-cost book (`book`) that starts on its first priced snapshot and
