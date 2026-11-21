@@ -236,8 +236,10 @@ export interface ExpectedRange {
 
 /** 已經到期、可以驗收的一筆。 */
 export interface StraddleOutcome extends ExpectedRange {
-  /** 到期日收盤指數 */
+  /** 最後結算價（settle.json 有就用它；沒有才退回到期日收盤指數） */
   settle: number;
+  /** true = settle 是真正的最後結算價；false = 退回用到期日收盤 */
+  official: boolean;
   /** 實際走幅（絕對值，點） */
   moved: number;
   /** 實際走的方向：正為漲 */
@@ -275,6 +277,7 @@ export function expectedRange(
  */
 export function straddleOutcomes(
   rows: AtmRow[], taiex: Record<string, number>, series: Series, limit = 12,
+  settles: Record<string, number> = {},
 ): StraddleOutcome[] {
   const first = new Map<string, AtmRow>();
   for (const r of rows) {
@@ -285,7 +288,10 @@ export function straddleOutcomes(
   const out: StraddleOutcome[] = [];
   for (const row of first.values()) {
     const index = taiex[row.d];
-    const settle = taiex[row.e];
+    // 2026-11-21：答案改用最後結算價（settle.json）。到期日收盤和結算價可以差很多
+    // （11-20 收盤 36,033、結算價 35,840），選擇權實際是用結算價結算的。
+    const official = settles[row.e] > 0;
+    const settle = official ? settles[row.e] : taiex[row.e];
     // 還沒到期（或那天的指數還沒補到）就不算 —— 驗收只看已經有答案的
     if (!index || !settle) continue;
     const change = settle - index;
@@ -294,7 +300,7 @@ export function straddleOutcomes(
       day: row.d, series, contract: row.c, expiry: row.e, dte: row.dte,
       straddle: row.sum, index, low: index - row.sum, high: index + row.sum,
       pct: (row.sum / index) * 100,
-      settle, moved, change,
+      settle, official, moved, change,
       ratio: row.sum > 0 ? moved / row.sum : 0,
       inside: moved < row.sum,
     });
@@ -571,13 +577,14 @@ export interface WallOutcome {
 
 /**
  * 每個合約一筆驗收，新到舊。與 straddleOutcomes 同一條規則：取合約
- * **第一次成為最近到期那天**的支撐壓力，跟到期日收盤比。
+ * **第一次成為最近到期那天**的支撐壓力，跟最後結算價比（沒有結算價才用到期日收盤）。
  *
  * 支撐偶爾會高於壓力（Put 堆在較高的履約價），這時用兩者的高低當區間，
  * 不然「之間」根本不存在。
  */
 export function wallOutcomes(
   rows: AtmRow[], taiex: Record<string, number>, series: Series, limit = 12,
+  settles: Record<string, number> = {},
 ): WallOutcome[] {
   const first = new Map<string, AtmRow>();
   for (const r of rows) {
@@ -589,7 +596,7 @@ export function wallOutcomes(
   const out: WallOutcome[] = [];
   for (const row of first.values()) {
     const index = taiex[row.d];
-    const settle = taiex[row.e];
+    const settle = settles[row.e] > 0 ? settles[row.e] : taiex[row.e];
     if (!index || !settle) continue;
     const a = row.pw![0][0];
     const b = row.cw![0][0];
@@ -603,4 +610,80 @@ export function wallOutcomes(
   }
   out.sort((x, y) => (x.expiry < y.expiry ? 1 : x.expiry > y.expiry ? -1 : 0));
   return out.slice(0, limit);
+}
+
+// ── 賣價平雙賣抱到結算（2026-11-21）────────────────────────────────────────
+
+/** 一個合約、在到期前第 n 個交易日收盤賣出價平 Call＋Put，抱到最後結算 */
+export interface ShortStraddle {
+  contract: string;
+  series: Series;
+  /** 進場日（那天收盤） */
+  day: string;
+  expiry: string;
+  /** 價平履約價 */
+  k: number;
+  /** 收到的權利金（價平和） */
+  premium: number;
+  /** 最後結算價 */
+  settle: number;
+  /** |結算價 − 履約價|：到期要賠出去的 */
+  payout: number;
+  /** premium − payout（點／口，不含手續費、稅、滑價） */
+  pnl: number;
+}
+
+export interface ShortStraddleStat {
+  /** 到期前第幾個交易日進場 */
+  n: number;
+  count: number;
+  wins: number;
+  mean: number;
+  median: number;
+  worst: number;
+  best: number;
+  /** 賠出去的 ÷ 收到的，中位數；小於 1 代表一般情況賣方賺 */
+  medianRatio: number;
+}
+
+/**
+ * settles：{到期日: 最後結算價}（settle.json，只用真正的結算價）。
+ * 合約在到期前每個交易日各一列（換倉前是 r=1、換倉後是 r=0），從到期前一天往回數第 n 個。
+ * 新到舊。
+ */
+export function shortStraddles(
+  rows: AtmRow[], settles: Record<string, number>, n: number, series?: Series,
+): ShortStraddle[] {
+  const by = new Map<string, AtmRow[]>();
+  for (const r of rows) {
+    if (r.d >= r.e || !(settles[r.e] > 0) || (series && r.s !== series)) continue;
+    const list = by.get(r.c);
+    if (list) list.push(r); else by.set(r.c, [r]);
+  }
+  const out: ShortStraddle[] = [];
+  for (const list of by.values()) {
+    const days = [...new Map(list.map(r => [r.d, r])).values()].sort((a, b) => (a.d < b.d ? -1 : 1));
+    if (days.length < n) continue;
+    const r = days[days.length - n];
+    if (!(r.sum > 0) || !(r.k > 0)) continue;
+    const settle = settles[r.e];
+    const payout = Math.abs(settle - r.k);
+    out.push({ contract: r.c, series: r.s, day: r.d, expiry: r.e, k: r.k, premium: r.sum, settle, payout, pnl: r.sum - payout });
+  }
+  out.sort((a, b) => (a.expiry < b.expiry ? 1 : a.expiry > b.expiry ? -1 : a.contract < b.contract ? 1 : -1));
+  return out;
+}
+
+export function shortStraddleStat(list: ShortStraddle[], n: number): ShortStraddleStat | null {
+  if (!list.length) return null;
+  const pnl = list.map(x => x.pnl);
+  return {
+    n, count: list.length,
+    wins: pnl.filter(x => x > 0).length,
+    mean: pnl.reduce((a, b) => a + b, 0) / pnl.length,
+    median: median(pnl),
+    worst: Math.min(...pnl),
+    best: Math.max(...pnl),
+    medianRatio: median(list.map(x => x.payout / x.premium)),
+  };
 }

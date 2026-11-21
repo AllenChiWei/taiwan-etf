@@ -12,15 +12,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchAtm } from '../api/atm';
+import { fetchSettleHistory } from '../api/settle';
 import { Fold } from './Fold';
 import {
   weekdayAverages, latestOf, recentOf, weekdayOf,
   expectedRange, straddleOutcomes, summarise, weekdayNow,
-  latestWalls, wallOutcomes,
+  latestWalls, wallOutcomes, shortStraddles, shortStraddleStat,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmData, type AtmRow, type Basis, type Series,
   type ExpectedRange, type StraddleOutcome, type OutcomeSummary,
-  type WeekdayNow, type Walls, type WallOutcome,
+  type WeekdayNow, type Walls, type WallOutcome, type ShortStraddle, type ShortStraddleStat,
 } from '../lib/atm';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -255,6 +256,21 @@ export function AtmSection() {
   // 拿來比的窗口。60 是「最近三個月的同一個星期幾」，180 是「最近九個月」——
   // 窗口越長越該看佔指數的百分比，因為指數水位會漂移。
   const [lookback, setLookback] = useState(60);
+  // {到期日: 最後結算價}（settle.json）。驗收與賣方統計用；沒抓到時驗收退回到期日收盤
+  const [settles, setSettles] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const ac = new AbortController();
+    fetchSettleHistory(ac.signal)
+      .then(rs => {
+        if (ac.signal.aborted) return;
+        const m: Record<string, number> = {};
+        for (const r of rs) m[r.d] = r.fsp ?? r.settle;
+        setSettles(m);
+      })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -287,7 +303,11 @@ export function AtmSection() {
   const taiex = data.taiex ?? {};
   const ranges = SERIES.map(s => expectedRange(data.rows, taiex, s))
     .filter((r): r is ExpectedRange => r !== null);
-  const outcomes = straddleOutcomes(data.rows, taiex, detail, 8);
+  const outcomes = straddleOutcomes(data.rows, taiex, detail, 8, settles);
+  const shortN = [1, 2, 3, 5];
+  const shorts = shortN.map(n => shortStraddles(data.rows, settles, n));
+  const shortStats = shorts.map((l, i) => shortStraddleStat(l, shortN[i]))
+    .filter((x): x is ShortStraddleStat => x !== null);
   const walls = SERIES.map(s => latestWalls(data.rows, taiex, s))
     .filter((w): w is Walls => w !== null);
   const outcomeSum = summarise(outcomes);
@@ -335,7 +355,7 @@ export function AtmSection() {
           <div className="mt-2 grid gap-2 sm:grid-cols-2">
             {walls.map(w => (
               <WallsCard key={w.series} w={w}
-                         past={wallOutcomes(data.rows, taiex, w.series, 50)} />
+                         past={wallOutcomes(data.rows, taiex, w.series, 50, settles)} />
             ))}
           </div>
         </div>
@@ -448,11 +468,14 @@ export function AtmSection() {
           </h3>
           <p className="mt-0.5 text-[11px] text-faint">
             每個合約取<strong className="text-muted">第一次成為最近到期那天</strong>的
-            價平和，跟它到期當天的指數收盤比。樣本只有十幾週，看方向就好，不要當勝率用。
+            價平和，跟它的<strong className="text-muted">最後結算價</strong>比（還沒有結算價的用到期日收盤）。
+            樣本只有十幾週，看方向就好，不要當勝率用。
           </p>
           <OutcomeTable rows={outcomes} sum={outcomeSum} />
         </div>
       )}
+
+      {shortStats.length > 0 && <ShortStraddleBlock stats={shortStats} recent={shorts[0].slice(0, 8)} />}
 
       <Fold summary={<>價平和＝價平履約價的 Call＋Put（一般時段收盤價）</>}>
         價平履約價取 |Call−Put| 最小者，價平和為該履約價的 Call＋Put，採一般交易時段
@@ -461,5 +484,80 @@ export function AtmSection() {
         合約系列而不是到期日的星期。{data.meta.source}。
       </Fold>
     </section>
+  );
+}
+
+/** 賣價平雙賣抱到結算：到期前第 N 個交易日收盤賣出，結算時賠 |結算價 − 履約價|。 */
+function ShortStraddleBlock({ stats, recent }: { stats: ShortStraddleStat[]; recent: ShortStraddle[] }) {
+  const sign = (v: number) => `${v >= 0 ? '+' : '−'}${nf0.format(Math.abs(Math.round(v)))}`;
+  const tone = (v: number) => (v >= 0 ? 'text-up' : 'text-down');
+  const all = stats[0];
+  return (
+    <div id="sec-atm-short" className="mt-3 scroll-mt-16 rounded-lg border border-line bg-sunken/40 p-2.5">
+      <h3 className="text-[12.5px] font-bold text-ink">賣方抱到結算（價平 Call＋Put）</h3>
+      <p className="mt-0.5 text-[11px] leading-snug text-faint">
+        到期前第 N 個交易日收盤，賣出價平履約價的 Call 和 Put 各一口，一直抱到最後結算：
+        收進價平和，結算時賠出 |結算價 − 履約價|。週三、週五系列合併，點數／組，
+        <strong className="text-muted">不含手續費、稅、滑價</strong>。
+      </p>
+      <div className="mt-1.5 overflow-x-auto">
+        <table className="w-full min-w-[300px] text-[12px]">
+          <thead>
+            <tr className="text-right text-[11px] text-faint">
+              <th className="py-1 pr-2 text-left font-medium">進場</th>
+              <th className="py-1 pr-2 font-medium">次數</th>
+              <th className="py-1 pr-2 font-medium">賺的比例</th>
+              <th className="py-1 pr-2 font-medium">平均</th>
+              <th className="py-1 pr-2 font-medium">中位</th>
+              <th className="py-1 font-medium">最差</th>
+            </tr>
+          </thead>
+          <tbody>
+            {stats.map(s => (
+              <tr key={s.n} className="border-t border-line/60 text-right font-mono tabular-nums">
+                <td className="py-1 pr-2 text-left font-sans text-ink">到期前 {s.n} 日</td>
+                <td className="py-1 pr-2 text-muted">{s.count}</td>
+                <td className="py-1 pr-2 text-ink">{nf0.format((s.wins / s.count) * 100)}%</td>
+                <td className={`py-1 pr-2 font-semibold ${tone(s.mean)}`}>{sign(s.mean)}</td>
+                <td className={`py-1 pr-2 ${tone(s.median)}`}>{sign(s.median)}</td>
+                <td className="py-1 text-down">{sign(s.worst)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-muted">
+        賣方常常小賺，但偶爾一次大賠就吃掉好幾次（到期前 {all.n} 日：最差一次 {sign(all.worst)} 點、
+        賠出去÷收進來的中位數 {nf0.format(all.medianRatio * 100)}%）。看平均和最差，不要只看賺的比例。
+        樣本只有最近一年，涵蓋的行情有限。
+      </p>
+      {recent.length > 0 && (
+        <>
+          <div className="mt-2 text-[11.5px] font-semibold text-ink">最近 {recent.length} 次（到期前 1 日進場）</div>
+          <table className="mt-1 w-full text-[12px]">
+            <thead>
+              <tr className="text-right text-[11px] text-faint">
+                <th className="py-0.5 pr-2 text-left font-medium">到期</th>
+                <th className="py-0.5 pr-2 font-medium">履約價／收進</th>
+                <th className="py-0.5 pr-2 font-medium">結算價</th>
+                <th className="py-0.5 font-medium">損益</th>
+              </tr>
+            </thead>
+            <tbody>
+              {recent.map(r => (
+                <tr key={r.contract} className="border-t border-line/60 text-right font-mono tabular-nums">
+                  <td className="py-1 pr-2 text-left text-[11.5px] text-muted">
+                    {r.expiry.slice(5)} <span className="text-faint">{r.contract.slice(6) || '月'}</span>
+                  </td>
+                  <td className="py-1 pr-2 text-ink">{nf0.format(r.k)}／{nf0.format(r.premium)}</td>
+                  <td className="py-1 pr-2 text-muted">{nf0.format(r.settle)}</td>
+                  <td className={`py-1 font-semibold ${tone(r.pnl)}`}>{sign(r.pnl)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
+    </div>
   );
 }

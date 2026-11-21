@@ -8,7 +8,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import {
   weekdayOf, nextTradingDay, weekdayAverages, latestOf, recentOf, pickRow,
   expectedRange, straddleOutcomes, summarise, volComparison, weekdayNow,
-  latestWalls, wallOutcomes,
+  latestWalls, wallOutcomes, shortStraddles, shortStraddleStat,
   SERIES_LABEL, WEEKDAY_LABEL,
   type AtmRow, type AtmData, type AtmFilter,
 } from '../src/lib/atm.ts';
@@ -513,3 +513,60 @@ test('真實 atm.json 的支撐壓力欄位', { skip: !existsSync(new URL('../pu
       if (r.pw!.length) assert.ok(r.pw![0][1] <= r.poi!, `${r.d} ${r.c} 單一履約價比總未平倉大`);
     }
   });
+
+test('驗收改用最後結算價（2026-11-21）', async (t) => {
+  const idx = { '2026-09-17': 46288, '2026-09-23': 46800 };
+  const rows = [row({ d: '2026-09-17', c: '202609W4', e: '2026-09-23', dte: 6, sum: 968,
+                      cw: [[47000, 900]], pw: [[46000, 800]] })];
+  await t.test('有結算價就用結算價，official=true', () => {
+    const [o] = straddleOutcomes(rows, idx, 'wed', 12, { '2026-09-23': 47300 });
+    assert.equal(o.settle, 47300);
+    assert.equal(o.official, true);
+    assert.equal(o.moved, 1012);
+    assert.equal(o.inside, false);              // 用收盤 46800 會是「沒走出」，用結算價是走出去
+  });
+  await t.test('沒有結算價退回到期日收盤，official=false', () => {
+    const [o] = straddleOutcomes(rows, idx, 'wed', 12, {});
+    assert.equal(o.settle, 46800);
+    assert.equal(o.official, false);
+  });
+  await t.test('支撐壓力驗收也用結算價', () => {
+    assert.equal(wallOutcomes(rows, idx, 'wed', 12)[0].where, 'inside');
+    assert.equal(wallOutcomes(rows, idx, 'wed', 12, { '2026-09-23': 47300 })[0].where, 'above');
+  });
+});
+
+test('賣價平雙賣抱到結算', async (t) => {
+  const rows = [
+    row({ d: '2026-09-17', r: 1, c: '202609W4', e: '2026-09-23', k: 46000, sum: 1500 }),   // 換倉前也算
+    row({ d: '2026-09-18', r: 0, c: '202609W4', e: '2026-09-23', k: 46200, sum: 1200 }),
+    row({ d: '2026-09-22', r: 0, c: '202609W4', e: '2026-09-23', k: 46400, sum: 600 }),
+    row({ d: '2026-09-23', r: 0, c: '202609W4', e: '2026-09-23', dte: 0, k: 46600, sum: 20 }),  // 到期當天不算
+    row({ d: '2026-09-22', s: 'fri', c: '202609F4', e: '2026-09-25', k: 46400, sum: 900 }),     // 沒結算價
+  ];
+  const settles = { '2026-09-23': 46900 };
+  await t.test('從到期前一天往回數第 n 個交易日', () => {
+    const [a] = shortStraddles(rows, settles, 1);
+    assert.equal(a.day, '2026-09-22');
+    assert.equal(a.payout, 500);
+    assert.equal(a.pnl, 100);
+    const [c] = shortStraddles(rows, settles, 3);
+    assert.equal(c.day, '2026-09-17');
+    assert.equal(c.pnl, 1500 - 900);
+    assert.equal(shortStraddles(rows, settles, 4).length, 0);
+  });
+  await t.test('沒有結算價的合約不算；可以只看一個系列', () => {
+    assert.equal(shortStraddles(rows, settles, 1).length, 1);
+    assert.equal(shortStraddles(rows, settles, 1, 'fri').length, 0);
+  });
+  await t.test('彙總', () => {
+    const list = [...shortStraddles(rows, settles, 1), ...shortStraddles(rows, settles, 2)];
+    const st = shortStraddleStat(list, 1)!;
+    assert.equal(st.count, 2);
+    assert.equal(st.wins, 2);                    // +100、1200−700=+500
+    assert.equal(st.mean, 300);
+    assert.equal(st.worst, 100);
+    assert.equal(st.best, 500);
+    assert.equal(shortStraddleStat([], 1), null);
+  });
+});
