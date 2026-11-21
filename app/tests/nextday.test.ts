@@ -78,3 +78,11 @@ test('真實資料：維持率低時通道只會放寬、係數 ≥ 1', { skip: 
     if (!d.maint.low) { assert.equal(b.up, b.up0); assert.equal(b.dn, b.dn0); }
   }
 });
+
+test('真實資料：日波動＝EWMA 和選擇權隱含取大；取大後隱含波動那段 95% 突破率不比只用 EWMA 差太多', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
+  const d = JSON.parse(readFileSync(PATH, 'utf8')) as NextdayData;
+  if (d.meta.sigmaE === undefined) return;
+  assert.ok(Math.abs(d.meta.sigma - Math.max(d.meta.sigmaE, d.meta.sigmaIv ?? 0)) < 1e-4);
+  const g = d.iv?.check.find(c => c.p === 0.95);
+  if (g) assert.ok(g.up <= g.upE + 1e-9 && g.dn <= g.dnE + 1e-9, '取大只會更寬，突破率不會變高');
+});

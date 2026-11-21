@@ -43,7 +43,9 @@ export function NextDaySection() {
         以 {dayLabel(m.date)} 收盤 <b className="font-mono text-ink">{nf0.format(close)}</b> 為基準，
         看下一個交易日 <b className="text-ink">{dayLabel(m.next)}</b>
         {m.regime !== 'normal' && <span className="ml-1 rounded bg-sunken px-1.5 py-0.5 text-[11px] text-ink">{REGIME_LABEL[m.regime]}，波動通常比較大</span>}
-        。近期波動（EWMA 日標準差）<b className="font-mono text-ink">{(m.sigma * 100).toFixed(2)}%</b>。
+        。日波動取 <b className="font-mono text-ink">{(m.sigma * 100).toFixed(2)}%</b>
+        {m.sigmaE !== undefined && <>（近期實際 EWMA {(m.sigmaE * 100).toFixed(2)}%、選擇權隱含 {m.sigmaIv ? `${(m.sigmaIv * 100).toFixed(2)}%` : '—'}，取較大）</>}。
+        {m.sigmaIv && m.sigmaE !== undefined && m.sigmaIv > m.sigmaE * 1.1 && <b className="ml-1 text-ink">選擇權報價比實際波動貴（市場恐慌），通道已跟著放寬。</b>}
       </p>
 
       {m && d.maint && d.maint.value != null && <MaintBox d={d} />}
@@ -96,6 +98,18 @@ export function NextDaySection() {
         歷史最大：隔日最高 {pct(d.extremes.H.v)}（{d.extremes.H.d1}）、最低 {pct(d.extremes.L.v)}（{d.extremes.L.d1}）。
       </p>
 
+      {d.iv && d.iv.check.length > 0 && (() => {
+        const g95 = d.iv!.check.find(c => c.p === 0.95), g99 = d.iv!.check.find(c => c.p === 0.99);
+        const p1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+        return g95 && g99 ? (
+          <p className="mt-1.5 rounded-lg bg-sunken/60 px-2.5 py-1.5 text-[11.5px] text-muted">
+            <b className="text-ink">加入選擇權隱含波動</b>（恐慌指數的同一種東西：價平和反推的預期波動）：{d.iv!.from} 起 {d.iv!.days} 天，
+            95% 區間被突破 只用實際波動 上 {p1(g95.upE)}／下 {p1(g95.dnE)} → 取大 上 {p1(g95.up)}／下 {p1(g95.dn)}；
+            99% {p1(g99.upE)}／{p1(g99.dnE)} → {p1(g99.up)}／{p1(g99.dn)}（應各 5%、1%）。預測隔日振幅的解釋力 R² 0.40，只用實際波動 0.16。
+          </p>
+        ) : null;
+      })()}
+
       {c95 && c99 && (
         <p className="mt-1.5 rounded-lg bg-sunken/60 px-2.5 py-1.5 text-[11.5px] text-muted">
           <b className="text-ink">準不準</b>：用 {m.checkFrom} 以後 {m.checkDays} 天做樣本外驗證（只用當時以前的資料算），
@@ -139,8 +153,7 @@ export function NextDaySection() {
       </table>
 
       <p className="mt-2 text-[11px] leading-snug text-faint">
-        方法：{m.since.slice(0, 4)} 年起每一天「隔日最高、最低 ÷ 今收」除以當天的 EWMA 日標準差（λ 0.94）取分位數，
-        再乘上今天的標準差；一般交易日、跨週末、連假後各用自己那一組（99% 倍數 一般 {m.mult99.normal[0]}／{m.mult99.normal[1]}、
+        方法：{m.since.slice(0, 4)} 年起每一天「隔日最高、最低 ÷ 今收」除以當天的 EWMA 日標準差（λ 0.94）取分位數，再乘上今天的日波動（EWMA 和選擇權隱含取大；布林通道寬度＝20 日標準差，研究時比 EWMA 不準所以不用；美國 VIX 也比較差）；一般交易日、跨週末、連假後各用自己那一組（99% 倍數 一般 {m.mult99.normal[0]}／{m.mult99.normal[1]}、
         跨週末 {m.mult99.weekend[0]}／{m.mult99.weekend[1]}、連假 {m.mult99.holiday[0]}／{m.mult99.holiday[1]} 倍標準差；連假樣本只有 {m.counts.holiday} 天）。
         週選到期結算看的是結算價（13:00～13:30 平均），盤中最高最低影響的是保證金與停損。履約價以 50 點取整，實際掛牌以期交所為準。僅供參考，不構成投資建議。
       </p>

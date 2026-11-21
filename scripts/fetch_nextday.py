@@ -49,6 +49,7 @@ SERIES_DAYS = 500              # 通道推移圖：最近幾個交易日
 LIMIT = 0.10                     # 個股漲跌停 10%，指數一天不會超過
 MAINT_LOW = 160                  # 融資維持率低於這個數＝低維持率日（2026-11-21 研究：門檻 155～160 樣本外改善 95% 下緣）
 CHIPS_URL = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
+ATM_PATH = os.path.join(ROOT, 'app', 'public', 'data', 'atm.json')
 
 
 def log(m):
@@ -125,7 +126,26 @@ def load_maint():
         return {}
 
 
-def build(rows, hol, today=None, maint=None):
+def load_iv():
+    u"""{日期: 選擇權隱含的日波動}，從 atm.json（同一步驟剛更新）：最近到期合約（r＝0、未到期、配對夠）的價平和
+    ÷ (0.8 × 加權指數 × √到期交易日數)（ATM 跨式 ≈ 0.8·S·σ·√T；日曆天 × 5/7 當交易日）。週三、週五兩個系列取較小（較近的）。
+    2026-11-21 研究（D:/ai/_tmp/scripts_iso/nextday_iv_study.py）：預測隔日振幅 R² 0.40，EWMA 0.16；美國 VIX 比 EWMA 差（不用）"""
+    try:
+        atm = json.load(io.open(ATM_PATH, encoding='utf-8'))
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  ⚠ atm.json 讀不到（%s），不用隱含波動' % str(e)[:60])
+        return {}
+    tx = atm.get('taiex') or {}
+    out = {}
+    for r in atm.get('rows') or []:
+        if r.get('r') != 0 or (r.get('dte') or 0) <= 0 or r.get('thin') or r.get('d') not in tx or not r.get('sum'):
+            continue
+        s = r['sum'] / (0.8 * tx[r['d']] * math.sqrt(max(1.0, r['dte'] * 5.0 / 7)))
+        out[r['d']] = min(out.get(r['d'], 9.0), s)
+    return out
+
+
+def build(rows, hol, today=None, maint=None, iv=None):
     n = len(rows)
     ds = [r[0] for r in rows]
     cl = [r[3] for r in rows]
@@ -183,7 +203,11 @@ def build(rows, hol, today=None, maint=None):
     last = date.fromisoformat(ds[-1])
     nxt = next_trading_day(last, hol)
     reg = regime_of((nxt - last).days)
-    s = sig[-1]
+    # 波動＝EWMA 和選擇權隱含波動取大（2026-11-21：216 天樣本外 90/95/99% 突破率最接近名目，寬度 +10%）；沒有隱含波動就是 EWMA
+    iv = iv or {}
+    s_e = sig[-1]
+    iv_now = iv.get(ds[-1])
+    s = max(s_e, iv_now) if iv_now else s_e
     cnt, z = zs[reg]
     fac_all = mfac(obs)
     m_now = mt[-1]
@@ -194,7 +218,22 @@ def build(rows, hol, today=None, maint=None):
         fu, fd = fac_all[p] if low_now else (1.0, 1.0)
         bands.append({'p': p, 'up': round(min(up * fu * s, LIMIT), 5), 'dn': round(max(dn * fd * s, -LIMIT), 5),
                       'c': round(min(cc * max(fu, fd) * s, LIMIT), 5),
-                      'up0': round(min(up * s, LIMIT), 5), 'dn0': round(max(dn * s, -LIMIT), 5)})
+                      'up0': round(min(up * s, LIMIT), 5), 'dn0': round(max(dn * s, -LIMIT), 5),
+                      'upE': round(min(up * s_e, LIMIT), 5), 'dnE': round(max(dn * s_e, -LIMIT), 5)})
+
+    # 隱含波動的驗證：有隱含波動的那些天（atm.json 起），倍數只用那之前的資料，比 EWMA 與取大各被突破多少
+    iv_check = []
+    iv_obs = [o for o in obs if o['d'] in iv and o['reg'] != 'holiday']
+    if iv_obs:
+        first = min(o['d'] for o in iv_obs)
+        zpre = dict((r, zq([o for o in obs if o['d1'] < first], r)[1]) for r in ('normal', 'weekend'))
+        for p in (0.90, 0.95, 0.99):
+            def rate(fn):
+                return (round(sum(1 for o in iv_obs if o['H'] > zpre[o['reg']][p][0] * fn(o)) / len(iv_obs), 4),
+                        round(sum(1 for o in iv_obs if o['L'] < zpre[o['reg']][p][1] * fn(o)) / len(iv_obs), 4))
+            ue, de = rate(lambda o: o['s'])
+            um, dm = rate(lambda o: max(o['s'], iv[o['d']]))
+            iv_check.append({'p': p, 'upE': ue, 'dnE': de, 'up': um, 'dn': dm})
 
     # 樣本外驗證：最近 CHECK_YEARS 年，用之前的資料算倍數（含維持率係數）；另外看測試期裡低維持率那些天，加維持率前後各被突破多少
     split = (last - timedelta(days=365 * CHECK_YEARS)).isoformat()
@@ -264,7 +303,8 @@ def build(rows, hol, today=None, maint=None):
         if j > start:
             learn(obs[j - 1])                          # 前一天的答案今天收盤時已經知道
         base = cl[o['i']]
-        ch = channel(o['reg'], o['s'], base, o['low'])
+        s_o = max(o['s'], iv[o['d']]) if o['d'] in iv else o['s']
+        ch = channel(o['reg'], s_o, base, o['low'])
         series.append(dict({'d': o['d1'], 'b': base, 'h': rows[o['i'] + 1][1], 'l': rows[o['i'] + 1][2],
                             'c': cl[o['i'] + 1], 'r': o['reg'][0], 'mt': o['m']}, **ch))
         if j >= len(obs) - 10:
@@ -284,7 +324,7 @@ def build(rows, hol, today=None, maint=None):
         'meta': {
             'updated': (today or datetime.now(TPE).date()).isoformat(),
             'date': ds[-1], 'close': cl[-1], 'next': nxt.isoformat(), 'gap': (nxt - last).days, 'regime': reg,
-            'sigma': round(s, 5), 'lambda': LAMBDA, 'since': ds[0], 'samples': cnt,
+            'sigma': round(s, 5), 'sigmaE': round(s_e, 5), 'sigmaIv': round(iv_now, 5) if iv_now else None, 'lambda': LAMBDA, 'since': ds[0], 'samples': cnt,
             'counts': dict((r, zs[r][0]) for r in regs),
             'mult99': dict((r, [round(zs[r][1][0.99][0], 3), round(zs[r][1][0.99][1], 3)]) for r in regs),
             'limit': LIMIT, 'checkFrom': split, 'checkDays': len(test),
@@ -297,6 +337,9 @@ def build(rows, hol, today=None, maint=None):
         # r＝n 一般／w 跨週末／h 連假。最後一列是明天（f＝1，沒有 h/l/c）
         'series': series + [dict({'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1, 'mt': m_now}, **channel(reg, s, cl[-1], low_now))],
         # 融資維持率（2026-11-21 使用者：維持率太低會加速破低）：低於 thr 時上下緣都乘放大係數（低維持率日的倍數分位 ÷ 全部）
+        # 選擇權隱含波動（2026-11-21 使用者：加恐慌指數；臺指 VIX 長期歷史要向期交所申請，改用 atm.json 價平和反推、同一種東西）
+        'iv': {'days': len(iv_obs), 'from': min((o['d'] for o in iv_obs), default=None), 'check': iv_check,
+               'note': u'σ＝max(EWMA, 價平和隱含)；價平和 ÷ (0.8 × 指數 × √到期交易日)'},
         'maint': {
             'value': m_now, 'date': md[-1], 'thr': MAINT_LOW, 'low': low_now,
             'factors': dict((str(p), [round(fac_all[p][0], 3), round(fac_all[p][1], 3)]) for p in PS),
@@ -316,12 +359,12 @@ def main():
     except Exception as e:                                    # noqa: BLE001
         log(u'⚠ 加權指數日線抓不到（%s），nextday.json 保留前一版' % str(e)[:80])
         return 0
-    doc = build(rows, holidays(), maint=load_maint())
+    doc = build(rows, holidays(), maint=load_maint(), iv=load_iv())
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')))
     m = doc['meta']
     b99 = next(b for b in doc['bands'] if b['p'] == 0.99)
-    log(u'%s：%s 收 %.2f → 下一個交易日 %s（%s，EWMA %.2f%%）；99%% 最高 %+.2f%%、最低 %+.2f%%；'
+    log(u'%s：%s 收 %.2f → 下一個交易日 %s（%s，日波動 %.2f%%＝EWMA 與隱含取大）；99%% 最高 %+.2f%%、最低 %+.2f%%；'
         u'樣本外 99%% 突破 上 %.2f%%／下 %.2f%%'
         % (OUT, m['date'], m['close'], m['next'], m['regime'], m['sigma'] * 100, b99['up'] * 100, b99['dn'] * 100,
            doc['check'][2]['up'] * 100, doc['check'][2]['dn'] * 100))

@@ -41,7 +41,8 @@ export interface NextRecent {
 export interface NextdayData {
   meta: {
     updated: string; date: string; close: number; next: string; gap: number; regime: Regime;
-    sigma: number; since: string; samples: number; limit: number;
+    /** 實際用的日波動＝max(EWMA, 選擇權隱含)；sigmaE＝EWMA、sigmaIv＝價平和反推（沒有＝null） */
+    sigma: number; sigmaE?: number; sigmaIv?: number | null; since: string; samples: number; limit: number;
     counts: Record<Regime, number>; mult99: Record<Regime, [number, number]>;
     checkFrom: string; checkDays: number; source: string;
   };
@@ -49,6 +50,8 @@ export interface NextdayData {
   /** lowUp0／lowDn0＝測試期裡低維持率那些天、沒加維持率係數時的突破率；lowUp／lowDn＝加了之後 */
   check: Array<{ p: number; up: number; dn: number; lowUp0?: number; lowDn0?: number; lowUp?: number; lowDn?: number }>;
   maint?: NextMaint;
+  /** 選擇權隱含波動的驗證：有隱含波動的那些天，EWMA（upE/dnE）與取大（up/dn）各被突破多少 */
+  iv?: { days: number; from: string | null; check: Array<{ p: number; upE: number; dnE: number; up: number; dn: number }> };
   recent: NextRecent[];
   extremes: Record<'H' | 'L' | 'Cup' | 'Cdn', { v: number; d: string; d1: string }>;
   /** 通道推移：每一天（被預測的那天）當時估的通道（點位）與實際；最後一列是明天（f＝1，沒有 h/l/c） */
