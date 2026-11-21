@@ -78,5 +78,7 @@ Call 取價平以上、Put 取價平以下 —— 沒過濾時剛掛牌的薄合
 - `scripts/fetch_nextday.py` → `nextday.json`：FinMind TAIEX 日線（2000 起），隔日最高／最低／收盤 ÷ 今收，
   除以當天 EWMA 日標準差（λ 0.94）取分位數、乘上今天的標準差；一般／跨週末（差 3 天）／連假（≥4 天）分組，
   下一個交易日用證交所休市日 OpenAPI 判斷。附最近 3 年樣本外突破率（99% 約 1.4～1.8%）與最近 10 天對照。
+  `series`＝最近 500 個交易日每天「前一天收盤時只用當時以前資料」估的通道（點位）＋實際高低收，最後一列是明天（`f:1`）。
+  網站：獨立頁 `#/nextday`（市場 → 隔日漲跌；NextDaySection＋NextDayChannel 通道推移圖），結算價頁頂端有連結。
   研究比較（全歷史分位數、20 日標準差、EWMA）在 `D:/ai/_tmp/scripts_iso/nextday_study.py`。
 - 兩支都 `|| echo ::warning`，失敗不擋價平和；site-data-check 會看 settle.json（比最近已過的結算日）與 nextday.json（每日）。
