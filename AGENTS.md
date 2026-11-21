@@ -28,6 +28,8 @@ scripts/                Python pipeline: scrape → etfs.json + legacy HTML
   fetch_stocks.py         per-stock fundamentals (accumulated) + chips → stocks/
   fetch_highs.py          150/200/250-day highs + returns → highs.json
   fetch_atm.py            weekly-option ATM straddle → atm.json (accumulated, committed)
+  fetch_settle.py         TXO final settlement history → settle.json (same workflow step, warn-only)
+  fetch_nextday.py        next-day TAIEX high/low bands (EWMA-scaled quantiles) → nextday.json (same step)
 tools/                  dev helpers (headless screenshots, static server)
 taiwan_etf_list.html    original single-file page, still served at its old URL
 .github/workflows/      daily data update, Pages deploy
