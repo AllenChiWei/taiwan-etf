@@ -1,0 +1,125 @@
+/* 隔日加權指數漲跌幅（結算價頁，2026-11-21 使用者：做選擇權用，知道隔天最多漲／跌到哪，去賣嚴重偏離的履約價）。
+ * 數字由 scripts/fetch_nextday.py 每天算好放 nextday.json；方法與驗證見 lib/nextday.ts、腳本檔頭。 */
+
+import { useEffect, useState } from 'react';
+import {
+  REGIME_LABEL, breached, callStrikeAbove, levelOf, putStrikeBelow, type NextdayData,
+} from '../lib/nextday';
+import { WEEKDAY_LABEL, weekdayOf } from '../lib/atm';
+
+const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
+const pct = (v: number, d = 1) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)}%`;
+const prob = (p: number) => `${(p * 100).toFixed(p >= 0.995 ? 1 : 0)}%`;
+
+function dayLabel(iso: string): string {
+  const wd = weekdayOf(iso);
+  return `${iso.slice(5).replace('-', '/')}${wd === null ? '' : `（${WEEKDAY_LABEL[wd]}）`}`;
+}
+
+export function NextDaySection() {
+  const [d, setD] = useState<NextdayData | null>(null);
+  useEffect(() => {
+    const ac = new AbortController();
+    fetch(`${import.meta.env.BASE_URL}data/nextday.json`, { signal: ac.signal, cache: 'no-cache' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (!ac.signal.aborted && j?.bands) setD(j as NextdayData); })
+      .catch(() => {});
+    return () => ac.abort();
+  }, []);
+  if (!d) return null;
+  const m = d.meta;
+  const close = m.close;
+  const c95 = d.check.find(c => c.p === 0.95);
+  const c99 = d.check.find(c => c.p === 0.99);
+
+  return (
+    <section id="sec-nextday" className="mt-3 scroll-mt-16 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <h2 className="text-sm font-bold text-ink">隔日漲跌幅：明天加權指數可能到哪</h2>
+        <span className="text-[11.5px] text-faint">{m.date} 收盤</span>
+      </div>
+      <p className="mt-1 text-[12px] text-muted">
+        以 {dayLabel(m.date)} 收盤 <b className="font-mono text-ink">{nf0.format(close)}</b> 為基準，
+        看下一個交易日 <b className="text-ink">{dayLabel(m.next)}</b>
+        {m.regime !== 'normal' && <span className="ml-1 rounded bg-sunken px-1.5 py-0.5 text-[11px] text-ink">{REGIME_LABEL[m.regime]}，波動通常比較大</span>}
+        。近期波動（EWMA 日標準差）<b className="font-mono text-ink">{(m.sigma * 100).toFixed(2)}%</b>。
+      </p>
+
+      <table className="mt-2 w-full text-[12px]">
+        <thead>
+          <tr className="text-right text-[11px] text-faint">
+            <th className="py-1 pr-2 text-left font-medium">機率</th>
+            <th className="py-1 pr-2 font-medium">最高不超過<br />（賣買權 ≥）</th>
+            <th className="py-1 font-medium">最低不跌破<br />（賣賣權 ≤）</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {d.bands.map(b => {
+            const hi = levelOf(close, b.up), lo = levelOf(close, b.dn);
+            const capHi = b.up >= m.limit - 1e-9, capLo = b.dn <= -m.limit + 1e-9;
+            return (
+              <tr key={b.p} className="text-right font-mono tabular-nums">
+                <td className="py-1.5 pr-2 text-left font-sans font-semibold text-ink">{prob(b.p)}</td>
+                <td className="py-1.5 pr-2">
+                  <div className="text-up">{nf0.format(hi)} <span className="text-[11px]">{pct(b.up)}</span></div>
+                  <div className="text-[11px] text-muted">{capHi ? '到漲停上限' : `買權 ${nf0.format(callStrikeAbove(hi))} 以上`}</div>
+                </td>
+                <td className="py-1.5">
+                  <div className="text-down">{nf0.format(lo)} <span className="text-[11px]">{pct(b.dn)}</span></div>
+                  <div className="text-[11px] text-muted">{capLo ? '到跌停下限' : `賣權 ${nf0.format(putStrikeBelow(lo))} 以下`}</div>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      <p className="mt-1 text-[11px] leading-snug text-faint">
+        「99%」＝依過去同類型的日子，明天盤中最高有 99% 機會不超過這個數（最低同理）。
+        指數一天最多約 ±{(m.limit * 100).toFixed(0)}%（個股漲跌停）：{nf0.format(levelOf(close, m.limit))}／{nf0.format(levelOf(close, -m.limit))}。
+        歷史最大：隔日最高 {pct(d.extremes.H.v)}（{d.extremes.H.d1}）、最低 {pct(d.extremes.L.v)}（{d.extremes.L.d1}）。
+      </p>
+
+      {c95 && c99 && (
+        <p className="mt-1.5 rounded-lg bg-sunken/60 px-2.5 py-1.5 text-[11.5px] text-muted">
+          <b className="text-ink">準不準</b>：用 {m.checkFrom} 以後 {m.checkDays} 天做樣本外驗證（只用當時以前的資料算），
+          95% 區間實際被突破 上 {prob(c95.up)}／下 {prob(c95.dn)}（應各 5%），
+          99% 區間 上 {prob(c99.up)}／下 {prob(c99.dn)}（應各 1%）—— 極端行情比歷史稍多，賣得太近要留餘裕。
+        </p>
+      )}
+
+      <h3 className="mt-3 text-[12.5px] font-bold text-ink">最近 10 天：實際 vs 當時的 95% 區間</h3>
+      <table className="mt-1 w-full text-[12px]">
+        <thead>
+          <tr className="text-right text-[11px] text-faint">
+            <th className="py-0.5 pr-2 text-left font-medium">隔日</th>
+            <th className="py-0.5 pr-2 font-medium">實際 高／低</th>
+            <th className="py-0.5 pr-2 font-medium">95% 區間</th>
+            <th className="py-0.5 font-medium">結果</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {[...d.recent].reverse().map(r => {
+            const b95 = breached(r, 95), b99 = breached(r, 99);
+            return (
+              <tr key={r.d} className="text-right font-mono tabular-nums">
+                <td className="py-1 pr-2 text-left font-sans text-ink">{dayLabel(r.d1)}</td>
+                <td className="py-1 pr-2"><span className="text-up">{pct(r.H)}</span>／<span className="text-down">{pct(r.L)}</span></td>
+                <td className="py-1 pr-2 text-muted">{pct(r.up95)}／{pct(r.dn95)}</td>
+                <td className="py-1 font-sans text-[11.5px]">
+                  {b99 ? <b className="text-ink">破 99%</b> : b95 ? <b className="text-ink">破 95%</b> : <span className="text-muted">在內</span>}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      <p className="mt-2 text-[11px] leading-snug text-faint">
+        方法：{m.since.slice(0, 4)} 年起每一天「隔日最高、最低 ÷ 今收」除以當天的 EWMA 日標準差（λ 0.94）取分位數，
+        再乘上今天的標準差；一般交易日、跨週末、連假後各用自己那一組（99% 倍數 一般 {m.mult99.normal[0]}／{m.mult99.normal[1]}、
+        跨週末 {m.mult99.weekend[0]}／{m.mult99.weekend[1]}、連假 {m.mult99.holiday[0]}／{m.mult99.holiday[1]} 倍標準差；連假樣本只有 {m.counts.holiday} 天）。
+        週選到期結算看的是結算價（13:00～13:30 平均），盤中最高最低影響的是保證金與停損。履約價以 50 點取整，實際掛牌以期交所為準。僅供參考，不構成投資建議。
+      </p>
+    </section>
+  );
+}
