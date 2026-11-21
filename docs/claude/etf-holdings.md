@@ -37,6 +37,18 @@
 - **凱基**：robots 沒有限制。`POST /Fund/RedemptionVC fundID=J024` 回 HTML 片段，持股日期是
   「(YYYY/MM/DD)每受益權單位淨資產價值」的括號；基金代碼從下拉選單用簡稱對。
 
+- **台新**（2026-11-21）：robots.txt 只有 Googlebot／AdsBot 的規則。`GET /ETF/Home/Pcf/{代號}?FundType=ALL&DataDate=公告日`
+  回整頁 HTML，持股表四欄＝代號（`2330 TT`、`GOOGL US`）、名稱、股數、權重；期貨表是名稱、契約年月、口數、權重。
+  持股日期是「YYYY/MM/DD每基數實際申購總價金」那個日期（公告日的前一個交易日；全球型 00986A 再晚一天）。
+  網址直接用證券代號，不用查內部碼。
+
+**2026-11-21 逐家查過、還沒接的**（依市值）：安聯 00984A／00993A／00412A／00402A **做不到** —— 資料在
+`allianzetf.webtech888.com/webapi/Fund/GetFundAssets`（robots 對一般程式 Allow、`Content-Signal: use=reference`），
+但 Cloudflare 對非瀏覽器一律 403，不偽裝。兆豐 00996A（megafunds 沒有 robots.txt）、摩根 00401A／00989A
+（jpmrich 沒有 robots.txt）、聯博 00404A（abfunds 只擋系統目錄）、第一金 00994A／00408A（fsitc 沒有 robots.txt）、
+施羅德 00419A：robots 都沒擋，**還沒拆 API**，下一個接時從這裡開始。永豐 00410A、玉山 00413A 的網域還沒找到
+（sinopacfunds.com.tw、esunam.com.tw 查不到 DNS）。查法腳本：`D:/ai/_tmp/scripts_iso/active_robots.py`、`active_uncovered.py`（暫存，可能被清掉）。
+
 **國泰（00400A）、富邦（00405A）做不到**，兩檔都在市值前十：cathaysite.com.tw 對表明身分的 UA 連 robots.txt 都回 403。富邦也
 一樣（`Disallow: /`）。統一的 robots.txt 會轉址回自己，看起來像擋程式，實際上是 cookie 檢查。
 

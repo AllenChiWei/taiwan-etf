@@ -28,6 +28,12 @@ t187ap47_L 的發行單位數 × STOCK_DAY_ALL 的收盤價，兩個請求。排
     元大  yuantaetfs.com      robots.txt `Allow: /`；etfapi.yuantaetfs.com/ectranslation/api/bridge
                               ?FuncId=PCF/Daily&ticker=（就是證券代號）
     凱基  kgifund.com.tw      robots.txt 沒有限制；POST /Fund/RedemptionVC fundID=J024，回 HTML 片段
+    台新  tsit.com.tw         robots.txt 只有 Googlebot／AdsBot 的規則（2026-11-21 查）；
+                              GET /ETF/Home/Pcf/{代號}?FundType=ALL&DataDate=公告日，回整頁 HTML
+
+**2026-11-21 查過、不接的**：安聯（etf.allianzgi.com.tw 的資料在 allianzetf.webtech888.com/webapi，
+robots.txt 對一般程式 Allow，但 Cloudflare 對非瀏覽器一律 403，不偽裝）。摩根、第一金、兆豐、聯博、
+永豐、玉山、施羅德的 robots.txt 沒有擋持股頁，還沒拆它們的 API（見 CLAUDE.md 待辦）。
 
 各家網站內部的基金代碼（統一 49YTW、復華 ETF23、中信 E0038、群益 399、凱基 J024）
 不寫死，每次從各家的基金清單查（resolve_ids）—— 市值前十會換人，寫死就跟不上。查到的
@@ -97,7 +103,8 @@ PICKED = ['00981A', '00988A', '00409A', '00411A', '00406A', '00991A', '00400A', 
 TOP_N = 10
 
 ISSUER_NAME = {'ezmoney': u'統一投信', 'fhtrust': u'復華投信', 'ctbc': u'中國信託投信',
-               'capital': u'群益投信', 'yuanta': u'元大投信', 'kgi': u'凱基投信', 'nomura': u'野村投信'}
+               'capital': u'群益投信', 'yuanta': u'元大投信', 'kgi': u'凱基投信', 'nomura': u'野村投信',
+               'tsit': u'台新投信'}
 # 已知的網站內部代碼，最底層的備援（各家清單都查不到、也沒有上次的紀錄時用）
 KNOWN_IDS = {
     '00981A': ('ezmoney', '49YTW'), '00988A': ('ezmoney', '61YTW'), '00411A': ('ezmoney', '64YTW'),
@@ -106,11 +113,12 @@ KNOWN_IDS = {
 }
 # 從 ETF 簡稱（「主動統一台股增長」）認投信
 ISSUER_BY_NAME = [(u'統一', 'ezmoney'), (u'復華', 'fhtrust'), (u'中信', 'ctbc'), (u'群益', 'capital'),
-                  (u'元大', 'yuanta'), (u'凱基', 'kgi'), (u'野村', 'nomura')]
+                  (u'元大', 'yuanta'), (u'凱基', 'kgi'), (u'野村', 'nomura'), (u'台新', 'tsit')]
 # 做不到的投信與原因。其他沒接的投信會標「還沒接」
 REFUSED = {
     u'國泰': u'國泰投信網站對表明身分的程式回 403（連 robots.txt 也是），不假裝成瀏覽器去抓',
     u'富邦': u'富邦投信持股頁所在的網站 robots.txt 是 Disallow: /',
+    u'安聯': u'安聯投信的持股資料站（Cloudflare）對非瀏覽器的程式一律回 403，不假裝成瀏覽器去抓',
 }
 
 ERRORS = []
@@ -392,6 +400,40 @@ class Kgi(object):
             r'<option class="fundSelector" value="([^"]+)"[^>]*>([^<]+)</option>', page))
 
 
+# ── 台新 ─────────────────────────────────────────────────────
+
+class Tsit(object):
+    u"""台新 tsit.com.tw（2026-11-21 接上）：robots.txt 只限制 Googlebot／AdsBot。
+    申購買回清單頁 /ETF/Home/Pcf/{代號}?FundType=ALL&DataDate=公告日，持股表直接在 HTML 裡
+    （代號、名稱、股數、持股權重，代號寫成「2330 TT」「GOOGL US」）。持股日期看
+    「2026/11/19每基數實際申購總價金」那個日期（公告日 11-20 的前一個交易日）。期貨表也收（口數）。"""
+    URL = 'https://www.tsit.com.tw/ETF/Home/Pcf/'
+
+    def __init__(self, http):
+        self.http = http
+
+    def fetch(self, code, day):
+        post = day + timedelta(days=3 if day.weekday() == 4 else 1)
+        q = {'FundType': 'ALL'}
+        if post <= datetime.now(TPE).date():
+            q['DataDate'] = post.isoformat()
+        page = self.http.get(self.URL + code + '?' + urllib.parse.urlencode(q)).decode('utf-8', 'replace')
+        m = re.search(r'(\d{4})/(\d{2})/(\d{2})\s*每基數實際申購總價金', text_of(page))
+        rows = []
+        for tr in re.findall(r'<tr.*?</tr>', page, re.S):
+            c = [text_of(td) for td in re.findall(r'<td[^>]*>(.*?)</td>', tr, re.S)]
+            if len(c) != 4 or not num(c[2]):
+                continue
+            mm = re.match(r'^(\S+) ([A-Z]{2})$', c[0])
+            if mm:                                      # 股票：台股「2330 TT」→ 2330；外國股照別家寫法「GOOGL US」
+                rows.append(row(mm.group(1) if mm.group(2) == 'TT' else c[0], c[1], num(c[2]), num(c[3])))
+            elif re.match(r'^\d{6}$', c[1]):            # 期貨表：名稱、契約年月、口數、權重
+                rows.append(row('%s %s/%s' % (c[0], c[1][:4], c[1][4:]), c[0], num(c[2]), num(c[3])))
+        if not m or not rows:
+            return None, []
+        return '%s-%s-%s' % m.groups(), rows
+
+
 def text_of(s):
     return re.sub(r'\s+', ' ', htmllib.unescape(re.sub(r'<[^>]+>', ' ', s or ''))).strip()
 
@@ -467,6 +509,8 @@ def resolve_ids(http, ctbc_http, universe=None):
             out[code] = ('yuanta', code)
         if u'野村' in n and code not in out:                # 野村：API 也直接用證券代號
             out[code] = ('nomura', code)
+        if u'台新' in n and code not in out:                # 台新：網址直接用證券代號
+            out[code] = ('tsit', code)
     return out
 
 
@@ -713,7 +757,8 @@ def main():
     http = Http()
     ctbc_http = Http(cookies=False)
     clients = {'ezmoney': Ezmoney(http), 'fhtrust': Fhtrust(http), 'ctbc': Ctbc(ctbc_http),
-               'capital': Capital(http), 'yuanta': Yuanta(http), 'kgi': Kgi(http), 'nomura': Nomura(http)}
+               'capital': Capital(http), 'yuanta': Yuanta(http), 'kgi': Kgi(http), 'nomura': Nomura(http),
+               'tsit': Tsit(http)}
     names = load_names()
 
     try:
@@ -811,7 +856,7 @@ def main():
             'top': top,
             # 各家網站內部的基金代碼，下次某家清單被擋時沿用
             'ids': dict((c, list(v)) for c, v in sorted(ids.items()) if c in set(targets)),
-            'source': u'各投信官網每日公告之持股（統一、復華、中國信託、群益、元大、凱基、野村）',
+            'source': u'各投信官網每日公告之持股（統一、復華、中國信託、群益、元大、凱基、野村、台新）',
             'errors': ERRORS,
         },
         'etfs': dict(sorted(etfs.items())),               # 依代號排序（站主指定）

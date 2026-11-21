@@ -183,7 +183,7 @@ deploy workflow.
 | 週選價平和 | `atm` | `atm.json` | 期交所 |
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
-| 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信／群益／元大／凱基／野村投信官網＋證交所 `MI_INDEX`／櫃買 `afterTrading/otc`（估值與持股損益用的均價） |
+| 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信／群益／元大／凱基／野村／台新投信官網＋證交所 `MI_INDEX`／櫃買 `afterTrading/otc`（估值與持股損益用的均價） |
 | 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
 | ETF 受益人數 | `eholders` | `etf_holders.json`（逐週累積） | 集保開放資料 1-5 |
 | ETF 配息組成 | `dmix` | `div_mix.json`（每檔最近一次公告的股利／利息／平準金／資本利得／其他占比） | 集保 ETF 觀測站 `fundclear.com.tw/api/etf/dividend/query-dividend`（月領試算只把股利＋利息算進二代健保，2026-10-27） |
