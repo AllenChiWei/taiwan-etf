@@ -99,8 +99,6 @@ function useEtfNames(): Map<string, string> {
 function Board({ loaded }: { loaded: Loaded }) {
   const [plans, setPlans] = useState<DcaPlan[]>(loaded.data.plans);
   const [holdings, setHoldings] = useState<DcaHolding[]>(loaded.data.holdings);
-  const [hDraft, setHDraft] = useState<HDraft | null>(null);
-  const [hDel, setHDel] = useState<string | null>(null);
   const [managing, setManaging] = useState(false);
   const { quotes, asof } = useQuotes();
   const [people, setPeople] = useState<string[]>(peopleOf(loaded.data));
@@ -185,10 +183,12 @@ function Board({ loaded }: { loaded: Loaded }) {
         const g = cur.data ? cleanDca(cur.data).generated : '';
         if (g && g !== base.generated) { setConflict(g); return; }
       }
-      const data: DcaData = { v: 1, generated: nowStamp(), people, plans, holdings };
-      await ghWrite(FILE, await vault.encryptJson(data), loaded.token, `資料：定期定額（網站儲存，${plans.length} 筆、持股 ${holdings.length} 筆，已加密）`);
-      setBase(data); setSrc('api');
-      setMsg(`已儲存（定期定額 ${plans.length} 筆、持股 ${holdings.length} 筆）。其他裝置重新整理這一頁就會看到。`);
+      // 2026-11-21 持股改成表格直接填：代號空白或股數 0 的列不存
+      const hs = holdings.filter(h => (h.code || h.name) && h.shares > 0).map(h => ({ ...h, name: h.name || h.code }));
+      const data: DcaData = { v: 1, generated: nowStamp(), people, plans, holdings: hs };
+      await ghWrite(FILE, await vault.encryptJson(data), loaded.token, `資料：定期定額（網站儲存，${plans.length} 筆、持股 ${hs.length} 筆，已加密）`);
+      setBase(data); setHoldings(hs); setSrc('api');
+      setMsg(`已儲存（定期定額 ${plans.length} 筆、持股 ${hs.length} 筆）。其他裝置重新整理這一頁就會看到。`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); }
@@ -377,13 +377,8 @@ function Board({ loaded }: { loaded: Loaded }) {
         </ul>
       </section>
 
-      <HoldingsSection people={people} who={who} holdings={holdings} quotes={quotes} asof={asof} etfNames={etfNames}
-                       draft={hDraft} setDraft={setHDraft} del={hDel} setDel={setHDel} colorOf={colorOf} input={input} btn={btn}
-                       onSave={h => {
-                         if (!people.includes(h.who)) setPeople(ps => [...ps, h.who]);
-                         setHoldings(xs => (xs.some(x => x.id === h.id) ? xs.map(x => (x.id === h.id ? h : x)) : [...xs, h]));
-                       }}
-                       onDelete={id => setHoldings(xs => xs.filter(x => x.id !== id))} setMsg={setMsg} />
+      <HoldingsSection people={people} who={who} holdings={holdings} setHoldings={setHoldings} quotes={quotes} asof={asof} etfNames={etfNames}
+                       colorOf={colorOf} btn={btn} />
 
       <Compare people={people} holdings={holdings} plans={plans} quotes={quotes} asof={asof} colorOf={colorOf} />
 
@@ -402,7 +397,7 @@ function Board({ loaded }: { loaded: Loaded }) {
               {dirty && <button type="button" className="h-9 rounded-lg bg-accent px-4 text-[13px] font-semibold text-accent-ink disabled:opacity-50"
                                 disabled={busy} onClick={() => save()}>{busy ? '儲存中…' : '☁ 儲存'}</button>}
               {dirty && <button type="button" className="h-9 px-2 text-[12.5px] text-muted hover:text-ink" disabled={busy}
-                                onClick={() => { setPlans(base.plans); setHoldings(base.holdings); setPeople(basePeople); setDraft(null); setHDraft(null); setDel(null); setHDel(null); setMsg(''); }}>放棄修改</button>}
+                                onClick={() => { setPlans(base.plans); setHoldings(base.holdings); setPeople(basePeople); setDraft(null); setDel(null); setMsg(''); }}>放棄修改</button>}
             </div>
           )}
           {msg && <p className="mt-1 text-[12px] text-muted">{msg}</p>}
@@ -503,108 +498,90 @@ function PeopleEditor({ people, plans, holdings, input, btn, onRename, onDelete,
   );
 }
 
-// ───── 持股（2026-11-02：記錄兩個小孩的持股）─────
+// ───── 持股（2026-11-02：記錄兩個小孩的持股；2026-11-21 使用者：「很難輸入兩個小孩分別的持股」→ 先選人，再直接在表格裡填）─────
 
-type HDraft = { id: string | null; who: string; code: string; name: string; shares: string; cost: string };
-
-function HoldingsSection({ people, who, holdings, quotes, asof, etfNames, draft, setDraft, del, setDel, colorOf, input, btn, onSave, onDelete, setMsg }: {
-  people: string[]; who: string | null; holdings: DcaHolding[]; quotes: Map<string, Quote>; asof: string; etfNames: Map<string, string>;
-  draft: HDraft | null; setDraft: (d: HDraft | null) => void; del: string | null; setDel: (id: string | null) => void;
-  colorOf: (w: string) => string; input: string; btn: string; onSave: (h: DcaHolding) => void; onDelete: (id: string) => void; setMsg: (m: string) => void;
+function HoldingsSection({ people, who, holdings, setHoldings, quotes, asof, etfNames, colorOf, btn }: {
+  people: string[]; who: string | null; holdings: DcaHolding[]; setHoldings: (f: (xs: DcaHolding[]) => DcaHolding[]) => void;
+  quotes: Map<string, Quote>; asof: string; etfNames: Map<string, string>; colorOf: (w: string) => string; btn: string;
 }) {
-  const shown = holdings.filter(h => who === null || h.who === who)
-    .sort((a, b) => people.indexOf(a.who) - people.indexOf(b.who) || (b.shares * (quotes.get(b.code)?.price ?? 0)) - (a.shares * (quotes.get(a.code)?.price ?? 0)));
-  const kid = who ?? people.find(p => p !== '我') ?? people[0] ?? '我';
-  const blank = (): HDraft => ({ id: null, who: kid, code: '', name: '', shares: '', cost: '' });
-  const submit = () => {
-    if (!draft) return;
-    const code = draft.code.trim().toUpperCase();
-    const name = draft.name.trim() || etfNames.get(code) || code;
-    const shares = Number(draft.shares.replace(/,/g, ''));
-    const cost = draft.cost.trim() === '' ? undefined : Number(draft.cost.replace(/,/g, ''));
-    if (!name) { setMsg('請輸入代號或名稱。'); return; }
-    if (!Number.isFinite(shares) || shares <= 0) { setMsg('股數要大於 0（1 張＝1,000 股）。'); return; }
-    if (cost !== undefined && (!Number.isFinite(cost) || cost < 0)) { setMsg('投入成本要是 0 以上的數字，不知道可以空白。'); return; }
-    onSave({ id: draft.id ?? newId(), who: draft.who.trim() || kid, code, name, shares, ...(cost !== undefined ? { cost } : {}) });
-    setDraft(null); setMsg('');
+  const firstKid = people.find(p => p !== '我') ?? people[0] ?? '我';
+  const [tab, setTab] = useState<string>(who ?? firstKid);
+  // 上方「對象」切到某個人時，持股也跟著切過去；選「全部」時保留目前這頁
+  useEffect(() => { if (who) setTab(who); }, [who]);
+  const cur = people.includes(tab) ? tab : firstKid;
+  const mine = holdings.filter(h => h.who === cur);
+  const others = people.filter(p => p !== cur && holdings.some(h => h.who === p && h.code));
+  const upd = (id: string, p: Partial<DcaHolding>) => setHoldings(xs => xs.map(x => (x.id === id ? { ...x, ...p } : x)));
+  const add = () => setHoldings(xs => [...xs, { id: newId(), who: cur, code: '', name: '', shares: 0 }]);
+  const remove = (id: string) => setHoldings(xs => xs.filter(x => x.id !== id));
+  const copyCodes = (from: string) => {
+    const have = new Set(mine.map(h => h.code));
+    const codes = [...new Map(holdings.filter(h => h.who === from && h.code && !have.has(h.code)).map(h => [h.code, h.name])).entries()];
+    if (codes.length) setHoldings(xs => [...xs, ...codes.map(([code, name]) => ({ id: newId(), who: cur, code, name, shares: 0 }))]);
   };
-  const form = (d: HDraft) => {
-    const set = (p: Partial<HDraft>) => setDraft({ ...d, ...p });
-    return (
-      <form className="mt-2 rounded-lg border border-line bg-bg p-2" onSubmit={e => { e.preventDefault(); submit(); }}>
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
-          <label className="flex flex-col text-[11.5px] text-muted">對象
-            <input className={input} value={d.who} onChange={e => set({ who: e.target.value })} list="dca-people" />
-          </label>
-          <label className="flex flex-col text-[11.5px] text-muted">代號
-            <input className={`${input} font-mono`} value={d.code} autoFocus placeholder="例如 0050"
-                   onChange={e => { const c = e.target.value.trim().toUpperCase(); const n = etfNames.get(c); set({ code: e.target.value, ...(n ? { name: n } : {}) }); }} />
-          </label>
-          <label className="col-span-2 flex flex-col text-[11.5px] text-muted sm:col-span-1">名稱
-            <input className={input} value={d.name} onChange={e => set({ name: e.target.value })} placeholder="輸入代號會自動帶出" />
-          </label>
-          <label className="flex flex-col text-[11.5px] text-muted">股數（1 張＝1,000）
-            <input className={`${input} font-mono`} value={d.shares} onChange={e => set({ shares: e.target.value })} inputMode="numeric" />
-          </label>
-          <label className="flex flex-col text-[11.5px] text-muted">投入成本（元，可空白）
-            <input className={`${input} font-mono`} value={d.cost} onChange={e => set({ cost: e.target.value })} inputMode="numeric" />
-          </label>
-        </div>
-        <div className="mt-1 flex justify-end gap-1">
-          <button type="button" className="h-9 px-2 text-[12.5px] text-muted hover:text-ink" onClick={() => setDraft(null)}>取消</button>
-          <button type="submit" className={btn}>{d.id ? '確定修改' : '加入'}</button>
-        </div>
-      </form>
-    );
-  };
+  const digits = (v: string) => v.replace(/[^\d]/g, '');
+  let mv = 0, div = 0, cost = 0;
+  for (const h of mine) {
+    const q = quotes.get(h.code);
+    if (q) { mv += h.shares * q.price; div += h.shares * q.perYear; }
+    if (h.cost) cost += h.cost;
+  }
+  const cell = 'h-9 w-full min-w-0 rounded-md border border-line bg-bg px-1.5 text-base text-ink sm:text-[13px]';
+  const counts = (p: string) => holdings.filter(h => h.who === p && h.shares > 0).length;
+
   return (
     <section className="mt-4 rounded-xl border border-line bg-surface p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-bold text-ink">持股（{shown.length}）</h2>
-        <button type="button" className={btn} onClick={() => { setDel(null); setMsg(''); setDraft(blank()); }}>＋ 新增持股</button>
+      <h2 className="text-sm font-bold text-ink">持股</h2>
+      {/* 先選是誰的持股（大按鈕，不用自己打名字） */}
+      <div className="mt-2 grid gap-1.5" style={{ gridTemplateColumns: `repeat(${Math.max(1, people.length)}, minmax(0, 1fr))` }}>
+        {people.map(p => (
+          <button key={p} type="button" aria-pressed={cur === p} onClick={() => setTab(p)}
+                  className={`h-11 rounded-lg border-2 px-2 text-[14px] font-bold ${cur === p ? 'text-ink' : 'border-line text-muted hover:text-ink'}`}
+                  style={cur === p ? { borderColor: colorOf(p), background: 'var(--sunken)' } : undefined}>
+            <span className="mr-1.5 inline-block h-2.5 w-2.5 rounded-full align-middle" style={{ background: colorOf(p) }} />
+            {p}<span className="ml-1 text-[11.5px] font-normal text-faint">{counts(p)} 檔</span>
+          </button>
+        ))}
       </div>
-      <p className="text-[11px] text-faint">市值用網站收盤價{asof ? `（${asof}）` : ''}；年配息用最近一次配息 × 一年配幾次估。網站沒有報價的代號不算市值。</p>
-      {draft && !draft.id && form(draft)}
-      {shown.length === 0 && !draft && <p className="mt-2 text-[12.5px] text-muted">還沒有持股。按「＋ 新增持股」記下每個人目前持有的 ETF 與股數。</p>}
-      <ul className="mt-1 divide-y divide-line">
-        {shown.map(h => {
-          if (draft?.id === h.id) return <li key={h.id} className="py-1">{form(draft)}</li>;
+      <p className="mt-2 text-[12.5px] text-muted">
+        <b className="text-ink">{cur}</b> 的持股：市值 <b className="font-mono text-ink">{money(mv)}</b>
+        {cost > 0 && <>、成本 <span className="font-mono">{money(cost)}</span></>}
+        {div > 0 && <>、年配息約 <span className="font-mono">{money(div)}</span></>}
+        <span className="text-faint">（收盤價{asof ? ` ${asof}` : ''}；直接在表格裡改，改完按下方「☁ 儲存」）</span>
+      </p>
+
+      <div className="mt-1.5 grid grid-cols-[4.2rem_minmax(0,1fr)_5.2rem_5.8rem_1.8rem] items-center gap-x-1.5 gap-y-1 text-[11.5px] text-faint">
+        <span>代號</span><span>名稱／市值</span><span className="text-right">股數</span><span className="text-right">成本（可空白）</span><span />
+        {mine.map(h => {
           const q = quotes.get(h.code);
-          const mv = q ? h.shares * q.price : null;
-          const pnl = mv !== null && h.cost !== undefined ? mv - h.cost : null;
           return (
-            <li key={h.id} className="flex flex-wrap items-center gap-x-3 gap-y-0.5 py-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-[13px] text-ink">
-                  <span className="mr-1.5 inline-block h-2 w-2 rounded-full align-middle" style={{ background: colorOf(h.who) }} />
-                  {h.code && <span className="mr-1 font-mono text-muted">{h.code}</span>}{h.name}<span className="ml-1.5 text-[11px] text-faint">{h.who}</span>
-                </div>
-                <div className="flex flex-wrap gap-x-2.5 text-[11.5px] text-muted">
-                  <span><span className="font-mono text-ink">{money(h.shares)}</span> 股（{(h.shares / 1000).toFixed(h.shares % 1000 ? 3 : 0)} 張）</span>
-                  {mv !== null ? <span>市值 <span className="font-mono text-ink">{money(mv)}</span></span> : <span className="text-faint">沒有報價</span>}
-                  {h.cost !== undefined && <span>成本 <span className="font-mono">{money(h.cost)}</span></span>}
-                  {pnl !== null && h.cost! > 0 && <span className={pnl >= 0 ? 'text-up' : 'text-down'}>{pnl >= 0 ? '+' : ''}{money(pnl)}（{((pnl / h.cost!) * 100).toFixed(1)}%）</span>}
-                  {q && q.perYear > 0 && <span>年配息約 <span className="font-mono">{money(h.shares * q.perYear)}</span></span>}
+            <div key={h.id} className="contents">
+              <input className={`${cell} font-mono uppercase`} value={h.code} placeholder="0050" aria-label={`${cur} 代號`}
+                     onChange={e => { const c = e.target.value.trim().toUpperCase(); const n = etfNames.get(c); upd(h.id, { code: c, ...(n ? { name: n } : {}) }); }} />
+              <div className="min-w-0 leading-tight">
+                <input className={`${cell} h-7 border-transparent bg-transparent px-0.5`} value={h.name} placeholder="輸入代號會自動帶出" aria-label={`${cur} 名稱`}
+                       onChange={e => upd(h.id, { name: e.target.value })} />
+                <div className="truncate px-0.5 text-[11px] text-faint">
+                  {q && h.shares > 0 ? <>市值 <span className="font-mono text-muted">{money(h.shares * q.price)}</span>（{(h.shares / 1000).toFixed(h.shares % 1000 ? 3 : 0)} 張）</> : h.code ? '沒有報價或股數' : ''}
                 </div>
               </div>
-              <div className="flex shrink-0 items-center">
-                {del === h.id ? (
-                  <>
-                    <span className="text-[12px] text-ink">刪除？</span>
-                    <button type="button" className="h-9 px-2 text-[12.5px] font-semibold text-up" onClick={() => { onDelete(h.id); setDel(null); }}>確定</button>
-                    <button type="button" className="h-9 px-2 text-[12.5px] text-muted" onClick={() => setDel(null)}>取消</button>
-                  </>
-                ) : (
-                  <>
-                    <button type="button" className={btn} onClick={() => { setDel(null); setMsg(''); setDraft({ id: h.id, who: h.who, code: h.code, name: h.name, shares: String(h.shares), cost: h.cost === undefined ? '' : String(h.cost) }); }}>編輯</button>
-                    <button type="button" className="h-9 px-2 text-[12.5px] text-muted hover:text-ink" onClick={() => { setDraft(null); setDel(h.id); }}>刪除</button>
-                  </>
-                )}
-              </div>
-            </li>
+              <input className={`${cell} text-right font-mono`} value={h.shares ? String(h.shares) : ''} inputMode="numeric" placeholder="股" aria-label={`${cur} ${h.code} 股數`}
+                     onChange={e => { const v = digits(e.target.value); upd(h.id, { shares: v === '' ? 0 : Number(v) }); }} />
+              <input className={`${cell} text-right font-mono`} value={h.cost === undefined ? '' : String(h.cost)} inputMode="numeric" placeholder="元" aria-label={`${cur} ${h.code} 成本`}
+                     onChange={e => { const v = digits(e.target.value); upd(h.id, v === '' ? { cost: undefined } : { cost: Number(v) }); }} />
+              <button type="button" className="h-9 text-[15px] text-faint hover:text-up" aria-label={`刪除 ${cur} ${h.code}`} onClick={() => remove(h.id)}>✕</button>
+            </div>
           );
         })}
-      </ul>
+      </div>
+      {mine.length === 0 && <p className="mt-1 text-[12.5px] text-muted">{cur} 還沒有持股。按「＋ 加一檔」，或從另一個人的清單帶入代號再填股數。</p>}
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        <button type="button" className={btn} onClick={add}>＋ 加一檔</button>
+        {others.map(o => (
+          <button key={o} type="button" className={btn} onClick={() => copyCodes(o)}>照 {o} 的清單帶入代號</button>
+        ))}
+      </div>
+      <p className="mt-1.5 text-[11px] text-faint">股數 1 張＝1,000 股；股數空白或 0 的那一列儲存時會略過。網站沒有報價的代號不算市值。</p>
     </section>
   );
 }
