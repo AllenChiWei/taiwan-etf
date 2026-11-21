@@ -163,3 +163,37 @@ export function taipeiNow(now = new Date()): { date: string; sec: number } {
     sec: t.getUTCHours() * 3600 + t.getUTCMinutes() * 60 + t.getUTCSeconds(),
   };
 }
+
+/** 結算價歷史的一列（新到舊）：13:00 指數到結算價拉了多少（有每 5 秒走勢的才有）。 */
+export interface SettleHistView {
+  d: string;
+  c: string[];
+  settle: number;
+  /** 期交所公告；undefined＝沒抓到 */
+  fsp?: number;
+  /** 13:00:00 加權指數 */
+  at1300?: number;
+  /** 結算價 − 13:00 指數 */
+  drift?: number;
+}
+
+export function settleHistory(rows: Array<{ d: string; c: string[]; settle: number; fsp?: number; v?: number[] }>): SettleHistView[] {
+  return [...rows].sort((a, b) => (a.d < b.d ? 1 : -1)).map(r => {
+    const final = r.fsp ?? r.settle;
+    const at1300 = r.v && r.v.length === 361 ? r.v[0] : undefined;
+    return { d: r.d, c: r.c, settle: r.settle, fsp: r.fsp, at1300, drift: at1300 === undefined ? undefined : final - at1300 };
+  });
+}
+
+/** 13:00 到結算價的偏移統計（只看有走勢的） */
+export function driftStats(list: SettleHistView[]): { n: number; meanAbs: number; maxAbs: number; up: number; down: number } | null {
+  const xs = list.map(x => x.drift).filter((x): x is number => x !== undefined);
+  if (!xs.length) return null;
+  return {
+    n: xs.length,
+    meanAbs: xs.reduce((a, x) => a + Math.abs(x), 0) / xs.length,
+    maxAbs: Math.max(...xs.map(Math.abs)),
+    up: xs.filter(x => x > 0).length,
+    down: xs.filter(x => x < 0).length,
+  };
+}

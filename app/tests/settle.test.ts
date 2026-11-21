@@ -127,3 +127,24 @@ test('預測曲線：最後一點＝期交所公告，中途每一點＝當時�
   }
   assert.deepEqual(settleCurve([], CLOSE_SEC), []);
 });
+
+test('結算價歷史：新到舊、13:00 偏移、公告優先', async () => {
+  const { settleHistory, driftStats } = await import('../src/lib/settle.ts');
+  const v = Array.from({ length: 361 }, () => 100);
+  const h = settleHistory([
+    { d: '2026-11-18', c: ['202611'], settle: 130, fsp: 130, v },
+    { d: '2026-11-20', c: ['202611F3'], settle: 90, fsp: 91, v },
+    { d: '2025-12-12', c: ['202512F2'], settle: 50 },
+  ]);
+  assert.deepEqual(h.map(x => x.d), ['2026-11-20', '2026-11-18', '2025-12-12']);
+  assert.equal(h[0].drift, -9);                     // 用公告 91 − 13:00 的 100
+  assert.equal(h[1].drift, 30);
+  assert.equal(h[2].drift, undefined);
+  const s = driftStats(h)!;
+  assert.equal(s.n, 2);
+  assert.equal(s.meanAbs, 19.5);
+  assert.equal(s.maxAbs, 30);
+  assert.equal(s.up, 1);
+  assert.equal(s.down, 1);
+  assert.equal(driftStats([]), null);
+});

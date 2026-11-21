@@ -9,7 +9,7 @@ import { Link } from '@tanstack/react-router';
 import { fetchAtm } from '../api/atm';
 import { fetchSettleHistory, fetchTaiex5s, fetchTaiexLive, type SettleHistRow, type TaiexLive } from '../api/settle';
 import {
-  CLOSE_SEC, SLOT_FIRST, TOTAL, hmsSec, nextSettle, predictSettle, secLabel, settleCurve, settleDates, strikeNeed, strikesAround,
+  CLOSE_SEC, SLOT_FIRST, TOTAL, driftStats, hmsSec, nextSettle, predictSettle, secLabel, settleCurve, settleHistory, settleDates, strikeNeed, strikesAround,
   taipeiNow, type Point, type Prediction,
 } from '../lib/settle';
 import { SettleChart } from './SettleChart';
@@ -222,6 +222,8 @@ export function SettleSection({ page = false }: { page?: boolean }) {
         </div>
       )}
 
+      {page && hist.length > 0 && <SettleHistTable hist={hist} />}
+
       {page && upcoming.some(u => u.e >= now.date) && (
         <div className="mt-3">
           <h2 className="text-[13px] font-bold text-ink">接下來的結算日</h2>
@@ -294,4 +296,66 @@ function StrikeTable({ pred, z }: { pred: Prediction; z: number }) {
       </table>
     </div>
   );
+}
+
+/** 結算價歷史：每次的結算價、和期交所公告是否相同、13:00 指數到結算價拉了多少。 */
+function SettleHistTable({ hist }: { hist: SettleHistRow[] }) {
+  const [all, setAll] = useState(false);
+  const list = useMemo(() => settleHistory(hist), [hist]);
+  const st = useMemo(() => driftStats(list), [list]);
+  const same = list.filter(r => r.fsp !== undefined && r.fsp === r.settle).length;
+  const withFsp = list.filter(r => r.fsp !== undefined).length;
+  const shown = all ? list : list.slice(0, 10);
+  const sign = (v: number) => `${v >= 0 ? '+' : '−'}${nf0.format(Math.abs(Math.round(v)))}`;
+  return (
+    <div className="mt-3">
+      <h2 className="text-[13px] font-bold text-ink">歷次結算價</h2>
+      <p className="mt-0.5 text-[11.5px] text-muted">
+        {list.length} 次，有期交所公告的 {withFsp} 次中自算相同 <b className="text-ink">{same}</b> 次。
+        {st && <>「13:00 起」＝結算價 − 13:00 的加權指數：最近 {st.n} 次平均差 <b className="font-mono text-ink">{nf0.format(st.meanAbs)}</b> 點、
+          最大 {nf0.format(st.maxAbs)} 點（結算價比 13:00 高 {st.up} 次、低 {st.down} 次）。</>}
+      </p>
+      <table className="mt-1.5 w-full text-[12px]">
+        <thead>
+          <tr className="text-right text-[11px] text-faint">
+            <th className="py-0.5 pr-2 text-left font-medium">結算日</th>
+            <th className="py-0.5 pr-2 font-medium">結算價</th>
+            <th className="py-0.5 pr-2 font-medium">13:00 起</th>
+            <th className="py-0.5 font-medium">公告</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-line">
+          {shown.map(r => (
+            <tr key={r.d} className="text-right font-mono tabular-nums">
+              <td className="py-1 pr-2 text-left font-sans text-ink">
+                {dayLabel(r.d)}
+                <span className="ml-1 font-mono text-[10.5px] text-faint">{r.c.map(seriesShort).join('/')}</span>
+              </td>
+              <td className="py-1 pr-2 font-semibold text-ink">{nf0.format(r.fsp ?? r.settle)}</td>
+              <td className={`py-1 pr-2 ${r.drift === undefined ? 'text-faint' : r.drift >= 0 ? 'text-up' : 'text-down'}`}>
+                {r.drift === undefined ? '—' : sign(r.drift)}
+              </td>
+              <td className="py-1 font-sans text-[11.5px] text-muted">
+                {r.fsp === undefined ? '未抓到' : r.fsp === r.settle ? '相同' : <b className="text-ink">自算 {nf0.format(r.settle)}</b>}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {list.length > 10 && (
+        <button type="button" onClick={() => setAll(v => !v)}
+                className="mt-1.5 text-[12px] font-semibold text-accent">
+          {all ? '只看最近 10 次' : `顯示全部 ${list.length} 次`}
+        </button>
+      )}
+      <p className="mt-1 text-[11px] text-faint">
+        13:00 的指數只留最近 30 個結算日的走勢，更早的只有結算價。
+      </p>
+    </div>
+  );
+}
+
+/** 202611W4 → W4、202611F3 → F3、202611 → 月 */
+function seriesShort(c: string): string {
+  return /[WF]\d$/.test(c) ? c.slice(-2) : '月';
 }
