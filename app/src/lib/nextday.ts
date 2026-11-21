@@ -26,8 +26,6 @@ export interface NextMaint {
   /** 低於這個數＝低維持率日，上下緣乘放大係數 */
   thr: number;
   low: boolean;
-  /** {機率: [上緣係數, 下緣係數]}（全部歷史：低維持率日的倍數分位 ÷ 全部） */
-  factors: Record<string, [number, number]>;
   lowDays: number;
   /** 低於 call（斷頭區，證交所口徑 139）的日子；欄位名沿用 below140 */
   below140: { days: number; avgC: number };
@@ -46,11 +44,14 @@ export interface NextdayData {
     /** 實際用的日波動＝max(EWMA, 選擇權隱含)；sigmaE＝EWMA、sigmaIv＝價平和反推（沒有＝null） */
     sigma: number; sigmaE?: number; sigmaIv?: number | null; since: string; samples: number; limit: number;
     counts: Record<Regime, number>; mult99: Record<Regime, [number, number]>;
-    checkFrom: string; checkDays: number; source: string;
+    checkFrom: string; checkDays: number; stressDays?: number; source: string;
   };
   bands: NextBand[];
-  /** lowUp0／lowDn0＝測試期裡低維持率那些天、沒加維持率係數時的突破率；lowUp／lowDn＝加了之後 */
-  check: Array<{ p: number; up: number; dn: number; lowUp0?: number; lowDn0?: number; lowUp?: number; lowDn?: number }>;
+  /** 最近 3 年樣本外：up/dn＝含狀態調整、up0/dn0＝不含；stress*＝壓力日（大跌 2% 或維持率一天掉 2 點）的突破率 */
+  check: Array<{ p: number; up: number; dn: number; up0?: number; dn0?: number;
+    stressUp0?: number | null; stressDn0?: number | null; stressUp?: number | null; stressDn?: number | null }>;
+  /** 今天的狀態調整（2026-11-21 IC 研究）：fu／fd＝上／下緣係數（≥ 1），why*＝各特徵貢獻（log，正＝放寬） */
+  state?: { fu: number; fd: number; whyUp: Array<{ k: string; label: string; x: number; c: number }>; whyDn: Array<{ k: string; label: string; x: number; c: number }> };
   maint?: NextMaint;
   /** 選擇權隱含波動的驗證：有隱含波動的那些天，EWMA（upE/dnE）與取大（up/dn）各被突破多少 */
   iv?: { days: number; from: string | null; check: Array<{ p: number; upE: number; dnE: number; up: number; dn: number }> };

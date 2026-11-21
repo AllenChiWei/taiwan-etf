@@ -33,6 +33,8 @@ import os
 import sys
 import urllib.parse
 import urllib.request
+
+import numpy as np                       # 狀態調整的 OLS（每日更新流程裝 finlab 時就有 numpy）
 from datetime import date, datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -75,7 +77,7 @@ def load_taiex():
     for r in doc.get('data') or []:
         h, l, c = float(r.get('max') or 0), float(r.get('min') or 0), float(r.get('close') or 0)
         if r.get('date') and 0 < l <= c <= h:
-            rows.append((r['date'], h, l, c))
+            rows.append((r['date'], h, l, c, float(r.get('open') or 0) or None))
     rows.sort()
     if len(rows) < 3000:
         raise RuntimeError(u'FinMind 只回 %d 天' % len(rows))
@@ -148,12 +150,70 @@ def load_iv():
     return out
 
 
-def build(rows, hol, today=None, maint=None, iv=None):
+# ── 狀態調整（2026-11-21 使用者：增加預測隔日漲跌的數據、看 IC）────────────────
+# IC 研究（D:/ai/_tmp/scripts_iso/nextday_ic.py，2009 起逐年 Spearman）：在已經除以 EWMA 之後，
+#   下檔（隔日最大跌幅÷σ）：維持率 1 日變化 −0.080（18 年 89% 同號）、今天報酬 −0.077（94%）、今天跳空 −0.072、下跌家數占比 +0.069（94%）；
+#   上檔（隔日最大漲幅÷σ）：5 日報酬 −0.086（94%）、維持率 5 日變化 −0.085、收盤位置 −0.081；EWMA 本身 −0.07（大波動後 EWMA 偏大）。
+# 做法：log(倍數) 對這些特徵做 OLS → 調整係數 exp(Σβ·標準化x)（夾在 0.6～2.0）；倍數分位改用「倍數÷調整係數」。
+# 樣本外（nextday_model.py，2009～2019 估、2020～ 測 1,671 天；2009～2016 估、2017～ 測）：12 組分位數損失全部下降 1.4～9.7%，
+#   壓力日（大跌 2% 或維持率掉 2 點）的突破率下降（下緣 95% 10.2%→8.6%），平常日區間平均窄 5～10%。
+FEAT_DN = ('dkeep1', 'ret', 'gapo', 'dnshare', 'lsig', 'wk')
+FEAT_UP = ('ret5', 'dkeep5', 'clv', 'dnshare', 'lsig', 'wk')
+FEAT_LABEL = {'dkeep1': u'維持率今天變化', 'ret': u'今天漲跌', 'gapo': u'今天跳空', 'dnshare': u'下跌家數占比',
+              'lsig': u'近期波動水準', 'wk': u'隔天跨週末', 'ret5': u'5 日漲跌', 'dkeep5': u'維持率 5 日變化', 'clv': u'收盤位置'}
+FAC_MIN, FAC_MAX = 1.0, 2.0          # 只放寬不收窄：0.6 版最近 3 年樣本外突破率變高（平常日收太窄），賣方不能接受
+
+
+def load_chips():
+    u"""網站 chips.json（部署流程每天更新）；抓不到回 {}（不做維持率與漲跌家數相關的調整）"""
+    try:
+        return get_json(CHIPS_URL)
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  ⚠ 籌碼資料（chips.json）抓不到（%s），不做維持率與漲跌家數調整' % str(e)[:60])
+        return {}
+
+
+def fit_model(sample, feats, side):
+    u"""log(max(倍數, 0.1)) 對特徵做 OLS；回 (平均, 標準差, 係數) 或 None"""
+    xs, ys = [], []
+    for o in sample:
+        x = o['x']
+        if x is None or any(x.get(k) is None for k in feats):
+            continue
+        z = o['H'] / o['s'] if side == 'u' else -o['L'] / o['s']
+        xs.append([x[k] for k in feats]); ys.append(math.log(max(z, 0.1)))
+    if len(xs) < 500:
+        return None
+    X = np.array(xs, float); y = np.array(ys, float)
+    mu, sd = X.mean(0), X.std(0)
+    sd[sd == 0] = 1
+    A = np.c_[np.ones(len(X)), (X - mu) / sd]
+    beta = np.linalg.lstsq(A, y, rcond=None)[0]
+    return mu, sd, beta, feats
+
+
+def model_fac(model, x):
+    if model is None or x is None or any(x.get(k) is None for k in model[3]):
+        return 1.0, []
+    mu, sd, beta, feats = model
+    zx = (np.array([x[k] for k in feats], float) - mu) / sd
+    contrib = beta[1:] * zx
+    f = float(np.exp(contrib.sum()))
+    return min(FAC_MAX, max(FAC_MIN, f)), [(feats[k], float(contrib[k]), float(x[feats[k]])) for k in range(len(feats))]
+
+
+def build(rows, hol, today=None, maint=None, iv=None, chips=None):
     n = len(rows)
     ds = [r[0] for r in rows]
     cl = [r[3] for r in rows]
+    hi = [r[1] for r in rows]
+    lo = [r[2] for r in rows]
+    op = [r[4] if len(r) > 4 else None for r in rows]
+    chips = chips or {}
+    if maint is None:
+        maint = dict((r[0], float(r[1])) for r in (chips.get('margin') or {}).get('keepHist') or [] if r[1])
+    breadth = dict((r[0], r[2] / (r[1] + r[2])) for r in (chips.get('tw') or {}).get('breadth') or [] if (r[1] + r[2]) > 0)
     # 每天的融資維持率：當天的；還沒公布（晚上才有）就用最近 5 個日曆日內的前一筆
-    maint = maint or {}
     mt, md = [None] * n, [None] * n
     last_m, last_d = None, None
     for i, dd in enumerate(ds):
@@ -168,68 +228,74 @@ def build(rows, hol, today=None, maint=None, iv=None):
     for i in range(1, n):
         v = LAMBDA * v + (1 - LAMBDA) * rets[i] ** 2
         sig[i] = math.sqrt(v)
+
+    def feats_at(i, wk):
+        u"""第 i 天收盤時已知的特徵（缺的是 None）"""
+        if i < 5:
+            return None
+        def dk(k):
+            return mt[i] - mt[i - k] if mt[i] is not None and mt[i - k] is not None else None
+        return {'dkeep1': dk(1), 'dkeep5': dk(5), 'ret': cl[i] / cl[i - 1] - 1,
+                'gapo': op[i] / cl[i - 1] - 1 if op[i] else None, 'dnshare': breadth.get(ds[i]),
+                'lsig': math.log(sig[i]), 'wk': 1.0 if wk else 0.0, 'ret5': cl[i] / cl[i - 5] - 1,
+                'clv': (cl[i] - lo[i]) / (hi[i] - lo[i]) if hi[i] > lo[i] else None}
+
     # 第 i 天看第 i+1 天
     obs = []
     for i in range(61, n - 1):
         gap = (date.fromisoformat(ds[i + 1]) - date.fromisoformat(ds[i])).days
         obs.append({'i': i, 'd': ds[i], 'd1': ds[i + 1], 'reg': regime_of(gap), 's': sig[i], 'm': mt[i],
-                    'low': mt[i] is not None and mt[i] < MAINT_LOW,
+                    'low': mt[i] is not None and mt[i] < MAINT_LOW, 'x': feats_at(i, gap >= 3), 'fu': 1.0, 'fd': 1.0,
                     'H': rows[i + 1][1] / cl[i] - 1, 'L': rows[i + 1][2] / cl[i] - 1, 'C': cl[i + 1] / cl[i] - 1})
 
-    def mfac(sample):
-        u"""維持率放大係數 {p: (上, 下)}：低維持率日（< MAINT_LOW）的倍數分位 ÷ 同期有維持率資料的全部（一般＋跨週末合併，連假不分）。
-        最少 1（不因為維持率低而縮窄）；0.995、0.999 用 0.99 的係數（低維持率日樣本不夠估那麼遠的尾巴）"""
-        pool = [o for o in sample if o['m'] is not None and o['reg'] != 'holiday']
-        low = [o for o in pool if o['low']]
-        out = {}
-        for p in PS:
-            pp = min(p, 0.99)
-            if len(low) < 100:
-                out[p] = (1.0, 1.0)
-                continue
-            fu = quantile([o['H'] / o['s'] for o in low], pp) / quantile([o['H'] / o['s'] for o in pool], pp)
-            fd = quantile([o['L'] / o['s'] for o in low], 1 - pp) / quantile([o['L'] / o['s'] for o in pool], 1 - pp)
-            out[p] = (max(1.0, fu), max(1.0, fd))
-        return out
+    def set_fac(mu_, md_):
+        for o in obs:
+            o['fu'] = model_fac(mu_, o['x'])[0]
+            o['fd'] = model_fac(md_, o['x'])[0]
 
-    def zq(sample, reg):
-        u"""某一組的倍數分位數 {p: (上, 下, |收盤|)}"""
+    def zq(sample, reg, adj=True):
+        u"""某一組的倍數分位數 {p: (上, 下, |收盤|)}；adj＝倍數先除以狀態調整係數"""
         g = [o for o in sample if o['reg'] == reg]
-        return len(g), dict((p, (quantile([o['H'] / o['s'] for o in g], p),
-                                 quantile([o['L'] / o['s'] for o in g], 1 - p),
-                                 quantile([abs(o['C']) / o['s'] for o in g], p))) for p in PS)
+        fu = (lambda o: o['fu']) if adj else (lambda o: 1.0)
+        fd = (lambda o: o['fd']) if adj else (lambda o: 1.0)
+        return len(g), dict((p, (quantile([o['H'] / o['s'] / fu(o) for o in g], p),
+                                 quantile([o['L'] / o['s'] / fd(o) for o in g], 1 - p),
+                                 quantile([abs(o['C']) / o['s'] / max(fu(o), fd(o)) for o in g], p))) for p in PS)
 
     regs = ('normal', 'weekend', 'holiday')
-    zs = dict((r, zq(obs, r)) for r in regs)
-
-    # 明天
     last = date.fromisoformat(ds[-1])
     nxt = next_trading_day(last, hol)
     reg = regime_of((nxt - last).days)
-    # 波動＝EWMA 和選擇權隱含波動取大（2026-11-21：216 天樣本外 90/95/99% 突破率最接近名目，寬度 +10%）；沒有隱含波動就是 EWMA
     iv = iv or {}
     s_e = sig[-1]
     iv_now = iv.get(ds[-1])
     s = max(s_e, iv_now) if iv_now else s_e
+
+    # ── 明天：模型用全部資料估 ──
+    m_up, m_dn = fit_model(obs, FEAT_UP, 'u'), fit_model(obs, FEAT_DN, 'd')
+    set_fac(m_up, m_dn)
+    zs = dict((r, zq(obs, r)) for r in regs)
+    zs_raw = dict((r, zq(obs, r, adj=False)) for r in regs)
+    x_now = feats_at(n - 1, (nxt - last).days >= 3)
+    fu_now, why_u = model_fac(m_up, x_now)
+    fd_now, why_d = model_fac(m_dn, x_now)
     cnt, z = zs[reg]
-    fac_all = mfac(obs)
-    m_now = mt[-1]
-    low_now = m_now is not None and m_now < MAINT_LOW and reg != 'holiday'
+    z0 = zs_raw[reg][1]
     bands = []
     for p in PS:
         up, dn, cc = z[p]
-        fu, fd = fac_all[p] if low_now else (1.0, 1.0)
-        bands.append({'p': p, 'up': round(min(up * fu * s, LIMIT), 5), 'dn': round(max(dn * fd * s, -LIMIT), 5),
-                      'c': round(min(cc * max(fu, fd) * s, LIMIT), 5),
-                      'up0': round(min(up * s, LIMIT), 5), 'dn0': round(max(dn * s, -LIMIT), 5),
-                      'upE': round(min(up * s_e, LIMIT), 5), 'dnE': round(max(dn * s_e, -LIMIT), 5)})
+        u0, d0, _ = z0[p]
+        bands.append({'p': p, 'up': round(min(up * fu_now * s, LIMIT), 5), 'dn': round(max(dn * fd_now * s, -LIMIT), 5),
+                      'c': round(min(cc * max(fu_now, fd_now) * s, LIMIT), 5),
+                      'up0': round(min(u0 * s, LIMIT), 5), 'dn0': round(max(d0 * s, -LIMIT), 5),
+                      'upE': round(min(u0 * s_e, LIMIT), 5), 'dnE': round(max(d0 * s_e, -LIMIT), 5)})
 
-    # 隱含波動的驗證：有隱含波動的那些天（atm.json 起），倍數只用那之前的資料，比 EWMA 與取大各被突破多少
+    # 隱含波動的驗證（不含狀態調整，看隱含波動本身）
     iv_check = []
     iv_obs = [o for o in obs if o['d'] in iv and o['reg'] != 'holiday']
     if iv_obs:
         first = min(o['d'] for o in iv_obs)
-        zpre = dict((r, zq([o for o in obs if o['d1'] < first], r)[1]) for r in ('normal', 'weekend'))
+        zpre = dict((r, zq([o for o in obs if o['d1'] < first], r, adj=False)[1]) for r in ('normal', 'weekend'))
         for p in (0.90, 0.95, 0.99):
             def rate(fn):
                 return (round(sum(1 for o in iv_obs if o['H'] > zpre[o['reg']][p][0] * fn(o)) / len(iv_obs), 4),
@@ -238,32 +304,31 @@ def build(rows, hol, today=None, maint=None, iv=None):
             um, dm = rate(lambda o: max(o['s'], iv[o['d']]))
             iv_check.append({'p': p, 'upE': ue, 'dnE': de, 'up': um, 'dn': dm})
 
-    # 樣本外驗證：最近 CHECK_YEARS 年，用之前的資料算倍數（含維持率係數）；另外看測試期裡低維持率那些天，加維持率前後各被突破多少
+    # 樣本外驗證：最近 CHECK_YEARS 年；模型與倍數都只用之前的資料。up0/dn0＝沒有狀態調整；stress＝大跌 2% 或維持率一天掉 2 點的日子
     split = (last - timedelta(days=365 * CHECK_YEARS)).isoformat()
     train = [o for o in obs if o['d'] <= split]
     test = [o for o in obs if o['d'] > split]
+    set_fac(fit_model(train, FEAT_UP, 'u'), fit_model(train, FEAT_DN, 'd'))
     ztr = dict((r, zq(train, r)[1]) for r in regs)
-    ftr = mfac(train)
-    tlow = [o for o in test if o['low'] and o['reg'] != 'holiday']
+    ztr0 = dict((r, zq(train, r, adj=False)[1]) for r in regs)
+    stress = [o for o in test if o['x'] and (o['x']['ret'] <= -0.02 or (o['x']['dkeep1'] is not None and o['x']['dkeep1'] <= -2))]
 
-    def adj(o, p):
-        return ftr[p] if o['low'] and o['reg'] != 'holiday' else (1.0, 1.0)
+    def brk(sample, p, adj):
+        if not sample:
+            return None, None
+        zt = ztr if adj else ztr0
+        return (round(sum(1 for o in sample if o['H'] > zt[o['reg']][p][0] * (o['fu'] if adj else 1) * o['s']) / len(sample), 4),
+                round(sum(1 for o in sample if o['L'] < zt[o['reg']][p][1] * (o['fd'] if adj else 1) * o['s']) / len(sample), 4))
     check = []
     for p in (0.90, 0.95, 0.99):
-        eu = sum(1 for o in test if o['H'] > ztr[o['reg']][p][0] * adj(o, p)[0] * o['s'])
-        ed = sum(1 for o in test if o['L'] < ztr[o['reg']][p][1] * adj(o, p)[1] * o['s'])
-        row = {'p': p, 'up': round(eu / len(test), 4), 'dn': round(ed / len(test), 4)}
-        if tlow:
-            row.update({
-                'lowUp0': round(sum(1 for o in tlow if o['H'] > ztr[o['reg']][p][0] * o['s']) / len(tlow), 4),
-                'lowDn0': round(sum(1 for o in tlow if o['L'] < ztr[o['reg']][p][1] * o['s']) / len(tlow), 4),
-                'lowUp': round(sum(1 for o in tlow if o['H'] > ztr[o['reg']][p][0] * ftr[p][0] * o['s']) / len(tlow), 4),
-                'lowDn': round(sum(1 for o in tlow if o['L'] < ztr[o['reg']][p][1] * ftr[p][1] * o['s']) / len(tlow), 4),
-            })
-        check.append(row)
+        u1, d1 = brk(test, p, True)
+        u0_, d0_ = brk(test, p, False)
+        su1, sd1 = brk(stress, p, True)
+        su0, sd0 = brk(stress, p, False)
+        check.append({'p': p, 'up': u1, 'dn': d1, 'up0': u0_, 'dn0': d0_,
+                      'stressUp0': su0, 'stressDn0': sd0, 'stressUp': su1, 'stressDn': sd1})
 
-    # 通道推移：最近 SERIES_DAYS 天，每天的 95%／99% 通道只用「那天收盤以前」已經知道的隔日資料
-    # （obs[k] 的答案在 obs[k].d1 才知道，算第 j 天時 obs[0..j-1] 都已經知道）。各組各維護一份排好的倍數。
+    # 通道推移：最近 SERIES_DAYS 天；模型用通道開始以前的資料估，倍數只用「那天收盤以前」已經知道的隔日資料
     def sq(sorted_xs, p):
         if not sorted_xs:
             return float('nan')
@@ -272,33 +337,22 @@ def build(rows, hol, today=None, maint=None, iv=None):
         c = min(f + 1, len(sorted_xs) - 1)
         return sorted_xs[f] + (sorted_xs[c] - sorted_xs[f]) * (k - f)
 
-    known = dict((r, ([], [])) for r in regs)          # 組 → (H 倍數, L 倍數)，排好的
-    mk = {'pH': [], 'pL': [], 'lH': [], 'lL': []}      # 維持率係數用：有維持率的一般＋跨週末（p）、其中低維持率（l）
+    start = max(0, len(obs) - SERIES_DAYS)
+    set_fac(fit_model(obs[:start], FEAT_UP, 'u'), fit_model(obs[:start], FEAT_DN, 'd'))
+    known = dict((r, ([], [])) for r in regs)
 
     def learn(o):
-        bisect.insort(known[o['reg']][0], o['H'] / o['s'])
-        bisect.insort(known[o['reg']][1], o['L'] / o['s'])
-        if o['m'] is not None and o['reg'] != 'holiday':
-            bisect.insort(mk['pH'], o['H'] / o['s']); bisect.insort(mk['pL'], o['L'] / o['s'])
-            if o['low']:
-                bisect.insort(mk['lH'], o['H'] / o['s']); bisect.insort(mk['lL'], o['L'] / o['s'])
+        bisect.insort(known[o['reg']][0], o['H'] / o['s'] / o['fu'])
+        bisect.insort(known[o['reg']][1], o['L'] / o['s'] / o['fd'])
 
-    start = max(0, len(obs) - SERIES_DAYS)
     for o in obs[:start]:
         learn(o)
 
-    def channel(reg_, s_, base, low_):
+    def channel(reg_, s_, base, fu_, fd_):
         hz, lz = known[reg_]
-
-        def f(p, side):
-            if not low_ or reg_ == 'holiday' or len(mk['lH']) < 100:
-                return 1.0
-            if side == 'u':
-                return max(1.0, sq(mk['lH'], p) / sq(mk['pH'], p))
-            return max(1.0, sq(mk['lL'], 1 - p) / sq(mk['pL'], 1 - p))
         return dict((k, round(base * (1 + v), 1)) for k, v in (
-            ('u95', min(sq(hz, 0.95) * f(0.95, 'u') * s_, LIMIT)), ('d95', max(sq(lz, 0.05) * f(0.95, 'd') * s_, -LIMIT)),
-            ('u99', min(sq(hz, 0.99) * f(0.99, 'u') * s_, LIMIT)), ('d99', max(sq(lz, 0.01) * f(0.99, 'd') * s_, -LIMIT))))
+            ('u95', min(sq(hz, 0.95) * fu_ * s_, LIMIT)), ('d95', max(sq(lz, 0.05) * fd_ * s_, -LIMIT)),
+            ('u99', min(sq(hz, 0.99) * fu_ * s_, LIMIT)), ('d99', max(sq(lz, 0.01) * fd_ * s_, -LIMIT))))
 
     series, recent = [], []
     for j in range(start, len(obs)):
@@ -307,22 +361,28 @@ def build(rows, hol, today=None, maint=None, iv=None):
             learn(obs[j - 1])                          # 前一天的答案今天收盤時已經知道
         base = cl[o['i']]
         s_o = max(o['s'], iv[o['d']]) if o['d'] in iv else o['s']
-        ch = channel(o['reg'], s_o, base, o['low'])
+        ch = channel(o['reg'], s_o, base, o['fu'], o['fd'])
         series.append(dict({'d': o['d1'], 'b': base, 'h': rows[o['i'] + 1][1], 'l': rows[o['i'] + 1][2],
-                            'c': cl[o['i'] + 1], 'r': o['reg'][0], 'mt': o['m']}, **ch))
+                            'c': cl[o['i'] + 1], 'r': o['reg'][0], 'mt': o['m'], 'fu': round(o['fu'], 3), 'fd': round(o['fd'], 3)}, **ch))
         if j >= len(obs) - 10:
             recent.append({'d': o['d'], 'd1': o['d1'], 'close': base, 'reg': o['reg'],
                            'H': round(o['H'], 5), 'L': round(o['L'], 5), 'C': round(o['C'], 5),
                            'up95': round(ch['u95'] / base - 1, 5), 'dn95': round(ch['d95'] / base - 1, 5),
                            'up99': round(ch['u99'] / base - 1, 5), 'dn99': round(ch['d99'] / base - 1, 5)})
-    # 最後一點：明天（還沒有答案），用全部資料
-    if obs:
-        learn(obs[-1])
+    b95 = next(b for b in bands if b['p'] == 0.95); b99 = next(b for b in bands if b['p'] == 0.99)
+    tomorrow = {'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1, 'mt': mt[-1], 'fu': round(fu_now, 3), 'fd': round(fd_now, 3),
+                'u95': round(cl[-1] * (1 + b95['up']), 1), 'd95': round(cl[-1] * (1 + b95['dn']), 1),
+                'u99': round(cl[-1] * (1 + b99['up']), 1), 'd99': round(cl[-1] * (1 + b99['dn']), 1)}
 
     def ext(key, best):
         o = best(obs, key=lambda x: x[key])
         return {'v': round(o[key], 5), 'd': o['d'], 'd1': o['d1']}
 
+    def why(items):
+        return [{'k': k, 'label': FEAT_LABEL.get(k, k), 'x': round(x, 5), 'c': round(c, 4)}
+                for k, c, x in sorted(items, key=lambda t: -abs(t[1]))]
+
+    m_now = mt[-1]
     return {
         'meta': {
             'updated': (today or datetime.now(TPE).date()).isoformat(),
@@ -330,22 +390,22 @@ def build(rows, hol, today=None, maint=None, iv=None):
             'sigma': round(s, 5), 'sigmaE': round(s_e, 5), 'sigmaIv': round(iv_now, 5) if iv_now else None, 'lambda': LAMBDA, 'since': ds[0], 'samples': cnt,
             'counts': dict((r, zs[r][0]) for r in regs),
             'mult99': dict((r, [round(zs[r][1][0.99][0], 3), round(zs[r][1][0.99][1], 3)]) for r in regs),
-            'limit': LIMIT, 'checkFrom': split, 'checkDays': len(test),
-            'source': u'FinMind TaiwanStockPrice TAIEX（加權指數日線）；休市日：證交所 OpenAPI',
+            'limit': LIMIT, 'checkFrom': split, 'checkDays': len(test), 'stressDays': len(stress),
+            'source': u'FinMind TaiwanStockPrice TAIEX（加權指數日線）；休市日：證交所 OpenAPI；維持率、漲跌家數：網站籌碼資料',
         },
         'bands': bands,
         'check': check,
         'recent': recent,
         # 通道推移圖：d＝那一天（被預測的日子），b＝前一日收盤，h/l/c＝實際，u95/d95/u99/d99＝當時估的通道（點位），
-        # r＝n 一般／w 跨週末／h 連假。最後一列是明天（f＝1，沒有 h/l/c）
-        'series': series + [dict({'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1, 'mt': m_now}, **channel(reg, s, cl[-1], low_now))],
-        # 融資維持率（2026-11-21 使用者：維持率太低會加速破低）：低於 thr 時上下緣都乘放大係數（低維持率日的倍數分位 ÷ 全部）
-        # 選擇權隱含波動（2026-11-21 使用者：加恐慌指數；臺指 VIX 長期歷史要向期交所申請，改用 atm.json 價平和反推、同一種東西）
+        # r＝n 一般／w 跨週末／h 連假，fu/fd＝那天的狀態調整係數。最後一列是明天（f＝1，沒有 h/l/c）
+        'series': series + [tomorrow],
+        # 狀態調整（2026-11-21 IC 研究）：今天的上／下緣係數與各特徵的貢獻（log 尺度，正＝放寬）
+        'state': {'fu': round(fu_now, 3), 'fd': round(fd_now, 3), 'whyUp': why(why_u), 'whyDn': why(why_d)},
+        # 選擇權隱含波動（臺指 VIX 長期歷史要向期交所申請，改用 atm.json 價平和反推、同一種東西）
         'iv': {'days': len(iv_obs), 'from': min((o['d'] for o in iv_obs), default=None), 'check': iv_check,
                'note': u'σ＝max(EWMA, 價平和隱含)；價平和 ÷ (0.8 × 指數 × √到期交易日)'},
         'maint': {
-            'value': m_now, 'date': md[-1], 'thr': MAINT_LOW, 'low': low_now,
-            'factors': dict((str(p), [round(fac_all[p][0], 3), round(fac_all[p][1], 3)]) for p in PS),
+            'value': m_now, 'date': md[-1], 'thr': MAINT_LOW, 'low': m_now is not None and m_now < MAINT_LOW,
             'lowDays': sum(1 for o in obs if o['low'] and o['reg'] != 'holiday'),
             'below140': {'days': len([o for o in obs if o['m'] is not None and o['m'] < MAINT_CALL]),
                          'avgC': round(sum(o['C'] for o in obs if o['m'] is not None and o['m'] < MAINT_CALL)
@@ -357,21 +417,22 @@ def build(rows, hol, today=None, maint=None, iv=None):
     }
 
 
+
 def main():
     try:
         rows = load_taiex()
     except Exception as e:                                    # noqa: BLE001
         log(u'⚠ 加權指數日線抓不到（%s），nextday.json 保留前一版' % str(e)[:80])
         return 0
-    doc = build(rows, holidays(), maint=load_maint(), iv=load_iv())
+    doc = build(rows, holidays(), iv=load_iv(), chips=load_chips())
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')))
     m = doc['meta']
     b99 = next(b for b in doc['bands'] if b['p'] == 0.99)
     log(u'%s：%s 收 %.2f → 下一個交易日 %s（%s，日波動 %.2f%%＝EWMA 與隱含取大）；99%% 最高 %+.2f%%、最低 %+.2f%%；'
-        u'樣本外 99%% 突破 上 %.2f%%／下 %.2f%%'
+        u'樣本外 99%% 突破 上 %.2f%%／下 %.2f%%；狀態調整 上 ×%.2f 下 ×%.2f'
         % (OUT, m['date'], m['close'], m['next'], m['regime'], m['sigma'] * 100, b99['up'] * 100, b99['dn'] * 100,
-           doc['check'][2]['up'] * 100, doc['check'][2]['dn'] * 100))
+           doc['check'][2]['up'] * 100, doc['check'][2]['dn'] * 100, doc['state']['fu'], doc['state']['fd']))
     return 0
 
 

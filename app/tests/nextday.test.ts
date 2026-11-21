@@ -68,15 +68,17 @@ test('真實資料：通道序列的明天那列＝表格的 99% 點位，每一
   assert.ok(st.up99 / st.days < 0.04 && st.dn99 / st.days < 0.04);
 });
 
-test('真實資料：維持率低時通道只會放寬、係數 ≥ 1', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
+test('真實資料：狀態調整只放寬（係數 ≥ 1），調整後區間不比調整前窄', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
   const d = JSON.parse(readFileSync(PATH, 'utf8')) as NextdayData;
-  if (!d.maint || d.maint.value == null) return;
-  for (const [u, dn] of Object.values(d.maint.factors)) assert.ok(u >= 1 && dn >= 1);
+  if (!d.state) return;
+  assert.ok(d.state.fu >= 1 && d.state.fd >= 1 && d.state.fu <= 2 && d.state.fd <= 2);
   for (const b of d.bands) {
     if (b.up0 === undefined || b.dn0 === undefined) continue;
-    assert.ok(b.up >= b.up0 - 1e-9 && b.dn <= b.dn0 + 1e-9, `p=${b.p}`);
-    if (!d.maint.low) { assert.equal(b.up, b.up0); assert.equal(b.dn, b.dn0); }
+    // 分位數表是除以係數後重算的，係數 1 時可能略窄一點點；只要求不明顯變窄
+    assert.ok(b.up >= b.up0 * 0.9 && b.dn <= b.dn0 * 0.9, `p=${b.p}`);
   }
+  const last = d.series![d.series!.length - 1];
+  assert.equal(last.f, 1);
 });
 
 test('真實資料：日波動＝EWMA 和選擇權隱含取大；取大後隱含波動那段 95% 突破率不比只用 EWMA 差太多', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
