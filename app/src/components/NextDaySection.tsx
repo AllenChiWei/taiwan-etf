@@ -1,4 +1,4 @@
-/* 隔日加權指數漲跌幅（結算價頁，2026-11-21 使用者：做選擇權用，知道隔天最多漲／跌到哪，去賣嚴重偏離的履約價）。
+/* 隔日加權指數漲跌幅（#/nextday 獨立頁；2026-11-21 使用者：做選擇權用，知道隔天最多漲／跌到哪，去賣嚴重偏離的履約價）。
  * 數字由 scripts/fetch_nextday.py 每天算好放 nextday.json；方法與驗證見 lib/nextday.ts、腳本檔頭。 */
 
 import { useEffect, useState } from 'react';
@@ -6,6 +6,7 @@ import {
   REGIME_LABEL, breached, callStrikeAbove, levelOf, putStrikeBelow, type NextdayData,
 } from '../lib/nextday';
 import { WEEKDAY_LABEL, weekdayOf } from '../lib/atm';
+import { NextDayChannel } from './NextDayChannel';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const pct = (v: number, d = 1) => `${v >= 0 ? '+' : '−'}${Math.abs(v * 100).toFixed(d)}%`;
@@ -35,7 +36,7 @@ export function NextDaySection() {
   return (
     <section id="sec-nextday" className="mt-3 scroll-mt-16 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <h2 className="text-sm font-bold text-ink">隔日漲跌幅：明天加權指數可能到哪</h2>
+        <h1 className="text-base font-bold text-ink">隔日漲跌幅：明天加權指數可能到哪</h1>
         <span className="text-[11.5px] text-faint">{m.date} 收盤</span>
       </div>
       <p className="mt-1 text-[12px] text-muted">
@@ -85,6 +86,13 @@ export function NextDaySection() {
           95% 區間實際被突破 上 {prob(c95.up)}／下 {prob(c95.dn)}（應各 5%），
           99% 區間 上 {prob(c99.up)}／下 {prob(c99.dn)}（應各 1%）—— 極端行情比歷史稍多，賣得太近要留餘裕。
         </p>
+      )}
+
+      {d.series && d.series.length > 2 && (
+        <>
+          <h2 className="mt-3 text-[13px] font-bold text-ink">通道推移</h2>
+          <NextDayChannel series={d.series} />
+        </>
       )}
 
       <h3 className="mt-3 text-[12.5px] font-bold text-ink">最近 10 天：實際 vs 當時的 95% 區間</h3>

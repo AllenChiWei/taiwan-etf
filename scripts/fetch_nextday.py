@@ -25,6 +25,7 @@ u"""隔日加權指數漲跌幅：明天最高／最低／收盤可能到哪（�
 FinMind TaiwanStockPrice data_id=TAIEX（加權指數日線，2000 年起，一個請求；有 FINMIND_TOKEN 就帶）。
 抓不到就不寫檔，網站保留前一版。
 """
+import bisect
 import io
 import json
 import math
@@ -44,6 +45,7 @@ HOLIDAY_API = 'https://openapi.twse.com.tw/v1/holidaySchedule/holidaySchedule'
 LAMBDA = 0.94
 PS = [0.90, 0.95, 0.99, 0.995, 0.999]
 CHECK_YEARS = 3
+SERIES_DAYS = 500              # 通道推移圖：最近幾個交易日
 LIMIT = 0.10                     # 個股漲跌停 10%，指數一天不會超過
 
 
@@ -162,15 +164,49 @@ def build(rows, hol, today=None):
         ed = sum(1 for o in test if o['L'] < ztr[o['reg']][p][1] * o['s'])
         check.append({'p': p, 'up': round(eu / len(test), 4), 'dn': round(ed / len(test), 4)})
 
-    # 最近 10 天：當時的 95%／99% 區間（只用那天以前的資料）vs 實際
-    recent = []
-    for o in obs[-10:]:
-        past = [x for x in obs if x['d1'] <= o['d']]
-        zz = zq(past, o['reg'])[1]
-        recent.append({'d': o['d'], 'd1': o['d1'], 'close': cl[o['i']], 'reg': o['reg'],
-                       'H': round(o['H'], 5), 'L': round(o['L'], 5), 'C': round(o['C'], 5),
-                       'up95': round(zz[0.95][0] * o['s'], 5), 'dn95': round(zz[0.95][1] * o['s'], 5),
-                       'up99': round(zz[0.99][0] * o['s'], 5), 'dn99': round(zz[0.99][1] * o['s'], 5)})
+    # 通道推移：最近 SERIES_DAYS 天，每天的 95%／99% 通道只用「那天收盤以前」已經知道的隔日資料
+    # （obs[k] 的答案在 obs[k].d1 才知道，算第 j 天時 obs[0..j-1] 都已經知道）。各組各維護一份排好的倍數。
+    def sq(sorted_xs, p):
+        if not sorted_xs:
+            return float('nan')
+        k = (len(sorted_xs) - 1) * p
+        f = int(math.floor(k))
+        c = min(f + 1, len(sorted_xs) - 1)
+        return sorted_xs[f] + (sorted_xs[c] - sorted_xs[f]) * (k - f)
+
+    known = dict((r, ([], [])) for r in regs)          # 組 → (H 倍數, L 倍數)，排好的
+    start = max(0, len(obs) - SERIES_DAYS)
+    for o in obs[:start]:
+        bisect.insort(known[o['reg']][0], o['H'] / o['s'])
+        bisect.insort(known[o['reg']][1], o['L'] / o['s'])
+
+    def channel(reg_, s_, base):
+        hz, lz = known[reg_]
+        return dict((k, round(base * (1 + v), 1)) for k, v in (
+            ('u95', min(sq(hz, 0.95) * s_, LIMIT)), ('d95', max(sq(lz, 0.05) * s_, -LIMIT)),
+            ('u99', min(sq(hz, 0.99) * s_, LIMIT)), ('d99', max(sq(lz, 0.01) * s_, -LIMIT))))
+
+    def learn(o):
+        bisect.insort(known[o['reg']][0], o['H'] / o['s'])
+        bisect.insort(known[o['reg']][1], o['L'] / o['s'])
+
+    series, recent = [], []
+    for j in range(start, len(obs)):
+        o = obs[j]
+        if j > start:
+            learn(obs[j - 1])                          # 前一天的答案今天收盤時已經知道
+        base = cl[o['i']]
+        ch = channel(o['reg'], o['s'], base)
+        series.append(dict({'d': o['d1'], 'b': base, 'h': rows[o['i'] + 1][1], 'l': rows[o['i'] + 1][2],
+                            'c': cl[o['i'] + 1], 'r': o['reg'][0]}, **ch))
+        if j >= len(obs) - 10:
+            recent.append({'d': o['d'], 'd1': o['d1'], 'close': base, 'reg': o['reg'],
+                           'H': round(o['H'], 5), 'L': round(o['L'], 5), 'C': round(o['C'], 5),
+                           'up95': round(ch['u95'] / base - 1, 5), 'dn95': round(ch['d95'] / base - 1, 5),
+                           'up99': round(ch['u99'] / base - 1, 5), 'dn99': round(ch['d99'] / base - 1, 5)})
+    # 最後一點：明天（還沒有答案），用全部資料
+    if obs:
+        learn(obs[-1])
 
     def ext(key, best):
         o = best(obs, key=lambda x: x[key])
@@ -189,6 +225,9 @@ def build(rows, hol, today=None):
         'bands': bands,
         'check': check,
         'recent': recent,
+        # 通道推移圖：d＝那一天（被預測的日子），b＝前一日收盤，h/l/c＝實際，u95/d95/u99/d99＝當時估的通道（點位），
+        # r＝n 一般／w 跨週末／h 連假。最後一列是明天（f＝1，沒有 h/l/c）
+        'series': series + [dict({'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1}, **channel(reg, s, cl[-1]))],
         'extremes': {'H': ext('H', max), 'L': ext('L', min), 'Cup': ext('C', max), 'Cdn': ext('C', min)},
     }
 

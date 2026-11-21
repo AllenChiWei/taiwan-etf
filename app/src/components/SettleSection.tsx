@@ -37,7 +37,7 @@ export function SettleLink() {
   return (
     <Link to="/settle"
           className="mt-3 flex items-center justify-between rounded-xl border border-line bg-surface px-3.5 py-3 text-[13px] hover:border-accent">
-      <span><b className="text-ink">結算價預測</b><span className="ml-2 text-muted">週三／週五結算日 13:00 起每 5 秒即時更新；隔日漲跌幅</span></span>
+      <span><b className="text-ink">結算價預測</b><span className="ml-2 text-muted">週三／週五結算日 13:00 起每 5 秒即時更新</span></span>
       <span className="font-semibold text-accent">前往 →</span>
     </Link>
   );

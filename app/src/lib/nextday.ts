@@ -32,6 +32,49 @@ export interface NextdayData {
   check: Array<{ p: number; up: number; dn: number }>;
   recent: NextRecent[];
   extremes: Record<'H' | 'L' | 'Cup' | 'Cdn', { v: number; d: string; d1: string }>;
+  /** 通道推移：每一天（被預測的那天）當時估的通道（點位）與實際；最後一列是明天（f＝1，沒有 h/l/c） */
+  series?: NextPoint[];
+}
+
+export interface NextPoint {
+  /** 被預測的那一天 */
+  d: string;
+  /** 前一交易日收盤（通道的基準） */
+  b: number;
+  /** 實際最高、最低、收盤（明天那列沒有） */
+  h?: number; l?: number; c?: number;
+  /** n 一般／w 跨週末／h 連假 */
+  r: 'n' | 'w' | 'h';
+  u95: number; d95: number; u99: number; d99: number;
+  /** 1＝明天的預估 */
+  f?: 1;
+}
+
+export interface ChannelStats {
+  days: number;
+  up95: number; dn95: number; up99: number; dn99: number;
+}
+
+/** 這一段裡，盤中最高突破上緣、最低跌破下緣各幾次（明天那列不算） */
+export function channelStats(points: NextPoint[]): ChannelStats {
+  const done = points.filter(p => !p.f && p.h !== undefined && p.l !== undefined);
+  return {
+    days: done.length,
+    up95: done.filter(p => p.h! > p.u95).length,
+    dn95: done.filter(p => p.l! < p.d95).length,
+    up99: done.filter(p => p.h! > p.u99).length,
+    dn99: done.filter(p => p.l! < p.d99).length,
+  };
+}
+
+/** 這一天的結果：破 99%／破 95%（上或下），或在通道內 */
+export function pointBreach(p: NextPoint): { side: 'up' | 'down'; level: 95 | 99 } | null {
+  if (p.f || p.h === undefined || p.l === undefined) return null;
+  if (p.h > p.u99) return { side: 'up', level: 99 };
+  if (p.l < p.d99) return { side: 'down', level: 99 };
+  if (p.h > p.u95) return { side: 'up', level: 95 };
+  if (p.l < p.d95) return { side: 'down', level: 95 };
+  return null;
 }
 
 export const REGIME_LABEL: Record<Regime, string> = {

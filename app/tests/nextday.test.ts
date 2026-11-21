@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { levelOf, callStrikeAbove, putStrikeBelow, breached, type NextdayData, type NextRecent } from '../src/lib/nextday.ts';
+import { levelOf, callStrikeAbove, putStrikeBelow, breached, channelStats, pointBreach, type NextdayData, type NextRecent, type NextPoint } from '../src/lib/nextday.ts';
 
 test('履約價：買權往上取、賣權往下取，50 點一檔', () => {
   assert.equal(callStrikeAbove(39175.2), 39200);
@@ -36,4 +36,34 @@ test('真實資料：區間單調、不超過漲跌停、驗證期突破率合�
   const c99 = d.check.find(c => c.p === 0.99)!;
   assert.ok(c99.up < 0.04 && c99.dn < 0.04, `99% 突破 ${c99.up}／${c99.dn}`);
   assert.equal(d.recent.length, 10);
+});
+
+test('通道推移：突破次數與單日結果，明天那列不算', () => {
+  const base = { b: 100, r: 'n' as const, u95: 105, d95: 95, u99: 108, d99: 92 };
+  const pts: NextPoint[] = [
+    { ...base, d: '2026-11-17', h: 104, l: 96, c: 100 },
+    { ...base, d: '2026-11-18', h: 106, l: 99, c: 105 },          // 破 95 上
+    { ...base, d: '2026-11-19', h: 101, l: 90, c: 91 },           // 破 99 下
+    { ...base, d: '2026-11-20', f: 1 },
+  ];
+  assert.deepEqual(channelStats(pts), { days: 3, up95: 1, dn95: 1, up99: 0, dn99: 1 });
+  assert.equal(pointBreach(pts[0]), null);
+  assert.deepEqual(pointBreach(pts[1]), { side: 'up', level: 95 });
+  assert.deepEqual(pointBreach(pts[2]), { side: 'down', level: 99 });
+  assert.equal(pointBreach(pts[3]), null);
+});
+
+test('真實資料：通道序列的明天那列＝表格的 99% 點位，每一列上緣 > 前收 > 下緣', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
+  const d = JSON.parse(readFileSync(PATH, 'utf8')) as NextdayData;
+  const s = d.series!;
+  assert.ok(s.length > 100);
+  const last = s[s.length - 1];
+  assert.equal(last.f, 1);
+  assert.equal(last.d, d.meta.next);
+  const b99 = d.bands.find(b => b.p === 0.99)!;
+  assert.ok(Math.abs(last.u99 - levelOf(d.meta.close, b99.up)) < 0.2);
+  assert.ok(Math.abs(last.d99 - levelOf(d.meta.close, b99.dn)) < 0.2);
+  for (const p of s) assert.ok(p.u99 >= p.u95 && p.u95 > p.b && p.b > p.d95 && p.d95 >= p.d99, p.d);
+  const st = channelStats(s);
+  assert.ok(st.up99 / st.days < 0.04 && st.dn99 / st.days < 0.04);
 });
