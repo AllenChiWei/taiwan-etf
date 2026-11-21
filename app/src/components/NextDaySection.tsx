@@ -183,8 +183,8 @@ function Hero({ d }: { d: NextdayData }) {
     );
     return (
       <div className="min-w-0 rounded-lg border border-line bg-sunken/40 px-2.5 py-2">
-        <div className="text-[11.5px] font-semibold text-muted">{isDn ? '明天最低不跌破' : '明天最高不超過'}<span className="ml-1 font-normal text-faint">95%</span></div>
-        <div className={`mt-0.5 font-mono text-[26px] font-bold leading-tight tabular-nums ${color}`}>{nf0.format(lv(main))}</div>
+        <div className="text-[12px] font-semibold text-muted">{isDn ? '預測最低' : '預測最高'}<span className="ml-1 font-normal text-faint">95% 機率守住</span></div>
+        <div className={`mt-0.5 font-mono text-[32px] font-extrabold leading-none tabular-nums sm:text-[38px] ${color}`}>{nf0.format(lv(main))}</div>
         <div className="font-mono text-[12px] tabular-nums text-muted">
           {pct(main)}{capped(main) && <span className="ml-1 font-sans text-faint">＝{isDn ? '跌停' : '漲停'}價</span>}
         </div>
@@ -199,9 +199,28 @@ function Hero({ d }: { d: NextdayData }) {
       </div>
     );
   };
+  // 2026-11-21 使用者：「我要看加權指數漲跌停價格」（昨收 ×1.1／×0.9）→ 最上面單獨一塊大字，一天不可能超過的硬上下限
+  const limUp = levelOf(close, m.limit), limDn = levelOf(close, -m.limit);
   return (
     <div className="mt-2">
-      <div className="grid grid-cols-2 gap-2">
+      <div className="rounded-lg border-2 border-line bg-sunken/40 px-2.5 py-2">
+        <div className="text-[12px] font-semibold text-muted">
+          {dayLabel(m.next)} 加權指數漲跌停<span className="ml-1 font-normal text-faint">昨收 {nf0.format(close)} ×1.1／×0.9</span>
+        </div>
+        <div className="mt-1 grid grid-cols-2 gap-2">
+          <div className="min-w-0">
+            <div className="text-[12px] text-muted">跌停價（最低）</div>
+            <div className="font-mono text-[32px] font-extrabold leading-none tabular-nums text-down sm:text-[38px]">{nf0.format(limDn)}</div>
+            <div className="mt-0.5 text-[11.5px] text-muted">賣權 {nf0.format(putStrikeBelow(limDn))} 以下碰不到</div>
+          </div>
+          <div className="min-w-0">
+            <div className="text-[12px] text-muted">漲停價（最高）</div>
+            <div className="font-mono text-[32px] font-extrabold leading-none tabular-nums text-up sm:text-[38px]">{nf0.format(limUp)}</div>
+            <div className="mt-0.5 text-[11.5px] text-muted">買權 {nf0.format(callStrikeAbove(limUp))} 以上碰不到</div>
+          </div>
+        </div>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
         {card('dn')}
         {card('up')}
       </div>
