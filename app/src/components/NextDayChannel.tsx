@@ -123,6 +123,7 @@ export function NextDayChannel({ series }: { series: NextPoint[] }) {
         {cur.h !== undefined && <>{' · '}高 <span className="font-mono text-up">{nf0.format(cur.h)}</span> 低 <span className="font-mono text-down">{nf0.format(cur.l!)}</span> 收 <span className="font-mono text-ink">{nf0.format(cur.c!)}</span></>}
         <br />95% <span className="font-mono">{nf0.format(cur.d95)}～{nf0.format(cur.u95)}</span>
         {' · '}99% <span className="font-mono">{nf0.format(cur.d99)}～{nf0.format(cur.u99)}</span>
+        {cur.mt != null && <>{' · '}融資維持率 <span className={`font-mono ${cur.mt < 160 ? 'font-semibold' : ''}`} style={cur.mt < 160 ? { color: '#d97706' } : undefined}>{cur.mt.toFixed(1)}%</span></>}
         <br />漲跌停（前收 ×0.9／×1.1）<span className="font-mono">{nf0.format(cur.b * 0.9)}～{nf0.format(cur.b * 1.1)}</span>
         {br &&<b className="ml-1 text-ink">{br.side === 'up' ? '突破' : '跌破'} {br.level}%</b>}
       </div>

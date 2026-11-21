@@ -46,6 +46,8 @@ export function NextDaySection() {
         。近期波動（EWMA 日標準差）<b className="font-mono text-ink">{(m.sigma * 100).toFixed(2)}%</b>。
       </p>
 
+      {m && d.maint && d.maint.value != null && <MaintBox d={d} />}
+
       <table className="mt-2 w-full text-[12px]">
         <thead>
           <tr className="text-right text-[11px] text-faint">
@@ -143,5 +145,41 @@ export function NextDaySection() {
         週選到期結算看的是結算價（13:00～13:30 平均），盤中最高最低影響的是保證金與停損。履約價以 50 點取整，實際掛牌以期交所為準。僅供參考，不構成投資建議。
       </p>
     </section>
+  );
+}
+
+/** 融資維持率：低於門檻時通道已放寬多少，以及近 3 年低維持率日的實際突破率（比名目高很多，要照實講） */
+function MaintBox({ d }: { d: NextdayData }) {
+  const mt = d.maint!;
+  const b95 = d.bands.find(b => b.p === 0.95);
+  const c95 = d.check.find(c => c.p === 0.95), c99 = d.check.find(c => c.p === 0.99);
+  const f95 = mt.factors['0.95'];
+  const p1 = (v: number) => `${(v * 100).toFixed(1)}%`;
+  return (
+    // 警示用琥珀色（台股紅漲綠跌，用綠色會被看成「沒事」）
+    <div className="mt-2 rounded-lg border border-line bg-sunken/40 px-2.5 py-2 text-[11.5px] leading-snug text-muted"
+         style={mt.low ? { borderColor: '#d97706', borderLeftWidth: 4 } : undefined}>
+      <div className="text-[12.5px] text-ink">
+        融資維持率 <b className="font-mono" style={mt.low ? { color: '#d97706' } : undefined}>{mt.value!.toFixed(1)}%</b>
+        <span className="ml-1 text-[11px] text-faint">（{mt.date}）</span>
+        {mt.low ? <b className="ml-1.5" style={{ color: '#d97706' }}>低於 {mt.thr}：斷頭賣壓可能加速破低</b> : <span className="ml-1.5">高於 {mt.thr}，不調整</span>}
+      </div>
+      {mt.low && b95 && b95.dn0 !== undefined && (
+        <p className="mt-1">
+          通道已依維持率放寬：95% 上緣 ×{f95[0].toFixed(2)}、下緣 ×{f95[1].toFixed(2)}
+          （下緣 {pct(b95.dn0)} → <b className="text-ink">{pct(b95.dn)}</b>；係數＝2009 年起維持率低於 {mt.thr} 的 {nf0.format(mt.lowDays)} 天和全部日子的倍數比）。
+        </p>
+      )}
+      {c95?.lowUp0 !== undefined && c99?.lowUp0 !== undefined && (
+        <p className="mt-1">
+          <b className="text-ink">要留意</b>：最近 3 年維持率低於 {mt.thr} 的日子，95% 區間實際被突破 上 {p1(c95.lowUp0!)}／下 {p1(c95.lowDn0!)}、
+          99% 區間 上 {p1(c99.lowUp0!)}／下 {p1(c99.lowDn0!)}（正常應各 5%、1%）—— <b className="text-ink">上下都比平常猛</b>（破底之後常急彈）。
+          維持率低時把 95% 當 90% 看，賣在 99% 之外比較保險。
+        </p>
+      )}
+      <p className="mt-1 text-[11px] text-faint">
+        維持率低於 140 的日子 2009 年起只有 {mt.below140.days} 天，隔日收盤平均 {pct(mt.below140.avgC, 2)}（斷頭賣完常反彈），樣本太少不另外調整。
+      </p>
+    </div>
   );
 }

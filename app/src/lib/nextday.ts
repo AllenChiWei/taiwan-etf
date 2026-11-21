@@ -13,6 +13,23 @@ export interface NextBand {
   dn: number;
   /** |明天收盤 ÷ 今收 − 1| 的上緣 */
   c: number;
+  /** 沒有維持率調整前的上下緣（2026-11-21） */
+  up0?: number;
+  dn0?: number;
+}
+
+/** 融資維持率調整（2026-11-21 使用者：維持率太低會加速破低） */
+export interface NextMaint {
+  /** 最近一筆大盤融資維持率（%）與日期 */
+  value: number | null;
+  date: string | null;
+  /** 低於這個數＝低維持率日，上下緣乘放大係數 */
+  thr: number;
+  low: boolean;
+  /** {機率: [上緣係數, 下緣係數]}（全部歷史：低維持率日的倍數分位 ÷ 全部） */
+  factors: Record<string, [number, number]>;
+  lowDays: number;
+  below140: { days: number; avgC: number };
 }
 
 export interface NextRecent {
@@ -29,7 +46,9 @@ export interface NextdayData {
     checkFrom: string; checkDays: number; source: string;
   };
   bands: NextBand[];
-  check: Array<{ p: number; up: number; dn: number }>;
+  /** lowUp0／lowDn0＝測試期裡低維持率那些天、沒加維持率係數時的突破率；lowUp／lowDn＝加了之後 */
+  check: Array<{ p: number; up: number; dn: number; lowUp0?: number; lowDn0?: number; lowUp?: number; lowDn?: number }>;
+  maint?: NextMaint;
   recent: NextRecent[];
   extremes: Record<'H' | 'L' | 'Cup' | 'Cdn', { v: number; d: string; d1: string }>;
   /** 通道推移：每一天（被預測的那天）當時估的通道（點位）與實際；最後一列是明天（f＝1，沒有 h/l/c） */
@@ -48,6 +67,8 @@ export interface NextPoint {
   u95: number; d95: number; u99: number; d99: number;
   /** 1＝明天的預估 */
   f?: 1;
+  /** 那天（前一交易日收盤時）的融資維持率 */
+  mt?: number | null;
 }
 
 export interface ChannelStats {

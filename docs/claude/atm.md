@@ -81,4 +81,9 @@ Call 取價平以上、Put 取價平以下 —— 沒過濾時剛掛牌的薄合
   `series`＝最近 500 個交易日每天「前一天收盤時只用當時以前資料」估的通道（點位）＋實際高低收，最後一列是明天（`f:1`）。
   網站：獨立頁 `#/nextday`（市場 → 隔日漲跌；NextDaySection＋NextDayChannel 通道推移圖），結算價頁頂端有連結。
   研究比較（全歷史分位數、20 日標準差、EWMA）在 `D:/ai/_tmp/scripts_iso/nextday_study.py`。
+- **融資維持率調整**（2026-11-21 使用者：維持率太低會加速破低）：`load_maint()` 讀網站 chips.json 的 `margin.maintHist`（當天的，還沒公布用 5 天內前一筆）；
+  低於 `MAINT_LOW`＝160 時上下緣乘係數＝低維持率日倍數分位 ÷ 全部（一般＋跨週末合併、最少 1、0.995／0.999 用 0.99 的係數）。
+  研究 `D:/ai/_tmp/scripts_iso/nextday_maint_study.py`、`nextday_maint_check.py`：EWMA 已吸收大部分（低維持率時 σ 高一倍），長期係數只有 1.03～1.14；
+  但近 3 年低維持率 48 天 95% 區間被突破 10%／8%、99% 6%／4%（約 2 倍，上下都猛），用 2023 以前估的係數改善不了 → 頁面照實列出，不硬調。
+  維持率 < 140 只有 36 天、隔日收盤平均 +0.67%（斷頭後反彈），不另外調整。抓不到維持率就不調整（`maint.value` null）。
 - 兩支都 `|| echo ::warning`，失敗不擋價平和；site-data-check 會看 settle.json（比最近已過的結算日）與 nextday.json（每日）。

@@ -47,6 +47,8 @@ PS = [0.90, 0.95, 0.99, 0.995, 0.999]
 CHECK_YEARS = 3
 SERIES_DAYS = 500              # 通道推移圖：最近幾個交易日
 LIMIT = 0.10                     # 個股漲跌停 10%，指數一天不會超過
+MAINT_LOW = 160                  # 融資維持率低於這個數＝低維持率日（2026-11-21 研究：門檻 155～160 樣本外改善 95% 下緣）
+CHIPS_URL = 'https://allenchiwei.github.io/taiwan-etf/data/chips.json'
 
 
 def log(m):
@@ -113,10 +115,29 @@ def quantile(xs, p):
     return s[f] + (s[c] - s[f]) * (k - f)
 
 
-def build(rows, hol, today=None):
+def load_maint():
+    u"""{日期: 大盤融資維持率}，從網站 chips.json 的 margin.maintHist（部署流程每天更新，2009 起）。抓不到回 {}（不做維持率調整）"""
+    try:
+        doc = get_json(CHIPS_URL)
+        return dict((d, float(v)) for d, v in (doc.get('margin') or {}).get('maintHist') or [] if v)
+    except Exception as e:                                    # noqa: BLE001
+        log(u'  ⚠ 融資維持率抓不到（%s），不做維持率調整' % str(e)[:60])
+        return {}
+
+
+def build(rows, hol, today=None, maint=None):
     n = len(rows)
     ds = [r[0] for r in rows]
     cl = [r[3] for r in rows]
+    # 每天的融資維持率：當天的；還沒公布（晚上才有）就用最近 5 個日曆日內的前一筆
+    maint = maint or {}
+    mt, md = [None] * n, [None] * n
+    last_m, last_d = None, None
+    for i, dd in enumerate(ds):
+        if dd in maint:
+            last_m, last_d = maint[dd], dd
+        if last_d and (date.fromisoformat(dd) - date.fromisoformat(last_d)).days <= 5:
+            mt[i], md[i] = last_m, last_d
     # EWMA 日標準差（含當天報酬），前 60 天的變異數當起點
     rets = [0.0] + [cl[i] / cl[i - 1] - 1 for i in range(1, n)]
     v = sum(x * x for x in rets[1:61]) / 60
@@ -128,8 +149,25 @@ def build(rows, hol, today=None):
     obs = []
     for i in range(61, n - 1):
         gap = (date.fromisoformat(ds[i + 1]) - date.fromisoformat(ds[i])).days
-        obs.append({'i': i, 'd': ds[i], 'd1': ds[i + 1], 'reg': regime_of(gap), 's': sig[i],
+        obs.append({'i': i, 'd': ds[i], 'd1': ds[i + 1], 'reg': regime_of(gap), 's': sig[i], 'm': mt[i],
+                    'low': mt[i] is not None and mt[i] < MAINT_LOW,
                     'H': rows[i + 1][1] / cl[i] - 1, 'L': rows[i + 1][2] / cl[i] - 1, 'C': cl[i + 1] / cl[i] - 1})
+
+    def mfac(sample):
+        u"""維持率放大係數 {p: (上, 下)}：低維持率日（< MAINT_LOW）的倍數分位 ÷ 同期有維持率資料的全部（一般＋跨週末合併，連假不分）。
+        最少 1（不因為維持率低而縮窄）；0.995、0.999 用 0.99 的係數（低維持率日樣本不夠估那麼遠的尾巴）"""
+        pool = [o for o in sample if o['m'] is not None and o['reg'] != 'holiday']
+        low = [o for o in pool if o['low']]
+        out = {}
+        for p in PS:
+            pp = min(p, 0.99)
+            if len(low) < 100:
+                out[p] = (1.0, 1.0)
+                continue
+            fu = quantile([o['H'] / o['s'] for o in low], pp) / quantile([o['H'] / o['s'] for o in pool], pp)
+            fd = quantile([o['L'] / o['s'] for o in low], 1 - pp) / quantile([o['L'] / o['s'] for o in pool], 1 - pp)
+            out[p] = (max(1.0, fu), max(1.0, fd))
+        return out
 
     def zq(sample, reg):
         u"""某一組的倍數分位數 {p: (上, 下, |收盤|)}"""
@@ -147,22 +185,40 @@ def build(rows, hol, today=None):
     reg = regime_of((nxt - last).days)
     s = sig[-1]
     cnt, z = zs[reg]
+    fac_all = mfac(obs)
+    m_now = mt[-1]
+    low_now = m_now is not None and m_now < MAINT_LOW and reg != 'holiday'
     bands = []
     for p in PS:
         up, dn, cc = z[p]
-        bands.append({'p': p, 'up': round(min(up * s, LIMIT), 5), 'dn': round(max(dn * s, -LIMIT), 5),
-                      'c': round(min(cc * s, LIMIT), 5)})
+        fu, fd = fac_all[p] if low_now else (1.0, 1.0)
+        bands.append({'p': p, 'up': round(min(up * fu * s, LIMIT), 5), 'dn': round(max(dn * fd * s, -LIMIT), 5),
+                      'c': round(min(cc * max(fu, fd) * s, LIMIT), 5),
+                      'up0': round(min(up * s, LIMIT), 5), 'dn0': round(max(dn * s, -LIMIT), 5)})
 
-    # 樣本外驗證：最近 CHECK_YEARS 年，用之前的資料算倍數
+    # 樣本外驗證：最近 CHECK_YEARS 年，用之前的資料算倍數（含維持率係數）；另外看測試期裡低維持率那些天，加維持率前後各被突破多少
     split = (last - timedelta(days=365 * CHECK_YEARS)).isoformat()
     train = [o for o in obs if o['d'] <= split]
     test = [o for o in obs if o['d'] > split]
     ztr = dict((r, zq(train, r)[1]) for r in regs)
+    ftr = mfac(train)
+    tlow = [o for o in test if o['low'] and o['reg'] != 'holiday']
+
+    def adj(o, p):
+        return ftr[p] if o['low'] and o['reg'] != 'holiday' else (1.0, 1.0)
     check = []
     for p in (0.90, 0.95, 0.99):
-        eu = sum(1 for o in test if o['H'] > ztr[o['reg']][p][0] * o['s'])
-        ed = sum(1 for o in test if o['L'] < ztr[o['reg']][p][1] * o['s'])
-        check.append({'p': p, 'up': round(eu / len(test), 4), 'dn': round(ed / len(test), 4)})
+        eu = sum(1 for o in test if o['H'] > ztr[o['reg']][p][0] * adj(o, p)[0] * o['s'])
+        ed = sum(1 for o in test if o['L'] < ztr[o['reg']][p][1] * adj(o, p)[1] * o['s'])
+        row = {'p': p, 'up': round(eu / len(test), 4), 'dn': round(ed / len(test), 4)}
+        if tlow:
+            row.update({
+                'lowUp0': round(sum(1 for o in tlow if o['H'] > ztr[o['reg']][p][0] * o['s']) / len(tlow), 4),
+                'lowDn0': round(sum(1 for o in tlow if o['L'] < ztr[o['reg']][p][1] * o['s']) / len(tlow), 4),
+                'lowUp': round(sum(1 for o in tlow if o['H'] > ztr[o['reg']][p][0] * ftr[p][0] * o['s']) / len(tlow), 4),
+                'lowDn': round(sum(1 for o in tlow if o['L'] < ztr[o['reg']][p][1] * ftr[p][1] * o['s']) / len(tlow), 4),
+            })
+        check.append(row)
 
     # 通道推移：最近 SERIES_DAYS 天，每天的 95%／99% 通道只用「那天收盤以前」已經知道的隔日資料
     # （obs[k] 的答案在 obs[k].d1 才知道，算第 j 天時 obs[0..j-1] 都已經知道）。各組各維護一份排好的倍數。
@@ -175,20 +231,32 @@ def build(rows, hol, today=None):
         return sorted_xs[f] + (sorted_xs[c] - sorted_xs[f]) * (k - f)
 
     known = dict((r, ([], [])) for r in regs)          # 組 → (H 倍數, L 倍數)，排好的
-    start = max(0, len(obs) - SERIES_DAYS)
-    for o in obs[:start]:
-        bisect.insort(known[o['reg']][0], o['H'] / o['s'])
-        bisect.insort(known[o['reg']][1], o['L'] / o['s'])
-
-    def channel(reg_, s_, base):
-        hz, lz = known[reg_]
-        return dict((k, round(base * (1 + v), 1)) for k, v in (
-            ('u95', min(sq(hz, 0.95) * s_, LIMIT)), ('d95', max(sq(lz, 0.05) * s_, -LIMIT)),
-            ('u99', min(sq(hz, 0.99) * s_, LIMIT)), ('d99', max(sq(lz, 0.01) * s_, -LIMIT))))
+    mk = {'pH': [], 'pL': [], 'lH': [], 'lL': []}      # 維持率係數用：有維持率的一般＋跨週末（p）、其中低維持率（l）
 
     def learn(o):
         bisect.insort(known[o['reg']][0], o['H'] / o['s'])
         bisect.insort(known[o['reg']][1], o['L'] / o['s'])
+        if o['m'] is not None and o['reg'] != 'holiday':
+            bisect.insort(mk['pH'], o['H'] / o['s']); bisect.insort(mk['pL'], o['L'] / o['s'])
+            if o['low']:
+                bisect.insort(mk['lH'], o['H'] / o['s']); bisect.insort(mk['lL'], o['L'] / o['s'])
+
+    start = max(0, len(obs) - SERIES_DAYS)
+    for o in obs[:start]:
+        learn(o)
+
+    def channel(reg_, s_, base, low_):
+        hz, lz = known[reg_]
+
+        def f(p, side):
+            if not low_ or reg_ == 'holiday' or len(mk['lH']) < 100:
+                return 1.0
+            if side == 'u':
+                return max(1.0, sq(mk['lH'], p) / sq(mk['pH'], p))
+            return max(1.0, sq(mk['lL'], 1 - p) / sq(mk['pL'], 1 - p))
+        return dict((k, round(base * (1 + v), 1)) for k, v in (
+            ('u95', min(sq(hz, 0.95) * f(0.95, 'u') * s_, LIMIT)), ('d95', max(sq(lz, 0.05) * f(0.95, 'd') * s_, -LIMIT)),
+            ('u99', min(sq(hz, 0.99) * f(0.99, 'u') * s_, LIMIT)), ('d99', max(sq(lz, 0.01) * f(0.99, 'd') * s_, -LIMIT))))
 
     series, recent = [], []
     for j in range(start, len(obs)):
@@ -196,9 +264,9 @@ def build(rows, hol, today=None):
         if j > start:
             learn(obs[j - 1])                          # 前一天的答案今天收盤時已經知道
         base = cl[o['i']]
-        ch = channel(o['reg'], o['s'], base)
+        ch = channel(o['reg'], o['s'], base, o['low'])
         series.append(dict({'d': o['d1'], 'b': base, 'h': rows[o['i'] + 1][1], 'l': rows[o['i'] + 1][2],
-                            'c': cl[o['i'] + 1], 'r': o['reg'][0]}, **ch))
+                            'c': cl[o['i'] + 1], 'r': o['reg'][0], 'mt': o['m']}, **ch))
         if j >= len(obs) - 10:
             recent.append({'d': o['d'], 'd1': o['d1'], 'close': base, 'reg': o['reg'],
                            'H': round(o['H'], 5), 'L': round(o['L'], 5), 'C': round(o['C'], 5),
@@ -227,7 +295,17 @@ def build(rows, hol, today=None):
         'recent': recent,
         # 通道推移圖：d＝那一天（被預測的日子），b＝前一日收盤，h/l/c＝實際，u95/d95/u99/d99＝當時估的通道（點位），
         # r＝n 一般／w 跨週末／h 連假。最後一列是明天（f＝1，沒有 h/l/c）
-        'series': series + [dict({'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1}, **channel(reg, s, cl[-1]))],
+        'series': series + [dict({'d': nxt.isoformat(), 'b': cl[-1], 'r': reg[0], 'f': 1, 'mt': m_now}, **channel(reg, s, cl[-1], low_now))],
+        # 融資維持率（2026-11-21 使用者：維持率太低會加速破低）：低於 thr 時上下緣都乘放大係數（低維持率日的倍數分位 ÷ 全部）
+        'maint': {
+            'value': m_now, 'date': md[-1], 'thr': MAINT_LOW, 'low': low_now,
+            'factors': dict((str(p), [round(fac_all[p][0], 3), round(fac_all[p][1], 3)]) for p in PS),
+            'lowDays': sum(1 for o in obs if o['low'] and o['reg'] != 'holiday'),
+            'below140': {'days': len([o for o in obs if o['m'] is not None and o['m'] < 140]),
+                         'avgC': round(sum(o['C'] for o in obs if o['m'] is not None and o['m'] < 140)
+                                       / max(1, len([o for o in obs if o['m'] is not None and o['m'] < 140])), 5)},
+            'source': u'網站籌碼資料 margin.maintHist（大盤融資維持率＝Σ融資餘額×收盤÷融資金額，2009 起）',
+        },
         'extremes': {'H': ext('H', max), 'L': ext('L', min), 'Cup': ext('C', max), 'Cdn': ext('C', min)},
     }
 
@@ -238,7 +316,7 @@ def main():
     except Exception as e:                                    # noqa: BLE001
         log(u'⚠ 加權指數日線抓不到（%s），nextday.json 保留前一版' % str(e)[:80])
         return 0
-    doc = build(rows, holidays())
+    doc = build(rows, holidays(), maint=load_maint())
     with io.open(OUT, 'w', encoding='utf-8') as fh:
         fh.write(json.dumps(doc, ensure_ascii=False, separators=(',', ':')))
     m = doc['meta']

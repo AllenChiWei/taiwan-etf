@@ -67,3 +67,14 @@ test('真實資料：通道序列的明天那列＝表格的 99% 點位，每一
   const st = channelStats(s);
   assert.ok(st.up99 / st.days < 0.04 && st.dn99 / st.days < 0.04);
 });
+
+test('真實資料：維持率低時通道只會放寬、係數 ≥ 1', { skip: !existsSync(PATH) && '沒有 nextday.json' }, () => {
+  const d = JSON.parse(readFileSync(PATH, 'utf8')) as NextdayData;
+  if (!d.maint || d.maint.value == null) return;
+  for (const [u, dn] of Object.values(d.maint.factors)) assert.ok(u >= 1 && dn >= 1);
+  for (const b of d.bands) {
+    if (b.up0 === undefined || b.dn0 === undefined) continue;
+    assert.ok(b.up >= b.up0 - 1e-9 && b.dn <= b.dn0 + 1e-9, `p=${b.p}`);
+    if (!d.maint.low) { assert.equal(b.up, b.up0); assert.equal(b.dn, b.dn0); }
+  }
+});
