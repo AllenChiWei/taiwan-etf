@@ -10,7 +10,6 @@ import {
 // 區的顏色：便宜用網站主色（藍），昂貴用琥珀；不用紅綠（台股紅漲綠跌）
 const ZONE_COLOR: Record<Zone, string> = { cheap: '#2563eb', fairLow: '#60a5fa', fairHigh: '#f59e0b', rich: '#d97706' };
 const px = (v: number | null | undefined) => (v == null ? '—' : v >= 1000 ? Math.round(v).toLocaleString('zh-TW') : v.toFixed(v >= 100 ? 1 : 2));
-const pc = (v: number | null | undefined, d = 1) => (v == null ? '—' : `${(v * 100).toFixed(d)}%`);
 
 function Bar({ r, b }: { r: DefRow; b: Band }) {
   const s = scale(r.price, b);
