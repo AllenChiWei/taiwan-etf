@@ -21,7 +21,7 @@ import { CommandPalette } from './CommandPalette';
  * 「配息」站主很常用（11-18）→ 單獨放上排、一鍵直達；只有一頁的組不顯示下排。
  */
 const GROUPS = [
-  { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/cb', label: '可轉債' }] },
+  { key: '商品', tabs: [{ to: '/', label: '台股' }, { to: '/us', label: '美股' }, { to: '/stock', label: '個股' }, { to: '/defensive', label: '民生股' }, { to: '/cb', label: '可轉債' }] },
   { key: '配息', tabs: [{ to: '/dividend', label: '配息' }] },
   { key: '市場', tabs: [{ to: '/market', label: '總覽' }, { to: '/chips', label: '籌碼' }, { to: '/settle', label: '結算價' }, { to: '/nextday', label: '隔日漲跌' }, { to: '/macro', label: '總經' }, { to: '/news', label: '新聞' }, { to: '/calendar', label: '行事曆' }] },
   { key: '工具', tabs: [{ to: '/calc', label: '試算' }, { to: '/compare', label: '比對' }, { to: '/favorites', label: '收藏' }, { to: '/futures', label: '對帳單' }] },

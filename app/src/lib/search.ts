@@ -61,6 +61,7 @@ export const PAGES: SearchItem[] = [
   { kind: 'page', name: '配息規劃', to: '/dividend', keywords: '配息 月配 股息 存股 規劃' },
   { kind: 'page', name: '期貨對帳單', to: '/futures', keywords: '對帳單 期貨 元大' },
   { kind: 'page', name: '籌碼（法人、選擇權）', to: '/chips', keywords: '籌碼 法人 外資 投信 選擇權 put call 大額 散戶 價平和' },
+  { kind: 'page', name: '民生必需股（建議持有價）', to: '/defensive', keywords: '民生 必需 防禦 電信 中華電 台灣大 遠傳 台哥大 食品 超商 燃氣 便宜價 合理價 昂貴價 存股 殖利率' },
   { kind: 'page', name: '市場總覽（現在該注意什麼）', to: '/market', keywords: '市場 總覽 總結 籌碼 警戒 注意 維持率 恐慌 VIX 外資 散戶 斷頭 燈號' },
   { kind: 'page', name: '結算價預測（週三／週五選擇權）', to: '/settle', keywords: '結算價 結算 預測 選擇權 週選 月選 TXO 最後結算價' },
   { kind: 'page', name: '隔日漲跌幅（明天加權指數可能到哪）', to: '/nextday', keywords: '隔日 漲跌幅 明天 通道 區間 最高 最低 賣方 選擇權 履約價 波動' },

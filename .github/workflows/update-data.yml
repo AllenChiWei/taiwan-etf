@@ -33,7 +33,7 @@ concurrency:
 #   台股   etfs.json, taiwan_etf_list.html      名單 + MoneyDJ + FinLab 報酬率
 #   美股   us_etfs.json                         Nasdaq 名單 + FinLab 價格
 #   價平和 atm.json, settle.json, nextday.json  期交所選擇權行情、結算價歷史（累積式）、隔日漲跌幅
-#   個股   fin_history.json                     公開資訊觀測站（累積式）
+#   個股   fin_history.json, defensive.json     公開資訊觀測站（累積式）、民生股建議持有價（FinMind）
 #   散戶   retail.json                          期交所三大法人＋全市場未沖銷（累積式）
 #   換股   active_holdings.json                 各投信官網的主動式 ETF 持股（累積式）
 #   前十大 top10.json                           投信投顧公會月報（月份沒變就不重抓）
@@ -78,7 +78,7 @@ jobs:
       TW_FILES: app/public/data/etfs.json taiwan_etf_list.html
       US_FILES: app/public/data/us_etfs.json
       ATM_FILES: app/public/data/atm.json app/public/data/settle.json app/public/data/nextday.json
-      STOCK_FILES: app/public/data/fin_history.json
+      STOCK_FILES: app/public/data/fin_history.json app/public/data/defensive.json
       RETAIL_FILES: app/public/data/retail.json
       HOLD_FILES: app/public/data/active_holdings.json
       TOP10_FILES: app/public/data/top10.json
@@ -267,7 +267,12 @@ jobs:
       - name: 個股財報
         id: stocks
         continue-on-error: true
-        run: python scripts/fetch_stocks.py --no-chips
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: |
+          python scripts/fetch_stocks.py --no-chips
+          # 民生必需股的建議持有價（defensive.json，商品 → 民生股；FinMind 每檔 3 個請求）：失敗不擋個股財報
+          python scripts/fetch_defensive.py || echo "::warning title=民生股::fetch_defensive.py 失敗，defensive.json 保留前一版"
 
       # ── 區塊六：散戶多空比 ─────────────────────────────────────────────
       # 期交所的三大法人資料只保留約三年，所以跟價平和一樣逐日累積、進版控，

@@ -15,7 +15,7 @@ export const KIND_LABEL: Record<ChangeKind, string> = {
 };
 
 /** 站內分頁。寫成聯集而不是 string，打錯路徑時型別檢查就會擋下來。 */
-export type SitePath = '/' | '/us' | '/favorites' | '/compare' | '/calc' | '/dividend' | '/futures' | '/settle' | '/nextday' | '/market'
+export type SitePath = '/' | '/us' | '/favorites' | '/compare' | '/calc' | '/dividend' | '/futures' | '/settle' | '/nextday' | '/market' | '/defensive'
   | '/chips' | '/news' | '/macro' | '/calendar' | '/cb' | '/stock' | '/etf' | '/poker' | '/about' | '/changelog';
 
 export interface ChangeItem {
@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-21',
     items: [
+      { kind: 'new', to: '/defensive',
+        text: '新增「民生股」頁（商品 → 民生股）：中華電、台灣大、遠傳、統一、統一超、全家、大台北、欣天然、中保科、台灣高鐵等 13 檔民生必需股的便宜／合理／昂貴價（用每檔自己近 10 年的殖利率分布換算），標出現在落在哪一區；另附本益比、淨值比區間、傳統股利法與歷年股利、連續配息年數。' },
       { kind: 'new', to: '/market',
         text: '新增「市場總覽」頁（市場 → 總覽，點「市場」直接到這頁）：一頁看完現在該注意的籌碼狀況 —— 融資維持率、斷頭股票、融資與借券、臺指 VIX、明天的 95% 區間、P/C、外資與散戶、正逆價差、漲跌家數、站上均線、美股 VIX，每項一個燈號（警戒／注意／正常）和一句白話，最上面一句總結與警戒清單。' },
       { kind: 'new', to: '/settle',

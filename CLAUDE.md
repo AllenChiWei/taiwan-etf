@@ -71,6 +71,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_atm.py               週選價平和 → atm.json（累積式，每日更新流程提交）
   fetch_settle.py            選擇權結算價歷史 → settle.json（證交所每 5 秒指數自算＋期交所公告，價平和那一步順便跑）
   fetch_nextday.py           隔日加權指數漲跌幅 → nextday.json（FinMind 日線、EWMA 調整分位數，同上）
+  fetch_defensive.py         民生必需股建議持有價 → defensive.json（FinMind 殖利率／本益比／淨值比 10 年分位；個股財報那一步順便跑）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
   fetch_stock_dividends.py   全部上市櫃個股配息 → stock_dividends.json（累積式）
