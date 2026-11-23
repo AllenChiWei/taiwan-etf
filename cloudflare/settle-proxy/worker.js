@@ -201,6 +201,8 @@ export default {
 
   async scheduled(event, env, ctx) {
     if (!env.SETTLE_KV) return;
-    ctx.waitUntil(collect(env, event.scheduledTime));
+    // 2026-11-23 實測：用 ctx.waitUntil 丟背景，排程一結束背景就被收掉，每分鐘只存到第一筆（20 分鐘只有 20 筆）。
+    // 直接 await：排程觸發本身可以跑好幾分鐘，一分鐘內每 5 秒取一次（約 12 筆）才跑得完
+    await collect(env, event.scheduledTime);
   },
 };
