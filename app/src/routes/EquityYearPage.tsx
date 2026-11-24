@@ -104,13 +104,18 @@ function Board({ data, demo }: { data: Data; demo: boolean }) {
           大盤（含息）{pct(k.bm)}　·　{k.excess === null ? '大盤資料不足' : <span className={`font-semibold ${win ? 'text-up' : 'text-down'}`}>{win ? '贏' : '輸'}大盤 {pct(Math.abs(k.excess))}</span>}
           　·　報酬 ÷ 最大回撤 <span className="font-mono font-semibold text-ink">{f2(r.mar)}</span>
         </div>
+        <div className="mt-0.5 text-[12.5px] text-muted">
+          Sharpe <span className="font-mono font-semibold text-ink">{f2(k.sharpe)}</span>（大盤 {f2(k.sharpeBm)}）
+          　·　Sortino <span className="font-mono font-semibold text-ink">{f2(k.sortino)}</span>（大盤 {f2(k.sortinoBm)}）
+          　·　最大回撤 <span className="font-mono font-semibold text-down">{pct(k.mddPct)}</span>
+        </div>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
         <Tile label="期初 → 期末淨值" value={nf.format(r.p.endNav)} sub={`期初 ${nf.format(r.p.startNav)}`} />
         <Tile label="出入金" value={r.p.flow ? money(r.p.flow) : '—'} sub="不算損益、不影響報酬率" />
         <Tile label="最大回撤" value={pct(k.mddPct)} cls="text-down" sub={`金額 ${money(k.mddMoney)}　大盤 ${pct(k.mddBm)}`} />
-        <Tile label="Sharpe" value={f2(k.sharpe)} sub={`大盤 ${f2(k.sharpeBm)}　年化波動 ${pct(k.vol)}`} />
+        <Tile label="Sharpe／Sortino" value={`${f2(k.sharpe)}／${f2(k.sortino)}`} sub={`大盤 ${f2(k.sharpeBm)}／${f2(k.sortinoBm)}　年化波動 ${pct(k.vol)}`} />
         <Tile label="稅費合計" value={r.feeDays ? nf.format(r.fee) : '—'}
               sub={r.feeDays ? `${r.feeShare !== null ? `佔毛利 ${(r.feeShare * 100).toFixed(0)}%　` : ''}${r.estDays ? `只算記錄的 ${r.feeDays} 天` : `${r.feeDays} 天`}` : '推算期間沒有稅費資料'} />
         <Tile label="平倉損益" value={r.feeDays ? money(r.cpl) : '—'} cls={tone(r.cpl)} sub={r.estDays ? `只算記錄的 ${r.feeDays} 天` : '已實現（不含未平倉）'} />
@@ -269,11 +274,11 @@ function Extremes({ r }: { r: YearReport }) {
 function YearsTable({ reps }: { reps: YearReport[] }) {
   return (
     <div className="overflow-x-auto">
-      <table className="w-full min-w-[760px] text-[12px] tabular-nums">
+      <table className="w-full min-w-[820px] text-[12px] tabular-nums">
         <thead className="text-muted">
           <tr className="border-b border-line">
             <th className="py-1 text-left font-semibold">年</th><th className={th}>帳戶</th><th className={th}>大盤（含息）</th><th className={th}>超額</th>
-            <th className={th}>損益</th><th className={th}>最大回撤</th><th className={th}>報酬÷回撤</th><th className={th}>Sharpe</th>
+            <th className={th}>損益</th><th className={th}>最大回撤</th><th className={th}>報酬÷回撤</th><th className={th}>Sharpe</th><th className={th}>Sortino</th>
             <th className={th}>賺錢月</th><th className={th}>稅費</th><th className={th}>最好月</th><th className={th}>最差月</th>
           </tr>
         </thead>
@@ -288,6 +293,7 @@ function YearsTable({ reps }: { reps: YearReport[] }) {
               <td className={`${td} text-down`}>{pct(r.k.mddPct)}</td>
               <td className={`${td} text-ink`}>{f2(r.mar)}</td>
               <td className={`${td} text-ink`}>{f2(r.k.sharpe)}</td>
+              <td className={`${td} text-ink`}>{f2(r.k.sortino)}</td>
               <td className={`${td} text-muted`}>{r.upMonths}/{r.months.length}</td>
               <td className={`${td} text-muted`}>{r.feeDays ? nf.format(r.fee) : '—'}</td>
               <td className={`${td} ${tone(r.bestMonth?.ret)}`}>{r.bestMonth ? `${Number(r.bestMonth.key.slice(5))}月 ${pct(r.bestMonth.ret)}` : '—'}</td>
