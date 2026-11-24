@@ -206,7 +206,8 @@ function ticks(lo: number, hi: number, n = 4) {
   return out;
 }
 
-function LineChart({ pts, kind }: { pts: Point[]; kind: 'ret' | 'dd' }) {
+/** 年度頁（EquityYearPage）也用這張圖 */
+export function LineChart({ pts, kind }: { pts: Point[]; kind: 'ret' | 'dd' }) {
   const [hover, setHover] = useState<number | null>(null);
   const series = kind === 'ret'
     ? [{ key: 'acc', label: '帳戶', color: ACC, dash: '' }, { key: 'bm', label: '大盤（含息）', color: BM, dash: '' },

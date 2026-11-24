@@ -9,7 +9,8 @@ import { Vault, type VaultManifest } from '../lib/vault';
 import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Locked } from './QBPage';
 import type { EquityData } from '../lib/accountEquity';
-import { withNav, type BmRow, type Period } from '../lib/equityAnalysis';
+import { curve, sliceYear, withNav, type BmRow, type Period } from '../lib/equityAnalysis';
+import { LineChart } from './EquityPage';
 import { allYears, demoRows, monthGrid, yearNotes, type YearReport } from '../lib/equityYear';
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/equity/`, 'twetf.v18.unlock');
@@ -63,11 +64,13 @@ function seg(active: boolean) {
 }
 
 function Board({ data, demo }: { data: Data; demo: boolean }) {
-  const reps = useMemo(() => allYears(withNav(data.rows)), [data.rows]);
+  const all = useMemo(() => withNav(data.rows), [data.rows]);
+  const reps = useMemo(() => allYears(all), [all]);
   const [year, setYear] = useState<string | null>(null);
   const i = Math.max(0, reps.findIndex(r => r.year === year));
   const r = reps[i];
   const prev = reps[i + 1] ?? null;
+  const c = useMemo(() => (r ? curve(sliceYear(all, r.year)) : []), [all, r]);
   if (!r) return <p className="py-16 text-center text-[13px] text-muted">還沒有完整的交易日資料。</p>;
   const k = r.k;
   const win = k.excess !== null && k.excess >= 0;
@@ -115,8 +118,8 @@ function Board({ data, demo }: { data: Data; demo: boolean }) {
         <Tile label="賺錢的天數" value={`${(k.winRate * 100).toFixed(0)}%`} sub={`${r.p.winDays}／${r.p.n} 個交易日`} />
       </div>
 
-      <Section title="每月報酬：帳戶 vs 大盤" hint="紅＝帳戶、灰＝大盤（含息）">
-        <MonthBars ms={r.months} />
+      <Section title="累積報酬：帳戶 vs 大盤" hint="從年初 0% 起算；滑過去看當天數字">
+        <LineChart pts={c} kind="ret" />
       </Section>
       <Section title="每月明細">
         <MonthTable ms={r.months} />
@@ -174,45 +177,6 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
       </div>
       <div className="mt-2">{children}</div>
     </section>
-  );
-}
-
-const W = 640, H = 200, PL = 40, PR = 8, PT = 10, PB = 20;
-
-function MonthBars({ ms }: { ms: Period[] }) {
-  if (!ms.length) return null;
-  const vals = ms.flatMap(m => [m.ret, m.bm ?? 0]);
-  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
-  const pad = (hi - lo) * 0.08 || 0.01;
-  const y0 = lo - pad, y1 = hi + pad;
-  const y = (v: number) => PT + ((y1 - v) / (y1 - y0)) * (H - PT - PB);
-  const slot = (W - PL - PR) / ms.length, bw = slot * 0.36;
-  const step = (() => { const raw = (y1 - y0) / 4; const mag = 10 ** Math.floor(Math.log10(raw)); return [1, 2, 2.5, 5, 10].map(m => m * mag).find(s => s >= raw) ?? raw; })();
-  const tks: number[] = [];
-  for (let v = Math.ceil(y0 / step) * step; v <= y1 + 1e-12; v += step) tks.push(Math.round(v / step) * step);
-  const bar = (v: number, x: number, fill: string, key: string) => {
-    const top = y(Math.max(0, v)), bot = y(Math.min(0, v));
-    return <rect key={key} x={x} width={bw} y={top} height={Math.max(1, bot - top)} rx="2" fill={fill} />;
-  };
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="h-auto w-full" role="img" aria-label="每月報酬：帳戶與大盤">
-      {tks.map(t => (
-        <g key={t}>
-          <line x1={PL} x2={W - PR} y1={y(t)} y2={y(t)} stroke={t === 0 ? 'var(--c-border-strong)' : 'var(--c-border)'} strokeWidth="1" />
-          <text x={PL - 6} y={y(t) + 4} fontSize="11" fill="var(--c-faint)" textAnchor="end">{`${(t * 100).toFixed(Math.abs(t) < 0.1 && t !== 0 ? 1 : 0)}%`}</text>
-        </g>
-      ))}
-      {ms.map((m, j) => {
-        const x = PL + j * slot + slot * 0.12;
-        return (
-          <g key={m.key}>
-            {bar(m.ret, x, m.ret >= 0 ? 'var(--c-up)' : 'var(--c-down)', 'a')}
-            {m.bm !== null && bar(m.bm, x + bw + 2, 'var(--c-faint)', 'b')}
-            <text x={x + bw} y={H - 4} fontSize="11" fill="var(--c-faint)" textAnchor="middle">{Number(m.key.slice(5))}</text>
-          </g>
-        );
-      })}
-    </svg>
   );
 }
 
