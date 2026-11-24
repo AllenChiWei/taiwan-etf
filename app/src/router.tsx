@@ -59,6 +59,7 @@ const QBVPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBVPage);
 const QBXPage = lazyRoute(() => import('./routes/QBPage'), m => m.QBXPage);
 const QBFlowPage = lazyRoute(() => import('./routes/QBFlowPage'), m => m.QBFlowPage);
 const EquityPage = lazyRoute(() => import('./routes/EquityPage'), m => m.EquityPage);
+const EquityYearPage = lazyRoute(() => import('./routes/EquityYearPage'), m => m.EquityYearPage);
 const BudgetPage = lazyRoute(() => import('./routes/BudgetPage'), m => m.BudgetPage);
 const DcaPage = lazyRoute(() => import('./routes/DcaPage'), m => m.DcaPage);
 const GuidePage = lazyRoute(() => import('./routes/GuidePage'), m => m.GuidePage);
@@ -280,6 +281,12 @@ const eqRoute = createRoute({
   component: EquityPage,
 });
 
+const eqyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/EQY',
+  component: EquityYearPage,
+});
+
 const budgetRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/budget',
@@ -327,7 +334,7 @@ const oldQbRoutes = OLD_QB.map(([from, to]) => createRoute({
 const routeTree = rootRoute.addChildren(
   [listRoute, favoritesRoute, compareRoute, usRoute, calcRoute, dividendRoute, futuresRoute,
    chipsRoute, marketRoute, defensiveRoute, settleRoute, nextdayRoute, newsRoute, macroRoute, calendarRoute, cbRoute, stockRoute, etfRoute, pokerRoute, changelogRoute, aboutRoute,
-   v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, guideRoute, budgetRoute, dcaRoute, genRoute, maintRoute, meRoute, ...oldQbRoutes]);
+   v18Route, qbRoute, qbaRoute, qbwRoute, qbvRoute, qbxRoute, qbfRoute, eqRoute, eqyRoute, guideRoute, budgetRoute, dcaRoute, genRoute, maintRoute, meRoute, ...oldQbRoutes]);
 
 export const router = createRouter({
   routeTree,

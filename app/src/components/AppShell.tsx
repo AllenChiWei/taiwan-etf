@@ -29,7 +29,7 @@ const GROUPS = [
 ] as const;
 
 /** 從私人入口點進去的頁面，選單上仍標示在「私人」（v18、QT 看板都要密碼，入口頁 #/me 也要密碼 —— 選單只放這個入口） */
-const PRIVATE = new Set(['/me', '/v18', '/QT', '/QTA', '/QTW', '/QTV', '/QTX', '/QTF', '/EQ', '/QTG']);
+const PRIVATE = new Set(['/me', '/v18', '/QT', '/QTA', '/QTW', '/QTV', '/QTX', '/QTF', '/EQ', '/EQY', '/QTG']);
 
 function groupOf(pathname: string): string | null {
   if (PRIVATE.has(pathname)) return null;

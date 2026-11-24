@@ -75,7 +75,10 @@ function Board({ data }: { data: Data }) {
     <div className="mt-4 min-w-0">
       <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3">
         <h1 className="text-base font-bold text-ink">實盤權益分析（元大期貨）</h1>
-        <Link to="/me" className="text-[12px] text-muted hover:text-ink">← 我的工具</Link>
+        <span className="flex gap-3">
+          <Link to="/EQY" className="text-[12px] font-semibold text-accent hover:underline">年度績效分析 →</Link>
+          <Link to="/me" className="text-[12px] text-muted hover:text-ink">← 我的工具</Link>
+        </span>
       </div>
       <p className="text-[11.5px] text-faint">
         資料 {rows[0].d} ～ {data.asof}　·　大盤＝加權報酬指數（含息）{bmLag ? `，大盤資料到 ${data.bm_asof}（當天收盤稍晚公布）` : ''}

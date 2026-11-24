@@ -126,6 +126,10 @@ export function MePage() {
             );
           })() : <p className="mt-1 text-[12.5px] text-muted">月／年損益、同期大盤比較、風險指標</p>}
         </Link>
+        <Link to="/EQY" className={card}>
+          <div className="text-sm font-bold text-ink">年度績效分析（元大期貨）</div>
+          <p className="mt-1 text-[12.5px] text-muted">年底結算用：年度報酬 vs 大盤、報酬 ÷ 回撤、每月明細、最深的回撤、稅費、歷年比較與月報酬一覽</p>
+        </Link>
         <Link to="/QTG" className={card}>
           <div className="text-sm font-bold text-ink">QT 設定說明書</div>
           <p className="mt-1 text-[12.5px] text-muted">每個設定欄位的建議值與原因、原始／進階雙專案架構、內建自動槓桿與複利、流程圖與名詞解釋</p>
