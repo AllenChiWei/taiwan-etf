@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-26',
+    items: [
+      { kind: 'fix', to: '/settle',
+        text: '結算價預測：收盤後在證交所每 5 秒資料校正前標示「收盤後暫估」，校正完才稱最後結算價；真正的收盤指數不會再被 13:30 的凍結值蓋回，網頁開著跨日也會重新校正。' },
+    ],
+  },
+  {
     date: '2026-11-25',
     items: [
       { kind: 'fix', to: '/settle',
