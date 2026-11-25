@@ -33,6 +33,7 @@ const MIS_NOW = 'https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t0
 const MIS_OHLC = 'https://mis.twse.com.tw/stock/data/mis_ohlc_TSE.txt';
 const FROM = 125500;
 const TTL_MS = 4000;
+const FETCH_TIMEOUT_MS = 4000;                   // 單次上游逾時，避免慢端點拖住 Promise.allSettled
 const SAMPLE_FIRST = 1259, SAMPLE_LAST = 1330;   // 排程存的分鐘（台北 HHMM）
 
 function cors(origin) {
@@ -41,10 +42,31 @@ function cors(origin) {
   return h;
 }
 
-async function getJson(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json,text/plain,*/*' } });
-  if (!res.ok) throw new Error(`HTTP ${res.status} ${url.split('?')[0]}`);
-  return JSON.parse((await res.text()).trim());   // mis_ohlc 前面有一堆空行
+async function getJson(url, timeoutMs = FETCH_TIMEOUT_MS) {
+  const ac = new AbortController();
+  let timer;
+  const onTimeout = new Promise((_, reject) => {
+    timer = setTimeout(() => {
+      const err = new Error(`timeout ${timeoutMs}ms ${url.split('?')[0]}`);
+      ac.abort(err);
+      reject(err);
+    }, timeoutMs);
+  });
+  onTimeout.catch(() => {});
+  try {
+    const work = (async () => {
+      const res = await fetch(url, {
+        headers: { 'User-Agent': UA, Accept: 'application/json,text/plain,*/*' },
+        signal: ac.signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${url.split('?')[0]}`);
+      return JSON.parse((await res.text()).trim());   // mis_ohlc 前面有一堆空行
+    })();
+    work.catch(() => {});
+    return await Promise.race([work, onTimeout]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const num = v => {
@@ -141,18 +163,33 @@ export async function fromMis() {
     errs.push(`mis_ohlc: ${errMsg(ohlcRes)}`);
   }
 
-  // mis_ohlc 成功就用它（兩者都成功且同一天時取較新者）；只有 getStockInfo 成功就用它；兩者都失敗才丟錯
-  if (ohlcData && (ohlcData.d || nowData?.d)) {
-    const d = ohlcData.d || nowData.d;
-    const sameDay = !!(nowData && nowData.d === d);
-    if (sameDay && nowData.tNum > ohlcData.tNum) {
-      return { src: 'mis', d, t: nowData.t, z: nowData.z, y: nowData.y ?? ohlcData.y, bars: ohlcData.bars };
+  // 兩者都成功且各有日期時，以日期較新者為準（不無條件沿用 mis_ohlc 日期）；
+  // 同日（或 mis_ohlc 未帶日期而沿用 getStockInfo 日期）才合併 bars 並取時間較新者。
+  if (nowData && ohlcData) {
+    if (ohlcData.d && nowData.d > ohlcData.d) {
+      return { src: 'mis', d: nowData.d, t: nowData.t, z: nowData.z, y: nowData.y, bars: [] };
     }
-    return { src: 'mis', d, t: ohlcData.t, z: ohlcData.z, y: (sameDay ? nowData.y : null) ?? ohlcData.y, bars: ohlcData.bars };
+    if (ohlcData.d && ohlcData.d > nowData.d) {
+      return { src: 'mis', d: ohlcData.d, t: ohlcData.t, z: ohlcData.z, y: ohlcData.y, bars: ohlcData.bars };
+    }
+    const d = ohlcData.d || nowData.d;
+    const useNow = nowData.tNum > ohlcData.tNum;
+    return {
+      src: 'mis',
+      d,
+      t: useNow ? nowData.t : ohlcData.t,
+      z: useNow ? nowData.z : ohlcData.z,
+      y: nowData.y ?? ohlcData.y,
+      bars: ohlcData.bars,
+    };
+  }
+  if (ohlcData && ohlcData.d) {
+    return { src: 'mis', d: ohlcData.d, t: ohlcData.t, z: ohlcData.z, y: ohlcData.y, bars: ohlcData.bars };
   }
   if (nowData) {
     return { src: 'mis', d: nowData.d, t: nowData.t, z: nowData.z, y: nowData.y, bars: [] };
   }
+  if (ohlcData && !ohlcData.d) errs.push('mis_ohlc 沒有日期');
   throw new Error(errs.join('; ') || 'mis 沒有資料');
 }
 

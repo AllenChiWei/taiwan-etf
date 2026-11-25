@@ -219,9 +219,10 @@ export function isoFromYmd(d: string): string {
 /**
  * 合併轉接站回傳的即時快照與本頁累積的每 5 秒樣本（純函式）。
  * - 只有 src === 'mis' 的回應才接受；非 MIS 回應直接忽略，不寫入 samples 也不覆蓋畫面。
+ * - 回應日期比目前顯示的舊（舊後端回昨日）直接忽略，不清空 samples、不改畫面；只有日期較新才換日清空。
  * - 只有日期為 today 的 MIS 回應才寫入 samples。
  * - 同一天若回應時間比目前顯示的早（後端節點不同步），只補還沒收過的 5 秒點，不讓畫面時間與預測值倒退。
- * - 13:30 之後（含約 13:33 才出的延遲收盤價），只要時間未倒退就更新收盤樣本（CLOSE_SEC）。
+ * - 13:30 之後：已收到時間 > 13:30:00 的真收盤後，之後時間 <= 該時間（含相同時間）的回應不可覆蓋 CLOSE_SEC 與畫面。
  */
 export function mergeLiveResponse<T extends LiveSnapshot>(
   prev: T | null,
@@ -236,11 +237,18 @@ export function mergeLiveResponse<T extends LiveSnapshot>(
   if (!Number.isFinite(inSec) || !(incoming.z > 0)) {
     return { live: prev, samples: new Map(samples) };
   }
+  if (prev && incoming.d < prev.d) {
+    return { live: prev, samples: new Map(samples) };
+  }
 
-  const sameDayPrev = prev && prev.d === incoming.d ? prev : null;
-  const nextSamples = prev && prev.d !== incoming.d ? new Map<number, number>() : new Map(samples);
+  const isNewerDay = prev !== null && incoming.d > prev.d;
+  const sameDayPrev = prev && incoming.d === prev.d ? prev : null;
+  const nextSamples = isNewerDay ? new Map<number, number>() : new Map(samples);
   const prevSec = sameDayPrev ? hmsSec(sameDayPrev.t) : -1;
-  const isOlder = sameDayPrev !== null && Number.isFinite(prevSec) && inSec < prevSec;
+  // 已收到時間 > 13:30:00 的真收盤後，時間 <= 該時間（含相同時間）都不算比較新，不可覆蓋 CLOSE_SEC 與畫面
+  const isNotNewer = sameDayPrev !== null && Number.isFinite(prevSec) && (
+    prevSec > CLOSE_SEC ? inSec <= prevSec : inSec < prevSec
+  );
 
   if (isoFromYmd(incoming.d) === today) {
     // 補入 KV 帶回的盤中每 5 秒點（不覆蓋收盤點，避免 KV 的 13:30 凍結價蓋掉真實收盤價）
@@ -253,12 +261,12 @@ export function mergeLiveResponse<T extends LiveSnapshot>(
     if (inSec >= SLOT_FIRST - 5 && inSec < CLOSE_SEC && inSec % 5 === 0) {
       if (!nextSamples.has(inSec)) nextSamples.set(inSec, incoming.z);
     } else if (inSec >= CLOSE_SEC) {
-      // MIS 13:30 先給 13:25 凍結價，真實收盤約 13:33 才出；只要未倒退就更新 CLOSE_SEC
-      if (!isOlder || !nextSamples.has(CLOSE_SEC)) nextSamples.set(CLOSE_SEC, incoming.z);
+      // MIS 13:30 先給 13:25 凍結價，真實收盤約 13:33 才出；已收到 > 13:30:00 真收盤後，時間 <= 該時間不再覆蓋
+      if (!isNotNewer) nextSamples.set(CLOSE_SEC, incoming.z);
     }
   }
 
-  if (isOlder) {
+  if (isNotNewer) {
     return { live: sameDayPrev, samples: nextSamples };
   }
 
@@ -319,4 +327,22 @@ export function shouldFetchExact(
   hasExact: boolean,
 ): boolean {
   return !!pred && pred.final && hasLiveToday && !hasExact;
+}
+
+/** 證交所每 5 秒資料（MI_5MINS_INDEX）綁定所屬日期（YYYYMMDD），跨日或 live 換日不沿用舊資料。 */
+export interface ExactSeries {
+  /** YYYYMMDD */
+  d: string;
+  points: Point[];
+}
+
+/** 只有與目前 liveDate（YYYYMMDD）相符時才採用已抓到的每 5 秒資料；跨日或換日時回 null。 */
+export function exactPointsForDate(exact: ExactSeries | null, liveDate: string | null): Point[] | null {
+  return exact && liveDate && exact.d === liveDate ? exact.points : null;
+}
+
+/** 預測卡片標題：盤中為預測、13:30 後尚未拿到證交所每 5 秒資料前為收盤後暫估，校正後才稱最後結算價。 */
+export function settleCardTitle(final: boolean, hasExact: boolean): string {
+  if (!final) return '預測最後結算價';
+  return hasExact ? '今天的最後結算價（自算，以期交所公告為準）' : '收盤後暫估（等證交所資料校正）';
 }

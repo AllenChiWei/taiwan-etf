@@ -9,9 +9,9 @@ import { Link } from '@tanstack/react-router';
 import { fetchAtm } from '../api/atm';
 import { fetchSettleHistory, fetchTaiex5s, fetchTaiexLive, type SettleHistRow, type TaiexLive } from '../api/settle';
 import {
-  CLOSE_SEC, TOTAL, collectLivePoints, driftStats, hmsSec, isoFromYmd, mergeLiveResponse, nextSettle, predictSettle,
-  secLabel, settleCurve, settleDates, settleHistory, shouldFetchExact, shouldPollSettle, strikeNeed, strikesAround,
-  taipeiNow, type Point, type Prediction,
+  CLOSE_SEC, TOTAL, collectLivePoints, driftStats, exactPointsForDate, hmsSec, isoFromYmd, mergeLiveResponse,
+  nextSettle, predictSettle, secLabel, settleCardTitle, settleCurve, settleDates, settleHistory, shouldFetchExact,
+  shouldPollSettle, strikeNeed, strikesAround, taipeiNow, type ExactSeries, type Prediction,
 } from '../lib/settle';
 import { SettleChart } from './SettleChart';
 import { WEEKDAY_LABEL, weekdayOf } from '../lib/atm';
@@ -54,7 +54,7 @@ export function SettleSection({ page = false }: { page?: boolean }) {
     samples: new Map(),
   }));
   const { live, samples } = liveState;
-  const [exact, setExact] = useState<Point[] | null>(null);
+  const [exactState, setExactState] = useState<ExactSeries | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hist, setHist] = useState<SettleHistRow[]>([]);
 
@@ -102,6 +102,11 @@ export function SettleSection({ page = false }: { page?: boolean }) {
     return { ...live, t: secLabel(demoAt), z: bars.at(-1)?.[1] ?? live.z, bars,
              samples: (live.samples ?? []).filter(s => hmsSec(s[0]) <= demoAt) };
   }, [live, demo, demoAt, now.date]);
+  const liveDate = liveToday?.d ?? null;
+  const exact = exactPointsForDate(exactState, liveDate);
+  useEffect(() => {
+    setExactState(prev => (prev && prev.d === liveDate ? prev : null));
+  }, [liveDate]);
   const polling = shouldPollSettle({
     isToday,
     demo,
@@ -141,13 +146,12 @@ export function SettleSection({ page = false }: { page?: boolean }) {
     [livePts, liveToday]);
 
   // 收盤後一律以證交所每 5 秒資料（MI_5MINS_INDEX，收盤後才公布）重算校正；還沒公布就每 2 分鐘再試
-  const liveDate = liveToday?.d ?? null;
   const needExact = shouldFetchExact(pred0, !!liveToday, !!exact);
   useEffect(() => {
     if (!needExact || !liveDate) return;
     let stop = false;
     const ac = new AbortController();
-    const tryOnce = () => fetchTaiex5s(liveDate, ac.signal).then(p => { if (!stop && p) setExact(p); }).catch(() => {});
+    const tryOnce = () => fetchTaiex5s(liveDate, ac.signal).then(p => { if (!stop && p) setExactState({ d: liveDate, points: p }); }).catch(() => {});
     void tryOnce();
     const id = setInterval(tryOnce, 120_000);
     return () => { stop = true; ac.abort(); clearInterval(id); };
@@ -183,7 +187,7 @@ export function SettleSection({ page = false }: { page?: boolean }) {
       {pred && liveToday ? (
         <div className="mt-2 rounded-lg border border-line bg-bg px-3 py-2.5">
           <div className="text-[11.5px] text-muted">
-            {pred.final ? '今天的最後結算價（自算，以期交所公告為準）' : '預測最後結算價'}
+            {settleCardTitle(pred.final, !!exact)}
           </div>
           <div className={`mt-0.5 font-mono font-bold tabular-nums text-ink ${page ? 'text-[48px] leading-tight' : 'text-[28px]'}`}>{nf0.format(pred.rounded)}</div>
           <div className="mt-1 text-[11.5px] text-faint">

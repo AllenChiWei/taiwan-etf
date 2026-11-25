@@ -7,8 +7,8 @@ import { readFileSync } from 'node:fs';
 
 import {
   hmsSec, secLabel, predictSettle, settleDates, nextSettle, taipeiNow, strikeNeed, strikesAround, settleCurve,
-  isoFromYmd, mergeLiveResponse, collectLivePoints, shouldPollSettle, shouldFetchExact,
-  SLOT_FIRST, SLOT_LAST, CLOSE_SEC, POLL_END_SEC, TOTAL, type LiveSnapshot, type Point,
+  isoFromYmd, mergeLiveResponse, collectLivePoints, shouldPollSettle, shouldFetchExact, exactPointsForDate,
+  settleCardTitle, SLOT_FIRST, SLOT_LAST, CLOSE_SEC, POLL_END_SEC, TOTAL, type ExactSeries, type LiveSnapshot, type Point,
 } from '../src/lib/settle.ts';
 
 interface Day { date: string; fsp: number; from: string; step: number; v: number[] }
@@ -284,4 +284,120 @@ test('13:30 後輪詢延續至 13:35（或校正完成）且收盤值可更新',
   assert.equal(staleAfter.live?.t, '13:33:00');
   assert.equal(staleAfter.live?.z, 38195.43);
   assert.equal(staleAfter.samples.get(CLOSE_SEC), 38195.43);
+});
+
+test('即時合併：舊日期回應直接忽略不清空 samples，只有新日期才換日清空', () => {
+  const today = '2026-11-25';
+  const r0 = mergeLiveResponse(null, mkLive({ d: '20261125', t: '13:14:20', z: 38143.54 }), new Map(), today);
+  const r1 = mergeLiveResponse(r0.live, mkLive({ d: '20261125', t: '13:14:25', z: 38144 }), r0.samples, today);
+  assert.equal(r1.samples.size, 2);
+
+  // 舊後端偶發回昨天（20261124）：直接忽略，保留今日畫面與已累積 samples
+  const staleDay = mergeLiveResponse(
+    r1.live,
+    mkLive({ d: '20261124', t: '13:30:00', z: 37000, samples: [[131430, 37000]] }),
+    r1.samples,
+    today,
+  );
+  assert.equal(staleDay.live?.d, '20261125');
+  assert.equal(staleDay.live?.t, '13:14:25');
+  assert.equal(staleDay.live?.z, 38144);
+  assert.equal(staleDay.samples.size, 2);
+  assert.equal(staleDay.samples.get(hmsSec('13:14:20')), 38143.54);
+  assert.equal(staleDay.samples.get(hmsSec('13:14:25')), 38144);
+  assert.equal(staleDay.samples.has(CLOSE_SEC), false);
+  assert.equal(staleDay.samples.has(hmsSec('13:14:30')), false);
+
+  // 跨到下一個較新日期（20261127）：清空舊日 samples 並切到新日
+  const rolled = mergeLiveResponse(
+    staleDay.live,
+    mkLive({ d: '20261127', t: '13:00:05', z: 38500 }),
+    staleDay.samples,
+    '2026-11-27',
+  );
+  assert.equal(rolled.live?.d, '20261127');
+  assert.equal(rolled.live?.t, '13:00:05');
+  assert.equal(rolled.live?.z, 38500);
+  assert.equal(rolled.samples.size, 1);
+  assert.equal(rolled.samples.has(hmsSec('13:14:20')), false);
+  assert.equal(rolled.samples.get(SLOT_FIRST), 38500);
+});
+
+test('收盤後保護：收到 > 13:30:00 真收盤後，<= 該時間（含同時間）回應不可覆蓋 CLOSE 與畫面', () => {
+  const today = '2026-11-25';
+  const trueClose = mergeLiveResponse(
+    null,
+    mkLive({ t: '13:33:00', z: 38195.43, bars: [[133300, 38195.43]] }),
+    new Map(),
+    today,
+  );
+  assert.equal(trueClose.live?.t, '13:33:00');
+  assert.equal(trueClose.samples.get(CLOSE_SEC), 38195.43);
+
+  // 舊節點回 13:30:00 凍結價（< 13:33:00）：不得覆蓋
+  const afterOlder = mergeLiveResponse(
+    trueClose.live,
+    mkLive({ t: '13:30:00', z: 38141.53, bars: [[133000, 38141.53]] }),
+    trueClose.samples,
+    today,
+  );
+  assert.equal(afterOlder.live?.t, '13:33:00');
+  assert.equal(afterOlder.live?.z, 38195.43);
+  assert.equal(afterOlder.samples.get(CLOSE_SEC), 38195.43);
+
+  // 時間相同（=== 13:33:00）也算不比較新：不得覆蓋 CLOSE 與畫面
+  const afterSame = mergeLiveResponse(
+    trueClose.live,
+    mkLive({ t: '13:33:00', z: 38141.53, bars: [[133300, 38141.53]] }),
+    trueClose.samples,
+    today,
+  );
+  assert.equal(afterSame.live?.t, '13:33:00');
+  assert.equal(afterSame.live?.z, 38195.43);
+  assert.equal(afterSame.samples.get(CLOSE_SEC), 38195.43);
+
+  // 更晚時間（> 13:33:00）才允許更新
+  const afterNewer = mergeLiveResponse(
+    trueClose.live,
+    mkLive({ t: '13:34:00', z: 38196.12, bars: [[133400, 38196.12]] }),
+    trueClose.samples,
+    today,
+  );
+  assert.equal(afterNewer.live?.t, '13:34:00');
+  assert.equal(afterNewer.live?.z, 38196.12);
+  assert.equal(afterNewer.samples.get(CLOSE_SEC), 38196.12);
+});
+
+test('證交所每 5 秒校正資料綁定日期：換日或跨日開著分頁時失效並重新輪詢校正', () => {
+  const wedExact: ExactSeries = { d: '20261125', points: [{ sec: CLOSE_SEC, v: 38195.43 }] };
+  assert.equal(exactPointsForDate(wedExact, '20261125'), wedExact.points);
+  assert.equal(exactPointsForDate(null, '20261125'), null);
+
+  // 跨到下一個結算日（liveToday 尚未拿到今日資料，liveDate 為 null）：舊日 exact 失效，恢復輪詢
+  const crossDayExact = exactPointsForDate(wedExact, null);
+  assert.equal(crossDayExact, null);
+  assert.equal(shouldPollSettle({
+    isToday: true,
+    demo: false,
+    nowSec: hmsSec('12:55:00'),
+    startSec: hmsSec('12:55:00'),
+    liveSec: null,
+    hasExact: !!crossDayExact,
+  }), true);
+
+  // live 換成別天（20261127）：舊日 exact 失效，收盤後重新抓新日 MI_5MINS_INDEX
+  const nextDayExact = exactPointsForDate(wedExact, '20261127');
+  assert.equal(nextDayExact, null);
+  assert.equal(shouldFetchExact({ final: true }, true, !!nextDayExact), true);
+  assert.equal(shouldFetchExact({ final: true }, true, !!exactPointsForDate(wedExact, '20261125')), false);
+});
+
+test('卡片標題：盤中為預測、收盤後未校正為暫估、校正後才顯示最後結算價', () => {
+  assert.equal(settleCardTitle(false, false), '預測最後結算價');
+  const tentative = settleCardTitle(true, false);
+  assert.equal(tentative, '收盤後暫估（等證交所資料校正）');
+  assert.ok(!tentative.includes('最後結算價'));
+  const calibrated = settleCardTitle(true, true);
+  assert.equal(calibrated, '今天的最後結算價（自算，以期交所公告為準）');
+  assert.ok(calibrated.includes('最後結算價'));
 });
