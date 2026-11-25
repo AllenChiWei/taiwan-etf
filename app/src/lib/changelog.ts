@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-25',
+    items: [
+      { kind: 'fix', to: '/chips',
+        text: '籌碼頁：期交所某一項資料（Put/Call 比）暫時抓不到時，整頁籌碼不會再停在前一天，三大法人、未平倉等照常更新到最新交易日。' },
+    ],
+  },
+  {
     date: '2026-11-21',
     items: [
       { kind: 'improve', to: '/nextday',

@@ -346,8 +346,17 @@ def latest_available_date(max_back=8):
     for back in range(max_back):
         day = today - timedelta(days=back)
         probe = day.strftime('%Y/%m/%d')
+        # 2026-11-25：原本 tries=1，11-24 PC ratio 回 HTTP 520，探針把「抓不到」當成「那天沒資料」，
+        # 往前退到 11-23，整份籌碼（和散戶多空比）就停在前一天。改成會重試；PC ratio **抓失敗**（有記錯誤，
+        # 不是回空 CSV）時才改用三大法人期貨（籌碼的主資料）確認同一天。開盤前、假日 PC ratio 回空 CSV
+        # → 直接往前一天，不去問三大法人（它開盤前對今天回 HTML，會多等幾秒還留假警報，11-25 實測）。
+        n_err = len(ERRORS)
         if fetch_csv('pcRatioDown',
-                     {'queryStartDate': probe, 'queryEndDate': probe}, tries=1):
+                     {'queryStartDate': probe, 'queryEndDate': probe}, tries=3) or \
+           (len(ERRORS) > n_err and
+            fetch_csv('futContractsDateDown',
+                      {'firstDate': '', 'lastDate': '', 'commodityId': '',
+                       'queryStartDate': probe, 'queryEndDate': probe}, tries=2)):
             if back:
                 log(u'  期交所最新資料日：%s（今天還沒有）' % day.isoformat())
             return day
