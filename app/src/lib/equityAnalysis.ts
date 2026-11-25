@@ -93,6 +93,30 @@ export function periods(ds: Day[], unit: 'M' | 'Y'): Period[] {
   return [...groups].map(([k, g]) => period(k, g));
 }
 
+export interface MonthPoint {
+  m: string;           // 'YYYY-MM'
+  acc: number;         // 帳戶該月報酬
+  bm: number | null;   // 大盤（含息）該月報酬；整月缺值為 null，圖表不畫該點
+  diff: number | null; // 帳戶 − 大盤；大盤缺值時為 null
+}
+
+/** 月報酬折線圖資料點（依月份由舊到新；大盤缺值的月份 bm／diff 為 null） */
+export function monthCurve(ps: Period[]): MonthPoint[] {
+  return [...ps]
+    .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
+    .map(p => ({ m: p.key, acc: p.ret, bm: p.bm, diff: p.bm === null ? null : p.ret - p.bm }));
+}
+
+/** x 軸標籤抽稀：回傳要顯示的索引（固定含頭尾，總數不超過 maxTicks） */
+export function pickTickIndices(len: number, maxTicks = 6): number[] {
+  if (len <= 0) return [];
+  if (maxTicks <= 1 || len === 1) return [0];
+  if (len <= maxTicks) return Array.from({ length: len }, (_, i) => i);
+  const out: number[] = [];
+  for (let k = 0; k < maxTicks; k++) out.push(Math.round((k * (len - 1)) / (maxTicks - 1)));
+  return out;
+}
+
 export interface Point { d: string; acc: number; bm: number | null; px: number | null; accDd: number; bmDd: number | null }
 
 /** 累積報酬（從 0 起算）與各自的回撤（%） */

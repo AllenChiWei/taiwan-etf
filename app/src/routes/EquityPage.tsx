@@ -10,7 +10,11 @@ import { Vault, type VaultManifest } from '../lib/vault';
 import { useVaultExpiry } from '../hooks/useVaultExpiry';
 import { Locked } from './QBPage';
 import type { EquityData } from '../lib/accountEquity';
-import { curve, days, notes, periods, risk, sliceYear, withNav, years, MIN_ANNUAL_DAYS, type BmRow, type Period, type Point, type Risk } from '../lib/equityAnalysis';
+import {
+  curve, days, monthCurve, notes, periods, pickTickIndices, risk, sliceYear, withNav, years, MIN_ANNUAL_DAYS,
+  type BmRow, type MonthPoint, type Period, type Point, type Risk,
+} from '../lib/equityAnalysis';
+import { allYears, type YearReport } from '../lib/equityYear';
 
 const vault = new Vault(`${import.meta.env.BASE_URL}data/equity/`, 'twetf.v18.unlock');
 type Data = EquityData & { bm_asof?: string | null; rows: BmRow[] };
@@ -61,8 +65,11 @@ function Board({ data }: { data: Data }) {
   const k = useMemo(() => risk(rows), [rows]);
   const c = useMemo(() => curve(rows), [rows]);
   const ds = useMemo(() => days(rows), [rows]);
-  const months = useMemo(() => periods(ds, 'M').reverse(), [ds]);
+  const monthPeriods = useMemo(() => periods(ds, 'M'), [ds]);
+  const months = useMemo(() => [...monthPeriods].reverse(), [monthPeriods]);
+  const monthPts = useMemo(() => monthCurve(monthPeriods), [monthPeriods]);
   const yearly = useMemo(() => periods(days(all), 'Y').reverse(), [all]);
+  const yearReports = useMemo(() => allYears(all), [all]);
   const last = all[all.length - 1];
   const thisMonth = months[0];
   if (!k || !last) return <p className="py-16 text-center text-[13px] text-muted">這段期間沒有資料。</p>;
@@ -132,6 +139,16 @@ function Board({ data }: { data: Data }) {
       <Section title={`風險與報酬（${scope}）`} hint="帳戶與大盤用同一批交易日計算">
         <RiskTable k={k} />
       </Section>
+      <Section
+        title="年度績效分析"
+        hint="每年各自從年初 0 起算；帳戶與大盤用同一批交易日"
+        action={<Link to="/EQY" className="text-[12px] font-semibold text-accent hover:underline">詳細 →</Link>}
+      >
+        <YearlyRiskTable reps={yearReports} selectedYear={year} />
+      </Section>
+      <Section title="月報酬：帳戶 vs 大盤（含息）" hint="每個月各自從月初起算">
+        <MonthlyReturnChart pts={monthPts} />
+      </Section>
       <Section title="觀察與建議" hint="依上面的數字自動判斷，資料越多越可靠">
         <ul className="space-y-1.5">
           {notes(k).map((n, i) => (
@@ -183,13 +200,14 @@ function Tile({ label, value, cls = 'text-ink', sub }: { label: string; value: s
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+function Section({ title, hint, action, children }: { title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode }) {
   return (
     <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-sm font-bold text-ink">{title}</h2>
-        {hint && <span className="text-[11.5px] text-faint">{hint}</span>}
+        {action ?? (hint && <span className="text-[11.5px] text-faint">{hint}</span>)}
       </div>
+      {action && hint && <p className="mt-0.5 text-[11.5px] text-faint">{hint}</p>}
       <div className="mt-2">{children}</div>
     </section>
   );
@@ -264,6 +282,128 @@ export function LineChart({ pts, kind }: { pts: Point[]; kind: 'ret' | 'dd' }) {
         {series.map(s => (
           <span key={s.key} className="flex items-center gap-1">
             <svg width="16" height="4"><line x1="0" x2="16" y1="2" y2="2" stroke={s.color} strokeWidth="2" strokeDasharray={s.dash} /></svg>{s.label}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MonthlyReturnChart({ pts }: { pts: MonthPoint[] }) {
+  const [hover, setHover] = useState<number | null>(null);
+  if (!pts.length) return <p className="text-[12.5px] text-muted">這段期間沒有月報酬資料。</p>;
+  const series = [
+    { key: 'acc' as const, label: '帳戶', color: ACC },
+    { key: 'bm' as const, label: '大盤（含息）', color: BM },
+  ];
+  const vals = pts.flatMap(p => (p.bm === null ? [p.acc] : [p.acc, p.bm]));
+  const lo = Math.min(0, ...vals), hi = Math.max(0, ...vals);
+  const pad = (hi - lo) * 0.08 || 0.01;
+  const y0 = lo - pad, y1 = hi + pad;
+  const x = (i: number) => PL + (pts.length === 1 ? 0.5 : i / (pts.length - 1)) * (W - PL - PR);
+  const y = (v: number) => PT + ((y1 - v) / (y1 - y0 || 1)) * (H - PT - PB);
+  const path = (key: 'acc' | 'bm') => {
+    let d = '', pen = false;
+    pts.forEach((p, i) => {
+      const v = p[key];
+      if (v === null) { pen = false; return; }
+      d += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`;
+      pen = true;
+    });
+    return d;
+  };
+  const yTicks = ticks(y0, y1).map(t => (t === 0 ? 0 : t));
+  if (!yTicks.includes(0)) yTicks.push(0);
+  const xTicks = pickTickIndices(pts.length);
+  const pick = (clientX: number, rect: DOMRect) => {
+    if (pts.length <= 1) { setHover(0); return; }
+    const px = ((clientX - rect.left) / rect.width) * W;
+    setHover(Math.max(0, Math.min(pts.length - 1, Math.round(((px - PL) / (W - PL - PR)) * (pts.length - 1)))));
+  };
+  const active = hover !== null && hover < pts.length ? hover : null;
+  const h = active === null ? null : pts[active];
+  const showAllDots = pts.length <= 36;
+  const dotVisible = (key: 'acc' | 'bm', i: number) => {
+    if (pts[i][key] === null) return false;
+    if (showAllDots) return true;
+    const prevNull = i === 0 || pts[i - 1][key] === null;
+    const nextNull = i === pts.length - 1 || pts[i + 1][key] === null;
+    return prevNull && nextNull;
+  };
+
+  return (
+    <div className="relative">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        className="h-auto w-full touch-pan-y"
+        role="img"
+        aria-label="月報酬：帳戶與大盤（含息）"
+        onMouseLeave={() => setHover(null)}
+        onPointerMove={e => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+        onPointerDown={e => pick(e.clientX, e.currentTarget.getBoundingClientRect())}
+      >
+        {yTicks.map(t => (
+          <g key={t}>
+            <line
+              x1={PL} x2={W - PR} y1={y(t)} y2={y(t)}
+              stroke={t === 0 ? 'var(--c-border-strong)' : 'var(--c-border)'}
+              strokeWidth={t === 0 ? '1.25' : '1'}
+            />
+            <text x={PL - 6} y={y(t) + 4} fontSize="11" fill="var(--c-faint)" textAnchor="end">
+              {`${(t * 100).toFixed(Math.abs(t) < 0.1 && t !== 0 ? 1 : 0)}%`}
+            </text>
+          </g>
+        ))}
+        {series.map(s => (
+          <g key={s.key}>
+            <path d={path(s.key)} fill="none" stroke={s.color} strokeWidth="2" strokeLinejoin="round" />
+            {pts.map((p, i) => {
+              const v = p[s.key];
+              if (v === null || !dotVisible(s.key, i)) return null;
+              return <circle key={p.m} cx={x(i)} cy={y(v)} r="2.5" fill={s.color} />;
+            })}
+          </g>
+        ))}
+        {xTicks.map(i => (
+          <text
+            key={pts[i].m}
+            x={x(i)}
+            y={H - 4}
+            fontSize="11"
+            fill="var(--c-faint)"
+            textAnchor={pts.length === 1 ? 'middle' : i === 0 ? 'start' : i === pts.length - 1 ? 'end' : 'middle'}
+          >
+            {pts[i].m}
+          </text>
+        ))}
+        {h && active !== null && (
+          <>
+            <line x1={x(active)} x2={x(active)} y1={PT} y2={H - PB} stroke="var(--c-border-strong)" strokeDasharray="3 3" />
+            {series.map(s => {
+              const v = h[s.key];
+              return v === null ? null : (
+                <circle key={s.key} cx={x(active)} cy={y(v)} r="4" fill={s.color} stroke="var(--c-surface)" strokeWidth="2" />
+              );
+            })}
+          </>
+        )}
+      </svg>
+      {h && (
+        <div className="pointer-events-none absolute top-1 right-1 max-w-[calc(100%-8px)] rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11.5px] shadow">
+          <div className="font-semibold text-ink">{h.m}</div>
+          <div className="flex flex-wrap gap-x-1">
+            <span>帳戶 <span className={`font-mono ${tone(h.acc)}`}>{pct(h.acc, 2)}</span></span>
+            <span className="text-faint">／</span>
+            <span>大盤 <span className={`font-mono ${tone(h.bm)}`}>{pct(h.bm, 2)}</span></span>
+            <span className="text-faint">／</span>
+            <span>差 <span className={`font-mono ${tone(h.diff)}`}>{pct(h.diff, 2)}</span></span>
+          </div>
+        </div>
+      )}
+      <div className="mt-1 flex flex-wrap gap-3 text-[11px] text-muted">
+        {series.map(s => (
+          <span key={s.key} className="flex items-center gap-1">
+            <svg width="16" height="4"><line x1="0" x2="16" y1="2" y2="2" stroke={s.color} strokeWidth="2" /></svg>{s.label}
           </span>
         ))}
       </div>
@@ -396,6 +536,64 @@ function RiskTable({ k }: { k: Risk }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function YearlyRiskTable({ reps, selectedYear }: { reps: YearReport[]; selectedYear: string | null }) {
+  const hasFew = reps.some(r => r.k.n < MIN_ANNUAL_DAYS);
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[780px] text-[12px] tabular-nums">
+        <thead className="text-muted">
+          <tr className="border-b border-line">
+            <th className="py-1 text-left font-semibold whitespace-nowrap">年度</th>
+            <th className={th}>帳戶報酬</th>
+            <th className={th}>大盤（含息）報酬</th>
+            <th className={th}>超額</th>
+            <th className={th}>帳戶最大回撤</th>
+            <th className={th}>大盤最大回撤</th>
+            <th className={th}>報酬÷最大回撤（帳戶）</th>
+            <th className={th}>Sharpe（帳戶）</th>
+            <th className={th}>贏大盤天數%</th>
+            <th className={th}>交易日數</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          {reps.map(r => {
+            const k = r.k;
+            const few = k.n < MIN_ANNUAL_DAYS;
+            const ratioCls = few ? 'text-faint' : 'text-ink';
+            const fewNote = few ? `交易日少於 ${MIN_ANNUAL_DAYS} 天，僅供參考` : undefined;
+            return (
+              <tr
+                key={r.year}
+                className={`border-b border-line last:border-0 ${selectedYear === r.year ? 'bg-accent-soft/60' : ''}`}
+              >
+                <td className="py-1 text-left font-sans text-ink whitespace-nowrap">
+                  {r.year}{few ? '＊' : ''}
+                </td>
+                <td className={`${td} font-semibold ${tone(k.ret)}`}>{pct(k.ret)}</td>
+                <td className={`${td} ${tone(k.bm)}`}>{pct(k.bm)}</td>
+                <td className={`${td} font-semibold ${tone(k.excess)}`}>{pct(k.excess)}</td>
+                <td className={`${td} text-down`}>{pct(k.mddPct)}</td>
+                <td className={`${td} ${k.mddBm === null ? 'text-muted' : 'text-down'}`}>{pct(k.mddBm)}</td>
+                <td className={`${td} ${ratioCls}`} title={fewNote}>{f2(r.mar)}</td>
+                <td className={`${td} ${ratioCls}`} title={fewNote}>{f2(k.sharpe)}</td>
+                <td className={`${td} ${few ? 'text-faint' : 'text-muted'}`} title={fewNote}>
+                  {k.beatDays === null ? '—' : `${(k.beatDays * 100).toFixed(0)}%`}
+                </td>
+                <td className={`${td} text-muted`}>{k.n}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+      {hasFew && (
+        <p className="mt-1 text-[11px] text-faint">
+          ＊交易日少於 {MIN_ANNUAL_DAYS} 天的年份，比率類欄位（報酬÷最大回撤、Sharpe、贏大盤天數%）以淡色顯示（僅供參考）。
+        </p>
+      )}
     </div>
   );
 }

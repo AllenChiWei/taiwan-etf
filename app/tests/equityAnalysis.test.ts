@@ -72,3 +72,80 @@ test('實盤分析：淨值＝權益總值 − 累計出入金，切年份後仍
   assert.equal(p.startNav, 1100);
   assert.ok(Math.abs(p.endNav - 1067.9) < 1e-9);
 });
+
+import { monthCurve, pickTickIndices, MIN_ANNUAL_DAYS } from '../src/lib/equityAnalysis.ts';
+import { allYears, demoRows } from '../src/lib/equityYear.ts';
+
+test('實盤分析：年度績效分析與選單一年時的 risk() 完全一致，且保留未滿門檻年份', () => {
+  const demo = withNav(demoRows());
+  const reps = allYears(demo);
+  assert.deepEqual(reps.map(r => r.year), ['2026', '2025']);
+  for (const r of reps) {
+    const k = risk(sliceYear(demo, r.year))!;
+    assert.equal(r.k.ret, k.ret);
+    assert.equal(r.k.bm, k.bm);
+    assert.equal(r.k.excess, k.excess);
+    assert.equal(r.k.mddPct, k.mddPct);
+    assert.equal(r.k.mddBm, k.mddBm);
+    assert.equal(r.k.sharpe, k.sharpe);
+    assert.equal(r.k.beatDays, k.beatDays);
+    assert.equal(r.k.n, k.n);
+    const expectedMar = k.mddPct < 0 ? k.ret / -k.mddPct : null;
+    assert.equal(r.mar, expectedMar);
+  }
+
+  const shortAll = withNav(R);
+  const shortReps = allYears(shortAll);
+  assert.deepEqual(shortReps.map(r => r.year), ['2026', '2025']);
+  for (const r of shortReps) {
+    assert.ok(r.k.n < MIN_ANNUAL_DAYS);
+    const k = risk(sliceYear(shortAll, r.year))!;
+    assert.equal(r.k.ret, k.ret);
+    assert.equal(r.k.bm, k.bm);
+    assert.equal(r.k.excess, k.excess);
+    assert.equal(r.k.mddPct, k.mddPct);
+    assert.equal(r.k.mddBm, k.mddBm);
+    assert.equal(r.k.sharpe, k.sharpe);
+    assert.equal(r.k.beatDays, k.beatDays);
+    assert.equal(r.k.n, k.n);
+  }
+});
+
+test('實盤分析：月報酬折線圖資料轉換（含大盤缺值月與年份篩選）', () => {
+  const M: BmRow[] = [
+    row('2025-11-28', 1000, 0, 0, 100),
+    row('2025-12-15', 1100, 100, 0, 105),
+    row('2026-01-15', 1045, -55, 0, null),
+    row('2026-02-10', 1045, 0, 0, 100),
+    row('2026-02-20', 1149.5, 104.5, 0, 102),
+  ];
+  const ps = periods(days(M), 'M');
+  const pts = monthCurve(ps);
+  assert.deepEqual(pts.map(p => p.m), ['2025-12', '2026-01', '2026-02']);
+  assert.ok(Math.abs(pts[0].acc - 0.1) < 1e-12);
+  assert.ok(Math.abs((pts[0].bm ?? 0) - 0.05) < 1e-12);
+  assert.ok(Math.abs((pts[0].diff ?? 0) - 0.05) < 1e-12);
+  assert.ok(Math.abs(pts[1].acc - -0.05) < 1e-12);
+  assert.equal(pts[1].bm, null);
+  assert.equal(pts[1].diff, null);
+  assert.ok(Math.abs(pts[2].acc - 0.1) < 1e-12);
+  assert.ok(Math.abs((pts[2].bm ?? 0) - 0.02) < 1e-12);
+  assert.ok(Math.abs((pts[2].diff ?? 0) - 0.08) < 1e-12);
+  assert.deepEqual(monthCurve([...ps].reverse()), pts);
+  const pts26 = monthCurve(periods(days(sliceYear(M, '2026')), 'M'));
+  assert.deepEqual(pts26.map(p => p.m), ['2026-01', '2026-02']);
+});
+
+test('實盤分析：月報酬 x 軸標籤抽稀（少月全顯、多月不超標且含頭尾）', () => {
+  assert.deepEqual(pickTickIndices(0), []);
+  assert.deepEqual(pickTickIndices(1), [0]);
+  assert.deepEqual(pickTickIndices(4), [0, 1, 2, 3]);
+  assert.deepEqual(pickTickIndices(6), [0, 1, 2, 3, 4, 5]);
+  for (const len of [7, 12, 24, 37, 60]) {
+    const idx = pickTickIndices(len);
+    assert.ok(idx.length <= 6);
+    assert.equal(idx[0], 0);
+    assert.equal(idx[idx.length - 1], len - 1);
+    for (let i = 1; i < idx.length; i++) assert.ok(idx[i] > idx[i - 1]);
+  }
+});
