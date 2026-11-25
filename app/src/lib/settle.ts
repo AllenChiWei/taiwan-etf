@@ -14,6 +14,7 @@
 export const SLOT_FIRST = 13 * 3600 + 5;          // 13:00:05
 export const SLOT_LAST = 13 * 3600 + 25 * 60;     // 13:25:00
 export const CLOSE_SEC = 13 * 3600 + 30 * 60;     // 13:30:00
+export const POLL_END_SEC = 13 * 3600 + 35 * 60;  // 13:35:00（MIS 真實收盤約 13:33 才出，輪詢續到此）
 export const SLOTS = 300;
 export const TOTAL = SLOTS + 1;
 
@@ -196,4 +197,126 @@ export function driftStats(list: SettleHistView[]): { n: number; meanAbs: number
     up: xs.filter(x => x > 0).length,
     down: xs.filter(x => x < 0).length,
   };
+}
+
+/** 轉接站即時回應所需的最小欄位（與 api/settle.ts 的 TaiexLive 相容，保持 lib 獨立）。 */
+export interface LiveSnapshot {
+  src: string;
+  /** YYYYMMDD */
+  d: string;
+  /** HH:MM:SS */
+  t: string;
+  z: number;
+  bars: Array<[number, number]>;
+  samples?: Array<[number, number]>;
+}
+
+/** '20261125' → '2026-11-25' */
+export function isoFromYmd(d: string): string {
+  return d.length === 8 ? `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6)}` : d;
+}
+
+/**
+ * 合併轉接站回傳的即時快照與本頁累積的每 5 秒樣本（純函式）。
+ * - 只有 src === 'mis' 的回應才接受；非 MIS 回應直接忽略，不寫入 samples 也不覆蓋畫面。
+ * - 只有日期為 today 的 MIS 回應才寫入 samples。
+ * - 同一天若回應時間比目前顯示的早（後端節點不同步），只補還沒收過的 5 秒點，不讓畫面時間與預測值倒退。
+ * - 13:30 之後（含約 13:33 才出的延遲收盤價），只要時間未倒退就更新收盤樣本（CLOSE_SEC）。
+ */
+export function mergeLiveResponse<T extends LiveSnapshot>(
+  prev: T | null,
+  incoming: T,
+  samples: ReadonlyMap<number, number>,
+  today: string,
+): { live: T | null; samples: Map<number, number> } {
+  if (incoming.src !== 'mis') {
+    return { live: prev, samples: new Map(samples) };
+  }
+  const inSec = hmsSec(incoming.t);
+  if (!Number.isFinite(inSec) || !(incoming.z > 0)) {
+    return { live: prev, samples: new Map(samples) };
+  }
+
+  const sameDayPrev = prev && prev.d === incoming.d ? prev : null;
+  const nextSamples = prev && prev.d !== incoming.d ? new Map<number, number>() : new Map(samples);
+  const prevSec = sameDayPrev ? hmsSec(sameDayPrev.t) : -1;
+  const isOlder = sameDayPrev !== null && Number.isFinite(prevSec) && inSec < prevSec;
+
+  if (isoFromYmd(incoming.d) === today) {
+    // 補入 KV 帶回的盤中每 5 秒點（不覆蓋收盤點，避免 KV 的 13:30 凍結價蓋掉真實收盤價）
+    for (const [ts, v] of incoming.samples ?? []) {
+      const s = hmsSec(ts);
+      if (Number.isFinite(s) && v > 0 && s >= SLOT_FIRST - 5 && s < CLOSE_SEC && s % 5 === 0 && !nextSamples.has(s)) {
+        nextSamples.set(s, v);
+      }
+    }
+    if (inSec >= SLOT_FIRST - 5 && inSec < CLOSE_SEC && inSec % 5 === 0) {
+      if (!nextSamples.has(inSec)) nextSamples.set(inSec, incoming.z);
+    } else if (inSec >= CLOSE_SEC) {
+      // MIS 13:30 先給 13:25 凍結價，真實收盤約 13:33 才出；只要未倒退就更新 CLOSE_SEC
+      if (!isOlder || !nextSamples.has(CLOSE_SEC)) nextSamples.set(CLOSE_SEC, incoming.z);
+    }
+  }
+
+  if (isOlder) {
+    return { live: sameDayPrev, samples: nextSamples };
+  }
+
+  // mis_ohlc 偶發失敗時只剩 getStockInfo（bars 空），沿用同日前一份 bars 避免每分鐘基準閃失
+  const live: T =
+    sameDayPrev && incoming.bars.length === 0 && sameDayPrev.bars.length > 0
+      ? { ...incoming, bars: sameDayPrev.bars }
+      : incoming;
+
+  return { live, samples: nextSamples };
+}
+
+/** 組合已知指數點：每分鐘資料 → 轉接站排程存的每 5 秒 → 本頁累積的每 5 秒（後蓋前）。 */
+export function collectLivePoints(
+  live: Pick<LiveSnapshot, 'bars' | 'samples'>,
+  samples: ReadonlyMap<number, number>,
+  maxSec?: number,
+): Point[] {
+  const pts: Point[] = [];
+  const cap = maxSec !== undefined && Number.isFinite(maxSec) ? maxSec : Infinity;
+  for (const [ts, v] of live.bars) {
+    const sec = hmsSec(ts);
+    if (sec <= cap) pts.push({ sec, v });
+  }
+  for (const [ts, v] of live.samples ?? []) {
+    const sec = hmsSec(ts);
+    if (sec <= cap) pts.push({ sec, v });
+  }
+  for (const [sec, v] of samples) {
+    if (sec <= cap) pts.push({ sec, v });
+  }
+  return pts;
+}
+
+/**
+ * 是否繼續輪詢轉接站：看到 13:30:00 不立刻停止，繼續到台北 13:35（等延遲收盤價）或證交所每 5 秒資料校正完成。
+ */
+export function shouldPollSettle(opts: {
+  isToday: boolean;
+  demo: boolean;
+  nowSec: number;
+  startSec: number;
+  liveSec: number | null;
+  hasExact: boolean;
+}): boolean {
+  const { isToday, demo, nowSec, startSec, liveSec, hasExact } = opts;
+  if (!isToday || hasExact) return false;
+  if (!demo && nowSec < startSec) return false;
+  if (liveSec === null) return true;
+  if (demo) return liveSec < CLOSE_SEC;
+  return liveSec < CLOSE_SEC || nowSec < POLL_END_SEC;
+}
+
+/** 收盤後一律以證交所每 5 秒資料（MI_5MINS_INDEX）校正，不論盤中是否仍有內插點。 */
+export function shouldFetchExact(
+  pred: Pick<Prediction, 'final'> | null,
+  hasLiveToday: boolean,
+  hasExact: boolean,
+): boolean {
+  return !!pred && pred.final && hasLiveToday && !hasExact;
 }

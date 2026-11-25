@@ -7,7 +7,8 @@ import { readFileSync } from 'node:fs';
 
 import {
   hmsSec, secLabel, predictSettle, settleDates, nextSettle, taipeiNow, strikeNeed, strikesAround, settleCurve,
-  SLOT_FIRST, SLOT_LAST, CLOSE_SEC, TOTAL, type Point,
+  isoFromYmd, mergeLiveResponse, collectLivePoints, shouldPollSettle, shouldFetchExact,
+  SLOT_FIRST, SLOT_LAST, CLOSE_SEC, POLL_END_SEC, TOTAL, type LiveSnapshot, type Point,
 } from '../src/lib/settle.ts';
 
 interface Day { date: string; fsp: number; from: string; step: number; v: number[] }
@@ -147,4 +148,140 @@ test('結算價歷史：新到舊、13:00 偏移、公告優先', async () => {
   assert.equal(s.up, 1);
   assert.equal(s.down, 1);
   assert.equal(driftStats([]), null);
+});
+
+const mkLive = (over: Partial<LiveSnapshot> = {}): LiveSnapshot => ({
+  src: 'mis',
+  d: '20261125',
+  t: '13:14:20',
+  z: 38143.54,
+  bars: [[131300, 38145.87], [131400, 38149.11]],
+  samples: [],
+  ...over,
+});
+
+test('即時合併：時間倒退只補沒收過的點，畫面時間與預測值不往回跳', () => {
+  const today = '2026-11-25';
+  const r1 = mergeLiveResponse(null, mkLive({ t: '13:14:20', z: 38143.54 }), new Map(), today);
+  assert.equal(r1.live?.t, '13:14:20');
+  assert.equal(r1.samples.get(hmsSec('13:14:20')), 38143.54);
+
+  // 晚到的真實 5 秒點（13:13:05）：補進 samples，但畫面維持 13:14:20 不倒退
+  const r2 = mergeLiveResponse(r1.live, mkLive({ t: '13:13:05', z: 38143.69 }), r1.samples, today);
+  assert.equal(r2.live?.t, '13:14:20');
+  assert.equal(r2.live?.z, 38143.54);
+  assert.equal(r2.samples.get(hmsSec('13:13:05')), 38143.69);
+
+  // 已收過的舊時間點再回來：不覆蓋原值
+  const r3 = mergeLiveResponse(r2.live, mkLive({ t: '13:13:05', z: 99999 }), r2.samples, today);
+  assert.equal(r3.live?.t, '13:14:20');
+  assert.equal(r3.samples.get(hmsSec('13:13:05')), 38143.69);
+
+  // mis_ohlc 偶發失敗（bars 空）但時間前進：沿用前一份 bars
+  const r4 = mergeLiveResponse(r3.live, mkLive({ t: '13:14:30', z: 38143.87, bars: [] }), r3.samples, today);
+  assert.equal(r4.live?.t, '13:14:30');
+  assert.deepEqual(r4.live?.bars, [[131300, 38145.87], [131400, 38149.11]]);
+});
+
+test('即時合併：非 MIS 或非今日回應不寫入 samples，非 MIS 不覆蓋畫面', () => {
+  const today = '2026-11-25';
+  assert.equal(isoFromYmd('20261125'), today);
+
+  // 首次就收到 Yahoo：忽略，不寫入 samples 也不設為 live
+  const y0 = mergeLiveResponse(null, mkLive({ src: 'yahoo', t: '12:54:55', z: 38193.68 }), new Map(), today);
+  assert.equal(y0.live, null);
+  assert.equal(y0.samples.size, 0);
+
+  // 已有 MIS 時收到 Yahoo：不寫入 samples、不覆蓋既有畫面
+  const m1 = mergeLiveResponse(null, mkLive({ t: '13:14:20', z: 38143.54 }), new Map(), today);
+  const y1 = mergeLiveResponse(m1.live, mkLive({ src: 'yahoo', t: '13:15:00', z: 38000 }), m1.samples, today);
+  assert.equal(y1.live?.t, '13:14:20');
+  assert.equal(y1.live?.z, 38143.54);
+  assert.equal(y1.samples.has(hmsSec('13:15:00')), false);
+
+  // 非今日（前一天）MIS 回應：不寫入今日 samples
+  const oldDay = mergeLiveResponse(null, mkLive({ d: '20261124', t: '13:30:00', z: 38000 }), new Map(), today);
+  assert.equal(oldDay.samples.size, 0);
+});
+
+test('收盤後校正：interpolated 為 0 仍觸發證交所每 5 秒資料校正', () => {
+  const fullPts: Point[] = [];
+  for (let s = SLOT_FIRST; s <= SLOT_LAST; s += 5) fullPts.push({ sec: s, v: 38000 });
+  const predFull = predictSettle(fullPts, { sec: CLOSE_SEC, v: 38141.53 });
+  assert.equal(predFull.final, true);
+  assert.equal(predFull.interpolated, 0);
+  assert.equal(shouldFetchExact(predFull, true, false), true);
+  assert.equal(shouldFetchExact(predFull, true, true), false);
+  assert.equal(shouldFetchExact(predFull, false, false), false);
+
+  const predMid = predictSettle(fullPts.slice(0, 10), { sec: SLOT_FIRST + 50, v: 38000 });
+  assert.equal(predMid.final, false);
+  assert.equal(shouldFetchExact(predMid, true, false), false);
+});
+
+test('13:30 後輪詢延續至 13:35（或校正完成）且收盤值可更新', () => {
+  const today = '2026-11-25';
+  const startSec = 12 * 3600 + 55 * 60;
+
+  // 13:30:10 看到 13:30:00 凍結價：不立刻停，繼續輪詢
+  assert.equal(shouldPollSettle({ isToday: true, demo: false, nowSec: hmsSec('13:30:10'), startSec, liveSec: CLOSE_SEC, hasExact: false }), true);
+  // 13:34:00 若 MI_5MINS_INDEX 已校正完成：停止輪詢
+  assert.equal(shouldPollSettle({ isToday: true, demo: false, nowSec: hmsSec('13:34:00'), startSec, liveSec: hmsSec('13:33:00'), hasExact: true }), false);
+  // 台北時間到 13:35:00 且已收盤：停止輪詢
+  assert.equal(shouldPollSettle({ isToday: true, demo: false, nowSec: POLL_END_SEC, startSec, liveSec: hmsSec('13:33:00'), hasExact: false }), false);
+  // 13:40 才打開頁面尚未取得資料：先抓一次
+  assert.equal(shouldPollSettle({ isToday: true, demo: false, nowSec: hmsSec('13:40:00'), startSec, liveSec: null, hasExact: false }), true);
+
+  // 模擬 300 格皆 38000，13:30 先收到凍結價 38141.53（結算價 38000），13:33 收到真收盤 38195.43（翻成 38001）
+  const baseSamples = new Map<number, number>();
+  for (let s = SLOT_FIRST; s <= SLOT_LAST; s += 5) baseSamples.set(s, 38000);
+  baseSamples.set(SLOT_FIRST - 5, 38000);
+
+  const freeze = mergeLiveResponse(
+    null,
+    mkLive({ t: '13:30:00', z: 38141.53, bars: [[133000, 38141.53]], samples: [[133000, 38141.53]] }),
+    baseSamples,
+    today,
+  );
+  assert.equal(freeze.samples.get(CLOSE_SEC), 38141.53);
+  const pFreeze = predictSettle(collectLivePoints(freeze.live!, freeze.samples), { sec: CLOSE_SEC, v: freeze.live!.z });
+  assert.equal(pFreeze.rounded, 38000);
+
+  // 同時間 13:30:00 更新為真收盤價
+  const sameTsUpdate = mergeLiveResponse(
+    freeze.live,
+    mkLive({ t: '13:30:00', z: 38195.43, bars: [[133000, 38195.43]], samples: [[133000, 38141.53]] }),
+    freeze.samples,
+    today,
+  );
+  assert.equal(sameTsUpdate.live?.z, 38195.43);
+  assert.equal(sameTsUpdate.samples.get(CLOSE_SEC), 38195.43);
+
+  // 13:33:00 延遲揭露的真收盤價更新（如 11-25 mis_ohlc 實測）
+  const lateClose = mergeLiveResponse(
+    freeze.live,
+    mkLive({ t: '13:33:00', z: 38195.43, bars: [[133300, 38195.43]], samples: [[133000, 38141.53]] }),
+    freeze.samples,
+    today,
+  );
+  assert.equal(lateClose.live?.t, '13:33:00');
+  assert.equal(lateClose.live?.z, 38195.43);
+  assert.equal(lateClose.samples.get(CLOSE_SEC), 38195.43);
+  const latePts = collectLivePoints(lateClose.live!, lateClose.samples);
+  const pLate = predictSettle(latePts, { sec: hmsSec(lateClose.live!.t), v: lateClose.live!.z });
+  assert.equal(pLate.rounded, 38001);
+  const curve = settleCurve([...latePts, { sec: hmsSec(lateClose.live!.t), v: lateClose.live!.z }], hmsSec(lateClose.live!.t));
+  assert.equal(curve[curve.length - 1].v, 38195.43);
+  assert.equal(curve[curve.length - 1].p, 38001);
+
+  // 已拿到 13:33:00 真收盤後，舊節點再回 13:30:00 凍結價：不得倒退覆蓋
+  const staleAfter = mergeLiveResponse(
+    lateClose.live,
+    mkLive({ t: '13:30:00', z: 38141.53, bars: [[133000, 38141.53]] }),
+    lateClose.samples,
+    today,
+  );
+  assert.equal(staleAfter.live?.t, '13:33:00');
+  assert.equal(staleAfter.live?.z, 38195.43);
+  assert.equal(staleAfter.samples.get(CLOSE_SEC), 38195.43);
 });
