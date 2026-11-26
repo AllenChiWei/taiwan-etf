@@ -10,8 +10,8 @@ export function AboutPage() {
 
   return (
     <div className="pt-5 pb-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start">
-        <div className="min-w-0 space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-stretch">
+        <div className="min-w-0 flex flex-col gap-4">
           <section className={card}>
             <h2 className={h2}>這是什麼</h2>
             <p className={p}>
@@ -20,7 +20,7 @@ export function AboutPage() {
             </p>
           </section>
 
-          <section className={card}>
+          <section className={`${card} lg:grow`}>
             <h2 className={h2}>資料來源與更新</h2>
             <ul className={ul}>
               <li>ETF 清單：證交所 TWSE 與櫃買中心 TPEx 公開資料</li>
@@ -52,7 +52,7 @@ export function AboutPage() {
           </section>
         </div>
 
-        <div className="min-w-0 space-y-4">
+        <div className="min-w-0 flex flex-col gap-4">
           <section className={card}>
             <h2 className={h2}>欄位怎麼讀</h2>
             <ul className={ul}>
@@ -79,7 +79,7 @@ export function AboutPage() {
             </ul>
           </section>
 
-          <section className={card}>
+          <section className={`${card} lg:grow`}>
             <h2 className={h2}>收藏功能</h2>
             <p className={p}>
               點每一列的 ☆ 可加入收藏。資料只存在你這台裝置的瀏覽器裡，不會上傳，

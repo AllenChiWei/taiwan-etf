@@ -319,19 +319,19 @@ export function MacroPage() {
         const energy = indicators.filter(i => i.group === '能源');
         if (!growth.length && !energy.length) return null;
         return (
-          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-start lg:gap-4">
+          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-stretch lg:gap-4">
             {growth.length > 0 && (
-              <section className="min-w-0 lg:col-span-1">
+              <section className="min-w-0 lg:col-span-1 lg:flex lg:flex-col">
                 <h2 className="mb-2 text-sm font-bold text-ink">成長</h2>
-                <div className="grid gap-3">
+                <div className="grid gap-3 lg:grow">
                   {growth.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
                 </div>
               </section>
             )}
             {energy.length > 0 && (
-              <section className="min-w-0 lg:col-span-2">
+              <section className="min-w-0 lg:col-span-2 lg:flex lg:flex-col">
                 <h2 className="mb-2 text-sm font-bold text-ink">能源</h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:gap-4">
+                <div className="grid gap-3 sm:grid-cols-2 lg:grow lg:gap-4">
                   {energy.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
                 </div>
               </section>

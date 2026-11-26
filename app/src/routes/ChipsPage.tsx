@@ -1311,7 +1311,7 @@ function PcSection({ data }: { data: ChipsData }) {
           <Bars values={oiRel} />
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-2 text-[11px] text-faint xl:mt-auto xl:pt-2">
         比率高於 100% 代表賣權多於買權。未平倉量比變動慢、被當成偏中期的指標，
         成交量比每天跳動大。兩者都是統計，不是訊號。
         {hasAdj && (
@@ -1402,7 +1402,7 @@ function OptionsSection({ data }: { data: ChipsData }) {
         ))}
       </div>
 
-      <Fold summary={<>買方、賣方是各自的部位，不是同一筆的兩端；淨額＝買方 − 賣方</>}>
+      <Fold className="mt-2 xl:mt-auto xl:pt-2" summary={<>買方、賣方是各自的部位，不是同一筆的兩端；淨額＝買方 − 賣方</>}>
         欄位對應期交所「三大法人－臺指選擇權買賣權分計」。買方與賣方是各自的部位，
         不是同一筆的兩端；買賣淨額 = 買方 − 賣方。選擇權的買賣方風險不對稱，
         金額大不等於部位大，口數與金額要一起看。
@@ -1491,7 +1491,7 @@ function LargeSection({ data, kind: fixed, wide = false }: { data: ChipsData; ki
       <Switch options={LARGE_WHO} value={who} onChange={setWho} label="交易人類別" />
       {products.length > 1 && cur && <Switch options={products} value={cur} onChange={setProd} label="契約" />}
       <LargeTable rows={shown} wide={wide} />
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-2 text-[11px] text-faint xl:mt-auto xl:pt-2">
         「特定法人」是大額交易人裡的法人部分，與「全部交易人」是包含關係，不能相減。
         期交所的臺股期貨含小型臺指與微型臺指的換算口數。
       </p>
@@ -1552,7 +1552,7 @@ function SectorSection({ data }: { data: ChipsData }) {
         </MoreFold>
       )}
 
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-2 text-[11px] text-faint xl:mt-auto xl:pt-2">
         比重的分母是各細類的合計。「電子」與「化學生技醫療」是彙總類（等於底下幾個
         細類的總和），另外列出以免被算兩次 —— 一起算的話半導體會從 36% 被稀釋成 19%。
         櫃買沒有對應的公開端點，所以這份只有上市。
@@ -1731,7 +1731,7 @@ function DcaSection({ data, onPick }: {
         ))}
       </ol>
 
-      <Fold summary={<>戶數是有設定定期定額的帳戶數，不是投入金額</>}>
+      <Fold className="mt-2 xl:mt-auto xl:pt-2" summary={<>戶數是有設定定期定額的帳戶數，不是投入金額</>}>
         戶數是「有設定定期定額的帳戶數」，不是投入金額，所以一檔便宜的 ETF
         會比一檔貴的容易衝高。近一年報酬取自台股 ETF 清單，個股榜沒有這一欄。
         {dca.modified && `　資料更新：${dca.modified}`}
@@ -1821,15 +1821,15 @@ export function ChipsPage() {
       </Group>
       <Group id="fut" title="期貨" hint="法人、散戶、大額交易人">
         <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
-          <div id="sec-retail" className="min-w-0 scroll-mt-16"><RetailSection /></div>
-          <div id="sec-large" className="min-w-0 scroll-mt-16"><LargeSection data={data} kind="期貨" /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>div>section]:mt-0 xl:[&>div>section]:flex xl:[&>div>section]:grow xl:[&>div>section]:flex-col">
+          <div id="sec-retail" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><RetailSection /></div>
+          <div id="sec-large" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><LargeSection data={data} kind="期貨" /></div>
         </div>
       </Group>
       <Group id="opt" title="選擇權" hint="Put/Call、法人、價平和、大額交易人">
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
-          <div id="sec-pc" className="min-w-0 scroll-mt-16"><PcSection data={data} /></div>
-          <div id="sec-opt" className="min-w-0 scroll-mt-16"><OptionsSection data={data} /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>div>section]:mt-0 xl:[&>div>section]:flex xl:[&>div>section]:grow xl:[&>div>section]:flex-col">
+          <div id="sec-pc" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><PcSection data={data} /></div>
+          <div id="sec-opt" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><OptionsSection data={data} /></div>
         </div>
         <div id="sec-atm" className="scroll-mt-16">
           <AtmSection />
@@ -1845,9 +1845,9 @@ export function ChipsPage() {
       <Group id="mood" title="市場情緒與資金" hint="台股、美股情緒，類股、法人、定期定額">
         <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
         <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
-        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
-          <div id="sec-sector" className="min-w-0 scroll-mt-16"><SectorSection data={data} /></div>
-          <div id="sec-dca" className="min-w-0 scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>div>section]:mt-0 xl:[&>div>section]:flex xl:[&>div>section]:grow xl:[&>div>section]:flex-col">
+          <div id="sec-sector" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><SectorSection data={data} /></div>
+          <div id="sec-dca" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><DcaSection data={data} onPick={setSheet} /></div>
         </div>
         <div id="sec-top" className="scroll-mt-16"><TopSection data={data} onPick={setSheet} /></div>
       </Group>

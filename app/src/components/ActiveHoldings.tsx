@@ -145,10 +145,10 @@ export function ActiveHoldings() {
     <div className="pt-4">
       {(board.some(r => r.edge != null) || (agg && agg.rows.length > 0)) && (
         <div className={board.some(r => r.edge != null) && agg && agg.rows.length > 0
-          ? 'mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mb-0'
+          ? 'mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>section]:mb-0'
           : ''}>
       {board.some(r => r.edge != null) && (
-        <section className="mb-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <section className="mb-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <h2 className="text-sm font-bold text-ink">經理人排行（選股力）</h2>
             <span className="text-[11.5px] text-faint">近 60 次換股，算到 {data.last?.d} 收盤</span>
@@ -172,7 +172,7 @@ export function ActiveHoldings() {
               </li>
             ))}
           </ol>
-          <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+          <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
             選股力＝買進（新增＋加碼）之後的漲跌 − 賣出（剔除＋減碼）之後的漲跌，每筆從換股當天均價算到最新收盤、用金額加權。
             正的代表買的比賣的漲得多。換股不到 10 筆的不排名；張數變化可能含申購贖回，海外股票與期貨不算。點 ETF 看明細。
           </p>
@@ -180,7 +180,7 @@ export function ActiveHoldings() {
       )}
 
       {agg && agg.rows.length > 0 && (
-        <section className="mb-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <section className="mb-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <h2 className="text-sm font-bold text-ink">市值前十大主動式 ETF 合計持股</h2>
             <span className="text-[11.5px] text-faint">權重 × ETF 市值加總，依金額排</span>
@@ -204,7 +204,7 @@ export function ActiveHoldings() {
               </li>
             ))}
           </ol>
-          <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          <p className="mt-auto pt-2 text-[11px] leading-relaxed text-faint">
             納入 {agg.included.length} 檔（合計市值 {nf1.format(agg.included.reduce((a, x) => a + x.cap, 0))} 億）：
             {agg.included.map(x => x.code).join('、')}。比例是佔這幾檔合計市值的百分比，期貨部位不算。
             {agg.missing.length > 0 && (
@@ -277,9 +277,9 @@ export function ActiveHoldings() {
 
         {((sc.buy.n > 0 || sc.sell.n > 0) || bk) && (
           <div className={`mt-4 grid grid-cols-1 gap-3 ${
-            (sc.buy.n > 0 || sc.sell.n > 0) && bk ? 'lg:grid-cols-2 lg:items-start' : ''}`}>
+            (sc.buy.n > 0 || sc.sell.n > 0) && bk ? 'lg:grid-cols-2 lg:items-stretch' : ''}`}>
         {(sc.buy.n > 0 || sc.sell.n > 0) && (
-          <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
+          <div className="flex min-w-0 flex-col rounded-lg border border-line bg-bg p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 className="text-[13px] font-bold text-ink">換股成效</h3>
               <span className="text-[11px] text-faint">{sc.from} ～ {sc.to} 的換股，算到 {data.last?.d} 收盤</span>
@@ -296,7 +296,7 @@ export function ActiveHoldings() {
                 <p className="text-[10.5px] text-faint">{sc.sell.n} 筆 · 估值 {yi(sc.sell.value)}</p>
               </div>
             </div>
-            <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+            <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
               每筆換股從當天均價算到最新收盤，用金額加權。買進之後漲＝買對了；賣出之後還在漲＝賣早了。
               張數變化可能含申購贖回，海外股票與期貨不算。
             </p>
@@ -304,7 +304,7 @@ export function ActiveHoldings() {
         )}
 
         {bk && (
-          <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
+          <div className="flex min-w-0 flex-col rounded-lg border border-line bg-bg p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 className="text-[13px] font-bold text-ink">持股損益</h3>
               <span className="text-[11px] text-faint">{bk.since} 起算（成本＝當天收盤）→ {bk.asof}</span>
@@ -339,7 +339,7 @@ export function ActiveHoldings() {
                 </ul>
               </>
             )}
-            <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+            <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
               移動平均成本：加碼的成本＝股數 × 當日均價，減碼依平均成本算已實現。起算前沒有完整的每日持股，不往前回推；
               估算值，不是投信的帳面損益（不含現金、費用、配息，海外股票與期貨不算）。
             </p>

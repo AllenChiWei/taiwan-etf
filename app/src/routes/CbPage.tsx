@@ -752,8 +752,8 @@ export function CbPage() {
 
       {market && <div id="cb-hist" className="scroll-mt-16"><MarketHistory market={market} /></div>}
 
-      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] xl:items-start xl:gap-4 [&>div>section]:mt-0">
-      <div id="cb-up" className="min-w-0 scroll-mt-16">
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] xl:items-stretch xl:gap-4 [&>div>section]:mt-0 xl:[&>div>section]:grow">
+      <div id="cb-up" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col">
       <Section title="待發行" hint={`${data.upcoming.length} 檔　發行日或上櫃日在 ${md(data.meta.date)} 之後`}>
         {data.upcoming.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">目前沒有排定發行的公開募集可轉債。</p>
@@ -785,13 +785,13 @@ export function CbPage() {
             </table>
           </div>
         )}
-        <p className="mt-2 text-[11.5px] text-faint">
+        <p className="mt-auto pt-2 text-[11.5px] text-faint">
           來源是櫃買中心的發行資料，只列已排定發行日的公開募集。私募可轉債不在櫃買交易，不列。
         </p>
       </Section>
       </div>
 
-      <div id="cb-plan" className="min-w-0 scroll-mt-16">
+      <div id="cb-plan" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col">
       <Section title="籌備中" hint={`${planned.length} 則　重大訊息提到發行可轉債、之後還沒發新債的`}>
         {planned.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">
@@ -810,7 +810,7 @@ export function CbPage() {
             ))}
           </ul>
         )}
-        <p className="mt-2 text-[11.5px] text-faint">
+        <p className="mt-auto pt-2 text-[11.5px] text-faint">
           董事會決議、申報生效、訂定發行條件這類公告都會出現；同一家公司之後發了新債就會從這裡移到上面或清單裡。
         </p>
       </Section>

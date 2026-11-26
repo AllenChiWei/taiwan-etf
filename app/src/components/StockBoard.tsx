@@ -53,7 +53,7 @@ export function Section({ title, hint, children }: {
   title: string; hint?: string; children: React.ReactNode;
 }) {
   return (
-    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-sm font-bold text-ink">{title}</h2>
         {hint && <span className="text-[11.5px] text-faint">{hint}</span>}
@@ -91,7 +91,7 @@ export function InfoSection({ data }: { data: StockData }) {
       </div>
       {i.site && (
         <a href={i.site} target="_blank" rel="noopener noreferrer"
-           className="mt-2 inline-block text-[12px] text-accent hover:underline">
+           className="mt-2 inline-block self-start text-[12px] text-accent hover:underline">
           公司網站 ↗
         </a>
       )}
@@ -126,7 +126,7 @@ export function RevenueSection({ data }: { data: StockData }) {
       </div>
 
       {months.length > 1 && (
-        <ul className="mt-2.5 space-y-1">
+        <ul className="mt-2.5 space-y-1 xl:flex xl:flex-1 xl:flex-col xl:justify-center">
           {[...months].reverse().map(m => (
             <li key={m.p} className="grid grid-cols-[4.5em_1fr_5.5em] items-center gap-2">
               <span className="font-mono text-[11.5px] text-muted">{m.p}</span>
@@ -142,7 +142,7 @@ export function RevenueSection({ data }: { data: StockData }) {
           ))}
         </ul>
       )}
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-auto pt-2 text-[11px] text-faint">
         長條是當月營收，右邊是年增率。營收為公司自行公告，未經會計師查核。
       </p>
     </Section>
@@ -226,7 +226,7 @@ export function FinancialSection({ data }: { data: StockData }) {
         </div>
       )}
 
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-auto pt-2 text-[11px] text-faint">
         觀測站公佈的是<strong className="font-semibold">累計數</strong>：第二季是上半年、
         第三季是前三季。單季要有連續兩期才算得出來，這份資料從啟用日起逐期累積。
       </p>
@@ -255,8 +255,9 @@ export function PositionSection({ row }: { row: HighRow | null }) {
         ))}
       </div>
 
+      <div className="mt-2.5 xl:flex xl:flex-1 xl:flex-col xl:justify-center">
       {pos ? (
-        <div className="mt-2.5">
+        <div>
           {/* 一條軸把「距高點」「距低點」放在同一個畫面上 —— 分開講兩個百分比
               很難在腦中拼回位置，一條線就看得出是在高檔還是低檔 */}
           <div className="relative h-7">
@@ -280,7 +281,7 @@ export function PositionSection({ row }: { row: HighRow | null }) {
           </div>
         </div>
       ) : (
-        <p className="mt-2 py-3 text-center text-[12.5px] text-muted">
+        <p className="py-3 text-center text-[12.5px] text-muted">
           這檔沒有近 {win} 個交易日的資料（可能是上市未滿這個期間）。
         </p>
       )}
@@ -296,7 +297,8 @@ export function PositionSection({ row }: { row: HighRow | null }) {
           </div>
         ))}
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      </div>
+      <p className="mt-auto pt-2 text-[11px] leading-relaxed text-faint">
         高低點與漲跌幅都以還原股價計算（除權息與分割不會造成假性創低），
         顯示的收盤價則是原始股價。期間以交易日計：一週 5 日、一月 20 日、
         一季 60 日、半年 120 日；上市未滿該期間的顯示「—」而不是 0%。
@@ -430,7 +432,7 @@ export function ChipsVisual({ data }: { data: StockData }) {
           {bullPct <= 78 ? `賣 ${nf0.format(Math.abs(sell))} 張` : ''}
         </div>
       </div>
-      <p className="mt-1 text-[11px] leading-relaxed text-faint">
+      <p className="mt-auto pt-1.5 text-[11px] leading-relaxed text-faint">
         把每天的三大法人合計拆成買超與賣超兩堆再比大小。只看淨額的話，
         「大買大賣抵銷掉」跟「整段都沒人動」會長得一模一樣，但那是兩回事。
         圓環是持股結構：外資持股與集保的大戶比例越高，籌碼越集中。
@@ -458,7 +460,7 @@ export function InstDailySection({ data }: { data: StockData }) {
   return (
     <Section title="三大法人每日買賣超"
              hint={`近 ${rows.length} 個交易日 · 張`}>
-      <div className="mt-2 space-y-2.5">
+      <div className="mt-2 space-y-2.5 xl:flex xl:flex-1 xl:flex-col xl:justify-center">
         {INST_KEYS.map(k => {
           const sum = rows.reduce((a: number, r: InstDay) => a + (r[k.key] ?? 0), 0);
           return (
@@ -494,7 +496,7 @@ export function InstDailySection({ data }: { data: StockData }) {
           );
         })}
       </div>
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
+      <p className="mt-auto pt-2 text-[11px] leading-relaxed text-faint">
         每根是一個交易日，紅柱買超、綠柱賣超，三家共用同一個刻度所以高度可以互相比。
         沒有柱子代表那天還沒有資料，不是買賣超為零。
       </p>
@@ -591,7 +593,7 @@ export function ChipsSection({ data }: { data: StockData }) {
           ? `${nf0.format(c.tdcc.holders)} 人` : '—'} />
       </div>
 
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-auto pt-2 text-[11px] text-faint">
         買賣超為交易所公佈的股數，這裡換算成張（紅買綠賣）。集保股權分散表每週更新一次，
         所以它的日期與買賣超不同天。近 N 日只累計有資料的交易日。
       </p>

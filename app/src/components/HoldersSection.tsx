@@ -34,7 +34,7 @@ export function HoldersSection({ code }: { code: string }) {
   const daily = rows.filter(r => r.kind === 'daily').length;
 
   return (
-    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-sm font-bold text-ink">持有這檔的 ETF</h2>
         <span className="text-[11.5px] text-faint">
@@ -68,11 +68,11 @@ export function HoldersSection({ code }: { code: string }) {
         </ul>
       )}
       {rows.length > 12 && (
-        <button type="button" onClick={() => setAll(v => !v)} className="mt-1.5 text-[12.5px] font-semibold text-accent">
+        <button type="button" onClick={() => setAll(v => !v)} className="mt-1.5 self-start text-[12.5px] font-semibold text-accent">
           {all ? '收起' : `顯示全部 ${rows.length} 檔`}
         </button>
       )}
-      <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+      <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
         權重＝佔該 ETF 淨值的比例。非主動式 ETF 的來源是投信投顧公會月報，只公布前十大，排在十名以外的持有不會出現；
         主動式 ETF 是投信每日公告的完整持股。
       </p>

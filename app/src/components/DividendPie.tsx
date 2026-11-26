@@ -37,7 +37,7 @@ export function DividendPie({ rows, total, colorOf }: {
   const shown = expanded || rest.count === 0 ? slices : slices.slice(0, TOP_N);
 
   return (
-    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-sm font-bold text-ink">年配息來源</h2>
         <span className="text-[11.5px] text-faint">
@@ -122,13 +122,13 @@ export function DividendPie({ rows, total, colorOf }: {
           type="button"
           onClick={() => setExpanded(v => !v)}
           aria-expanded={expanded}
-          className="mt-2 text-[12px] font-semibold text-accent"
+          className="mt-2 self-start text-[12px] font-semibold text-accent"
         >
           {expanded ? '收合' : `展開全部 ${slices.length} 檔`}
         </button>
       )}
 
-      <p className="mt-2 text-[11px] text-faint">
+      <p className="mt-auto pt-2 text-[11px] text-faint">
         依預估年配息金額計算。圖上畫的是全部持股，清單預設只列前 {TOP_N} 名。
         沒有配息紀錄的持股不會出現在圖上 —— 它們在圖上會是有顏色但沒有意義的一片。
       </p>

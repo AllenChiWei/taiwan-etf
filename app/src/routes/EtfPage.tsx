@@ -184,7 +184,7 @@ export function EtfPage() {
         </section>
       )}
 
-      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start lg:gap-4 [&>section]:mt-0">
+      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-stretch lg:gap-4 [&>section]:mt-0">
       <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">配息紀錄</h2>
         {!div && <p className="py-6 text-center text-[13px] text-muted">載入中…</p>}
