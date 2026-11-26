@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { useUsDataset } from '../hooks/useUsDataset';
 import { fetchCalendar, fetchSeries, needsUnlock, type Market } from '../api/series';
@@ -67,6 +68,8 @@ export function FavoritesPage() {
   // 那份有 554 KB，純台股使用者不該為它付代價。
   const twMap = useMemo(
     () => new Map(tw.etfs.map(e => [e.code, e])), [tw.etfs]);
+  const twNames = useMemo(
+    () => new Map(tw.etfs.map(e => [e.code, e.name])), [tw.etfs]);
   const unknown = favorites.codes.filter(c => !twMap.has(c));
   // 美股清單是公開的，不需要解鎖；只有績效曲線要密碼
   const needUs = unknown.length > 0;
@@ -254,26 +257,37 @@ export function FavoritesPage() {
           const checked = selected.includes(it.code);
           const color = checked ? colorOf(it.code) : undefined;
           const full = !checked && selected.length >= MAX_COMPARE;
+          const checkId = `fav-cmp-${it.code}`;
           return (
             <li key={it.code}>
-              <label className={`flex items-center gap-3 rounded-t-lg border border-b-0 px-3 py-2.5 transition-colors
+              <div className={`flex items-center gap-2.5 rounded-t-lg border border-b-0 px-3 py-2.5 transition-colors
                 ${checked ? 'border-accent bg-accent-soft' : 'border-line bg-surface'}
-                ${full ? 'opacity-50' : 'cursor-pointer hover:bg-hover'}`}>
-                <input type="checkbox" checked={checked} disabled={full}
-                       onChange={() => toggle(it.code)}
-                       className="h-4 w-4 shrink-0 accent-[var(--c-accent)]" />
-                <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ background: color ?? 'transparent',
-                               border: color ? undefined : '1px solid var(--c-border)' }} />
-                <span className="font-mono text-sm font-bold text-accent">{it.code}</span>
-                <span className="min-w-0 flex-1 truncate text-sm text-ink">{it.name}</span>
-                <span className="rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-muted">
+                ${full ? 'opacity-50' : 'hover:bg-hover'}`}>
+                <label htmlFor={checkId} className={`flex shrink-0 items-center gap-2.5 ${full ? '' : 'cursor-pointer'}`}>
+                  <input id={checkId} type="checkbox" checked={checked} disabled={full}
+                         aria-label={`勾選比較 ${it.code} ${it.name}`}
+                         onChange={() => toggle(it.code)}
+                         className="h-4 w-4 shrink-0 accent-[var(--c-accent)]" />
+                  <span aria-hidden="true" className="h-2.5 w-2.5 shrink-0 rounded-full"
+                        style={{ background: color ?? 'transparent',
+                                 border: color ? undefined : '1px solid var(--c-border)' }} />
+                </label>
+                <Link to="/etf" search={{ code: it.code }}
+                      className="shrink-0 font-mono text-sm font-bold text-accent hover:underline"
+                      title={`查看 ${it.code} 詳情`}>
+                  {it.code}
+                </Link>
+                <label htmlFor={checkId}
+                       className={`min-w-0 flex-1 truncate text-sm text-ink ${full ? '' : 'cursor-pointer'}`}>
+                  {it.name}
+                </label>
+                <span className="shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-semibold text-muted">
                   {it.market === 'tw' ? '台股' : '美股'}
                 </span>
                 <button type="button" aria-label={`移除收藏 ${it.code}`}
-                        onClick={e => { e.preventDefault(); favorites.toggle(it.code); }}
+                        onClick={() => favorites.toggle(it.code)}
                         className="shrink-0 rounded px-1 text-sm text-faint hover:text-ink">✕</button>
-              </label>
+              </div>
 
               {/* 指標。放在第二排而不是擠進上面那行 —— 六個數字在手機上排不下。 */}
               <dl className={`grid grid-cols-3 gap-x-2 gap-y-1.5 rounded-b-lg border border-t-0 px-3 py-2
@@ -309,8 +323,8 @@ export function FavoritesPage() {
         </p>
       )}
 
-      {/* 兩兩比較收藏 ETF 的前十大持股重疊（只看台股清單裡的，美股公會沒有月報） */}
-      <OverlapSection codes={items.filter(i => i.market === 'tw').map(i => i.code)} />
+      {/* 兩兩比較收藏 ETF 的持股重疊（主動式用每日完整持股，其餘用公會月報前十大；只看台股清單裡的） */}
+      <OverlapSection codes={items.filter(i => i.market === 'tw').map(i => i.code)} names={twNames} />
     </div>
   );
 }

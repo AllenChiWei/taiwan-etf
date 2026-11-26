@@ -184,9 +184,14 @@ const calendarRoute = createRoute({
   component: CalendarPage,
 });
 
+/** 可轉債：支援 #/cb?code=11011 從快速搜尋或分享連結直接開啟該檔詳情 */
 const cbRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/cb',
+  validateSearch: (search: Record<string, unknown>): { code?: string } => {
+    const code = str(search.code).toUpperCase();
+    return code ? { code } : {};
+  },
   component: CbPage,
 });
 

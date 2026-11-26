@@ -1,24 +1,27 @@
-/* 全站快速搜尋（Ctrl＋K，2026-10-26）。純函式，沒有 React。
+/* 全站快速搜尋（Ctrl＋K，2026-10-26；2026-11-26 加入美股 ETF 與可轉債）。純函式，沒有 React。
  *
- * 一個框找頁面、台股 ETF、個股。排序：代號完全相同 > 代號開頭 > 名稱開頭 > 名稱包含 > 關鍵字包含；
- * 同分時頁面 > ETF > 個股（頁面最少、最常是使用者要的）。
+ * 一個框找頁面、台股 ETF、美股 ETF、個股、可轉債。
+ * 排序：代號完全相同 > 代號開頭 > 名稱開頭 > 名稱包含 > 關鍵字包含；
+ * 同分時頁面 > 台股 ETF > 美股 ETF > 個股 > 可轉債（同類別再依 priority 與代號排序）。
  */
 
-export type SearchKind = 'page' | 'etf' | 'stock';
+export type SearchKind = 'page' | 'etf' | 'us' | 'stock' | 'cb';
 
 export interface SearchItem {
   kind: SearchKind;
   /** 代號（頁面沒有） */
   code?: string;
   name: string;
-  /** 額外比對的字（頁面的別名、ETF 的配息頻率…） */
+  /** 額外比對的字（頁面的別名、ETF 的配息頻率、可轉債的標的股與產業…） */
   keywords?: string;
+  /** 同分同類別時的優先度（較大者排前，例如有流動性的美股 ETF） */
+  priority?: number;
   /** 導向：路徑＋查詢參數 */
   to: string;
   search?: Record<string, string>;
 }
 
-const KIND_ORDER: Record<SearchKind, number> = { page: 0, etf: 1, stock: 2 };
+const KIND_ORDER: Record<SearchKind, number> = { page: 0, etf: 1, us: 2, stock: 3, cb: 4 };
 
 /** 全形英數轉半形、去空白、轉小寫（使用者常在中文輸入法下打代號） */
 export function norm(s: string): string {
@@ -43,10 +46,40 @@ export function searchAll(items: SearchItem[], query: string, limit = 12): Searc
   return items
     .map(i => ({ i, s: score(i, q) }))
     .filter(x => x.s > 0)
-    .sort((a, b) => b.s - a.s || KIND_ORDER[a.i.kind] - KIND_ORDER[b.i.kind]
+    .sort((a, b) => b.s - a.s
+      || KIND_ORDER[a.i.kind] - KIND_ORDER[b.i.kind]
+      || (b.i.priority ?? 0) - (a.i.priority ?? 0)
       || (a.i.code ?? '').localeCompare(b.i.code ?? ''))
     .slice(0, limit)
     .map(x => x.i);
+}
+
+/** 美股 ETF → 快速搜尋項目（點選開 /etf?code=…；有流動性者同分排前面） */
+export function usEtfSearchItems(
+  etfs: ReadonlyArray<{ code: string; name: string; liquid?: boolean }>,
+): SearchItem[] {
+  return etfs.map(e => ({
+    kind: 'us' as const,
+    code: e.code,
+    name: e.name,
+    priority: e.liquid ? 1 : 0,
+    to: '/etf',
+    search: { code: e.code },
+  }));
+}
+
+/** 可轉債 → 快速搜尋項目（點選開 /cb?code=…；交換債不附代號前四碼 s，避免誤對到別家公司） */
+export function cbSearchItems(
+  bonds: ReadonlyArray<{ c: string; n: string; s: string; sn: string; ind: string; exch?: boolean }>,
+): SearchItem[] {
+  return bonds.map(b => ({
+    kind: 'cb' as const,
+    code: b.c,
+    name: b.n,
+    keywords: [b.exch ? '' : b.s, b.sn, b.ind].filter(Boolean).join(' ') || undefined,
+    to: '/cb',
+    search: { code: b.c },
+  }));
 }
 
 /** 站上的頁面（含分頁）。私人頁不放（要密碼，也不該被搜尋露出） */

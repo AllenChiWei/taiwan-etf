@@ -1,7 +1,7 @@
-/* 收藏 ETF 的持股重疊（用投信投顧公會月報的前十大）。純函式，沒有 React。
+/* 收藏 ETF 的持股重疊（主動式用投信每日完整持股，其餘用公會月報前十大）。純函式，沒有 React。
  *
- * 重疊度 = Σ 共同持股 min(甲的佔比, 乙的佔比)。兩檔前十大完全一樣、比重也一樣時等於兩檔前十大的合計；
- * 只看前十大，所以是「下限」：前十大以外的共同持股算不到。
+ * 重疊度 = Σ 共同持股 min(甲的佔比, 乙的佔比)。只算看得到的部分，所以有月報前十大參與時是「下限」：
+ * 前十大以外的共同持股算不到。期貨部位不算持股（isStock）。
  */
 
 import { lookupMonthly, type Top10Data } from './top10.ts';
@@ -42,15 +42,35 @@ export function overlapPair(data: Top10Data, a: string, b: string): Pair {
   return { a, b, overlap: common.reduce((s, c) => s + Math.min(c.a, c.b), 0), common };
 }
 
-/** 收藏中有前十大資料的 ETF，兩兩配對，重疊度高的在前 */
-export function overlapPairs(data: Top10Data, codes: string[]): { covered: string[]; pairs: Pair[] } {
-  const covered = codes.filter(c => (data.etfs[c]?.rows.length ?? 0) > 0);
+/** 收藏中有持股資料的 ETF（主動式用每日完整持股，其餘用公會月報前十大），兩兩配對，重疊度高的在前 */
+export function overlapPairs(
+  data: Top10Data | null,
+  codes: string[],
+  active: ActiveData | null = null,
+): { covered: string[]; pairs: Pair[]; sets: Record<string, HoldingSet> } {
+  const covered: string[] = [];
+  const sets: Record<string, HoldingSet> = {};
+  const seen = new Set<string>();
+  for (const c of codes) {
+    if (seen.has(c)) continue;
+    seen.add(c);
+    const s = holdingsOf(c, data, active);
+    if (s) {
+      covered.push(c);
+      sets[c] = s;
+    }
+  }
   const pairs: Pair[] = [];
   for (let i = 0; i < covered.length; i++) {
-    for (let j = i + 1; j < covered.length; j++) pairs.push(overlapPair(data, covered[i], covered[j]));
+    for (let j = i + 1; j < covered.length; j++) {
+      const a = covered[i];
+      const b = covered[j];
+      const cmp = compareHoldings(sets[a], sets[b]);
+      pairs.push({ a, b, overlap: cmp.overlap, common: cmp.common });
+    }
   }
   pairs.sort((p, q) => q.overlap - p.overlap);
-  return { covered, pairs };
+  return { covered, pairs, sets };
 }
 
 /* ───── 任選兩檔比對（#/compare，2026-11-19 站主：選兩檔 ETF 比共同持股與比例）─────
@@ -92,8 +112,8 @@ export function holdingsOf(code: string, top10: Top10Data | null, active: Active
       if (sid && pct !== null && pct > 0 && isStock(name)) w.set(sid, { name, pct: (w.get(sid)?.pct ?? 0) + pct });
     }
     if (!w.size) return null;
-    const ym = top10!.meta.ym;
-    return { code, kind: 'monthly', asof: `${ym.slice(0, 4)}/${ym.slice(4)}`, w, covered: sumPct(w) };
+    const ym = top10!.meta?.ym ?? '';
+    return { code, kind: 'monthly', asof: ym ? `${ym.slice(0, 4)}/${ym.slice(4)}` : '', w, covered: sumPct(w) };
   }
   return null;
 }

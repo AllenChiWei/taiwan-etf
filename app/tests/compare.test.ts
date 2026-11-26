@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
-import { holdingsOf, compareHoldings } from '../src/lib/overlap.ts';
+import { holdingsOf, compareHoldings, overlapPairs } from '../src/lib/overlap.ts';
 import type { Top10Data } from '../src/lib/top10.ts';
 import type { ActiveData } from '../src/lib/active.ts';
 
@@ -62,6 +62,31 @@ test('同一檔跟自己比：重疊度＝自己的涵蓋', () => {
   const r = compareHoldings(s, s);
   assert.ok(Math.abs(r.overlap - s.covered) < 1e-9);
   assert.equal(r.onlyA.length + r.onlyB.length, 0);
+});
+
+test('overlapPairs：主動式改用每日完整持股、期貨不計，且僅有每日資料也納入', () => {
+  const activeOnly: ActiveData = {
+    meta: { updated: '', minChange: 0.005, blocked: [], source: '', errors: [] },
+    etfs: {
+      ...active.etfs,
+      '00999A': { name: '新主動', issuer: '', asof: '2026-11-18', changes: [],
+                  holdings: [['6669', '緯穎', 1, 5], ['TX', '台股期貨', 1, 30]] },
+    },
+  } as unknown as ActiveData;
+  const r = overlapPairs(monthly, ['0050', '00981A', '00999A', '00981A', 'UNKNOWN'], activeOnly);
+  assert.deepEqual(r.covered, ['0050', '00981A', '00999A'], '重複代號只算一次，僅有每日資料的新主動式也涵蓋');
+  assert.equal(r.sets['00981A'].kind, 'daily');
+  assert.equal(r.sets['0050'].kind, 'monthly');
+  const p050 = r.pairs.find(p => (p.a === '0050' && p.b === '00981A') || (p.a === '00981A' && p.b === '0050'))!;
+  assert.equal(p050.overlap, 13, '使用每日的 10%+3% 而非月報的 9%');
+  const pAct = r.pairs.find(p => (p.a === '00981A' && p.b === '00999A') || (p.a === '00999A' && p.b === '00981A'))!;
+  assert.equal(pAct.overlap, 1.5, '期貨不計重疊，只算 6669 緯穎的 min(1.5, 5)');
+
+  // 缺 top10.json 時仍能用 active_holdings.json 比較主動式 ETF
+  const noTop10 = overlapPairs(null, ['00981A', '00999A'], activeOnly);
+  assert.deepEqual(noTop10.covered, ['00981A', '00999A']);
+  assert.equal(noTop10.pairs.length, 1);
+  assert.equal(noTop10.pairs[0].overlap, 1.5);
 });
 
 test('真實資料：0050 vs 006208 重疊高、都有台積電；主動式每日持股合計合理', () => {

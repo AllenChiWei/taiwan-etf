@@ -9,6 +9,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { fetchCb, fetchCbMarket, fetchCbSeries, fetchCbConv } from '../api/extras';
 import { fetchNews } from '../api/news';
 import {
@@ -463,6 +464,8 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
 /* ── 頁面 ─────────────────────────────────────────────────── */
 
 export function CbPage() {
+  const { code: urlCode } = useSearch({ from: '/cb' });
+  const navigate = useNavigate();
   const [data, setData] = useState<CbData | null | undefined>(undefined);
   const [market, setMarket] = useState<CbMarket | null>(null);
   const [news, setNews] = useState<NewsData | null | undefined>(undefined);
@@ -486,6 +489,14 @@ export function CbPage() {
     fetchCbMarket(ac.signal).then(d => { if (!ac.signal.aborted) setMarket(d); }).catch(() => {});
     return () => ac.abort();
   }, []);
+
+  // 從快速搜尋（Ctrl＋K）或網址 #/cb?code=… 進來時直接開該檔詳情；找不到則帶進搜尋框
+  useEffect(() => {
+    if (!data || !urlCode) return;
+    const hit = data.bonds.find(b => b.c === urlCode);
+    if (hit) setPick(hit);
+    else setQ(urlCode);
+  }, [data, urlCode]);
 
   // 新聞只在點開某一檔時才抓（約幾百 KB），沒點的人不用下載
   useEffect(() => {
@@ -846,7 +857,11 @@ export function CbPage() {
         以公司公告為準。餘額是上月底的數字。
       </p>
 
-      <StockSheet code={pick?.s ?? null} name={pick?.sn} onClose={() => setPick(null)}
+      <StockSheet code={pick?.s ?? null} name={pick?.sn}
+                  onClose={() => {
+                    setPick(null);
+                    if (urlCode) void navigate({ to: '/cb', search: {}, replace: true, resetScroll: false });
+                  }}
                   extra={pick ? <BondDetail b={pick} news={news} asOf={asOf} fav={favs.has(pick.c)}
                                             onFav={() => toggleFav(pick.c)} /> : null} />
     </div>

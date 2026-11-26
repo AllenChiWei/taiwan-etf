@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { norm, searchAll, PAGES, type SearchItem } from '../src/lib/search.ts';
+import { norm, searchAll, PAGES, usEtfSearchItems, cbSearchItems, type SearchItem } from '../src/lib/search.ts';
 
 const items: SearchItem[] = [
   ...PAGES,
@@ -33,4 +33,34 @@ test('頁面靠關鍵字也找得到；空字串只列頁面', () => {
   assert.deepEqual(searchAll(items, '經理人')[0].search, { view: 'active' });
   assert.ok(searchAll(items, '').every(x => x.kind === 'page'));
   assert.equal(searchAll(items, 'zzzz').length, 0);
+});
+
+test('美股 ETF 與可轉債搜尋：路由、流動性優先度與交換債防誤對', () => {
+  const us = usEtfSearchItems([
+    { code: 'AAA', name: 'Alpha S&P 500 ETF', liquid: false },
+    { code: 'VOO', name: 'Vanguard S&P 500 ETF', liquid: true },
+  ]);
+  const cb = cbSearchItems([
+    { c: '23082', n: '台達電二', s: '2308', sn: '台達電', ind: '電子零組件業', exch: false },
+    { c: '11011E', n: '交換債樣本', s: '1101', sn: '某公司', ind: '其他', exch: true },
+  ]);
+  const all = [...items, ...us, ...cb];
+
+  const hitVoo = searchAll(all, 'ｖｏｏ')[0];
+  assert.equal(hitVoo.kind, 'us');
+  assert.equal(hitVoo.to, '/etf');
+  assert.deepEqual(hitVoo.search, { code: 'VOO' });
+
+  const hitSp = searchAll(all, 'S&P 500');
+  assert.equal(hitSp[0].code, 'VOO', '同分美股 ETF 有流動性者排前面');
+
+  const hitCb = searchAll(all, '23082')[0];
+  assert.equal(hitCb.kind, 'cb');
+  assert.equal(hitCb.to, '/cb');
+  assert.deepEqual(hitCb.search, { code: '23082' });
+
+  assert.equal(searchAll(all, '台達電')[0].code, '23082');
+  assert.equal(searchAll(all, '電子零組件')[0].code, '23082');
+  assert.equal(searchAll(all, '1101').some(x => x.code === '11011E'), true, '債券代號本身開頭仍可搜到');
+  assert.equal(cb[1].keywords?.includes('1101'), false, '交換債不附前四碼 s 進 keywords');
 });
