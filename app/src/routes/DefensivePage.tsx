@@ -106,6 +106,7 @@ function Card({ r }: { r: DefRow }) {
 export function DefensivePage() {
   const [d, setD] = useState<DefData | null | undefined>(undefined);
   const [cat, setCat] = useState('全部');
+  const [zone, setZone] = useState<Zone | null>(null);
   useEffect(() => {
     const ac = new AbortController();
     fetch(`${import.meta.env.BASE_URL}data/defensive.json`, { signal: ac.signal, cache: 'no-cache' })
@@ -117,8 +118,9 @@ export function DefensivePage() {
   const cats = useMemo(() => ['全部', ...Array.from(new Set(rows.map(r => r.cat)))], [rows]);
   if (d === undefined) return <p className="mt-6 text-center text-sm text-muted">載入中…</p>;
   if (!d) return <p className="mt-6 text-center text-sm text-muted">民生股資料暫時讀不到，請稍後再試。</p>;
-  const shown = rows.filter(r => cat === '全部' || r.cat === cat);
-  const cnt = (z: Zone) => rows.filter(r => zoneOf(r.price, r.byYield) === z).length;
+  const byCat = rows.filter(r => cat === '全部' || r.cat === cat);
+  const shown = zone ? byCat.filter(r => zoneOf(r.price, r.byYield) === zone) : byCat;
+  const cnt = (z: Zone) => byCat.filter(r => zoneOf(r.price, r.byYield) === z).length;
   return (
     <div>
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
@@ -130,8 +132,23 @@ export function DefensivePage() {
           電信、食品、超商、燃氣、保全、高鐵這類「景氣差也要用」的股票。便宜／合理／昂貴價用<b className="text-ink">這檔自己近 {d.meta.years} 年的殖利率分布</b>換算
           （便宜＝最近全年股利 ÷ 歷史第 80 百分位殖利率，合理 ÷ 第 50，昂貴 ÷ 第 20），比傳統「股利 ×16／20／32」更貼近每檔自己的行情。
         </p>
-        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[12px]">
-          {ZONE_ORDER.map(z => <span key={z} style={{ color: ZONE_COLOR[z] }} className="font-semibold">{ZONE_LABEL[z]} {cnt(z)}</span>)}
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {ZONE_ORDER.map(z => {
+            const active = zone === z;
+            const c = ZONE_COLOR[z];
+            return (
+              <button
+                key={z}
+                type="button"
+                aria-pressed={active}
+                onClick={() => setZone(cur => (cur === z ? null : z))}
+                style={active ? { color: c, borderColor: c, backgroundColor: `${c}22` } : { color: c }}
+                className={`h-7 rounded-lg border px-2.5 text-[12px] font-semibold tabular-nums ${active ? '' : 'border-transparent bg-sunken hover:bg-hover'}`}
+              >
+                {ZONE_LABEL[z]} {cnt(z)}
+              </button>
+            );
+          })}
         </div>
         <div className="mt-2 flex flex-wrap gap-1.5">
           {cats.map(c => (
@@ -142,9 +159,15 @@ export function DefensivePage() {
           ))}
         </div>
       </section>
-      <ul className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start xl:grid-cols-3">
-        {shown.map(r => <Card key={r.c} r={r} />)}
-      </ul>
+      {shown.length > 0 ? (
+        <ul className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start xl:grid-cols-3">
+          {shown.map(r => <Card key={r.c} r={r} />)}
+        </ul>
+      ) : (
+        <p className="mt-3 rounded-xl border border-line bg-surface px-4 py-6 text-center text-[13px] text-muted">
+          這個條件下目前沒有股票
+        </p>
+      )}
       <p className="mt-3 max-w-[78ch] px-1 text-[11px] leading-relaxed text-faint">
         只是「現在價格在這檔自己歷史區間的哪裡」，不是買賣建議。公司基本面變了（電信降價戰、燃氣調價、通路展店），歷史區間就不一定適用；
         殖利率用最近一次全年現金股利，除息前後會跳動。資料：{d.meta.source}。點股票名稱看個股頁（財報、本益比河流圖、籌碼）。
