@@ -65,12 +65,23 @@
 
 - **穿透展開**：讀取 `localStorage` 的 `twetf.holdings`（多帳戶先經 `mergeByCode` 合併），報價取
   `yields.json`（ETF）、`stock_dividends.json`（個股）與美股 FinMind 即時日價×匯率；展開沿用
-  `lib/overlap.ts` 的 `holdingsOf()`（主動式用每日完整持股、其餘用公會月報前十大＝已知下限），
-  並以 `holdingLinkKind(code) === 'stock'` 過濾台股個股（排除主動式 `TX` 期貨、海外股與債券 ISIN）。
-  債券 ETF（`cat-bond`）、美股 ETF（`m === 'us'`）、純海外股 ETF、槓桿／反向與期貨 ETF 歸為無法穿透，
-  但仍計入總市值分母。
-- **四項交叉健檢**（皆容許部署時 JSON 缺檔，缺檔各自降級顯示）：
+  `lib/overlap.ts` 的 `holdingsOf()`（主動式用每日完整持股、其餘用公會月報前十大＝已知下限，
+  月報同時保留資產類型 `type` 以排除債券與國外掛牌 ETF）。
+  - 台股普通股維持 `holdingLinkKind(code) === 'stock'`（排除主動式 `TX`／`WTX` 期貨部位）。
+  - 海外股票（海外 ETF 與跨市場主動式 ETF）同樣依 `ETF 市值 × 該股佔淨值%` 計入曝險排行，
+    並單獨彙總「海外個股曝險」：公會月報的 ISIN 透過靜態對照表 `app/src/lib/isinTicker.ts` 轉為
+    「代號 交易所」並做交易所別名正規化（如 `UW→US`、`JT→JP`、`KP→KS`、`GY→GR`、`C1/C2→CH`），
+    與主動式 ETF 的海外持股合併為同一列；查無對照的 ISIN 仍保留呈現。名稱優先取中文（含括號內中文），
+    其次做輕度英文標點整理。
+  - 債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'`，站內無成分資料）、槓桿／反向與期貨 ETF、
+    以及無可展開股票成分之 ETF 歸為無法穿透，仍計入總市值分母。
+- **ISIN 對照表更新**：`python scripts/gen_isin_ticker.py` 讀取 `app/public/data/top10.json`
+  非台股股票 ISIN，呼叫 OpenFIGI v3 mapping API（免 API key；每批 10 筆、節流 2.6 秒、遇 429/5xx
+  自動重試），壓低美國場外粉紅單（`Foreign Sh.`／OTC）並優先選各國主要交易所綜合代碼，輸出至
+  `app/src/lib/isinTicker.ts`。預設保留既有對照、僅補查新 ISIN；加 `--refresh` 才全量重查。
+- **四項交叉健檢**（**僅針對台股標的**，`market === 'tw'` 嚴格隔離避免 `6857 JP` 等海外代號誤配；
+  皆容許部署時 JSON 缺檔，缺檔各自降級顯示）：
   1. `margin_state.json`（`api/market.ts`）：低於 130%／150% 維持率警戒（XQ 公式估算值）。
   2. `cb.json`：排除交換債（`exch: true`），標示強制贖回、近月餘額減少、負溢價與價內轉換賣壓。
-  3. `calendar.json`：未來 14 天除權息、法說會、股東會（同時含直接持有 ETF 除息與穿透成分股）。
+  3. `calendar.json`：未來 14 天除權息、法說會、股東會（同時含直接持有 ETF 除息與穿透台股成分股）。
   4. `news.json`：公開資訊觀測站近期重大訊息（僅標題與外連）。

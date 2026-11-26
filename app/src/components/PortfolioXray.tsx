@@ -41,6 +41,8 @@ const STORAGE_KEY = 'twetf.holdings';
 // 非漲跌警示用琥珀／黃（同 MarketPage／PremarketCard），避免與台股紅漲綠跌混淆
 const AMBER = '#d97706';
 const WATCH = '#ca8a04';
+// 海外個股曝險進度條採用既有類別 token（非紅非綠，深淺主題皆相容）
+const FOREIGN_BAR = 'var(--cat-8)';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -72,11 +74,11 @@ const EVENT_BADGE: Partial<Record<EventKind, string>> = {
   meeting: 'bg-sunken text-ink',
 };
 
-function StatCard({ label, value, sub, accent }: {
-  label: string; value: string; sub?: string; accent?: 'yield' | 'amber';
+function StatCard({ label, value, sub, accent, className }: {
+  label: string; value: string; sub?: string; accent?: 'yield' | 'amber'; className?: string;
 }) {
   return (
-    <div className="min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5">
+    <div className={`min-w-0 rounded-lg border border-line bg-surface px-3 py-2.5 ${className ?? ''}`}>
       <div className="truncate text-[11.5px] text-muted">{label}</div>
       <div
         className={`mt-0.5 truncate font-mono text-[16px] font-bold tabular-nums sm:text-[17px] ${
@@ -160,6 +162,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   const [fx, setFx] = useState<{ date: string; rate: number; stale: boolean } | null>(null);
 
   // 介面互動狀態
+  const [marketFilter, setMarketFilter] = useState<'all' | 'tw' | 'foreign'>('all');
   const [query, setQuery] = useState('');
   const [showAllExp, setShowAllExp] = useState(false);
   const [openCode, setOpenCode] = useState<string | null>(null);
@@ -293,14 +296,29 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
     [filingRows, healthMode],
   );
 
+  const { twCount, foreignCount } = useMemo(() => {
+    let tw = 0;
+    let foreign = 0;
+    for (const e of xray.exposures) {
+      if (e.market === 'foreign') foreign += 1;
+      else tw += 1;
+    }
+    return { twCount: tw, foreignCount: foreign };
+  }, [xray.exposures]);
+
   const filteredExposures = useMemo<ExposureRow[]>(() => {
+    const byMarket = marketFilter === 'all'
+      ? xray.exposures
+      : xray.exposures.filter(e => e.market === marketFilter);
     const q = query.trim().toLowerCase();
-    if (!q) return xray.exposures;
-    return xray.exposures.filter(e =>
+    if (!q) return byMarket;
+    return byMarket.filter(e =>
       e.code.toLowerCase().includes(q)
+      || e.displayCode.toLowerCase().includes(q)
       || e.name.toLowerCase().includes(q)
+      || e.marketLabel.toLowerCase().includes(q)
       || e.sources.some(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)));
-  }, [xray.exposures, query]);
+  }, [xray.exposures, marketFilter, query]);
 
   if (holdings.length === 0) {
     return (
@@ -324,7 +342,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   }
 
   const baseLoading = !extras || yields === undefined || stockDivs === undefined;
-  const maxPct = Math.max(1, xray.exposures[0]?.pct ?? 1);
+  const maxPct = Math.max(1, filteredExposures[0]?.pct ?? xray.exposures[0]?.pct ?? 1);
   const visibleExposures = showAllExp || query.trim() ? filteredExposures : filteredExposures.slice(0, 20);
   const top1 = xray.exposures[0] ?? null;
 
@@ -357,25 +375,36 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
         <p className="py-4 text-center text-[12.5px] text-muted">載入持股成分與報價資料中…</p>
       )}
 
-      {/* 頂部四格總覽 */}
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      {/* 頂部五格總覽（手機 2 欄首格滿版、中螢幕 3 欄、寬螢幕 5 欄） */}
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
         <StatCard
+          className="col-span-2 sm:col-span-1"
           label="投組已定價市值"
           value={xray.totalValue > 0 ? `${money(xray.totalValue)} 元` : '—'}
-          sub={`${xray.pricedCount} / ${xray.holdingCount} 檔・已穿透台股 ${nf1.format(xray.knownTwPct)}%`}
+          sub={`${xray.pricedCount} / ${xray.holdingCount} 檔・台股 ${nf1.format(xray.knownTwPct)}%・海外 ${nf1.format(xray.foreignStockPct)}%`}
+        />
+        <StatCard
+          label={xray.hasLowerBound ? '海外個股曝險（下限）' : '海外個股曝險'}
+          value={xray.totalValue > 0 ? `${nf1.format(xray.foreignStockPct)}%` : '—'}
+          sub={xray.foreignStockValue > 0
+            ? `約 ${money(xray.foreignStockValue)} 元（${foreignCount} 檔）`
+            : '尚無展開海外個股'}
         />
         <StatCard
           label={xray.hasLowerBound ? '最大單一個股（下限）' : '最大單一個股'}
           value={top1 ? `${nf1.format(top1.pct)}%` : '—'}
           accent={top1 && top1.pct >= 20 ? 'amber' : 'yield'}
-          sub={top1 ? `${top1.code} ${top1.name}（約 ${money(top1.amount)} 元）` : '無可穿透台股'}
+          sub={top1
+            ? `${top1.isIsin ? top1.name : `${top1.displayCode} ${top1.name}`}（約 ${money(top1.amount)} 元）`
+            : '無可穿透個股'}
         />
         <StatCard
           label={xray.hasLowerBound ? '前五大合計（下限）' : '前五大個股合計'}
           value={xray.exposures.length > 0 ? `${nf1.format(xray.top5Pct)}%` : '—'}
-          sub={`共展開 ${xray.exposures.length} 檔台股個股`}
+          sub={`共展開 ${xray.exposures.length} 檔（台 ${twCount}・海 ${foreignCount}）`}
         />
         <StatCard
+          className="sm:col-span-2 lg:col-span-1"
           label="健檢項目提醒"
           value={healthUnavailable ? '—' : `${majorAlertTotal} 筆`}
           accent={!healthUnavailable && majorAlertTotal > 0 ? 'amber' : undefined}
@@ -402,13 +431,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             <div
               className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full bg-sunken"
               role="img"
-              aria-label={`直接持股 ${nf1.format(xray.directStockPct)}%、ETF 穿透 ${nf1.format(xray.penetratedEtfPct)}%、未揭露或現金 ${nf1.format(xray.unrevealedEtfPct)}%、無法穿透 ${nf1.format(xray.unpenetrablePct)}%`}
+              aria-label={`直接持股 ${nf1.format(xray.directStockPct)}%、ETF 穿透台股 ${nf1.format(xray.penetratedEtfPct)}%、海外個股 ${nf1.format(xray.foreignStockPct)}%、未揭露或現金 ${nf1.format(xray.unrevealedEtfPct)}%、無法穿透 ${nf1.format(xray.unpenetrablePct)}%`}
             >
               {xray.directStockPct > 0 && (
                 <span className="bg-accent" style={{ width: `${Math.min(100, xray.directStockPct)}%` }} />
               )}
               {xray.penetratedEtfPct > 0 && (
                 <span className="bg-yield" style={{ width: `${Math.min(100, xray.penetratedEtfPct)}%` }} />
+              )}
+              {xray.foreignStockPct > 0 && (
+                <span style={{ width: `${Math.min(100, xray.foreignStockPct)}%`, backgroundColor: FOREIGN_BAR }} />
               )}
               {xray.unrevealedEtfPct > 0 && (
                 <span className="bg-line-strong" style={{ width: `${Math.min(100, xray.unrevealedEtfPct)}%` }} />
@@ -426,16 +458,22 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                 <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs bg-yield" />
                 ETF 穿透台股 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.penetratedEtfPct)}%</b>
               </span>
+              {xray.foreignStockPct > 0.05 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs" style={{ backgroundColor: FOREIGN_BAR }} />
+                  海外個股曝險 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.foreignStockPct)}%</b>
+                </span>
+              )}
               {xray.unrevealedEtfPct > 0.05 && (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs bg-line-strong" />
-                  前十大以外／海外／期貨現金 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unrevealedEtfPct)}%</b>
+                  前十大以外／期貨現金 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unrevealedEtfPct)}%</b>
                 </span>
               )}
               {xray.unpenetrablePct > 0.05 && (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs border border-line-strong bg-sunken" />
-                  無法穿透（債券／美股／純海外／槓反） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
+                  無法穿透（債券／美股／槓反／無明細） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
                 </span>
               )}
             </div>
@@ -453,7 +491,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             {xray.unpenetrableValue > 0 && (
               <>
                 {xray.hasLowerBound ? ' ' : ''}
-                <b className="text-ink">債券／美股／海外／槓反 ETF 無法穿透</b>，已計入總市值分母但不展開至台股。
+                <b className="text-ink">債券／美股／槓反及尚無明細的 ETF 無法穿透</b>，已計入總市值分母但不展開至個股。
               </>
             )}
             {xray.hasDateMismatch && (
@@ -485,7 +523,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                   <th className="px-2.5 py-1.5 text-left font-semibold">標的</th>
                   <th className="px-2 py-1.5 text-right font-semibold">佔投組</th>
                   <th className="px-2 py-1.5 text-left font-semibold">穿透來源與口徑</th>
-                  <th className="px-2.5 py-1.5 text-right font-semibold">已展開台股</th>
+                  <th className="px-2.5 py-1.5 text-right font-semibold">已展開個股</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -508,8 +546,12 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                     </td>
                     <td className="px-2 py-1.5 text-muted">
                       {b.status === 'direct' && '直接持股（100%）'}
-                      {b.status === 'daily' && `主動式每日持股（${b.asof}・${b.stockCount} 檔）`}
-                      {b.status === 'monthly' && `公會月報前十大（${b.asof}・下限）`}
+                      {b.status === 'daily' && (b.note
+                        ? `${b.note}（${b.asof}・${b.stockCount} 檔）`
+                        : `主動式每日持股（${b.asof}・${b.stockCount} 檔）`)}
+                      {b.status === 'monthly' && (b.note
+                        ? `${b.note}（${b.asof}）`
+                        : `公會月報前十大（${b.asof}・下限）`)}
                       {b.status === 'unpenetrable' && (b.note ?? '無法穿透')}
                     </td>
                     <td className="px-2.5 py-1.5 text-right font-mono tabular-nums text-ink">
@@ -532,21 +574,40 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               單一個股真實曝險排行
               {xray.hasLowerBound && <span className="ml-1.5 text-[11.5px] font-normal text-muted">（已知下限）</span>}
             </h2>
-            <span className="text-[11.5px] text-faint">點列展開來源・點代號看財報籌碼</span>
+            <span className="text-[11.5px] text-faint">點列展開來源・點台股代號看財報籌碼</span>
           </div>
 
           {xray.exposures.length === 0 ? (
             <p className="py-10 text-center text-[13px] text-muted">
-              目前持股沒有可穿透的台股普通股（例如全為債券或美股 ETF，或報價尚未載入）。
+              目前持股沒有可穿透的個股（例如全為債券或美股掛牌 ETF，或報價尚未載入）。
             </p>
           ) : (
             <>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {([
+                  ['all', `全部（${xray.exposures.length}）`],
+                  ['tw', `台股（${twCount}）`],
+                  ['foreign', `海外（${foreignCount}）`],
+                ] as const).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    aria-pressed={marketFilter === id}
+                    onClick={() => setMarketFilter(id)}
+                    className={`h-8 rounded-lg px-2.5 text-[12px] font-semibold transition-colors ${
+                      marketFilter === id ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <input
                   type="search"
                   value={query}
                   onChange={e => setQuery(e.target.value)}
-                  placeholder="搜尋個股或來源 ETF 代號／名稱…"
+                  placeholder="搜尋個股、市場或來源 ETF…"
                   aria-label="搜尋穿透個股"
                   className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-bg px-3 text-[13px]
                              text-ink placeholder:text-faint sm:max-w-xs"
@@ -556,114 +617,142 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                 </span>
               </div>
 
-              <ol className="mt-2.5 divide-y divide-line">
-                {visibleExposures.map((row, idx) => {
-                  const isOpen = openCode === row.code;
-                  const canSheet = holdingLinkKind(row.code) === 'stock';
-                  const directBarW = (row.directPct / maxPct) * 100;
-                  const etfBarW = (row.etfPct / maxPct) * 100;
-                  return (
-                    <li key={row.code} className="py-2 first:pt-0.5 last:pb-0.5">
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 w-5 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-faint">
-                          {idx + 1}
-                        </span>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-baseline justify-between gap-2">
-                            <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5">
-                              {canSheet ? (
-                                <button
-                                  type="button"
-                                  onClick={() => pickStock(row.code, row.name)}
-                                  className="font-mono text-[13px] font-bold text-accent hover:underline"
-                                >
-                                  {row.code}
-                                </button>
-                              ) : (
-                                <span className="font-mono text-[13px] font-bold text-ink">{row.code}</span>
-                              )}
-                              <span className="truncate text-[13px] font-semibold text-ink">{row.name}</span>
-                              {row.isDirect && row.etfAmount > 0 && (
-                                <span className="rounded bg-accent-soft px-1 text-[10px] font-semibold text-accent">
-                                  直接＋ETF
+              {filteredExposures.length === 0 ? (
+                <p className="py-8 text-center text-[12.5px] text-muted">
+                  此篩選條件下沒有符合的個股。
+                </p>
+              ) : (
+                <ol className="mt-2.5 divide-y divide-line">
+                  {visibleExposures.map((row, idx) => {
+                    const isOpen = openCode === row.code;
+                    const isForeign = row.market === 'foreign';
+                    const canSheet = !isForeign && holdingLinkKind(row.code) === 'stock';
+                    const directBarW = (row.directPct / maxPct) * 100;
+                    const etfBarW = (row.etfPct / maxPct) * 100;
+                    return (
+                      <li key={row.code} className="py-2 first:pt-0.5 last:pb-0.5">
+                        <div className="flex items-start gap-2">
+                          <span className="mt-0.5 w-5 shrink-0 text-right font-mono text-[11.5px] tabular-nums text-faint">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <div className="flex min-w-0 flex-wrap items-baseline gap-x-1.5 gap-y-0.5">
+                                {isForeign && (
+                                  <span className="rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-semibold text-muted">
+                                    {row.marketLabel}
+                                  </span>
+                                )}
+                                {canSheet ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => pickStock(row.code, row.name)}
+                                      className="font-mono text-[13px] font-bold text-accent hover:underline"
+                                    >
+                                      {row.displayCode}
+                                    </button>
+                                    <span className="truncate text-[13px] font-semibold text-ink">{row.name}</span>
+                                  </>
+                                ) : isForeign && row.isIsin ? (
+                                  <>
+                                    <span className="truncate text-[13px] font-semibold text-ink">{row.name}</span>
+                                    <span className="font-mono text-[10.5px] text-faint">{row.displayCode}</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <span className="font-mono text-[13px] font-bold text-ink">{row.displayCode}</span>
+                                    <span className="truncate text-[13px] font-semibold text-ink">{row.name}</span>
+                                  </>
+                                )}
+                                {row.isDirect && row.etfAmount > 0 && (
+                                  <span className="rounded bg-accent-soft px-1 text-[10px] font-semibold text-accent">
+                                    直接＋ETF
+                                  </span>
+                                )}
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setOpenCode(isOpen ? null : row.code)}
+                                aria-expanded={isOpen}
+                                className="shrink-0 text-right hover:opacity-80"
+                              >
+                                <span className="font-mono text-[13.5px] font-bold tabular-nums text-ink">
+                                  {nf2.format(row.pct)}%
                                 </span>
-                              )}
+                                <span className="ml-1 text-[10px] text-accent">{isOpen ? '▴' : '▾'}</span>
+                              </button>
                             </div>
+
                             <button
                               type="button"
                               onClick={() => setOpenCode(isOpen ? null : row.code)}
                               aria-expanded={isOpen}
-                              className="shrink-0 text-right hover:opacity-80"
+                              className="mt-1 block w-full text-left"
                             >
-                              <span className="font-mono text-[13.5px] font-bold tabular-nums text-ink">
-                                {nf2.format(row.pct)}%
+                              <span className="flex h-1.5 w-full overflow-hidden rounded-full bg-sunken">
+                                {row.directPct > 0 && (
+                                  <span className="bg-accent" style={{ width: `${Math.min(100, directBarW)}%` }} />
+                                )}
+                                {row.etfPct > 0 && (
+                                  <span
+                                    className={isForeign ? undefined : 'bg-yield'}
+                                    style={{
+                                      width: `${Math.min(100 - directBarW, etfBarW)}%`,
+                                      ...(isForeign ? { backgroundColor: FOREIGN_BAR } : {}),
+                                    }}
+                                  />
+                                )}
                               </span>
-                              <span className="ml-1 text-[10px] text-accent">{isOpen ? '▴' : '▾'}</span>
+                              <span className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-faint">
+                                <span className="min-w-0 truncate">
+                                  來源：{row.sources.slice(0, 3).map(s => (s.kind === 'direct' ? '直接持有' : s.code)).join('、')}
+                                  {row.sources.length > 3 ? ` 等 ${row.sources.length} 項` : ''}
+                                </span>
+                                <span className="shrink-0 font-mono tabular-nums text-muted">
+                                  約 {money(row.amount)} 元
+                                </span>
+                              </span>
                             </button>
-                          </div>
 
-                          <button
-                            type="button"
-                            onClick={() => setOpenCode(isOpen ? null : row.code)}
-                            aria-expanded={isOpen}
-                            className="mt-1 block w-full text-left"
-                          >
-                            <span className="flex h-1.5 w-full overflow-hidden rounded-full bg-sunken">
-                              {row.directPct > 0 && (
-                                <span className="bg-accent" style={{ width: `${Math.min(100, directBarW)}%` }} />
-                              )}
-                              {row.etfPct > 0 && (
-                                <span className="bg-yield" style={{ width: `${Math.min(100 - directBarW, etfBarW)}%` }} />
-                              )}
-                            </span>
-                            <span className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-faint">
-                              <span className="min-w-0 truncate">
-                                來源：{row.sources.slice(0, 3).map(s => (s.kind === 'direct' ? '直接持有' : s.code)).join('、')}
-                                {row.sources.length > 3 ? ` 等 ${row.sources.length} 項` : ''}
-                              </span>
-                              <span className="shrink-0 font-mono tabular-nums text-muted">
-                                約 {money(row.amount)} 元
-                              </span>
-                            </span>
-                          </button>
-
-                          {isOpen && (
-                            <ul className="mt-1.5 space-y-1.5 rounded-lg bg-sunken px-2.5 py-2 text-[11.5px]">
-                              {row.sources.map(src => (
-                                <li key={`${src.kind}-${src.code}`}>
-                                  <div className="flex items-baseline justify-between gap-2">
-                                    <span className="min-w-0 truncate text-ink">
-                                      {src.kind === 'direct' ? (
-                                        <span className="font-semibold text-accent">直接持有</span>
-                                      ) : (
-                                        <>
-                                          <Link to="/etf" search={{ code: src.code }} className="font-mono font-semibold text-accent hover:underline">
-                                            {src.code}
-                                          </Link>
-                                          <span className="ml-1 text-muted">{src.name}</span>
-                                        </>
-                                      )}
-                                    </span>
-                                    <span className="shrink-0 font-mono tabular-nums text-ink">
-                                      {nf2.format(src.pctOfPortfolio)}%
-                                      <span className="ml-1.5 text-muted">{money(src.amount)} 元</span>
-                                    </span>
-                                  </div>
-                                  {src.kind !== 'direct' && (
-                                    <div className="mt-0.5 text-[10.5px] text-faint">
-                                      佔淨值 {nf2.format(src.weightInSource)}%・{src.kind === 'daily' ? `每日持股 ${src.asof}` : `公會月報 ${src.asof}`}
+                            {isOpen && (
+                              <ul className="mt-1.5 space-y-1.5 rounded-lg bg-sunken px-2.5 py-2 text-[11.5px]">
+                                {row.sources.map(src => (
+                                  <li key={`${src.kind}-${src.code}`}>
+                                    <div className="flex items-baseline justify-between gap-2">
+                                      <span className="min-w-0 truncate text-ink">
+                                        {src.kind === 'direct' ? (
+                                          <span className="font-semibold text-accent">直接持有</span>
+                                        ) : (
+                                          <>
+                                            <Link to="/etf" search={{ code: src.code }} className="font-mono font-semibold text-accent hover:underline">
+                                              {src.code}
+                                            </Link>
+                                            <span className="ml-1 text-muted">{src.name}</span>
+                                          </>
+                                        )}
+                                      </span>
+                                      <span className="shrink-0 font-mono tabular-nums text-ink">
+                                        {nf2.format(src.pctOfPortfolio)}%
+                                        <span className="ml-1.5 text-muted">{money(src.amount)} 元</span>
+                                      </span>
                                     </div>
-                                  )}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
+                                    {src.kind !== 'direct' && (
+                                      <div className="mt-0.5 text-[10.5px] text-faint">
+                                        佔淨值 {nf2.format(src.weightInSource)}%・{src.kind === 'daily' ? `每日持股 ${src.asof}` : `公會月報 ${src.asof}`}
+                                      </div>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ol>
+                      </li>
+                    );
+                  })}
+                </ol>
+              )}
 
               {!query.trim() && filteredExposures.length > 20 && (
                 <button
@@ -680,9 +769,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
 
         {/* 右欄：持股風險與事件健檢（4 張卡片） */}
         <div className="min-w-0 space-y-3">
-          {/* 風險／事件範圍切換 */}
+          {/* 風險／事件範圍切換（以下四項健檢僅適用台股） */}
           <div className="flex flex-wrap items-center gap-1.5 rounded-xl border border-line bg-surface px-3 py-2.5">
-            <span className="mr-1 text-[12px] font-semibold text-muted">健檢範圍</span>
+            <span className="mr-1 text-[12px] font-semibold text-muted">健檢範圍（台股）</span>
             {([
               ['major', `主要部位（直接＋穿透 ≥${MINOR_EXPOSURE_PCT}%）`],
               ['direct', '只看直接持有'],
@@ -1047,13 +1136,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
           </span>
         </div>
 
-        <Fold summary="算法口徑與限制：前十大為已知下限、債券／美股／海外 ETF 無法穿透、各資料來源日期不同，僅供檢視參考">
+        <Fold summary="算法口徑與限制：前十大為已知下限、海外成分來自月報與每日持股、美股／債券／槓反 ETF 無法穿透，僅供檢視參考">
           <ul className="list-disc space-y-1 pl-4">
             <li>
-              <strong className="text-muted">前十大是已知下限</strong>：除站上每日追蹤的主動式股票型 ETF 採用投信每日完整持股外，其餘台股 ETF（及未提供每日持股的主動式 ETF）僅有投信投顧公會月報前十大持股，排名第 11 名以後成分股無法展開，因此單一個股曝險為已知下限，實際集中度可能更高。
+              <strong className="text-muted">前十大是已知下限</strong>：除站上每日追蹤的主動式股票型 ETF 採用投信每日完整持股外，其餘台灣掛牌 ETF（含海外股票 ETF 及未提供每日持股的主動式 ETF）僅有投信投顧公會月報前十大持股，排名第 11 名以後成分股無法展開，因此單一個股曝險為已知下限，實際集中度可能更高。
             </li>
             <li>
-              <strong className="text-muted">無法穿透的標的</strong>：債券 ETF、美股掛牌 ETF、純海外股票 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型 ETF 均不展開至台股個股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
+              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自公會月報前十大（月）與主動式 ETF 每日持股，美股 ETF 本身沒有成分資料。公會月報的 ISIN 代號透過對照表合併至同一家公司，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
+            </li>
+            <li>
+              <strong className="text-muted">無法穿透的標的</strong>：債券 ETF、美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
             </li>
             <li>
               <strong className="text-muted">資料日期與口徑差異</strong>：公會月報為上月底快照（約每月 10 號後更新）、主動式持股為投信每日收盤後公告、股價為最新收盤價、融資維持率採 XQ 平均成本推算（非券商個人整戶維持率，最晚約 21:30 更新）、可轉債看板晚行情一個交易日且近月餘額減少含轉換／賣回／買回。

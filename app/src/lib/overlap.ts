@@ -88,8 +88,8 @@ export interface HoldingSet {
   kind: 'daily' | 'monthly';
   /** 每日是交易日 YYYY-MM-DD，月報是 YYYY/MM */
   asof: string;
-  /** 代號 → 名稱、佔淨值 % */
-  w: Map<string, { name: string; pct: number }>;
+  /** 代號 → 名稱、佔淨值 %（公會月報另保留資產類型 type，供穿透時排除債券／連結型 ETF） */
+  w: Map<string, { name: string; pct: number; type?: string }>;
   /** 這份資料涵蓋的淨值合計 %（前十大通常 40～70%） */
   covered: number;
 }
@@ -97,7 +97,7 @@ export interface HoldingSet {
 export function holdingsOf(code: string, top10: Top10Data | null, active: ActiveData | null): HoldingSet | null {
   const daily = active?.etfs[code];
   if (daily && daily.holdings.length) {
-    const w = new Map<string, { name: string; pct: number }>();
+    const w = new Map<string, { name: string; pct: number; type?: string }>();
     for (const [c, n, , pct] of daily.holdings) {
       if (!c || !isStock(n) || !(pct > 0)) continue;
       const prev = w.get(c);
@@ -107,9 +107,12 @@ export function holdingsOf(code: string, top10: Top10Data | null, active: Active
   }
   const m = top10 ? lookupMonthly(top10, code) : undefined;
   if (m && m.rows.length) {
-    const w = new Map<string, { name: string; pct: number }>();
-    for (const [, , sid, name, pct] of m.rows) {
-      if (sid && pct !== null && pct > 0 && isStock(name)) w.set(sid, { name, pct: (w.get(sid)?.pct ?? 0) + pct });
+    const w = new Map<string, { name: string; pct: number; type?: string }>();
+    for (const [, type, sid, name, pct] of m.rows) {
+      if (sid && pct !== null && pct > 0 && isStock(name)) {
+        const prev = w.get(sid);
+        w.set(sid, { name, pct: (prev?.pct ?? 0) + pct, type: prev?.type || type || undefined });
+      }
     }
     if (!w.size) return null;
     const ym = top10!.meta?.ym ?? '';
