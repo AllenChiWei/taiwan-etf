@@ -5,14 +5,16 @@
  * 2. 國泰 00400A 不在裡面，因為國泰的網站拒絕程式存取 —— 照實寫出來。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { fetchActive } from '../api/extras';
 import {
   KIND_LABEL, groupChanges, latestChange, netChange, consensus, sharesLabel, aggregateTop,
-  afterReturn, scorecard, bookSummary,
+  afterReturn, scorecard, bookSummary, holdingLinkKind,
   type ActiveData, type ChangeDay, type ChangeItem, type ChangeKind,
 } from '../lib/active';
 import { managerBoard } from '../lib/holders';
+import { StockSheet } from './StockSheet';
 
 const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -55,15 +57,64 @@ function Chip({ active, onClick, children }: {
   );
 }
 
-function ChangeRow({ it, day, kind, last }: { it: ChangeItem; day: ChangeDay; kind: ChangeKind; last: Last }) {
+/** 成分股名稱與代號：台股個股點開 StockSheet、台股 ETF 連到 /etf，其餘（海外股、期貨）純文字。 */
+function HoldingLabel({ code, name, onPick, reverse = false, className = 'justify-self-start text-[13px]', codeClass = 'text-[12px]' }: {
+  code: string;
+  name: string;
+  onPick: (code: string, name?: string) => void;
+  /** true＝「名稱 代號」（合計持股用）；false＝「代號 名稱」 */
+  reverse?: boolean;
+  className?: string;
+  codeClass?: string;
+}) {
+  const kind = holdingLinkKind(code);
+  const codeEl = <span className={`font-mono ${codeClass} ${kind ? 'text-accent' : 'text-muted'}`}>{code}</span>;
+  const body = reverse ? <>{name} {codeEl}</> : <>{codeEl} {name}</>;
+  if (kind === 'stock') {
+    return (
+      <button type="button" onClick={() => onPick(code, name)}
+              className={`min-w-0 max-w-full truncate text-left ${className} text-ink hover:text-accent hover:underline`}>
+        {body}
+      </button>
+    );
+  }
+  if (kind === 'etf') {
+    return (
+      <Link to="/etf" search={{ code }}
+            className={`min-w-0 max-w-full truncate ${className} text-ink hover:text-accent hover:underline`}>
+        {body}
+      </Link>
+    );
+  }
+  return <span className={`min-w-0 truncate ${className} text-ink`}>{body}</span>;
+}
+
+/** 串成「00981A、00403A」的 ETF 代號連結 */
+function EtfLinks({ codes, className = 'font-mono hover:text-accent hover:underline' }: {
+  codes: string[]; className?: string;
+}) {
+  return (
+    <>
+      {codes.map((c, i) => (
+        <span key={c}>
+          {i > 0 && '、'}
+          <Link to="/etf" search={{ code: c }} className={className}>{c}</Link>
+        </span>
+      ))}
+    </>
+  );
+}
+
+function ChangeRow({ it, day, kind, last, onPick }: {
+  it: ChangeItem; day: ChangeDay; kind: ChangeKind; last: Last;
+  onPick: (code: string, name?: string) => void;
+}) {
   const [code, name, a, b, w] = it;
   const pct = netChange(it, day.f);
   const after = afterReturn(it, last);
   return (
     <li className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1 last:border-0">
-      <span className="min-w-0 truncate text-[13px] text-ink">
-        <span className="font-mono text-[12px] text-muted">{code}</span> {name}
-      </span>
+      <HoldingLabel code={code} name={name} onPick={onPick} />
       <span className="text-right font-mono text-[12px] tabular-nums">
         {kind === 'new' && <span className="text-ink">{sharesLabel(code, b, name)} · {nf2.format(w)}%</span>}
         {kind === 'out' && <span className="text-muted">原 {sharesLabel(code, a, name)}</span>}
@@ -81,7 +132,9 @@ function ChangeRow({ it, day, kind, last }: { it: ChangeItem; day: ChangeDay; ki
   );
 }
 
-function DayDetail({ day, last }: { day: ChangeDay; last: Last }) {
+function DayDetail({ day, last, onPick }: {
+  day: ChangeDay; last: Last; onPick: (code: string, name?: string) => void;
+}) {
   const groups = groupChanges(day);
   if (day.items.length === 0) {
     return <p className="mt-1 text-[12.5px] text-muted">這天沒有換股（只有資金進出造成的同比例增減）。</p>;
@@ -98,7 +151,7 @@ function DayDetail({ day, last }: { day: ChangeDay; last: Last }) {
             <span className="text-[11px] text-faint">{groups[k].length} 檔</span>
           </div>
           <ul className="mt-1">
-            {groups[k].slice(0, 12).map(it => <ChangeRow key={it[0]} it={it} day={day} kind={k} last={last} />)}
+            {groups[k].slice(0, 12).map(it => <ChangeRow key={it[0]} it={it} day={day} kind={k} last={last} onPick={onPick} />)}
           </ul>
           {groups[k].length > 12 && (
             <p className="mt-1 text-[11px] text-faint">另有 {groups[k].length - 12} 檔</p>
@@ -114,6 +167,9 @@ export function ActiveHoldings() {
   const [code, setCode] = useState('');
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [sheet, setSheet] = useState<{ code: string; name?: string } | null>(null);
+  const pickStock = useCallback((c: string, n?: string) => setSheet({ code: c, name: n }), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
 
   useEffect(() => {
     const ac = new AbortController();
@@ -161,11 +217,19 @@ export function ActiveHoldings() {
             {board.map((r, i) => (
               <li key={r.code} className="grid grid-cols-[1.4em_1fr_auto_auto_auto] items-baseline gap-x-2.5 border-b border-line/60 py-1.5 last:border-0">
                 <span className="text-right font-mono text-[12px] text-faint">{r.edge != null && r.n >= 10 ? i + 1 : '–'}</span>
-                <button type="button" onClick={() => { setCode(r.code); setOpenDay(null); setShowAll(false); }}
-                        className="min-w-0 truncate text-left text-[13px] text-ink hover:text-accent">
-                  <span className="font-mono text-[12px] text-muted">{r.code}</span> {r.name.replace(/^主動/, '')}
-                  {r.n < 10 && <span className="ml-1 text-[10.5px] text-faint">（{r.n} 筆，不足）</span>}
-                </button>
+                <span className="flex min-w-0 items-baseline gap-1.5">
+                  <Link to="/etf" search={{ code: r.code }}
+                        className="shrink-0 font-mono text-[12px] text-accent hover:underline"
+                        title={`看 ${r.code} 完整頁面`}>
+                    {r.code}
+                  </Link>
+                  <button type="button" onClick={() => { setCode(r.code); setOpenDay(null); setShowAll(false); }}
+                          className="min-w-0 truncate text-left text-[13px] text-ink hover:text-accent"
+                          title="切換下方換股明細">
+                    {r.name.replace(/^主動/, '')}
+                    {r.n < 10 && <span className="ml-1 text-[10.5px] text-faint">（{r.n} 筆，不足）</span>}
+                  </button>
+                </span>
                 <span className={`w-[4.2em] text-right font-mono text-[12px] tabular-nums ${tone(r.buy)}`}>{r.buy == null ? '—' : pctTxt(r.buy)}</span>
                 <span className={`w-[4.2em] text-right font-mono text-[12px] tabular-nums ${tone(r.sell)}`}>{r.sell == null ? '—' : pctTxt(r.sell)}</span>
                 <span className={`w-[4.6em] text-right font-mono text-[13px] font-bold tabular-nums ${tone(r.edge)}`}>{r.edge == null ? '—' : pctTxt(r.edge)}</span>
@@ -174,7 +238,7 @@ export function ActiveHoldings() {
           </ol>
           <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
             選股力＝買進（新增＋加碼）之後的漲跌 − 賣出（剔除＋減碼）之後的漲跌，每筆從換股當天均價算到最新收盤、用金額加權。
-            正的代表買的比賣的漲得多。換股不到 10 筆的不排名；張數變化可能含申購贖回，海外股票與期貨不算。點 ETF 看明細。
+            正的代表買的比賣的漲得多。換股不到 10 筆的不排名；張數變化可能含申購贖回，海外股票與期貨不算。點代號看 ETF 頁，點名稱切換下方明細。
           </p>
         </section>
       )}
@@ -190,11 +254,10 @@ export function ActiveHoldings() {
               <li key={r.code} className="grid grid-cols-[1.4em_1fr_auto] items-center gap-2 border-b border-line/60 py-1.5 last:border-0">
                 <span className="text-right font-mono text-[12px] text-faint">{i + 1}</span>
                 <span className="min-w-0">
-                  <span className="block truncate text-[13.5px] text-ink">
-                    {r.name} <span className="font-mono text-[11.5px] text-muted">{r.code}</span>
-                  </span>
+                  <HoldingLabel code={r.code} name={r.name} onPick={pickStock} reverse
+                                className="block text-[13.5px]" codeClass="text-[11.5px]" />
                   <span className="block truncate text-[10.5px] text-faint">
-                    {r.etfs.length} 檔持有：{r.etfs.join('、')}
+                    {r.etfs.length} 檔持有：<EtfLinks codes={r.etfs} />
                   </span>
                 </span>
                 <span className="text-right">
@@ -206,9 +269,15 @@ export function ActiveHoldings() {
           </ol>
           <p className="mt-auto pt-2 text-[11px] leading-relaxed text-faint">
             納入 {agg.included.length} 檔（合計市值 {nf1.format(agg.included.reduce((a, x) => a + x.cap, 0))} 億）：
-            {agg.included.map(x => x.code).join('、')}。比例是佔這幾檔合計市值的百分比，期貨部位不算。
+            <EtfLinks codes={agg.included.map(x => x.code)} />。比例是佔這幾檔合計市值的百分比，期貨部位不算。
             {agg.missing.length > 0 && (
-              <> 沒算進去：{agg.missing.map(m => `${m.code} ${m.name}${m.cap ? `（${nf1.format(m.cap)} 億）` : ''}`).join('、')}
+              <> 沒算進去：{agg.missing.map((m, i) => (
+                <span key={m.code}>
+                  {i > 0 && '、'}
+                  <Link to="/etf" search={{ code: m.code }} className="font-mono hover:text-accent hover:underline">{m.code}</Link>
+                  {' '}{m.name}{m.cap ? `（${nf1.format(m.cap)} 億）` : ''}
+                </span>
+              ))}
               —— 沒有每日持股（{agg.missing[0].reason}）。</>
             )}
           </p>
@@ -226,13 +295,11 @@ export function ActiveHoldings() {
           <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
             {cons.rows.slice(0, 10).map(r => (
               <li key={r.code} className="flex items-baseline justify-between gap-2 rounded-lg border border-line bg-bg px-2.5 py-1.5">
-                <span className="min-w-0 truncate text-[13px] text-ink">
-                  <span className="font-mono text-[12px] text-muted">{r.code}</span> {r.name}
-                </span>
+                <HoldingLabel code={r.code} name={r.name} onPick={pickStock} className="text-[13px]" />
                 <span className="shrink-0 text-[11.5px]">
-                  {r.buy.length > 0 && <span className="text-up">買 {r.buy.join('、')}</span>}
+                  {r.buy.length > 0 && <span className="text-up">買 <EtfLinks codes={r.buy} className="font-mono hover:underline" /></span>}
                   {r.buy.length > 0 && r.sell.length > 0 && <span className="text-faint"> · </span>}
-                  {r.sell.length > 0 && <span className="text-down">賣 {r.sell.join('、')}</span>}
+                  {r.sell.length > 0 && <span className="text-down">賣 <EtfLinks codes={r.sell} className="font-mono hover:underline" /></span>}
                 </span>
               </li>
             ))}
@@ -251,7 +318,11 @@ export function ActiveHoldings() {
         </div>
 
         <div className="mt-3 flex flex-wrap items-baseline justify-between gap-x-3">
-          <h2 className="text-[15px] font-bold text-ink">{code} {etf.name}</h2>
+          <h2 className="text-[15px] font-bold text-ink">
+            <Link to="/etf" search={{ code }} className="font-mono text-accent hover:underline" title={`看 ${code} 完整頁面`}>
+              {code}
+            </Link>{' '}{etf.name}
+          </h2>
           <span className="text-[11.5px] text-faint">
             {etf.issuer}{etf.cap ? ` · 市值 ${nf1.format(etf.cap)} 億` : ''} · 持股 {etf.holdings.length} 檔 · {etf.asof} 收盤後
           </span>
@@ -271,7 +342,7 @@ export function ActiveHoldings() {
               )}
             </div>
             {last.v && <div className="mt-0.5"><Valuation day={last} /></div>}
-            <DayDetail day={last} last={data.last} />
+            <DayDetail day={last} last={data.last} onPick={pickStock} />
           </>
         )}
 
@@ -330,9 +401,8 @@ export function ActiveHoldings() {
                 <ul className="mt-1.5">
                   {bk.rows.slice(0, 8).map(r => (
                     <li key={r.code} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1 last:border-0">
-                      <span className="min-w-0 truncate text-[12.5px] text-ink">
-                        <span className="font-mono text-[11.5px] text-muted">{r.code}</span> {r.name}
-                      </span>
+                      <HoldingLabel code={r.code} name={r.name} onPick={pickStock}
+                                    className="justify-self-start text-[12.5px]" codeClass="text-[11.5px]" />
                       <span className={`font-mono text-[12px] tabular-nums ${tone(r.unreal + r.real)}`}>{yi(r.unreal + r.real)}</span>
                     </li>
                   ))}
@@ -376,7 +446,7 @@ export function ActiveHoldings() {
                         <span className="ml-2 text-faint">{open ? '▲' : '▼'}</span>
                       </span>
                     </button>
-                    {open && <div className="pb-2">{day.v && <Valuation day={day} />}<DayDetail day={day} last={data.last} /></div>}
+                    {open && <div className="pb-2">{day.v && <Valuation day={day} />}<DayDetail day={day} last={data.last} onPick={pickStock} /></div>}
                   </li>
                 );
               })}
@@ -388,9 +458,7 @@ export function ActiveHoldings() {
             <ul className="mt-1">
               {holdings.map(([c, n, sh, w]) => (
                 <li key={c} className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 border-b border-line/60 py-1 last:border-0">
-                  <span className="min-w-0 truncate text-[13px] text-ink">
-                    <span className="font-mono text-[12px] text-muted">{c}</span> {n}
-                  </span>
+                  <HoldingLabel code={c} name={n} onPick={pickStock} />
                   <span className="font-mono text-[11.5px] tabular-nums text-faint">{sharesLabel(c, sh, n)}</span>
                   <span className="w-[4.5em] text-right font-mono text-[12.5px] tabular-nums text-ink">{nf2.format(w)}%</span>
                 </li>
@@ -411,9 +479,13 @@ export function ActiveHoldings() {
         那是資金進出而不是看好哪一檔，所以只有偏離整體比例超過 {nf1.format(data.meta.minChange * 100)}% 的才算
         （目前這幾檔多數日子股數完全不動，這個調整幾乎沒有作用）。
         {data.meta.blocked.map(b => (
-          <span key={b.code}> {b.code} {b.name} 不在清單裡：{b.reason}。</span>
+          <span key={b.code}>
+            {' '}<Link to="/etf" search={{ code: b.code }} className="font-mono hover:text-accent hover:underline">{b.code}</Link>
+            {' '}{b.name} 不在清單裡：{b.reason}。
+          </span>
         ))}
       </p>
+      <StockSheet code={sheet?.code ?? null} name={sheet?.name} onClose={closeSheet} />
     </div>
   );
 }

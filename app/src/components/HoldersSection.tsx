@@ -5,6 +5,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { fetchActive, fetchTop10 } from '../api/extras';
 import { fetchDataset } from '../api/etfs';
 import { holdersOf } from '../lib/holders';
@@ -50,9 +51,10 @@ export function HoldersSection({ code }: { code: string }) {
           {shown.map(r => (
             <li key={r.etf} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1.5 last:border-0">
               <span className="min-w-0">
-                <span className="block truncate text-[13px] text-ink">
-                  <span className="font-mono text-[12px] text-muted">{r.etf}</span> {r.name}
-                </span>
+                <Link to="/etf" search={{ code: r.etf }}
+                      className="block truncate text-[13px] text-ink hover:text-accent hover:underline">
+                  <span className="font-mono text-[12px] text-accent">{r.etf}</span> {r.name}
+                </Link>
                 <span className="block text-[10.5px] text-faint">
                   {r.kind === 'daily' ? `每日持股 · ${r.asof}` : `月報前十大 · ${r.asof}`}
                   {r.last && (

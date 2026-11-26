@@ -4,12 +4,14 @@
  * 之後同一個分頁內重複使用。算法在 lib/top10.ts、lib/etfHolders.ts。
  */
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { fetchActive, fetchEtfHolders, fetchTop10 } from '../api/extras';
 import { top10For, missingReason, type Top10Data } from '../lib/top10';
 import { holdersFor, type EtfHoldersData } from '../lib/etfHolders';
-import type { ActiveData } from '../lib/active';
+import { holdingLinkKind, type ActiveData } from '../lib/active';
 import type { Etf } from '../types';
+import { StockSheet } from './StockSheet';
 
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
@@ -65,34 +67,68 @@ export function HoldersBox({ code, data }: { code: string; data: EtfExtras | nul
   );
 }
 
-export function Top10List({ etf, data }: { etf: Etf; data: EtfExtras | null }) {
+export function Top10List({ etf, data, onPickStock, onNavigate }: {
+  etf: Etf;
+  data: EtfExtras | null;
+  /** 外層彈窗（Top10Modal）自行掛 StockSheet，避免雙層彈窗互相干擾 Esc 與背景捲動鎖 */
+  onPickStock?: (code: string, name?: string) => void;
+  /** 點 ETF 連結導頁時的回呼（例如關閉外層彈窗） */
+  onNavigate?: () => void;
+}) {
+  const [sheet, setSheet] = useState<{ code: string; name?: string } | null>(null);
+  const closeSheet = useCallback(() => setSheet(null), []);
+  useEffect(() => { setSheet(null); }, [etf.code]);
+
   const view = data ? top10For(etf.code, data[0], data[1]) : null;
   const max = view ? Math.max(...view.rows.map(r => r.pct ?? 0), 1) : 1;
   if (!data) return <p className="py-10 text-center text-[13px] text-muted">載入中…</p>;
   if (!view) return <p className="py-8 text-center text-[13px] leading-relaxed text-muted">{missingReason(etf.sec)}</p>;
+
+  const pickStock = onPickStock ?? ((code: string, name?: string) => setSheet({ code, name }));
+  const hasStock = view.rows.some(r => holdingLinkKind(r.code, r.type) === 'stock');
+
   return (
     <>
       <ol className="mt-3 space-y-1.5">
-        {view.rows.map(r => (
-          <li key={`${r.rank}-${r.code}`} className="grid grid-cols-[1.4em_1fr_auto] items-center gap-2">
-            <span className="text-right font-mono text-[12px] text-faint">{r.rank}</span>
-            <span className="min-w-0">
-              <span className="block truncate text-[13.5px] text-ink">
-                {r.name}
-                {/^\d{4,6}$/.test(r.code) && (
-                  <span className="ml-1.5 font-mono text-[11.5px] text-muted">{r.code}</span>
+        {view.rows.map(r => {
+          const kind = holdingLinkKind(r.code, r.type);
+          const showCode = kind !== null || /^\d{4,6}$/.test(r.code);
+          const label = (
+            <>
+              {r.name}
+              {showCode && (
+                <span className={`ml-1.5 font-mono text-[11.5px] ${kind ? 'text-accent' : 'text-muted'}`}>{r.code}</span>
+              )}
+            </>
+          );
+          return (
+            <li key={`${r.rank}-${r.code}`} className="grid grid-cols-[1.4em_1fr_auto] items-center gap-2">
+              <span className="text-right font-mono text-[12px] text-faint">{r.rank}</span>
+              <span className="min-w-0">
+                {kind === 'stock' ? (
+                  <button type="button" onClick={() => pickStock(r.code, r.name)}
+                          className="block max-w-full truncate text-left text-[13.5px] text-ink hover:text-accent hover:underline">
+                    {label}
+                  </button>
+                ) : kind === 'etf' ? (
+                  <Link to="/etf" search={{ code: r.code }} onClick={onNavigate}
+                        className="block max-w-full truncate text-[13.5px] text-ink hover:text-accent hover:underline">
+                    {label}
+                  </Link>
+                ) : (
+                  <span className="block truncate text-[13.5px] text-ink">{label}</span>
                 )}
+                <span className="mt-0.5 block h-1.5 rounded-full bg-sunken">
+                  <span className="block h-1.5 rounded-full bg-accent"
+                        style={{ width: `${((r.pct ?? 0) / max) * 100}%` }} />
+                </span>
               </span>
-              <span className="mt-0.5 block h-1.5 rounded-full bg-sunken">
-                <span className="block h-1.5 rounded-full bg-accent"
-                      style={{ width: `${((r.pct ?? 0) / max) * 100}%` }} />
+              <span className="w-[4.2em] text-right font-mono text-[13px] tabular-nums text-ink">
+                {r.pct === null ? '—' : `${nf2.format(r.pct)}%`}
               </span>
-            </span>
-            <span className="w-[4.2em] text-right font-mono text-[13px] tabular-nums text-ink">
-              {r.pct === null ? '—' : `${nf2.format(r.pct)}%`}
-            </span>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ol>
       {view.total !== null && (
         <p className="mt-2 text-right text-[12px] text-muted">
@@ -103,7 +139,11 @@ export function Top10List({ etf, data }: { etf: Etf; data: EtfExtras | null }) {
         {view.kind === 'daily'
           ? '這一檔是站上追蹤的主動式 ETF，用的是投信每天公告的完整持股，取權重前十名。'
           : '投信投顧公會每月公布上個月底的持股，大約每月 10 號以後更新；主動式 ETF 天天換股，月報會落後。'}
+        {hasStock && ' 點台股成分股可以直接看財報與籌碼。'}
       </p>
+      {!onPickStock && (
+        <StockSheet code={sheet?.code ?? null} name={sheet?.name} onClose={closeSheet} />
+      )}
     </>
   );
 }

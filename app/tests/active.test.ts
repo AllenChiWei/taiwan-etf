@@ -6,7 +6,7 @@ import { readFileSync, existsSync } from 'node:fs';
 
 import {
   kindOf, netChange, groupChanges, consensus, sharesLabel, aggregateTop,
-  afterReturn, scorecard, bookSummary,
+  afterReturn, scorecard, bookSummary, holdingLinkKind,
   type ActiveData, type ActiveEtf, type ChangeDay,
 } from '../src/lib/active.ts';
 
@@ -112,6 +112,27 @@ test('股數顯示：台股用張、期貨用口、海外股票用股', () => {
   assert.equal(sharesLabel('TX', 679, '台指期貨'), '679 口');
   // 美股代號也是字母，不能因為「不是數字」就當成期貨
   assert.equal(sharesLabel('PLTR', 12_000, 'PALANTIR TECHNOLOGIES INC-A'), '12,000 股');
+});
+
+test('持股代號判斷：台股個股開抽屜、台股 ETF 連專頁、海外與期貨不連', () => {
+  assert.equal(holdingLinkKind('2330'), 'stock');
+  assert.equal(holdingLinkKind('6223', '國內上櫃'), 'stock');
+  assert.equal(holdingLinkKind('0050'), 'etf');
+  assert.equal(holdingLinkKind('006208'), 'etf');
+  assert.equal(holdingLinkKind('00679B'), 'etf');
+  assert.equal(holdingLinkKind('00981A'), 'etf');
+  assert.equal(holdingLinkKind('009804'), 'etf');
+  assert.equal(holdingLinkKind('TX'), null);
+  assert.equal(holdingLinkKind('TX 2026/12'), null);
+  assert.equal(holdingLinkKind('WTX202612'), null);
+  assert.equal(holdingLinkKind('PLTR US'), null);
+  assert.equal(holdingLinkKind('6857 JP'), null);
+  assert.equal(holdingLinkKind('000660 KS'), null);
+  assert.equal(holdingLinkKind('688256 C1'), null);
+  assert.equal(holdingLinkKind('US67066G1040'), null);
+  assert.equal(holdingLinkKind('0700'), null);
+  assert.equal(holdingLinkKind('2330', '國外股票(含承銷)'), null);
+  assert.equal(holdingLinkKind('2330', '政府公債 無擔保'), null);
 });
 
 test('還沒上市的 ETF', async (t) => {

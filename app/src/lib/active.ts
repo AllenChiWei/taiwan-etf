@@ -246,6 +246,21 @@ export function isStock(name: string): boolean {
   return !/期貨|期指/.test(name);
 }
 
+/**
+ * 判斷持股代號是否可連到站內頁面：台股個股開 StockSheet、台股 ETF 連 /etf，其餘回 null。
+ *
+ * - 台股 ETF：00 開頭的 4～6 碼，尾端可有單一英文類別碼（0050、006208、00679B、00981A）。
+ * - 台股個股：4 碼數字且不以 0 開頭（2330、6669）。外國股在主動式持股帶國別後綴（6857 JP、
+ *   PLTR US、000660 KS），公會月報是 ISIN（US67066G1040），期貨是 TX／WTX，都不會誤中。
+ * - 有公會月報的標的種類（type）時，國外標的、公債／公司債／金融債與期貨一律排除。
+ */
+export function holdingLinkKind(code: string, type = ''): 'stock' | 'etf' | null {
+  if (type && /國外|公債|公司債|金融債|期貨/.test(type)) return null;
+  if (/^00\d{2,4}[A-Z]?$/.test(code)) return 'etf';
+  if (/^[1-9]\d{3}$/.test(code)) return 'stock';
+  return null;
+}
+
 export function aggregateTop(data: ActiveData, limit = 10): Aggregate {
   const included: Aggregate['included'] = [];
   const map = new Map<string, AggRow>();
