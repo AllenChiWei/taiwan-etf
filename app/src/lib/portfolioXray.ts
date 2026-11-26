@@ -47,7 +47,10 @@ export function parseStoredHoldings(raw: string | null): AcctEntry[] {
       const shares = typeof obj.shares === 'number' ? obj.shares : Number.NaN;
       if (!code || !Number.isFinite(shares) || shares <= 0) continue;
       const entry: AcctEntry = { code, shares };
-      if (obj.m === 'us') entry.m = 'us';
+      if (obj.m === 'us') {
+        entry.m = 'us';
+        if (obj.k === 'stock') entry.k = 'stock';
+      }
       if (typeof obj.acct === 'string' && obj.acct.trim()) entry.acct = obj.acct.trim();
       out.push(entry);
     }
@@ -64,13 +67,15 @@ export interface PortfolioXrayInput {
   active: ActiveData | null;
   yields: YieldData | null;
   stockDivs: StockDividendData | null;
-  /** 美股 ETF 最新收盤價（已換算為台幣，代號 → 台幣股價） */
+  /** 美股最新收盤價（已換算為台幣，代號 → 台幣股價，涵蓋美股 ETF 與美股個股） */
   usPricesTwd?: ReadonlyMap<string, number>;
   /** 美股 ETF 名稱對照（代號 → 名稱） */
   usNames?: ReadonlyMap<string, string>;
+  /** 美股個股名稱對照（代號 → 名稱） */
+  usStockNames?: ReadonlyMap<string, string>;
 }
 
-export type HoldingKind = 'stock' | 'etf' | 'us';
+export type HoldingKind = 'stock' | 'etf' | 'us' | 'us-stock';
 export type StockMarket = 'tw' | 'foreign';
 export type PenetrationStatus = 'direct' | 'daily' | 'monthly' | 'unpenetrable';
 export type UnpenetrableReasonKind = 'bond' | 'us' | 'foreign' | 'derivative' | 'missing';
@@ -164,7 +169,7 @@ export interface PortfolioXrayResult {
   /** ETF 穿透辨識出的台股個股市值與佔比 */
   penetratedEtfValue: number;
   penetratedEtfPct: number;
-  /** ETF 穿透辨識出的海外個股市值與佔比 */
+  /** 海外個股總曝險市值與佔比（直接持有美股個股 ＋ ETF 穿透辨識出的海外個股） */
   foreignStockValue: number;
   foreignStockPct: number;
   /** 可穿透 ETF 中未揭露（前十大以外）／期貨與現金部分 */
@@ -380,7 +385,9 @@ function pickStockName(
  *   單一個股佔比＝（直接持股市值 ＋ Σ 各 ETF 市值 × 該股佔 ETF 淨值% ）÷ 投組總市值。
  * - 台股 ETF、海外 ETF 與跨市場主動式 ETF 皆展開台股與海外股票成分；公會月報的海外 ISIN 透過
  *   ISIN_TICKER 對照表轉成「代號 交易所」與主動式持股合併，查無對照時仍以 ISIN 保留。
- * - 債券 ETF（cat-bond）、美股掛牌 ETF（m='us'）、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
+ * - 直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」），
+ *   與 ETF 穿透之同一家公司合併；美股掛牌 ETF（m='us' 且無 k）維持無法穿透。
+ * - 債券 ETF（cat-bond）、美股掛牌 ETF、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
  * - 主動式 ETF 的期貨部位（含 TX／WTX 等）與公會月報的債券／國外掛牌 ETF 不計為個股曝險。
  */
 export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResult {
@@ -403,14 +410,18 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   for (const h of merged) {
     if (!(h.shares > 0)) continue;
     if (h.m === 'us') {
-      const name = input.usNames?.get(h.code) ?? h.code;
+      const isStock = h.k === 'stock';
+      const kind: HoldingKind = isStock ? 'us-stock' : 'us';
+      const name = isStock
+        ? (input.usStockNames?.get(h.code) ?? input.usNames?.get(h.code) ?? h.code)
+        : (input.usNames?.get(h.code) ?? h.code);
       const price = input.usPricesTwd?.get(h.code) ?? null;
       const validPrice = price !== null && Number.isFinite(price) && price > 0 ? price : null;
       const value = validPrice !== null ? validPrice * h.shares : null;
       if (value === null) {
-        unpriced.push({ code: h.code, name, kind: 'us', shares: h.shares, reason: '美股報價或匯率暫時讀不到' });
+        unpriced.push({ code: h.code, name, kind, shares: h.shares, reason: '美股報價或匯率暫時讀不到' });
       }
-      resolved.push({ code: h.code, name, kind: 'us', shares: h.shares, price: validPrice, value, etfMeta: undefined });
+      resolved.push({ code: h.code, name, kind, shares: h.shares, price: validPrice, value, etfMeta: undefined });
       continue;
     }
 
@@ -518,8 +529,56 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
 
   for (const r of resolved) {
     const pctOfPortfolio = totalValue > 0 && r.value !== null ? (r.value / totalValue) * 100 : 0;
-    if (r.kind !== 'us') {
+    if (r.kind !== 'us' && r.kind !== 'us-stock') {
       directWeights.set(r.code, { name: r.name, kind: r.kind, pct: pctOfPortfolio });
+    }
+
+    if (r.kind === 'us-stock') {
+      directStockCount += 1;
+      const norm = normalizeForeignTicker(r.code, 'US') ?? {
+        key: `${r.code} US`,
+        displayCode: r.code,
+        marketLabel: '美股',
+      };
+      if (r.value !== null) {
+        foreignStockValue += r.value;
+        addExposure(
+          norm.key,
+          r.name,
+          {
+            code: r.code,
+            name: r.name,
+            kind: 'direct',
+            weightInSource: 100,
+            amount: r.value,
+            pctOfPortfolio,
+            asof: null,
+          },
+          {
+            displayCode: norm.displayCode,
+            market: 'foreign',
+            marketLabel: norm.marketLabel,
+            isIsin: false,
+          },
+        );
+      }
+      breakdown.push({
+        code: r.code,
+        name: r.name,
+        kind: 'us-stock',
+        shares: r.shares,
+        price: r.price,
+        value: r.value,
+        pctOfPortfolio,
+        status: 'direct',
+        asof: null,
+        coveredPct: 100,
+        stockCount: 1,
+        twStockCount: 0,
+        foreignStockCount: 1,
+        note: '美股個股（直接持有）',
+      });
+      continue;
     }
 
     if (r.kind === 'us') {

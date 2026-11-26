@@ -363,6 +363,14 @@ jobs:
         continue-on-error: true
         run: python scripts/fetch_upcoming.py
 
+      # 美股個股清單（FinMind USStockInfo，單一請求）。供配息試算搜尋美股個股（如 ANT）；
+      # 缺檔時不影響部署，前端仍可正常運作並直接輸入美股代號向 FinMind 查詢。
+      - name: 產生美股個股清單
+        continue-on-error: true
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+        run: python scripts/fetch_us_stocks.py
+
       # 籌碼面（期交所三大法人／大額交易人、交易所法人買賣超）。不需要 FinLab，
       # 來源都是公開端點。continue-on-error 是刻意的：交易所偶爾維護或逾時，
       # 那不該讓整個網站的部署失敗 —— 缺檔時籌碼頁自己會說「今天還沒有資料」。

@@ -173,7 +173,12 @@ export function fetchUsPrices(code: string): Promise<UsPriceRow[]> {
   const p = rows<UsPriceRow>('USStockPrice', code, d.toISOString().slice(0, 10))
     .then(r => {
       const out = r.map(x => ({ date: x.date, Close: Number(x.Close), Adj_Close: Number(x.Adj_Close) }));
-      try { localStorage.setItem(US_KEY(code), JSON.stringify({ fetched: today, rows: out })); } catch { /* 忽略 */ }
+      if (out.length > 0) {
+        try { localStorage.setItem(US_KEY(code), JSON.stringify({ fetched: today, rows: out })); } catch { /* 忽略 */ }
+      } else {
+        // 查不到價格的代號不留快取，避免打錯代號污染 localStorage 或暫時空值被鎖死
+        usCache.delete(code);
+      }
       return out;
     })
     .catch(err => {

@@ -117,20 +117,24 @@ const STOCK_DIVS: StockDividendData = {
   },
 };
 
-test('parseStoredHoldings：過濾損毀與無效項目，保留台股與美股與帳戶欄位', () => {
+test('parseStoredHoldings：過濾損毀與無效項目，保留台股、美股 ETF、美股個股 k 與帳戶欄位', () => {
   assert.deepEqual(parseStoredHoldings(null), []);
   assert.deepEqual(parseStoredHoldings('{bad json'), []);
   const rows = parseStoredHoldings(JSON.stringify([
     { code: '0050', shares: 1000, acct: '帳戶A' },
     { code: ' spy ', shares: 10, m: 'us' },
+    { code: ' ant ', shares: 5, m: 'us', k: 'stock', acct: '美股戶' },
+    { code: '2330', shares: 10, k: 'stock' },
     { code: '2330', shares: 0 },
     { code: '', shares: 100 },
     { code: '2454', shares: -5 },
     null,
   ]));
-  assert.equal(rows.length, 2);
+  assert.equal(rows.length, 4);
   assert.deepEqual(rows[0], { code: '0050', shares: 1000, acct: '帳戶A' });
   assert.deepEqual(rows[1], { code: 'SPY', shares: 10, m: 'us' });
+  assert.deepEqual(rows[2], { code: 'ANT', shares: 5, m: 'us', k: 'stock', acct: '美股戶' });
+  assert.deepEqual(rows[3], { code: '2330', shares: 10 }, '非美股不應附掛 k 欄位');
 });
 
 test('穿透展開：直接持股＋月報前十大（含海外）＋主動式每日加總正確，排除期貨 TX、債券與美股 ETF', () => {
@@ -336,6 +340,87 @@ test('海外個股合併：ISIN 與「代號 交易所」合併成同一列、�
   assert.equal(xray.unrevealedEtfValue, 133_000);
   assert.equal(xray.unpenetrableValue, 50_000);
   assert.equal(xray.breakdown.find(b => b.code === '00757')?.status, 'unpenetrable');
+});
+
+test('直接持有美股個股 ANT 與 00988A 穿透合併成一列且金額正確，美股 ETF 仍無法穿透', () => {
+  const etfs: Etf[] = [
+    mkEtf('00988A', '主動統一全球創新', 'cat-foreign', true),
+  ];
+  const active = {
+    meta: { updated: '2026-11-27', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00988A': {
+        name: '主動統一全球創新', issuer: '統一投信', asof: '2026-11-26', changes: [],
+        holdings: [
+          ['ANT US', 'Anthropic PBC', 1000, 5],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '00988A': { price: 100 }, // 1000 股 = 100,000（ANT 佔 5% = 5,000）
+    },
+  };
+
+  // 投組總市值 = 直接 ANT (3,000*10=30,000) + 00988A (100*1000=100,000) + 美股 ETF SPY (1,000*20=20,000) = 150,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: 'ANT', shares: 10, m: 'us', k: 'stock', acct: '美股戶' },
+      { code: '00988A', shares: 1000, acct: '台股戶' },
+      { code: 'SPY', shares: 20, m: 'us', acct: '美股戶' },
+    ],
+    etfs,
+    top10: null,
+    active,
+    yields,
+    stockDivs: null,
+    usPricesTwd: new Map([['ANT', 3000], ['SPY', 1000]]),
+    usNames: new Map([['SPY', 'SPDR S&P 500 ETF']]),
+    usStockNames: new Map([['ANT', 'Anthropic PBC Class A']]),
+  });
+
+  assert.equal(xray.totalValue, 150_000);
+  assert.equal(xray.exposures.length, 1, '直接持有 ANT 與 00988A 的 ANT US 應合併為單一列');
+
+  const ant = xray.exposures[0];
+  assert.equal(ant.code, 'ANT US');
+  assert.equal(ant.displayCode, 'ANT');
+  assert.equal(ant.market, 'foreign');
+  assert.equal(ant.marketLabel, '美股');
+  assert.equal(ant.isDirect, true);
+  assert.equal(ant.directAmount, 30_000);
+  assert.equal(ant.etfAmount, 5_000);
+  assert.equal(ant.amount, 35_000);
+  assert.ok(Math.abs(ant.pct - (35_000 / 150_000) * 100) < 1e-9);
+  assert.equal(ant.sources.length, 2);
+  assert.equal(ant.sources[0].kind, 'direct');
+  assert.equal(ant.sources[0].amount, 30_000);
+  assert.equal(ant.sources[1].code, '00988A');
+  assert.equal(ant.sources[1].amount, 5_000);
+
+  // 覆蓋金額：海外個股 35,000（直接 30,000 + ETF 穿透 5,000）、未揭露 95,000、無法穿透 20,000（SPY）
+  assert.equal(xray.directStockValue, 0);
+  assert.equal(xray.knownTwPct, 0);
+  assert.equal(xray.foreignStockValue, 35_000);
+  assert.equal(xray.unrevealedEtfValue, 95_000);
+  assert.equal(xray.unpenetrableValue, 20_000);
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9);
+
+  // 各檔狀態：ANT 為直接持有美股個股；SPY 維持無法穿透
+  const antRow = xray.breakdown.find(b => b.code === 'ANT')!;
+  assert.equal(antRow.kind, 'us-stock');
+  assert.equal(antRow.status, 'direct');
+  assert.equal(antRow.coveredPct, 100);
+  const spyRow = xray.breakdown.find(b => b.code === 'SPY')!;
+  assert.equal(spyRow.kind, 'us');
+  assert.equal(spyRow.status, 'unpenetrable');
+  assert.equal(spyRow.unpenetrableKind, 'us');
+  // 美股個股不進台股 directWeights，避免誤配台股行事曆與重訊
+  assert.equal(xray.directWeights.has('ANT'), false);
 });
 
 test('台股 6857 與海外 6857 JP 不混算，且四項台股健檢絕不誤配海外代號', () => {

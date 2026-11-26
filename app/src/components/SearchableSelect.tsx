@@ -26,6 +26,10 @@ interface Props {
   placeholder?: string;
   id?: string;
   className?: string;
+  /** 搜尋字串變動時通知呼叫端（供懶載入大型清單或產生動態候選項用） */
+  onQueryChange?: (query: string) => void;
+  /** 固定顯示於下拉清單最末端的補充選項（例如「直接查詢 FinMind」） */
+  tailOption?: SelectOption | null;
 }
 
 /** 一次最多畫幾筆。清單超過這個數量時捲動就好，不必全部塞進 DOM。 */
@@ -38,11 +42,13 @@ const MIN_LIST_PX = 168;
 
 export function SearchableSelect({
   options, value, onChange, placeholder = '輸入代號或名稱搜尋…',
-  id, className = '',
+  id, className = '', onQueryChange, tailOption = null,
 }: Props) {
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  /** 記住剛選中的動態選項（例如 tailOption），關閉清單後輸入框仍能顯示其文字 */
+  const [pickedOpt, setPickedOpt] = useState<SelectOption | null>(null);
   /** 清單往上還是往下開、最多多高 —— 手機叫出鍵盤後往下常常只剩幾十 px */
   const [drop, setDrop] = useState({ up: false, max: MAX_LIST_PX });
   const boxRef = useRef<HTMLDivElement>(null);
@@ -50,8 +56,17 @@ export function SearchableSelect({
   const autoId = useId().replace(/:/g, '');
   const optionId = (i: number) => `${autoId}-opt-${i}`;
 
+  const updateQuery = useCallback((next: string) => {
+    setQuery(next);
+    onQueryChange?.(next);
+  }, [onQueryChange]);
+
   const selected = useMemo(
-    () => options.find(o => o.value === value), [options, value]);
+    () => options.find(o => o.value === value)
+      ?? (tailOption?.value === value ? tailOption : undefined)
+      ?? (pickedOpt?.value === value ? pickedOpt : undefined),
+    [options, tailOption, pickedOpt, value],
+  );
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -69,7 +84,13 @@ export function SearchableSelect({
     return [...starts, ...rest];
   }, [options, query]);
 
-  const shown = matches.slice(0, MAX_VISIBLE);
+  const shown = useMemo(() => {
+    const base = matches.slice(0, MAX_VISIBLE);
+    if (tailOption && !base.some(o => o.value === tailOption.value)) {
+      return [...base, tailOption];
+    }
+    return base;
+  }, [matches, tailOption]);
 
   useEffect(() => { setActive(0); }, [query]);
 
@@ -125,21 +146,22 @@ export function SearchableSelect({
   }, [active, open]);
 
   const choose = (o: SelectOption) => {
+    setPickedOpt(o);
     onChange(o.value);
     // 不必另外處理「選完要不要清空」：display 是從 value 推的，
     // 呼叫端把 value 留成空字串（例如退休頁的「選一檔帶入」）就自然是空的。
-    setQuery('');
+    updateQuery('');
     setOpen(false);
   };
 
   // 只在「從關到開」時清空查詢字串。每次點輸入框都清的話，使用者在手機上
   // 點一下想移動游標，打好的字就整串不見 —— 那正是輸入卡卡的來源。
   const openList = useCallback(() => {
-    setOpen(prev => {
-      if (!prev) setQuery('');
-      return true;
-    });
-  }, []);
+    if (!open) {
+      updateQuery('');
+      setOpen(true);
+    }
+  }, [open, updateQuery]);
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -186,7 +208,7 @@ export function SearchableSelect({
         // 展開後輸入框是空的，用 placeholder 留住「原本選的是哪一檔」，
         // 否則點一下會像是把選擇弄丟了
         placeholder={open && selectedText ? selectedText : placeholder}
-        onChange={e => { setQuery(e.target.value); setOpen(true); }}
+        onChange={e => { updateQuery(e.target.value); setOpen(true); }}
         // focus 與 pointerdown 都會展開。只掛 focus 不夠 —— 已經有焦點時再點
         // 一次不會再觸發 focus，使用者按了會覺得沒反應；而且部分手機瀏覽器
         // 在虛擬鍵盤收合後的 focus 行為並不一致。

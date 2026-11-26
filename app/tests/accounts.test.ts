@@ -63,3 +63,17 @@ test('同一帳戶重複加入同一檔是加股數，不同帳戶是另一筆',
   assert.equal(e.length, 2);
   assert.notEqual(entryKey(e[0]), entryKey(e[1]));
 });
+
+test('美股個股 k:"stock" 在 mergeByCode 與 addHolding 均保留，舊美股 ETF 相容無 k', () => {
+  const list: AcctEntry[] = [
+    { code: 'ANT', shares: 10, m: 'us', k: 'stock', acct: '帳戶A' },
+    { code: 'ANT', shares: 5, m: 'us', k: 'stock', acct: '帳戶B' },
+    { code: 'SPY', shares: 20, m: 'us', acct: '帳戶A' },
+  ];
+  assert.deepEqual(mergeByCode(list), [
+    { code: 'ANT', m: 'us', k: 'stock', shares: 15 },
+    { code: 'SPY', m: 'us', shares: 20 },
+  ]);
+  const added = addHolding(list, { code: 'ANT', shares: 3, m: 'us', k: 'stock', acct: '帳戶A' });
+  assert.deepEqual(added[0], { code: 'ANT', shares: 13, m: 'us', k: 'stock', acct: '帳戶A' });
+});

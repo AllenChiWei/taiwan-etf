@@ -21,6 +21,7 @@ Where each field comes from, because it is not one source:
 | Taiwan 保管銀行 / 配息頻率 | MoneyDJ `Basic0004` — **每週抓一次**，這兩個欄位幾乎不變 |
 | Taiwan 殖利率 | 自己算：近 12 個月公告配息 ÷ 當日收盤價（全部官方免費端點） |
 | US ETF list | Nasdaq Trader's public symbol file ∩ FinLab price matrix |
+| 美股個股清單（`us_stocks.json`） | FinMind `USStockInfo`（最新日期、排除 ETF／Blank Checks／n/a、市值 ≥ 3 億美元；部署時產生，缺檔不阻擋部署） |
 | US returns | FinLab `us_fund_price`（價格報酬）；有曲線的那些部署時改成 FinMind 含息報酬（`apply_us_total_return.py`，標 `tr`） |
 | 籌碼（法人期貨／選擇權未平倉、Put/Call Ratio、大額交易人） | 期交所的 CSV 下載端點 |
 | 籌碼（法人買賣超前十大） | TWSE `T86` + TPEx `insti/dailyTrade`，金額是估算 |
@@ -77,6 +78,7 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_stock_dividends.py   全部上市櫃個股配息 → stock_dividends.json（累積式）
   fetch_top10.py             ETF 前十大持股（公會月報）→ top10.json（進版控）
   fetch_upcoming.py          還沒上市的 ETF（新聞＋證交所簡介）→ upcoming.json（部署時產生）
+  fetch_us_stocks.py         美股個股清單（FinMind USStockInfo）→ us_stocks.json（部署時產生）
   fetch_yields.py            殖利率＝配息÷收盤價 → yields.json（不碰 FinLab／MoneyDJ）
   finmind_series.py          曲線的共用機制：額度、輪替、日曆、輸出
   fetch_series_tw.py         台股績效曲線（FinMind）→ series/tw/（明文）

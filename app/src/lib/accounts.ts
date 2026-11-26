@@ -12,6 +12,8 @@ export interface AcctEntry {
   code: string;
   shares: number;
   m?: 'us';
+  /** 美股個股標記；美股 ETF 與台股不加此欄（舊資料無 k 視為美股 ETF） */
+  k?: 'stock';
   acct?: string;
 }
 
@@ -47,17 +49,26 @@ export function nextAccountName(existing: readonly string[]): string {
 }
 
 /** 同一檔（同代號、同市場）在各帳戶的股數合併，順序照第一次出現。 */
-export function mergeByCode<T extends AcctEntry>(entries: readonly T[]): Array<{ code: string; m?: 'us'; shares: number }> {
-  const out: Array<{ code: string; m?: 'us'; shares: number }> = [];
+export function mergeByCode<T extends AcctEntry>(
+  entries: readonly T[],
+): Array<{ code: string; m?: 'us'; k?: 'stock'; shares: number }> {
+  const out: Array<{ code: string; m?: 'us'; k?: 'stock'; shares: number }> = [];
   const idx = new Map<string, number>();
   for (const e of entries) {
     const key = `${e.m ?? ''}:${e.code}`;
     const i = idx.get(key);
     if (i === undefined) {
       idx.set(key, out.length);
-      out.push(e.m ? { code: e.code, m: e.m, shares: e.shares } : { code: e.code, shares: e.shares });
+      const row: { code: string; m?: 'us'; k?: 'stock'; shares: number } = {
+        code: e.code,
+        shares: e.shares,
+      };
+      if (e.m) row.m = e.m;
+      if (e.m === 'us' && e.k === 'stock') row.k = 'stock';
+      out.push(row);
     } else {
       out[i].shares += e.shares;
+      if (e.m === 'us' && e.k === 'stock') out[i].k = 'stock';
     }
   }
   return out;
@@ -96,7 +107,9 @@ export function removeAccount<T extends AcctEntry>(
 export function addHolding<T extends AcctEntry>(entries: readonly T[], item: T): T[] {
   const k = entryKey(item);
   if (entries.some(e => entryKey(e) === k)) {
-    return entries.map(e => (entryKey(e) === k ? { ...e, shares: e.shares + item.shares } : e));
+    return entries.map(e => (entryKey(e) === k
+      ? { ...e, shares: e.shares + item.shares, ...(item.k ? { k: item.k } : {}) }
+      : e));
   }
   return [...entries, item];
 }

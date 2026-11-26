@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-27',
+    items: [
+      { kind: 'new', to: '/dividend',
+        text: '配息試算可以加入美股個股（例如 ANT），持股健檢會把它和 ETF 持有的同一家合併計算。' },
+    ],
+  },
+  {
     date: '2026-11-26',
     items: [
       { kind: 'improve', to: '/dividend',

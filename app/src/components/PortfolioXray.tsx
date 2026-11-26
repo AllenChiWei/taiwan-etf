@@ -11,7 +11,7 @@ import { useEtfExtras } from './EtfExtras';
 import { StockSheet } from './StockSheet';
 import { EmptyState } from './EmptyState';
 import { Fold } from './Fold';
-import { fetchCalendar, fetchCb, fetchStockDividends, fetchYields } from '../api/extras';
+import { fetchCalendar, fetchCb, fetchStockDividends, fetchUsStocks, fetchYields } from '../api/extras';
 import { fetchMarginState, type MarginState } from '../api/market';
 import { fetchNews } from '../api/news';
 import { fetchUsDataset } from '../api/usEtfs';
@@ -22,6 +22,7 @@ import { yi, type CbData } from '../lib/cb';
 import type { StockDividendData, YieldData } from '../lib/dividend';
 import { dayLabel as newsDayLabel, timeOfDay, type NewsData } from '../lib/news';
 import type { UsPriceRow } from '../lib/usDividend';
+import { usStockNameMap, type UsStocksDataset } from '../lib/usStocks';
 import type { UsEtfDataset } from '../types';
 import {
   buildPortfolioXray,
@@ -151,13 +152,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   const [calendar, setCalendar] = useState<CalendarData | null | undefined>(undefined);
   const [news, setNews] = useState<NewsData | null | undefined>(undefined);
 
-  // 美股 ETF（只有持股真的含 m === 'us' 才去載入 us_etfs.json 與 FinMind 報價）
+  // 美股（只有持股含 m === 'us' 才去載入對應清單與 FinMind 報價）
   const usCodes = useMemo(
     () => [...new Set(holdings.filter(h => h.m === 'us').map(h => h.code))],
     [holdings],
   );
+  const hasUsEtfs = useMemo(() => holdings.some(h => h.m === 'us' && h.k !== 'stock'), [holdings]);
+  const hasUsStocks = useMemo(() => holdings.some(h => h.m === 'us' && h.k === 'stock'), [holdings]);
   const usKey = usCodes.join(',');
   const [usDataset, setUsDataset] = useState<UsEtfDataset | null>(null);
+  const [usStocks, setUsStocks] = useState<UsStocksDataset | null>(null);
   const [usRows, setUsRows] = useState<Map<string, UsPriceRow[]>>(new Map());
   const [fx, setFx] = useState<{ date: string; rate: number; stale: boolean } | null>(null);
 
@@ -214,9 +218,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   useEffect(() => {
     if (!usKey) return;
     const ac = new AbortController();
-    fetchUsDataset(ac.signal)
-      .then(d => { if (!ac.signal.aborted) setUsDataset(d); })
-      .catch(() => {});
+    if (hasUsEtfs) {
+      fetchUsDataset(ac.signal)
+        .then(d => { if (!ac.signal.aborted) setUsDataset(d); })
+        .catch(() => {});
+    }
+    if (hasUsStocks) {
+      fetchUsStocks()
+        .then(d => { if (!ac.signal.aborted && d) setUsStocks(d); })
+        .catch(() => {});
+    }
     fetchUsdTwd()
       .then(v => { if (!ac.signal.aborted) setFx(v); })
       .catch(() => {});
@@ -230,12 +241,13 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
         .catch(() => {});
     }
     return () => ac.abort();
-  }, [usKey]);
+  }, [usKey, hasUsEtfs, hasUsStocks]);
 
   const usNames = useMemo(
     () => new Map(usDataset ? usDataset.etfs.map(e => [e.code, e.name] as const) : []),
     [usDataset],
   );
+  const usStockNames = useMemo(() => usStockNameMap(usStocks), [usStocks]);
   const usPricesTwd = useMemo(() => {
     const m = new Map<string, number>();
     if (!fx) return m;
@@ -258,8 +270,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       stockDivs: stockDivs ?? null,
       usPricesTwd,
       usNames,
+      usStockNames,
     }),
-    [holdings, etfData.etfs, top10, active, yields, stockDivs, usPricesTwd, usNames],
+    [holdings, etfData.etfs, top10, active, yields, stockDivs, usPricesTwd, usNames, usStockNames],
   );
 
   const marginCheck = useMemo(
@@ -452,7 +465,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px] text-muted">
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs bg-accent" />
-                直接持股 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.directStockPct)}%</b>
+                直接持股（台股） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.directStockPct)}%</b>
               </span>
               <span className="inline-flex items-center gap-1.5">
                 <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs bg-yield" />
@@ -473,7 +486,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               {xray.unpenetrablePct > 0.05 && (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs border border-line-strong bg-sunken" />
-                  無法穿透（債券／美股／槓反／無明細） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
+                  無法穿透（債券／美股 ETF／槓反／無明細） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
                 </span>
               )}
             </div>
@@ -491,7 +504,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             {xray.unpenetrableValue > 0 && (
               <>
                 {xray.hasLowerBound ? ' ' : ''}
-                <b className="text-ink">債券／美股／槓反及尚無明細的 ETF 無法穿透</b>，已計入總市值分母但不展開至個股。
+                <b className="text-ink">債券／美股 ETF／槓反及尚無明細的 ETF 無法穿透</b>，已計入總市值分母但不展開至個股。
               </>
             )}
             {xray.hasDateMismatch && (
@@ -545,7 +558,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                       {b.value !== null ? `${nf1.format(b.pctOfPortfolio)}%` : '—'}
                     </td>
                     <td className="px-2 py-1.5 text-muted">
-                      {b.status === 'direct' && '直接持股（100%）'}
+                      {b.status === 'direct' && (b.note ?? '直接持股（100%）')}
                       {b.status === 'daily' && (b.note
                         ? `${b.note}（${b.asof}・${b.stockCount} 檔）`
                         : `主動式每日持股（${b.asof}・${b.stockCount} 檔）`)}
@@ -1142,7 +1155,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               <strong className="text-muted">前十大是已知下限</strong>：除站上每日追蹤的主動式股票型 ETF 採用投信每日完整持股外，其餘台灣掛牌 ETF（含海外股票 ETF 及未提供每日持股的主動式 ETF）僅有投信投顧公會月報前十大持股，排名第 11 名以後成分股無法展開，因此單一個股曝險為已知下限，實際集中度可能更高。
             </li>
             <li>
-              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自公會月報前十大（月）與主動式 ETF 每日持股，美股 ETF 本身沒有成分資料。公會月報的 ISIN 代號透過對照表合併至同一家公司，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
+              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自公會月報前十大（月）與主動式 ETF 每日持股；直接持有的美股個股亦計入海外個股曝險並與 ETF 成分合併，美股 ETF 本身沒有成分資料。公會月報的 ISIN 代號透過對照表合併至同一家公司，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
             </li>
             <li>
               <strong className="text-muted">無法穿透的標的</strong>：債券 ETF、美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。

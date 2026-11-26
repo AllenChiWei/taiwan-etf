@@ -13,6 +13,7 @@ import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
 import type { CbData, CbMarket, CbSeriesPoint, CbConv } from '../lib/cb.ts';
 import type { NextdayData } from '../lib/nextday.ts';
+import { parseUsStocksDataset, type UsStocksDataset } from '../lib/usStocks.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -99,3 +100,15 @@ export async function fetchCbSeries(code: string, signal?: AbortSignal): Promise
     return null;
   }
 }
+
+/** 美股個股清單（scripts/fetch_us_stocks.py，部署時產生；僅在使用者搜尋美股或已持有美股個股時載入） */
+let usStocksPromise: Promise<UsStocksDataset | null> | null = null;
+export const fetchUsStocks = (): Promise<UsStocksDataset | null> => {
+  if (!usStocksPromise) {
+    usStocksPromise = fetch(`${BASE}data/us_stocks.json`, { cache: 'no-cache' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(raw => parseUsStocksDataset(raw))
+      .catch(() => null);
+  }
+  return usStocksPromise;
+};

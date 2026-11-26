@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { ghWrite, readEncrypted, readToken, type Src } from '../lib/ghSync';
 
-export interface SyncEntry { code: string; shares: number; m?: 'us'; acct?: string }
+export interface SyncEntry { code: string; shares: number; m?: 'us'; k?: 'stock'; acct?: string }
 interface Payload { v?: number; accounts?: unknown; holdings?: unknown; generated?: string }
 interface Remote { holdings: SyncEntry[]; accounts: string[]; generated: string }
 
@@ -22,9 +22,22 @@ const holdingsVault = new Vault(`${import.meta.env.BASE_URL}data/holdings/`, 'tw
 const SYNCED_KEY = 'twetf.holdings.synced';
 
 function clean(p: Payload): Remote {
-  const holdings = (Array.isArray(p.holdings) ? p.holdings : []).filter((x): x is SyncEntry =>
-    typeof x === 'object' && x !== null && typeof (x as SyncEntry).code === 'string'
-    && Number.isFinite((x as SyncEntry).shares) && (x as SyncEntry).shares > 0);
+  const holdings: SyncEntry[] = [];
+  for (const x of Array.isArray(p.holdings) ? p.holdings : []) {
+    if (typeof x !== 'object' || x === null) continue;
+    const o = x as Record<string, unknown>;
+    if (typeof o.code !== 'string' || !o.code.trim()
+      || typeof o.shares !== 'number' || !Number.isFinite(o.shares) || o.shares <= 0) {
+      continue;
+    }
+    const item: SyncEntry = { code: o.code.trim(), shares: o.shares };
+    if (o.m === 'us') {
+      item.m = 'us';
+      if (o.k === 'stock') item.k = 'stock';
+    }
+    if (typeof o.acct === 'string' && o.acct.trim()) item.acct = o.acct.trim();
+    holdings.push(item);
+  }
   const accounts = (Array.isArray(p.accounts) ? p.accounts : []).filter((x): x is string => typeof x === 'string' && !!x.trim());
   return { holdings, accounts, generated: typeof p.generated === 'string' ? p.generated : '' };
 }

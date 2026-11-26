@@ -57,6 +57,15 @@
 分析儀表板同一條路）：一檔一個請求、匯率一天一個並存在 localStorage，部署流程不碰。
 金額在進 `projectHolding` 前就乘上匯率，下游完全不知道有美元。
 
+### 美股個股（2026-11-27）
+
+配息試算與持股健檢亦支援美股個股（例：`ANT`＝Anthropic），走與美股 ETF 同一套瀏覽器端 FinMind `USStockPrice` 日價反推與台銀即期中價換算（`seriesFromUs`）。
+
+- **清單來源（`scripts/fetch_us_stocks.py` → `app/public/data/us_stocks.json`，部署時產生、不進版控）**：
+  單一請求呼叫 FinMind `USStockInfo`（免 token 亦可、有 `FINMIND_TOKEN` 一併帶上），只取最新 `date` 那批、排除 `Subsector` 為 `ETF`／`Blank Checks`／`n/a`、市值 ≥ 3 億美元；名稱去掉尾端 `Common Stock`／`Ordinary Shares` 等贅字（保留 `Class A` 等類別），依市值由大到小輸出精簡陣列 `[code, name, mcap]`。`deploy.yml` 掛 `continue-on-error: true`，抓不到不阻擋部署，前端缺檔亦可正常運作。
+- **懶載入與自由輸入代號**：搜尋選單新增「美股個股」群組（value 前綴 `uss:`，與美股 ETF 的 `us:` 區分），僅在使用者開始搜尋／打字（或已持有美股個股需顯示名稱）時才下載 `us_stocks.json`，不增加開頁流量。若輸入像美股代號的字串（英文字母開頭、英數與 `.`／`-`、1～6 碼）且清單中沒有，選單最末端顯示「美股代號 XXX（直接查詢 FinMind）」；加入時先向 FinMind `USStockPrice` 驗證，查不到則明確提示「查不到這個美股代號」，不寫入壞資料。
+- **持股格式與顯示**：美股個股存成 `{code, shares, m: 'us', k: 'stock', acct}`（美股 ETF 照舊無 `k`），`parseStoredHoldings`、`mergeByCode`、配息試算與私人持股同步（`HoldingsSync`）均保留 `k` 並相容舊資料。明細標籤寫「美股」，未配息個股顯示「近期未配息」說明並照常將股價／市值計入總市值。
+
 ## 持股穿透健檢（`/dividend?view=xray`，2026-11-26）
 
 配息頁上方分頁切換「配息試算／持股健檢」（路由參數 `?view=xray`），計算全在 `lib/portfolioXray.ts`
@@ -73,8 +82,7 @@
     「代號 交易所」並做交易所別名正規化（如 `UW→US`、`JT→JP`、`KP→KS`、`GY→GR`、`C1/C2→CH`），
     與主動式 ETF 的海外持股合併為同一列；查無對照的 ISIN 仍保留呈現。名稱優先取中文（含括號內中文），
     其次做輕度英文標點整理。
-  - 債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'`，站內無成分資料）、槓桿／反向與期貨 ETF、
-    以及無可展開股票成分之 ETF 歸為無法穿透，仍計入總市值分母。
+  - 直接持有的美股個股（`m === 'us' && k === 'stock'`）算入「海外個股曝險」的**直接持有**（鍵 `CODE US`，例如 `ANT US`），與 ETF 穿透的同一家公司合併為同一列；債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'` 且無 `k`，站內無成分資料）、槓桿／反向與期貨 ETF、以及無可展開股票成分之 ETF 仍歸為無法穿透，並計入總市值分母。
 - **ISIN 對照表更新**：`python scripts/gen_isin_ticker.py` 讀取 `app/public/data/top10.json`
   非台股股票 ISIN，呼叫 OpenFIGI v3 mapping API（免 API key；每批 10 筆、節流 2.6 秒、遇 429/5xx
   自動重試），壓低美國場外粉紅單（`Foreign Sh.`／OTC）並優先選各國主要交易所綜合代碼，輸出至

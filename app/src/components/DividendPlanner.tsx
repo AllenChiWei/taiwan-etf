@@ -3,7 +3,7 @@
  * 持股清單存在 localStorage，重新整理不會不見 —— 這是使用者自己輸入的資料，
  * 每次都要重打的話等於沒做。 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
@@ -14,13 +14,14 @@ import {
   seriesFromStock, activePayer, withUpcoming,
   type HoldingProjection, type ProjectionWithUpcoming, type StockDividendData, type EtfDividendData, type YieldData,
 } from '../lib/dividend';
-import { fetchStockDividends, fetchEtfDividends, fetchYields, fetchCalendar, fetchDivMix } from '../api/extras';
+import { fetchStockDividends, fetchEtfDividends, fetchYields, fetchCalendar, fetchDivMix, fetchUsStocks } from '../api/extras';
 import type { DivMixData } from '../lib/monthlyIncome';
 import { upcomingByCode, dayLabel, type CalendarData } from '../lib/calendar';
 import { useDataset } from '../hooks/useDataset';
 import { useUsDataset } from '../hooks/useUsDataset';
 import { fetchUsPrices, fetchUsdTwd } from '../api/finmind';
 import { seriesFromUs, type UsPriceRow } from '../lib/usDividend';
+import { parseCustomUsTicker, usStockNameMap, type UsStocksDataset } from '../lib/usStocks';
 import type { CalcIndex, CalcSeries } from '../lib/backtest';
 import {
   accountList, withAccounts, nextAccountName, mergeByCode, renameAccount, removeAccount,
@@ -38,9 +39,10 @@ const nf2 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 });
 const nf4 = (v: number) => v.toFixed(3).replace(/\.?0+$/, '') || '0';
 const money = (v: number) => nf0.format(Math.round(v));
 
-/** m='us' 是美股 ETF：代號可能跟台股撞名以外，也決定要不要走匯率換算。
+/** m='us' 是美股（代號可能跟台股撞名以外，也決定要不要走匯率換算）；
+    k='stock' 標記美股個股（ETF 不加 k，與舊資料相容）。
     acct 是配息進哪個帳戶；舊資料沒有，載入時歸到第一個帳戶。 */
-interface Entry { code: string; shares: number; m?: 'us'; acct?: string }
+interface Entry { code: string; shares: number; m?: 'us'; k?: 'stock'; acct?: string }
 
 function loadAccounts(): string[] {
   try {
@@ -57,10 +59,23 @@ function loadHoldings(): Entry[] {
     if (!raw) return [];
     const v: unknown = JSON.parse(raw);
     if (!Array.isArray(v)) return [];
-    return v.filter((x): x is Entry =>
-      typeof x === 'object' && x !== null
-      && typeof (x as Entry).code === 'string'
-      && Number.isFinite((x as Entry).shares));
+    const out: Entry[] = [];
+    for (const x of v) {
+      if (typeof x !== 'object' || x === null) continue;
+      const o = x as Record<string, unknown>;
+      if (typeof o.code !== 'string' || !o.code.trim()
+        || typeof o.shares !== 'number' || !Number.isFinite(o.shares)) {
+        continue;
+      }
+      const item: Entry = { code: o.code.trim(), shares: o.shares };
+      if (o.m === 'us') {
+        item.m = 'us';
+        if (o.k === 'stock') item.k = 'stock';
+      }
+      if (typeof o.acct === 'string' && o.acct.trim()) item.acct = o.acct.trim();
+      out.push(item);
+    }
+    return out;
   } catch {
     return [];
   }
@@ -123,10 +138,30 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     return m;
   }, [dataset, index.codes]);
 
-  // 美股 ETF：清單來自 us_etfs.json；日價與匯率由瀏覽器直接向 FinMind 抓（api/finmind.ts）
+  // 美股 ETF 與個股：ETF 清單來自 us_etfs.json；個股清單 us_stocks.json 僅在使用者開始搜尋
+  // （或已持有美股個股需顯示名稱）時才懶載入；日價與匯率由瀏覽器直接向 FinMind 抓（api/finmind.ts）
   const usDataset = useUsDataset();
   const usNames = useMemo(() => new Map(usDataset.status === 'ready'
     ? usDataset.data.etfs.map(e => [e.code, e.name] as const) : []), [usDataset]);
+  const [usStocks, setUsStocks] = useState<UsStocksDataset | null>(null);
+  const usStocksLoadedRef = useRef(false);
+  const ensureUsStocks = useCallback(() => {
+    if (usStocksLoadedRef.current) return;
+    usStocksLoadedRef.current = true;
+    fetchUsStocks().then(d => { if (d) setUsStocks(d); }).catch(() => {});
+  }, []);
+  const hasUsStock = entries.some(e => e.m === 'us' && e.k === 'stock');
+  useEffect(() => {
+    if (hasUsStock) ensureUsStocks();
+  }, [hasUsStock, ensureUsStocks]);
+  const usStockNames = useMemo(() => usStockNameMap(usStocks), [usStocks]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState('');
+  const handleSearchQuery = useCallback((q: string) => {
+    setSearchQuery(q);
+    if (q.trim().length > 0) ensureUsStocks();
+  }, [ensureUsStocks]);
   const [usRows, setUsRows] = useState<Map<string, UsPriceRow[] | Error>>(new Map());
   const [fx, setFx] = useState<{ date: string; rate: number; stale: boolean } | Error | null>(null);
   const usCodes = entries.filter(e => e.m === 'us').map(e => e.code);
@@ -156,7 +191,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
 
   // 只抓還沒抓過的，換張數不會重抓
   useEffect(() => {
-    const missing = entries.map(e => e.code).filter(c => !series.has(c) && c in index.codes);
+    const missing = entries.filter(e => e.m !== 'us').map(e => e.code).filter(c => !series.has(c) && c in index.codes);
     if (missing.length === 0) return;
     let cancelled = false;
     setLoading(true);
@@ -189,11 +224,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     [calendar]);
 
   /** 一筆持股 -> 配息推估；資料還沒到或查不到時回 null。總帳戶與各帳戶共用。 */
-  const project = useCallback((e: { code: string; shares: number; m?: 'us' }): ProjectionWithUpcoming | null => {
+  const project = useCallback((e: { code: string; shares: number; m?: 'us'; k?: 'stock' }): ProjectionWithUpcoming | null => {
       if (e.m === 'us') {
         const r = usRows.get(e.code);
         if (!Array.isArray(r) || !fx || fx instanceof Error) return null;
-        return projectHolding(seriesFromUs(e.code, usNames.get(e.code) ?? e.code, r, fx.rate, index.months),
+        const name = usNames.get(e.code) ?? usStockNames.get(e.code) ?? e.code;
+        return projectHolding(seriesFromUs(e.code, name, r, fx.rate, index.months),
                               index.months, e.shares);
       }
       const stock = stockDivs?.stocks[e.code];
@@ -210,7 +246,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       if (!s) return null;
       // 已公告還沒除息的下一次（交易所預告或投信公告）：比已記錄的新就提前反映
       return withUpcoming(projectHolding(s, index.months, e.shares), upcoming.get(e.code));
-  }, [series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames, upcoming]);
+  }, [series, index.months, index.codes, stockDivs, newEtfs, etfDivs, yields, usRows, fx, usNames, usStockNames, upcoming]);
 
   const rows: ProjectionWithUpcoming[] = useMemo(() => {
     // 總帳戶一檔一列。站主的用法是一檔只在一個帳戶，但萬一同一檔分在兩個帳戶，
@@ -290,18 +326,64 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       .map(([c, v]) => ({ value: c, label: c, group: 'ETF',
                           hint: v.name + ((etfDivs?.dividends[c]?.length ?? 0) > 0 ? '・新上市' : '・尚未配息') }));
     const etfs = [...pick('etf', 'ETF'), ...fresh].sort((a, b) => a.value.localeCompare(b.value));
-    // 美股的 value 加前綴，跟台股代號分開（加入時再拿掉）
+    // 美股 ETF（us:）與美股個股（uss:）各自加前綴，跟台股代號與彼此分開（加入時再拿掉）
     const us = [...usNames].filter(([c]) => !entries.some(e => e.m === 'us' && e.code === c))
       .map(([c, n]) => ({ value: `us:${c}`, label: c, hint: n, group: '美股 ETF' }));
-    return [...pick('stock', '個股'), ...all, ...etfs, ...us];
-  }, [index.codes, entries, stockDivs, newEtfs, etfDivs, usNames]);
+    const usStockOpts = usStocks
+      ? usStocks.stocks
+        .filter(s => !usNames.has(s.code))
+        .filter(s => !entries.some(e => e.m === 'us' && e.code === s.code))
+        .map(s => ({ value: `uss:${s.code}`, label: s.code, hint: s.name, group: '美股個股' }))
+      : [];
+    return [...pick('stock', '個股'), ...all, ...etfs, ...us, ...usStockOpts];
+  }, [index.codes, entries, stockDivs, newEtfs, etfDivs, usNames, usStocks]);
 
-  const add = useCallback(() => {
-    if (!pick || !(shares > 0)) return;
+  // 清單裡沒有、但長得像美股代號（英數、可含 .／-，1～6 碼）時，於選單最末端提供直接向 FinMind 查詢
+  const tailOption = useMemo<SelectOption | null>(() => {
+    const code = parseCustomUsTicker(searchQuery);
+    if (!code) return null;
+    if (usNames.has(code) || usStockNames.has(code)) return null;
+    if (entries.some(e => e.m === 'us' && e.code === code)) return null;
+    return {
+      value: `ussc:${code}`,
+      label: code,
+      hint: `美股代號 ${code}（直接查詢 FinMind）`,
+      group: '美股個股',
+    };
+  }, [searchQuery, usNames, usStockNames, entries]);
+
+  const add = useCallback(async () => {
+    if (!pick || !(shares > 0) || adding) return;
+    setAddError('');
+    if (pick.startsWith('ussc:')) {
+      const code = pick.slice(5);
+      setAdding(true);
+      try {
+        const r = await fetchUsPrices(code);
+        if (!r.some(x => x.Close > 0)) {
+          setAddError(`查不到這個美股代號（${code}），請確認代號是否正確。`);
+          return;
+        }
+        setUsRows(prev => new Map(prev).set(code, r));
+        setEntries(prev => addHolding(prev, { code, shares, m: 'us' as const, k: 'stock' as const, acct }));
+        setPick('');
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        setAddError(`查不到這個美股代號（${code}）：${msg}`);
+      } finally {
+        setAdding(false);
+      }
+      return;
+    }
+    if (pick.startsWith('uss:')) {
+      setEntries(prev => addHolding(prev, { code: pick.slice(4), shares, m: 'us' as const, k: 'stock' as const, acct }));
+      setPick('');
+      return;
+    }
     setEntries(prev => addHolding(prev, pick.startsWith('us:')
       ? { code: pick.slice(3), shares, m: 'us' as const, acct } : { code: pick, shares, acct }));
     setPick('');
-  }, [pick, shares, acct]);
+  }, [pick, shares, acct, adding]);
 
   const newAccount = () => {
     const name = nextAccountName(accounts);
@@ -348,7 +430,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               <SearchableSelect
                 options={options}
                 value={pick}
-                onChange={setPick}
+                onChange={v => { setPick(v); setAddError(''); }}
+                onQueryChange={handleSearchQuery}
+                tailOption={tailOption}
                 placeholder="輸入代號或名稱…"
                 className="min-w-0"
               />
@@ -363,15 +447,20 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                 />
                 <button
                   type="button"
-                  onClick={add}
-                  disabled={!pick || !(shares > 0)}
+                  onClick={() => { void add(); }}
+                  disabled={!pick || !(shares > 0) || adding}
                   className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
                              transition-opacity disabled:opacity-40"
                 >
-                  加入
+                  {adding ? '查詢中…' : '加入'}
                 </button>
               </div>
             </div>
+            {addError && (
+              <p role="alert" className="mt-2 rounded-lg border border-line bg-sunken px-2.5 py-1.5 text-[12px] text-ink">
+                {addError}
+              </p>
+            )}
             <p className="mt-1.5 text-[11px] text-faint">
               以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
               下面會另外算出每個帳戶各領多少。
@@ -494,7 +583,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                         style={{ background: colorOf(r.code) }} />
                   <span className="font-mono font-semibold text-ink">{r.code}</span>
-                  <span className="text-muted">{r.latest > 0 ? money(r.annual) : '待配息'}</span>
+                  <span className="text-muted">
+                    {r.latest > 0 ? money(r.annual) : (usSet.has(r.code) ? '近期未配息' : '待配息')}
+                  </span>
                   {r.fromUpcoming && r.upcoming?.ck === 'est' && (
                     <span className="rounded bg-sunken px-1 text-[10.5px] text-muted">預估</span>
                   )}
@@ -588,7 +679,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                             style={{ background: colorOf(r.code) }} />
                       <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
-                      <span className="ml-1.5 truncate text-[13px] text-muted">{r.name}</span>
+                      {usSet.has(r.code) && (
+                        <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-semibold text-muted">
+                          美股
+                        </span>
+                      )}
+                      <span className="ml-1 truncate text-[13px] text-muted">{r.name}</span>
                     </div>
                     <span className="flex shrink-0 items-center gap-2.5">
                       {accounts.length > 1 && (
@@ -651,7 +747,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   {/* 八格：電腦版一排放完（加了發放日後原本的 7 欄會折成兩排，站主 2026-11-03 要求維持一排） */}
                   <dl className="mt-1 grid grid-cols-3 gap-x-3 gap-y-1 text-[12px] sm:grid-cols-8">
                     <Cell label="股數" value={`${nf0.format(r.shares)} 股`}
-                          hint={r.shares >= 1000
+                          hint={!usSet.has(r.code) && r.shares >= 1000
                             ? `${nf2.format(r.shares / SHARES_PER_LOT)} 張` : undefined} />
                     {/* 市值＝股數 × 最新收盤價（美股已換成台幣）。沒有收盤價的顯示「—」，
                         不要顯示 0 —— 那會跟「持有 0 股」看起來一樣 */}
@@ -689,8 +785,17 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       美股，金額以 1 美元 = {fx.rate} 元（台銀即期中價，{fx.date}
                       {fx.stale ? '，今天抓不到，沿用上次' : ''}）換成台幣。
-                      最近一次 US${nf4(r.latest / fx.rate)}、股價 US${nf2.format(r.price / fx.rate)}。
-                      配息由還原股價反推，約略值（誤差約 1 美分），未扣美國 30% 預扣稅。
+                      {r.latest > 0 ? (
+                        <>
+                          最近一次 US${nf4(r.latest / fx.rate)}、股價 US${nf2.format(r.price / fx.rate)}。
+                          配息由還原股價反推，約略值（誤差約 1 美分），未扣美國 30% 預扣稅。
+                        </>
+                      ) : (
+                        <>
+                          股價 US${nf2.format(r.price / fx.rate)}。
+                          近期未配息（近 12 個月無配息紀錄），股價與市值照常計入總市值；未來若有配息將自動算入（未扣美國 30% 預扣稅）。
+                        </>
+                      )}
                     </p>
                   )}
                   {r.upcoming && (
@@ -706,10 +811,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                     </p>
                   )}
                   {r.latest === 0 ? (
-                    <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
-                      近 12 個月沒有配息紀錄，先記在持股裡、不計入配息。
-                      之後有除息資料時會自動算進來，不用重新加入。
-                    </p>
+                    !usSet.has(r.code) && (
+                      <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
+                        近 12 個月沒有配息紀錄，先記在持股裡、不計入配息。
+                        之後有除息資料時會自動算進來，不用重新加入。
+                      </p>
+                    )
                   ) : r.monthsListed < 12 ? (
                     <p className="mt-1 rounded bg-sunken px-2 py-1 text-[11px] leading-snug text-muted">
                       這檔上市才 {r.monthsListed} 個月，只配過 {r.payouts} 次
