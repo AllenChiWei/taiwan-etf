@@ -6,33 +6,10 @@ import { useLayoutEffect, useRef, useState } from 'react';
 import { useWindowVirtualizer } from '@tanstack/react-virtual';
 
 import type { UsEtf, UsNumericKey } from '../types';
-import { returnTone, TONE_CLASS } from '../lib/format';
+import { exchangeName, formatAdv, nasdaqUrl, returnTone, TONE_CLASS } from '../lib/format';
 import { FavButton } from './FavButton';
 
-/** 交易所代碼 -> 人看得懂的名字。來自 Nasdaq Trader 的 Listing Exchange 欄位。 */
-const EXCHANGE: Record<string, string> = {
-  A: 'NYSE American',
-  N: 'NYSE',
-  P: 'NYSE Arca',
-  Q: 'Nasdaq',
-  Z: 'Cboe BZX',
-  V: 'IEX',
-};
-
-export const exchangeName = (code: string) => EXCHANGE[code] ?? code;
-
-/** Nasdaq 自己的 ETF 頁面 —— 我們的名單本來就來自他們的官方檔案。 */
-export const nasdaqUrl = (code: string) =>
-  `https://www.nasdaq.com/market-activity/etf/${code.toLowerCase()}`;
-
-/** 成交金額縮寫：$34.4B / $512M / $15.0M */
-export function formatAdv(v: number): string {
-  if (!Number.isFinite(v) || v <= 0) return '—';
-  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
-  if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
-  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-}
+export { exchangeName, formatAdv, nasdaqUrl };
 
 export const US_COLUMNS: Array<{ key: UsNumericKey; label: string }> = [
   { key: 'adv', label: '日均成交額' },

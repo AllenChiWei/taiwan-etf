@@ -1,24 +1,31 @@
 /* 單檔 ETF 頁（#/etf?code=0056，2026-10-27）。
  *
  * 原本一檔 ETF 的資訊散在清單彈窗（前十大、受益人數）、配息、試算好幾個地方，也沒有網址可以分享。
- * 這頁只把既有資料集中起來，不新增來源：etfs.json（報酬）、yields.json（價格、實配殖利率）、
- * dividends.json（配息紀錄）、calc/tw/<代號>.json（成長圖，lib/backtest 的 runBacktest）、
+ * 這頁只把既有資料集中起來，不新增來源：etfs.json（含息總報酬）、yields.json（價格、年化殖利率）、
+ * dividends.json（配息紀錄）、div_mix.json（配息組成）、calc/tw/<代號>.json（成長圖，lib/backtest）、
  * EtfExtras（受益人數、前十大）。算法都在各自的 lib，這裡只負責呈現。
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useEtfData, useFavoritesApi } from '../context/AppContext';
-import { fetchEtfDividends, fetchYields } from '../api/extras';
+import { fetchDivMix, fetchEtfDividends, fetchYields } from '../api/extras';
+import { fetchUsDataset } from '../api/usEtfs';
 import { useCalcIndex } from '../hooks/useCalcIndex';
 import { runBacktest, type CalcSeries } from '../lib/backtest';
-import { incomeRow } from '../lib/monthlyIncome';
+import { incomeRow, type DivMixData } from '../lib/monthlyIncome';
+import { exchangeName, formatAdv, nasdaqUrl, returnBasisNote } from '../lib/format';
 import type { EtfDividendData, YieldData } from '../lib/dividend';
+import type { UsEtfDataset } from '../types';
+import { DivMixDetail } from '../components/DivMixDetail';
 import { FavButton } from '../components/FavButton';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
 import { HoldersBox, Top10List, top10Asof, useEtfExtras } from '../components/EtfExtras';
+
+// 美股資料約 960 KB，只有網址代號不在台股清單（例如 #/etf?code=VOO）時才按需載入並快取
+let usCache: UsEtfDataset | null = null;
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,12 +41,15 @@ function compact(v: number): string {
   return Math.abs(v) >= 1e4 ? `${nf0.format(Math.round(v / 1e4))}萬` : nf0.format(Math.round(v));
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: 'up' | 'down' }) {
+function Stat({ label, value, tone, sub }: {
+  label: string; value: string; tone?: 'up' | 'down'; sub?: ReactNode;
+}) {
   const color = tone === 'up' ? 'text-up' : tone === 'down' ? 'text-down' : 'text-ink';
   return (
-    <div className="rounded-lg border border-line bg-surface px-3 py-2">
+    <div className="min-w-0 rounded-lg border border-line bg-surface px-2.5 py-2 sm:px-3">
       <div className="text-[11.5px] text-muted">{label}</div>
       <div className={`mt-0.5 font-mono text-[16px] font-bold tabular-nums ${color}`}>{value}</div>
+      {sub && <div className="mt-0.5 text-[10.5px] leading-tight text-faint">{sub}</div>}
     </div>
   );
 }
@@ -59,14 +69,42 @@ export function EtfPage() {
 
   const extras = useEtfExtras();
   const { index } = useCalcIndex();
-  const [div, setDiv] = useState<{ d: EtfDividendData | null; y: YieldData | null } | null>(null);
+  const [div, setDiv] = useState<{ d: EtfDividendData | null; y: YieldData | null; m: DivMixData | null } | null>(null);
   const [series, setSeries] = useState<CalcSeries | null>(null);
   const [copied, setCopied] = useState(false);
 
+  const needUs = Boolean(code) && !etf;
+  const [usState, setUsState] = useState<'idle' | 'loading' | 'ready' | 'error'>(
+    needUs ? (usCache ? 'ready' : 'loading') : 'idle',
+  );
+  const [usData, setUsData] = useState<UsEtfDataset | null>(usCache);
+
+  useEffect(() => {
+    if (!needUs) return;
+    if (usCache) {
+      setUsData(usCache);
+      setUsState('ready');
+      return;
+    }
+    setUsState('loading');
+    const ac = new AbortController();
+    fetchUsDataset(ac.signal)
+      .then(d => {
+        if (ac.signal.aborted) return;
+        usCache = d;
+        setUsData(d);
+        setUsState('ready');
+      })
+      .catch(() => {
+        if (!ac.signal.aborted) setUsState('error');
+      });
+    return () => ac.abort();
+  }, [needUs]);
+
   useEffect(() => {
     const ac = new AbortController();
-    Promise.all([fetchEtfDividends(ac.signal), fetchYields(ac.signal)])
-      .then(([d, y]) => { if (!ac.signal.aborted) setDiv({ d, y }); })
+    Promise.all([fetchEtfDividends(ac.signal), fetchYields(ac.signal), fetchDivMix(ac.signal)])
+      .then(([d, y, m]) => { if (!ac.signal.aborted) setDiv({ d, y, m }); })
       .catch(() => {});
     return () => ac.abort();
   }, []);
@@ -102,7 +140,77 @@ export function EtfPage() {
                       onChange={c => void navigate({ to: '/etf', search: { code: c } })} />
   );
 
+  const share = async (title: string) => {
+    const url = location.href;
+    const nav = navigator as Navigator & { share?: (d: { title: string; url: string }) => Promise<void> };
+    try {
+      if (nav.share) await nav.share({ title, url });
+      else { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    } catch { /* 使用者取消分享 */ }
+  };
+
   if (!etf) {
+    if (needUs && (usState === 'idle' || usState === 'loading')) {
+      return (
+        <>
+          <h1 className="sr-only">ETF 個別頁</h1>
+          <div className="mt-4 lg:max-w-md">{picker}</div>
+          <p className="py-16 text-center text-muted">查詢美股 ETF 資料中…</p>
+        </>
+      );
+    }
+    const usEtf = needUs && usData ? usData.etfs.find(e => e.code === code) ?? null : null;
+    if (usEtf && usData) {
+      return (
+        <>
+          <h1 className="sr-only">{usEtf.code} {usEtf.name}</h1>
+          <div className="mt-4 lg:max-w-md">{picker}</div>
+
+          <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-[18px] font-bold text-ink">
+                  <span className="font-mono text-accent">{usEtf.code}</span> {usEtf.name}
+                </h2>
+                <p className="mt-1 flex flex-wrap gap-1.5 text-[11.5px]">
+                  <span className="rounded-md bg-sunken px-1.5 py-0.5 text-muted">美股ETF</span>
+                  <span className="rounded-md bg-sunken px-1.5 py-0.5 text-muted">{exchangeName(usEtf.exch)}</span>
+                  {usEtf.tr && (
+                    <span className="rounded-md bg-accent-soft px-1.5 py-0.5 font-semibold text-accent">含息總報酬</span>
+                  )}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                <FavButton code={usEtf.code} active={fav.has(usEtf.code)} onToggle={fav.toggle} />
+                <button type="button" onClick={() => void share(`${usEtf.code} ${usEtf.name}`)}
+                        className="h-9 rounded-lg border border-line px-2.5 text-[12.5px] font-semibold text-muted hover:text-ink">
+                  {copied ? '已複製連結' : '分享'}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <Stat label="日均成交額" value={formatAdv(usEtf.adv)} />
+              <Stat label="近 3 月" {...ret(num(usEtf.r3))} />
+              <Stat label="近 6 月" {...ret(num(usEtf.r6))} />
+              <Stat label="近 1 年" {...ret(num(usEtf.r12))} />
+              <Stat label="近 3 年" {...ret(num(usEtf.r36))} />
+              <Stat label="近 5 年" {...ret(num(usEtf.r60))} />
+            </div>
+            <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+              {returnBasisNote({
+                market: 'us',
+                tr: usEtf.tr,
+                asof: usData.meta.asof,
+                totalReturnAsOf: usData.meta.totalReturnAsOf,
+              })}。日均成交額為近 60 個交易日平均（美元）；美股暫無配息紀錄與集保持股資料，
+              <Link to="/us" className="text-accent">回美股清單</Link> 或至{' '}
+              <a href={nasdaqUrl(usEtf.code)} target="_blank" rel="noopener noreferrer" className="text-accent">Nasdaq 查看詳情</a>。
+            </p>
+          </section>
+        </>
+      );
+    }
     return (
       <>
         <h1 className="sr-only">ETF 個別頁</h1>
@@ -114,17 +222,30 @@ export function EtfPage() {
   }
 
   const events = div?.d?.dividends[etf.code] ?? [];
-  const price = div?.y?.yields[etf.code]?.price ?? null;
-  const income = incomeRow(etf.code, etf.name, etf.freq, events, price, 10_000);
+  const yieldEntry = div?.y?.yields[etf.code];
+  const price = yieldEntry?.price ?? null;
+  const mix = div?.m?.mix[etf.code] ?? null;
+  const income = incomeRow(etf.code, etf.name, etf.freq, events, price, 10_000, mix);
+  const annualizedYield = typeof yieldEntry?.y === 'number' && Number.isFinite(yieldEntry.y)
+    ? yieldEntry.y
+    : num(etf.yield);
+  const priceAsof = div?.y?.meta?.asof || data.meta.yieldAsof || '';
+  const yieldStat = income
+    ? {
+        label: '實配殖利率',
+        value: `${nf2.format(income.yieldPct)}%`,
+        sub: annualizedYield !== null ? (
+          <>最近一次年化 <span className="font-mono tabular-nums text-muted">{nf2.format(annualizedYield)}%</span></>
+        ) : undefined,
+      }
+    : annualizedYield !== null
+      ? {
+          label: '實配殖利率',
+          value: `${nf2.format(annualizedYield)}%`,
+          sub: '最近一次年化（清單口徑）',
+        }
+      : { label: '實配殖利率', value: '—' };
   const asof = top10Asof(etf, extras);
-  const share = async () => {
-    const url = location.href;
-    const nav = navigator as Navigator & { share?: (d: { title: string; url: string }) => Promise<void> };
-    try {
-      if (nav.share) await nav.share({ title: `${etf.code} ${etf.name}`, url });
-      else { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-    } catch { /* 使用者取消分享 */ }
-  };
 
   return (
     <>
@@ -146,7 +267,7 @@ export function EtfPage() {
           </div>
           <div className="flex shrink-0 items-center gap-1.5">
             <FavButton code={etf.code} active={fav.has(etf.code)} onToggle={fav.toggle} />
-            <button type="button" onClick={() => void share()}
+            <button type="button" onClick={() => void share(`${etf.code} ${etf.name}`)}
                     className="h-9 rounded-lg border border-line px-2.5 text-[12.5px] font-semibold text-muted hover:text-ink">
               {copied ? '已複製連結' : '分享'}
             </button>
@@ -155,14 +276,19 @@ export function EtfPage() {
 
         <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-6">
           <Stat label="收盤價" value={price ? nf2.format(price) : '—'} />
-          {/* 用近一年實配（和下面月領、試算頁同一個數），不用交易所「最近一次 × 次數」：0056 會差 12.2% 對 8.8% */}
-          <Stat label="實配殖利率" value={income ? `${nf2.format(income.yieldPct)}%` : num(etf.yield) === null ? '—' : `${nf2.format(num(etf.yield)!)}%`} />
+          {/* 主數字用近一年實配（同下方月領與試算頁），小字並列最近一次年化（同首頁清單）避免從清單點進來數字跳變 */}
+          <Stat {...yieldStat} />
           <Stat label="近 3 月" {...ret(num(etf.r3))} />
           <Stat label="近 1 年" {...ret(num(etf.r12))} />
           <Stat label="近 3 年" {...ret(num(etf.r36))} />
           <Stat label="近 5 年" {...ret(num(etf.r60))} />
         </div>
-        <p className="mt-1.5 text-[10.5px] text-faint">報酬是市價報酬（不含息），{data.meta.snapshot} 為止；實配殖利率＝近一年實際配息 ÷ 收盤價。</p>
+        <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+          {returnBasisNote({ market: 'tw', snapshot: data.meta.snapshot })}。
+          實配殖利率＝近一年實際配息合計 ÷ 收盤價（上市未滿一年以已配平均推估，同下方月領試算）；
+          最近一次年化＝最近一次配息 × 每年配息次數 ÷ 收盤價（同台股清單，單次增減配會立即反映）
+          {priceAsof ? `，收盤價截至 ${priceAsof}` : ''}。
+        </p>
 
         <HoldersBox code={etf.code} data={extras} />
       </section>
@@ -208,6 +334,14 @@ export function EtfPage() {
               </p>
             )}
           </>
+        )}
+        {div && (events.length > 0 || mix !== null) && (
+          <DivMixDetail
+            mix={mix}
+            unavailable={div.m === null}
+            showNote
+            className="mt-2.5"
+          />
         )}
       </section>
 

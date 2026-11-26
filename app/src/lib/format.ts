@@ -63,3 +63,45 @@ export function metaLine(
   if (yieldAsof) parts.push(`殖利率截至 ${yieldAsof}`);
   return parts.join('　·　');
 }
+
+export type ReturnBasisInput =
+  | { market: 'tw'; snapshot?: string }
+  | { market: 'us'; tr?: boolean; asof?: string; totalReturnAsOf?: string };
+
+/** 報酬率口徑說明：台股一律為含息總報酬（FinLab etl:adj_close）；美股依 tr 旗標區分含息或價格報酬。 */
+export function returnBasisNote(input: ReturnBasisInput): string {
+  if (input.market === 'tw') {
+    const asof = input.snapshot ? `，截至 ${input.snapshot}` : '';
+    return `報酬為市價含息總報酬（配息再投入、累積非年化${asof}）`;
+  }
+  if (input.tr) {
+    const asof = input.totalReturnAsOf || input.asof;
+    return `報酬為含息總報酬（配息再投入、累積非年化${asof ? `，截至 ${asof}` : ''}）`;
+  }
+  return `報酬為價格報酬（不含配息、累積非年化${input.asof ? `，截至 ${input.asof}` : ''}）`;
+}
+
+/** 美股交易所代碼 -> 人看得懂的名字。來自 Nasdaq Trader 的 Listing Exchange 欄位。 */
+const US_EXCHANGE: Record<string, string> = {
+  A: 'NYSE American',
+  N: 'NYSE',
+  P: 'NYSE Arca',
+  Q: 'Nasdaq',
+  Z: 'Cboe BZX',
+  V: 'IEX',
+};
+
+export const exchangeName = (code: string) => US_EXCHANGE[code] ?? code;
+
+/** Nasdaq 自己的 ETF 頁面 —— 我們的名單本來就來自他們的官方檔案。 */
+export const nasdaqUrl = (code: string) =>
+  `https://www.nasdaq.com/market-activity/etf/${code.toLowerCase()}`;
+
+/** 美股日均成交金額縮寫：$34.4B / $512M / $15.0M */
+export function formatAdv(v: number): string {
+  if (!Number.isFinite(v) || v <= 0) return '—';
+  if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `$${(v / 1e6).toFixed(0)}M`;
+  if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}

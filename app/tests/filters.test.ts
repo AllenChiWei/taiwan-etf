@@ -13,7 +13,7 @@ import {
   matchesQuery, filterEtfs, toNumber, sortEtfs,
   groupBySection, activeFilterCount, compareNumeric,
 } from '../src/lib/filters.ts';
-import { returnTone, yieldClass, freqPillClass } from '../src/lib/format.ts';
+import { returnTone, yieldClass, freqPillClass, returnBasisNote } from '../src/lib/format.ts';
 import type { Etf, EtfDataset, Filters, Section } from '../src/types.ts';
 
 const mk = (code: string, o: Partial<Etf> = {}): Etf => ({
@@ -274,4 +274,24 @@ test('主動與分區是兩個維度，可以同時成立', () => {
   // 兩個維度交集
   assert.deepEqual(codes({ sec: 'cat-bond', act: 'active' }), ['00980D']);
   assert.deepEqual(codes({ sec: 'cat-domestic', act: 'active' }), ['00400A']);
+});
+
+describe('報酬口徑說明（台股含息、美股依 tr 標記區分）', () => {
+  test('台股一律說明為市價含息總報酬', () => {
+    const s = returnBasisNote({ market: 'tw', snapshot: '2026-11-25' });
+    assert.match(s, /市價含息總報酬/);
+    assert.match(s, /2026-11-25/);
+    assert.doesNotMatch(s, /不含息/);
+    assert.doesNotMatch(returnBasisNote({ market: 'tw', snapshot: '' }), /截至/);
+  });
+
+  test('美股依 tr 旗標分別標示含息總報酬或價格報酬', () => {
+    const trYes = returnBasisNote({ market: 'us', tr: true, asof: '2026-11-24', totalReturnAsOf: '2026-11-25' });
+    assert.match(trYes, /含息總報酬/);
+    assert.match(trYes, /2026-11-25/);
+    const trNo = returnBasisNote({ market: 'us', tr: false, asof: '2026-11-24' });
+    assert.match(trNo, /價格報酬/);
+    assert.match(trNo, /不含配息/);
+    assert.match(trNo, /2026-11-24/);
+  });
 });

@@ -15,6 +15,40 @@ export const NHI_RATE = 0.0211;
 export interface DivMix { date: string; d: number[] }
 export interface DivMixData { meta: { source: string; generated: string; count: number }; mix: Record<string, DivMix> }
 
+/** 配息組成項次，順序同集保 ETF 觀測站 divDet1～5；前兩項（股利、利息）才計二代健保與所得稅。 */
+export interface MixPartDef {
+  readonly label: string;
+  readonly color: string;
+  readonly taxed: boolean;
+}
+
+export const MIX_PARTS: readonly MixPartDef[] = [
+  { label: '股利所得', color: 'bg-up', taxed: true },
+  { label: '利息所得', color: 'bg-yield', taxed: true },
+  { label: '收益平準金', color: 'bg-accent', taxed: false },
+  { label: '已實現資本利得', color: 'bg-down', taxed: false },
+  { label: '其他所得', color: 'bg-na', taxed: false },
+];
+
+export interface MixPart extends MixPartDef {
+  pct: number;
+}
+
+/** 將 div_mix.json 的五項占比過濾出大於 0 的項目；缺席或全 0 時回空陣列。 */
+export function divMixParts(mix: DivMix | null | undefined): MixPart[] {
+  if (!mix || !Array.isArray(mix.d)) return [];
+  return MIX_PARTS
+    .map((p, i) => ({ ...p, pct: Number.isFinite(mix.d[i]) ? mix.d[i] : 0 }))
+    .filter(p => p.pct > 0);
+}
+
+/** 股利＋利息所得合計占比（%）；缺席或五項皆 0（未公告）時回 null。 */
+export function divMixTaxPct(mix: DivMix | null | undefined): number | null {
+  const parts = divMixParts(mix);
+  if (!parts.length) return null;
+  return parts.filter(p => p.taxed).reduce((a, p) => a + p.pct, 0);
+}
+
 export interface IncomeRow {
   code: string;
   name: string;

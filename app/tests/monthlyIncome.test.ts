@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { incomeRow, perYearOf } from '../src/lib/monthlyIncome.ts';
+import { divMixParts, divMixTaxPct, incomeRow, perYearOf } from '../src/lib/monthlyIncome.ts';
 
 const ev0056: [string, number, number][] = [
   ['2025-10-23', 0.866, 1], ['2026-01-22', 0.866, 1], ['2026-04-23', 1.0, 1], ['2026-07-21', 1.35, 1], ['2026-10-22', 1.72, 1],
@@ -62,4 +62,23 @@ test('上市未滿一年：用平均每次 × 一年次數推估，不把幾個�
   assert.equal(r.paid, 4);
   assert.ok(Math.abs(r.annual - 1.44) < 1e-9);
   assert.equal(r.lots, Math.ceil(120000 / 1.44 / 1000));
+});
+
+test('配息組成拆解與健保占比（月領試算與單檔 ETF 頁共用）', () => {
+  const p56 = divMixParts({ date: '2026-10-22', d: [17.97, 0, 0, 82.03, 0] });
+  assert.deepEqual(p56.map(p => [p.label, p.pct, p.taxed]), [
+    ['股利所得', 17.97, true],
+    ['已實現資本利得', 82.03, false],
+  ]);
+  assert.ok(Math.abs(divMixTaxPct({ date: '2026-10-22', d: [17.97, 0, 0, 82.03, 0] })! - 17.97) < 1e-9);
+
+  // 全資本利得：應回 0 而非 null（已公告，只是免扣健保）
+  assert.equal(divMixTaxPct({ date: '2026-09-16', d: [0, 0, 0, 100, 0] }), 0);
+  // 股利＋利息合計
+  assert.ok(Math.abs(divMixTaxPct({ date: '2026-11-18', d: [8.2, 91.8, 0, 0, 0] })! - 100) < 1e-9);
+  // 缺席或五項皆 0（未公告）：空陣列／null
+  assert.deepEqual(divMixParts(null), []);
+  assert.deepEqual(divMixParts({ date: '2026-10-01', d: [0, 0, 0, 0, 0] }), []);
+  assert.equal(divMixTaxPct(null), null);
+  assert.equal(divMixTaxPct({ date: '2026-10-01', d: [0, 0, 0, 0, 0] }), null);
 });
