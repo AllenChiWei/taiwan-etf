@@ -80,7 +80,7 @@
   - 海外股票（海外 ETF 與跨市場主動式 ETF）同樣依 `ETF 市值 × 該股佔淨值%` 計入曝險排行，
     並單獨彙總「海外個股曝險」：公會月報的 ISIN 透過靜態對照表 `app/src/lib/isinTicker.ts` 轉為
     「代號 交易所」並做交易所別名正規化（如 `UW→US`、`JT→JP`、`KP→KS`、`GY→GR`、`C1/C2→CH`），
-    與主動式 ETF 的海外持股合併為同一列；查無對照的 ISIN 仍保留呈現。名稱優先取中文（含括號內中文），
+    再依股別對照表 `app/src/lib/shareClassAlias.ts`（`SHARE_CLASS_ALIAS`／`SHARE_CLASS_LABEL`）把同一家公司的不同股別（如 `GOOG→GOOGL`、`BRK.A→BRK.B`、`005935→005930`）合併成同一列代表鍵（套用於月報 ISIN、主動式每日持股與直接持有美股個股），代表列名稱會去掉 `-CL A`／`Class C`／`-PREF`／`特別股` 等股別字樣並於展開來源時標示各股別權重明細；查無對照的 ISIN 仍保留呈現。名稱優先取中文（含括號內中文），
     其次做輕度英文標點整理。
   - 直接持有的美股個股（`m === 'us' && k === 'stock'`）算入「海外個股曝險」的**直接持有**（鍵 `CODE US`，例如 `ANT US`），與 ETF 穿透的同一家公司合併為同一列；債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'` 且無 `k`，站內無成分資料）、槓桿／反向與期貨 ETF、以及無可展開股票成分之 ETF 仍歸為無法穿透，並計入總市值分母。
 - **ISIN 對照表更新**：`python scripts/gen_isin_ticker.py` 讀取 `app/public/data/top10.json`

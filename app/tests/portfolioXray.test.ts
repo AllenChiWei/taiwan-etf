@@ -13,8 +13,11 @@ import {
   checkPortfolioEvents,
   checkPortfolioFilings,
   checkPortfolioMargin,
+  cleanForeignName,
+  formatShareClasses,
   matchesHealthFilter,
   parseStoredHoldings,
+  SHARE_CLASS_ALIAS,
   type MarginStateLite,
 } from '../src/lib/portfolioXray.ts';
 import type { Etf, EtfDataset } from '../src/types.ts';
@@ -714,4 +717,340 @@ test('真實資料整合（海外＋跨市場）：00646＋00988A＋00990A＋006
   assert.equal(xray.breakdown.find(b => b.code === '00988A')?.status, 'daily');
   assert.equal(xray.breakdown.find(b => b.code === '00679B')?.status, 'unpenetrable');
   assert.equal(xray.exposures.some(e => e.code.startsWith('XS') || e.code.startsWith('US9128')), false);
+});
+
+test('股別合併（009818 式月報 ISIN）：ALPHABET A 股 5.92%＋C 股 5.55% 合併成單一列 GOOGL 11.47%、來源顯示各股別且台股不受影響', () => {
+  const etfs: Etf[] = [
+    mkEtf('009818', '華南永昌NASDAQ 100科技', 'cat-foreign'),
+  ];
+  const top10: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '009818': {
+        name: '華南永昌NASDAQ 100科技',
+        rows: [
+          [1, '國外股票(含承銷)', 'US0378331005', 'APPLE INC', 15.24],
+          [5, '國外股票(含承銷)', 'US02079K3059', 'ALPHABET INC-CL A', 5.92],
+          [7, '國外股票(含承銷)', 'US02079K1079', 'ALPHABET INC-CL C', 5.55],
+        ],
+      },
+    },
+  };
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '009818': { price: 100 }, // 1000 股 = 100,000
+    },
+  };
+
+  // 投組：009818 (100,000) + 台股 2330 (100 股 * 1000 = 100,000) = 200,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '009818', shares: 1000 },
+      { code: '2330', shares: 100 },
+    ],
+    etfs,
+    top10,
+    active: null,
+    yields,
+    stockDivs: STOCK_DIVS,
+  });
+
+  assert.equal(xray.totalValue, 200_000);
+  assert.equal(xray.exposures.some(e => e.code === 'GOOG US'), false, 'GOOG US 應已併入 GOOGL US');
+
+  const googl = xray.exposures.find(e => e.code === 'GOOGL US');
+  assert.ok(googl, '009818 的 Alphabet A／C 股應合併成單一列 GOOGL US');
+  assert.equal(googl.displayCode, 'GOOGL');
+  assert.equal(googl.name, 'ALPHABET INC', '代表列名稱應去掉 -CL A／-CL C 股別字樣');
+  assert.equal(googl.market, 'foreign');
+  assert.equal(googl.marketLabel, '美股');
+  assert.ok(Math.abs(googl.amount - 11_470) < 1e-6, '100,000 × (5.92% + 5.55%) = 11,470');
+  assert.ok(Math.abs(googl.pct - 5.735) < 1e-9);
+  assert.equal(googl.sources.length, 1);
+
+  const src = googl.sources[0];
+  assert.equal(src.code, '009818');
+  assert.ok(Math.abs(src.weightInSource - 11.47) < 1e-9);
+  assert.ok(src.shareClasses && src.shareClasses.length === 2);
+  assert.equal(src.shareClasses[0].code, 'GOOGL');
+  assert.equal(src.shareClasses[0].label, 'A 股');
+  assert.equal(src.shareClasses[0].weight, 5.92);
+  assert.equal(src.shareClasses[1].code, 'GOOG');
+  assert.equal(src.shareClasses[1].label, 'C 股');
+  assert.equal(src.shareClasses[1].weight, 5.55);
+  assert.equal(formatShareClasses(src.shareClasses, src.weightInSource), 'A 股 5.92%＋C 股 5.55%＝11.47%');
+
+  const b009818 = xray.breakdown.find(b => b.code === '009818')!;
+  assert.equal(b009818.stockCount, 2, '合併後 009818 展開為 AAPL 與 GOOGL 兩家公司');
+  assert.ok(Math.abs(b009818.coveredPct - 26.71) < 1e-9);
+
+  // 台股 2330 完全不受影響
+  const tsmc = xray.exposures.find(e => e.code === '2330');
+  assert.ok(tsmc);
+  assert.equal(tsmc.displayCode, '2330');
+  assert.equal(tsmc.name, '台積電');
+  assert.equal(tsmc.amount, 100_000);
+  assert.equal(tsmc.sources[0].shareClasses, undefined);
+});
+
+test('股別合併（主動式每日持股）：GOOG US＋GOOGL US 合併、中文名優先並去掉股別字樣', () => {
+  const etfs: Etf[] = [
+    mkEtf('00983A', '主動中信ARK創新', 'cat-foreign', true),
+    mkEtf('00990A', '主動元大AI新經濟', 'cat-foreign', true),
+  ];
+  const active = {
+    meta: { updated: '2026-11-26', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00983A': {
+        name: '主動中信ARK創新', issuer: '中國信託投信', asof: '2026-11-25', changes: [],
+        holdings: [
+          ['GOOG US', 'Alphabet公司 Class C', 1000, 4],
+          ['GOOGL UW', 'ALPHABET INC-CL A', 1000, 6],
+        ],
+      },
+      '00990A': {
+        name: '主動元大AI新經濟', issuer: '元大投信', asof: '2026-11-25', changes: [],
+        holdings: [
+          ['GOOG US', 'ALPHABET INC-CL C', 1000, 3],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '00983A': { price: 100 }, // 1000 股 = 100,000 -> GOOGL 10% = 10,000
+      '00990A': { price: 100 }, // 1000 股 = 100,000 -> GOOG 3% = 3,000
+    },
+  };
+
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '00983A', shares: 1000 },
+      { code: '00990A', shares: 1000 },
+    ],
+    etfs,
+    top10: null,
+    active,
+    yields,
+    stockDivs: null,
+  });
+
+  assert.equal(xray.exposures.length, 1);
+  const googl = xray.exposures[0];
+  assert.equal(googl.code, 'GOOGL US');
+  assert.equal(googl.displayCode, 'GOOGL');
+  assert.equal(googl.name, 'Alphabet公司', '有中文名應優先採用中文並去掉尾端 Class C');
+  assert.ok(Math.abs(googl.amount - 13_000) < 1e-6);
+  assert.equal(googl.sources.length, 2);
+
+  const s983 = googl.sources.find(s => s.code === '00983A')!;
+  assert.ok(s983.shareClasses);
+  assert.equal(formatShareClasses(s983.shareClasses, s983.weightInSource), 'A 股 6.00%＋C 股 4.00%＝10.00%');
+
+  const s990 = googl.sources.find(s => s.code === '00990A')!;
+  assert.ok(s990.shareClasses);
+  assert.equal(formatShareClasses(s990.shareClasses, s990.weightInSource), 'C 股 3.00%');
+});
+
+test('股別合併（直接持有美股個股）：直接持有 GOOG（k:stock）與 ETF 的 GOOGL 合併成一列', () => {
+  const etfs: Etf[] = [
+    mkEtf('009818', '華南永昌NASDAQ 100科技', 'cat-foreign'),
+  ];
+  const top10: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '009818': {
+        name: '華南永昌NASDAQ 100科技',
+        rows: [
+          [5, '國外股票(含承銷)', 'US02079K3059', 'ALPHABET INC-CL A', 5.92],
+          [7, '國外股票(含承銷)', 'US02079K1079', 'ALPHABET INC-CL C', 5.55],
+        ],
+      },
+    },
+  };
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '009818': { price: 100 }, // 1000 股 = 100,000 -> 11.47% = 11,470
+    },
+  };
+
+  // 直接持有 GOOG 10 股 * 5,000 = 50,000 + 009818 100,000 = 150,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: 'GOOG', shares: 10, m: 'us', k: 'stock', acct: '美股戶' },
+      { code: '009818', shares: 1000, acct: '台股戶' },
+    ],
+    etfs,
+    top10,
+    active: null,
+    yields,
+    stockDivs: null,
+    usPricesTwd: new Map([['GOOG', 5000]]),
+    usStockNames: new Map([['GOOG', 'Alphabet Inc. Class C']]),
+  });
+
+  assert.equal(xray.exposures.length, 1);
+  const googl = xray.exposures[0];
+  assert.equal(googl.code, 'GOOGL US');
+  assert.equal(googl.displayCode, 'GOOGL');
+  assert.equal(googl.name, 'Alphabet Inc');
+  assert.equal(googl.isDirect, true);
+  assert.equal(googl.directAmount, 50_000);
+  assert.ok(Math.abs(googl.etfAmount - 11_470) < 1e-6);
+  assert.ok(Math.abs(googl.amount - 61_470) < 1e-6);
+  assert.equal(googl.sources.length, 2);
+  assert.equal(googl.sources[0].kind, 'direct');
+  assert.equal(googl.sources[0].code, 'GOOG');
+  assert.deepEqual(googl.sources[0].shareClasses, [{ code: 'GOOG', label: 'C 股', weight: 100 }]);
+  assert.equal(googl.sources[1].code, '009818');
+  assert.equal(
+    formatShareClasses(googl.sources[1].shareClasses!, googl.sources[1].weightInSource),
+    'A 股 5.92%＋C 股 5.55%＝11.47%',
+  );
+
+  // 若未提供 usStockNames，名稱應採用 ETF 的公司名而非退化成代號 GOOG
+  const xrayNoUsName = buildPortfolioXray({
+    holdings: [
+      { code: 'GOOG', shares: 10, m: 'us', k: 'stock' },
+      { code: '009818', shares: 1000 },
+    ],
+    etfs,
+    top10,
+    active: null,
+    yields,
+    stockDivs: null,
+    usPricesTwd: new Map([['GOOG', 5000]]),
+  });
+  assert.equal(xrayNoUsName.exposures[0].name, 'ALPHABET INC');
+});
+
+test('股別合併（波克夏 BRK/B 與 BRK.A、三星電子普通股／特別股、其餘對照表與名稱清理）', () => {
+  const etfs: Etf[] = [
+    mkEtf('00999A', '測試全球主動', 'cat-foreign', true),
+  ];
+  const active = {
+    meta: { updated: '2026-11-26', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00999A': {
+        name: '測試全球主動', issuer: '測試投信', asof: '2026-11-26', changes: [],
+        holdings: [
+          ['BRK/B US', 'BERKSHIRE HATHAWAY INC-CL B', 1000, 5],
+          ['BRK.A UW', 'BERKSHIRE HATHAWAY INC-CL A', 10, 3],
+          ['005935 KP', 'SAMSUNG ELECTRONICS CO LTD-PREF', 500, 2],
+          ['005930 KS', 'SAMSUNG ELECTRONICS CO LTD', 1000, 8],
+          ['2330', '台積電', 1000, 10],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '00999A': { price: 100 }, // 1000 股 = 100,000
+    },
+  };
+
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '00999A', shares: 1000 },
+      { code: 'BRK-A', shares: 1, m: 'us', k: 'stock' }, // 市值 20,000，正規化為 BRK.A -> BRK.B US
+    ],
+    etfs,
+    top10: null,
+    active,
+    yields,
+    stockDivs: STOCK_DIVS,
+    usPricesTwd: new Map([['BRK-A', 20_000]]),
+    usStockNames: new Map([['BRK-A', 'Berkshire Hathaway Inc. Class A']]),
+  });
+
+  // 波克夏：直接 BRK-A (20,000) + ETF BRK/B 5% (5,000) + BRK.A 3% (3,000) = 28,000
+  const brk = xray.exposures.find(e => e.code === 'BRK.B US');
+  assert.ok(brk, 'BRK/B、BRK.A 與 BRK-A 應合併為 BRK.B US');
+  assert.equal(brk.displayCode, 'BRK.B');
+  assert.equal(brk.name, 'BERKSHIRE HATHAWAY INC');
+  assert.equal(brk.directAmount, 20_000);
+  assert.ok(Math.abs(brk.etfAmount - 8_000) < 1e-6);
+  assert.ok(Math.abs(brk.amount - 28_000) < 1e-6);
+  const brkEtf = brk.sources.find(s => s.code === '00999A')!;
+  assert.equal(formatShareClasses(brkEtf.shareClasses!, brkEtf.weightInSource), 'A 股 3.00%＋B 股 5.00%＝8.00%');
+  const brkDirect = brk.sources.find(s => s.kind === 'direct')!;
+  assert.deepEqual(brkDirect.shareClasses, [{ code: 'BRK.A', label: 'A 股', weight: 100 }]);
+
+  // 三星電子：005935 KP (特別股 2%) + 005930 KS (普通股 8%) = 10% (10,000)
+  const samsung = xray.exposures.find(e => e.code === '005930 KS');
+  assert.ok(samsung, '三星特別股 005935 KS 應併入普通股 005930 KS');
+  assert.equal(samsung.displayCode, '005930');
+  assert.equal(samsung.marketLabel, '韓股');
+  assert.equal(samsung.name, 'SAMSUNG ELECTRONICS CO LTD');
+  assert.ok(Math.abs(samsung.amount - 10_000) < 1e-6);
+  assert.equal(
+    formatShareClasses(samsung.sources[0].shareClasses!, samsung.sources[0].weightInSource),
+    '普通股 8.00%＋特別股 2.00%＝10.00%',
+  );
+
+  // 台股 2330 不受影響
+  const tsmc = xray.exposures.find(e => e.code === '2330');
+  assert.ok(tsmc);
+  assert.equal(tsmc.amount, 10_000);
+  assert.equal(tsmc.sources[0].shareClasses, undefined);
+
+  // 對照表覆蓋所有指定多股別標的
+  for (const [alias, target] of [
+    ['GOOG US', 'GOOGL US'],
+    ['BRK.A US', 'BRK.B US'],
+    ['FOX US', 'FOXA US'],
+    ['NWS US', 'NWSA US'],
+    ['ZG US', 'Z US'],
+    ['UA US', 'UAA US'],
+    ['LBRDA US', 'LBRDK US'],
+    ['LEN.B US', 'LEN US'],
+    ['HEI.A US', 'HEI US'],
+    ['BF.A US', 'BF.B US'],
+    ['MOG.B US', 'MOG.A US'],
+    ['005935 KS', '005930 KS'],
+  ]) {
+    assert.equal(SHARE_CLASS_ALIAS[alias], target);
+  }
+
+  // 名稱清理：去掉股別字樣但保留正常港股與公司名稱
+  assert.equal(cleanForeignName('ALPHABET INC-CL A').name, 'ALPHABET INC');
+  assert.equal(cleanForeignName('Alphabet公司 Class C').name, 'Alphabet公司');
+  assert.equal(cleanForeignName('Comcast Corp Cl A').name, 'Comcast Corp');
+  assert.equal(cleanForeignName('VISA INC-CLASS A SHARES').name, 'VISA INC');
+  assert.equal(cleanForeignName('三星電子特別股').name, '三星電子');
+  assert.equal(cleanForeignName('阿里巴巴-SW').name, '阿里巴巴-SW');
+  assert.equal(cleanForeignName('SIEMENS, AG.').name, 'SIEMENS AG');
+});
+
+test('真實資料整合（009818 股別合併）：月報 ALPHABET A／C 股合併成單一列 GOOGL', {
+  skip: (!existsSync(ETFS_PATH) || !existsSync(TOP10_PATH) || !existsSync(YIELDS_PATH)) && '缺少靜態資料檔',
+}, () => {
+  const etfs = (JSON.parse(readFileSync(ETFS_PATH, 'utf8')) as EtfDataset).etfs;
+  const top10 = JSON.parse(readFileSync(TOP10_PATH, 'utf8')) as Top10Data;
+  const yields = JSON.parse(readFileSync(YIELDS_PATH, 'utf8')) as YieldData;
+  const rows = top10.etfs['009818']?.rows ?? [];
+  const clA = rows.find(r => r[2] === 'US02079K3059')?.[4] ?? 0;
+  const clC = rows.find(r => r[2] === 'US02079K1079')?.[4] ?? 0;
+  if (!(clA > 0 && clC > 0)) return;
+
+  const xray = buildPortfolioXray({
+    holdings: [{ code: '009818', shares: 1000 }],
+    etfs,
+    top10,
+    active: null,
+    yields,
+    stockDivs: null,
+  });
+
+  assert.equal(xray.exposures.some(e => e.code === 'GOOG US'), false, '不應再出現獨立的 GOOG US 列');
+  const googl = xray.exposures.find(e => e.code === 'GOOGL US');
+  assert.ok(googl, '009818 應有合併後的 GOOGL US 列');
+  assert.equal(googl.displayCode, 'GOOGL');
+  assert.equal(googl.sources.length, 1);
+  assert.ok(Math.abs(googl.sources[0].weightInSource - (clA + clC)) < 1e-9);
+  assert.equal(googl.sources[0].shareClasses?.length, 2);
 });

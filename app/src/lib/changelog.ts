@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-27',
     items: [
+      { kind: 'fix', to: '/dividend',
+        text: '持股健檢把同一家公司的不同股別（例如 Alphabet A 股與 C 股）合併計算，並在展開來源時標示各股別比重。' },
       { kind: 'new', to: '/dividend',
         text: '配息試算可以加入美股個股（例如 ANT），持股健檢會把它和 ETF 持有的同一家合併計算。' },
     ],

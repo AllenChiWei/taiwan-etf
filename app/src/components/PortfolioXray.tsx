@@ -30,6 +30,7 @@ import {
   checkPortfolioEvents,
   checkPortfolioFilings,
   checkPortfolioMargin,
+  formatShareClasses,
   matchesHealthFilter,
   MINOR_EXPOSURE_PCT,
   parseStoredHoldings,
@@ -330,7 +331,11 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       || e.displayCode.toLowerCase().includes(q)
       || e.name.toLowerCase().includes(q)
       || e.marketLabel.toLowerCase().includes(q)
-      || e.sources.some(s => s.code.toLowerCase().includes(q) || s.name.toLowerCase().includes(q)));
+      || e.sources.some(s =>
+        s.code.toLowerCase().includes(q)
+        || s.name.toLowerCase().includes(q)
+        || Boolean(s.shareClasses?.some(c =>
+          c.code.toLowerCase().includes(q) || c.label.toLowerCase().includes(q)))));
   }, [xray.exposures, marketFilter, query]);
 
   if (holdings.length === 0) {
@@ -719,7 +724,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                               </span>
                               <span className="mt-0.5 flex flex-wrap items-baseline justify-between gap-x-2 text-[11px] text-faint">
                                 <span className="min-w-0 truncate">
-                                  來源：{row.sources.slice(0, 3).map(s => (s.kind === 'direct' ? '直接持有' : s.code)).join('、')}
+                                  來源：{row.sources.slice(0, 3).map(s => (s.kind === 'direct'
+                                    ? (s.shareClasses?.[0] ? `直接持有(${s.shareClasses[0].code})` : '直接持有')
+                                    : s.code)).join('、')}
                                   {row.sources.length > 3 ? ` 等 ${row.sources.length} 項` : ''}
                                 </span>
                                 <span className="shrink-0 font-mono tabular-nums text-muted">
@@ -735,7 +742,14 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                                     <div className="flex items-baseline justify-between gap-2">
                                       <span className="min-w-0 truncate text-ink">
                                         {src.kind === 'direct' ? (
-                                          <span className="font-semibold text-accent">直接持有</span>
+                                          <>
+                                            <span className="font-semibold text-accent">直接持有</span>
+                                            {src.shareClasses?.[0] && (
+                                              <span className="ml-1 text-muted">
+                                                （<span className="font-mono">{src.shareClasses[0].code}</span>・{src.shareClasses[0].label}）
+                                              </span>
+                                            )}
+                                          </>
                                         ) : (
                                           <>
                                             <Link to="/etf" search={{ code: src.code }} className="font-mono font-semibold text-accent hover:underline">
@@ -752,7 +766,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                                     </div>
                                     {src.kind !== 'direct' && (
                                       <div className="mt-0.5 text-[10.5px] text-faint">
-                                        佔淨值 {nf2.format(src.weightInSource)}%・{src.kind === 'daily' ? `每日持股 ${src.asof}` : `公會月報 ${src.asof}`}
+                                        佔淨值 {src.shareClasses?.length
+                                          ? formatShareClasses(src.shareClasses, src.weightInSource)
+                                          : `${nf2.format(src.weightInSource)}%`}・{src.kind === 'daily' ? `每日持股 ${src.asof}` : `公會月報 ${src.asof}`}
                                       </div>
                                     )}
                                   </li>
@@ -1155,7 +1171,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               <strong className="text-muted">前十大是已知下限</strong>：除站上每日追蹤的主動式股票型 ETF 採用投信每日完整持股外，其餘台灣掛牌 ETF（含海外股票 ETF 及未提供每日持股的主動式 ETF）僅有投信投顧公會月報前十大持股，排名第 11 名以後成分股無法展開，因此單一個股曝險為已知下限，實際集中度可能更高。
             </li>
             <li>
-              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自公會月報前十大（月）與主動式 ETF 每日持股；直接持有的美股個股亦計入海外個股曝險並與 ETF 成分合併，美股 ETF 本身沒有成分資料。公會月報的 ISIN 代號透過對照表合併至同一家公司，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
+              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自公會月報前十大（月）與主動式 ETF 每日持股；直接持有的美股個股亦計入海外個股曝險並與 ETF 成分合併，美股 ETF 本身沒有成分資料。公會月報的 ISIN 代號透過對照表合併至同一家公司，同一家公司的不同股別（如 Alphabet A／C 股、波克夏 A／B 股、三星電子普通股／特別股）亦合併計算並在展開來源時標示各股別比重，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
             </li>
             <li>
               <strong className="text-muted">無法穿透的標的</strong>：債券 ETF、美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。

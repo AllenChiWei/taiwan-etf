@@ -12,7 +12,15 @@ import { holdingLinkKind, type ActiveData } from './active.ts';
 import type { Top10Data } from './top10.ts';
 import { holdingsOf } from './overlap.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
+import {
+  resolveShareClass,
+  SHARE_CLASS_ALIAS,
+  SHARE_CLASS_LABEL,
+  shareClassRank,
+} from './shareClassAlias.ts';
 import type { StockDividendData, YieldData } from './dividend.ts';
+
+export { SHARE_CLASS_ALIAS, SHARE_CLASS_LABEL };
 import {
   addDays, convPct, convertible, outPct,
   type CbBond, type CbData, type CbUpcoming,
@@ -106,6 +114,15 @@ export interface HoldingBreakdownRow {
   unpenetrableKind?: UnpenetrableReasonKind;
 }
 
+export interface ShareClassPart {
+  /** 該股別的正規化簡短代號（例如 GOOGL、GOOG、BRK.A、BRK.B、005935） */
+  code: string;
+  /** 股別中文標籤（例如 A 股、B 股、C 股、普通股、特別股） */
+  label: string;
+  /** 此股別在該來源中的權重（%）；直接持股為 100 */
+  weight: number;
+}
+
 export interface ExposureSource {
   /** 來源代號（直接持股即為該股本身，ETF 為 ETF 代號） */
   code: string;
@@ -118,6 +135,27 @@ export interface ExposureSource {
   /** 此來源貢獻的投組權重（%） */
   pctOfPortfolio: number;
   asof: string | null;
+  /** 屬多股別合併標的時，記錄此來源包含的各股別與權重（依股別順序排列） */
+  shareClasses?: ShareClassPart[];
+}
+
+/**
+ * 格式化單一 ETF 來源的股別權重明細：
+ * - 多股別合併：例如「A 股 5.92%＋C 股 5.55%＝11.47%」
+ * - 單一股別：例如「C 股 3.42%」
+ */
+export function formatShareClasses(
+  shareClasses: readonly ShareClassPart[],
+  totalWeight: number,
+  decimals = 2,
+): string {
+  const fmt = (n: number) => n.toFixed(decimals);
+  if (shareClasses.length <= 1) {
+    const only = shareClasses[0];
+    return only ? `${only.label} ${fmt(only.weight)}%` : `${fmt(totalWeight)}%`;
+  }
+  const parts = shareClasses.map(c => `${c.label} ${fmt(c.weight)}%`).join('＋');
+  return `${parts}＝${fmt(totalWeight)}%`;
 }
 
 export interface ExposureRow {
@@ -257,17 +295,22 @@ const ISIN_COUNTRY_LABEL: Record<string, string> = {
   ID: '印尼', PH: '菲律賓', ZA: '南非', NZ: '紐西蘭',
 };
 
-interface ParsedForeign {
+interface NormalizedForeignTicker {
   key: string;
   displayCode: string;
+  rawDisplayCode: string;
+  classLabel: string | undefined;
   marketLabel: string;
+}
+
+interface ParsedForeign extends NormalizedForeignTicker {
   isIsin: boolean;
 }
 
 function normalizeForeignTicker(
   rawTicker: string,
   rawExch: string,
-): { key: string; displayCode: string; marketLabel: string } | null {
+): NormalizedForeignTicker | null {
   const exch = EXCH_ALIAS[rawExch.toUpperCase()];
   if (!exch) return null;
   let ticker = rawTicker.trim().toUpperCase();
@@ -275,11 +318,16 @@ function normalizeForeignTicker(
   if (exch === 'HK' && /^\d+$/.test(ticker)) {
     ticker = ticker.replace(/^0+(?=\d)/, '');
   } else if (exch === 'US') {
-    ticker = ticker.replace(/\//g, '.');
+    // 美股股別常見 BRK/B、BRK-B、BRK.B 三種寫法，先統一為點號再套股別對照
+    ticker = ticker.replace(/\//g, '.').replace(/^([A-Z0-9]{1,5})-([A-Z])$/, '$1.$2');
   }
+  const rawKey = `${ticker} ${exch}`;
+  const { canonicalKey, canonicalCode, classLabel } = resolveShareClass(rawKey);
   return {
-    key: `${ticker} ${exch}`,
-    displayCode: ticker,
+    key: canonicalKey,
+    displayCode: canonicalCode,
+    rawDisplayCode: ticker,
+    classLabel,
     marketLabel: EXCH_MARKET_LABEL[exch] ?? '海外',
   };
 }
@@ -313,6 +361,8 @@ function parseForeignComponent(rawSid: string, rawName: string, rowType?: string
     return {
       key: sid,
       displayCode: sid,
+      rawDisplayCode: sid,
+      classLabel: undefined,
       marketLabel: ISIN_COUNTRY_LABEL[sid.slice(0, 2)] ?? '海外',
       isIsin: true,
     };
@@ -321,7 +371,34 @@ function parseForeignComponent(rawSid: string, rawName: string, rowType?: string
   return null;
 }
 
-/** 整理海外個股名稱：有中文優先取中文（含括號內中文），英文名僅做輕度標點整理。 */
+/** 去掉海外公司名稱尾端的股別字樣（如 -CL A、Class C、-A、-PREF、特別股），讓合併後的代表列顯示公司名。 */
+function stripShareClassSuffix(raw: string): string {
+  let s = raw.trim();
+  if (!s) return s;
+
+  // 1. 括號內股別：(Class A)、(CL C)、(Pref)、(特別股)、(普通股)
+  s = s.replace(
+    /\s*[（(]\s*(?:(?:(?:CLASS|SERIES)\s+|(?:CL|SER)(?:\.\s*|\s+))[A-Z](?:\s+(?:SHARES?|SHS|STOCK|COMMON|ORD))?|PREF(?:ERRED)?|PFD|特別股|普通股|[ABC]\s*股)\s*[)）]\s*$/i,
+    '',
+  );
+
+  // 2. 明確的 Class / CL / Series 標記：-CL A、-CLASS A SHARES、Class C、CL. B、Series A
+  s = s.replace(
+    /(?:\s*[-–—,/]\s*|\s+)(?:(?:COM(?:MON)?|ORD(?:INARY)?)\s+)?(?:(?:CLASS|SERIES)\s+|(?:CL|SER)(?:\.\s*|\s+))[A-Z](?:\s+(?:SHARES?|SHS|STOCK|COMMON|ORD))?\.?\s*$/i,
+    '',
+  );
+
+  // 3. 破折號後單一字母股別：-A、- A、-B、-C、-K（僅限常見多股別字母，避免誤刪港股 -W/-S/-SW 等標記）
+  s = s.replace(/\s*[-–—]\s*[ABCK]\s*$/i, '');
+
+  // 4. 特別股與中文股別標記：-PREF、PREF、PREFERRED、PFD、特別股、普通股、A 股 / B 股 / C 股
+  s = s.replace(/(?:\s*[-–—,/]\s*|\s+)(?:PREF(?:ERRED)?|PFD)\.?\s*$/i, '');
+  s = s.replace(/\s*(?:特別股|普通股|[ABC]\s*股)\s*$/, '');
+
+  return s.replace(/[.,;:\-\s]+$/, '').trim();
+}
+
+/** 整理海外個股名稱：有中文優先取中文（含括號內中文），去掉股別字樣，英文名僅做輕度標點整理。 */
 export function cleanForeignName(raw: string): { name: string; hasCjk: boolean } {
   let s = raw.trim().replace(/\s+/g, ' ');
   if (!s) return { name: '', hasCjk: false };
@@ -331,36 +408,42 @@ export function cleanForeignName(raw: string): { name: string; hasCjk: boolean }
   if (cjkParen) {
     const inside = cjkParen[1].trim();
     const outside = s.replace(cjkParen[0], '').trim();
-    return { name: CJK_RE.test(outside) ? outside : inside, hasCjk: true };
+    const picked = CJK_RE.test(outside) ? outside : inside;
+    const stripped = stripShareClassSuffix(picked);
+    return { name: stripped || picked, hasCjk: true };
   }
 
-  // 2. 本身已含中文（如「愛德萬測試」、「微軟(MSFT US)」），去掉末尾純英數代號括號
+  // 2. 本身已含中文（如「愛德萬測試」、「微軟(MSFT US)」、「Alphabet公司 Class C」），去掉末尾純英數代號括號與股別字樣
   if (CJK_RE.test(s)) {
-    const cleaned = s.replace(/\s*[（(][A-Za-z0-9.\s/-]{1,20}[)）]\s*$/, '').trim();
-    return { name: cleaned || s, hasCjk: true };
+    const noCode = s.replace(/\s*[（(][A-Za-z0-9.\s/-]{1,20}[)）]\s*$/, '').trim() || s;
+    const stripped = stripShareClassSuffix(noCode);
+    return { name: stripped || noCode, hasCjk: true };
   }
 
-  // 3. 純英文名：去掉投信附帶代號與 INC/CORP 等前後多餘標點，不過度改寫
+  // 3. 純英文名：去掉投信附帶代號、INC/CORP 等前後多餘標點與股別字樣，不過度改寫
   s = s
     .replace(/\.[A-Za-z0-9/-]{1,10}\s+[A-Za-z]{2}\s*$/i, '')
     .replace(/\s*[（(][A-Za-z0-9./-]{1,10}\s+[A-Za-z0-9]{2}[)）]\s*$/i, '')
     .replace(/,\s*(INC|CORP|CORPORATION|CO|LTD|LIMITED|PLC|NV|SA|SE|AG|HOLDINGS?)\b\.?/gi, ' $1')
-    .replace(/\b(INC|CORP|CO|LTD|PLC)\.(?=\s|$|-)/gi, '$1')
+    .replace(/\b(INC|CORP|CO|LTD|PLC)\.(?=\s|$|-|,)/gi, '$1')
     .replace(/[.,;:\s]+$/, '')
     .replace(/\s+/g, ' ')
     .trim();
 
-  return { name: s, hasCjk: false };
+  const stripped = stripShareClassSuffix(s);
+  return { name: stripped || s, hasCjk: false };
 }
 
 function pickForeignStockName(candidate: string, current: string | undefined, fallbackCode: string): string {
   const cand = cleanForeignName(candidate);
-  const candName = cand.name || fallbackCode;
-  if (!current) return candName;
+  if (!current) return cand.name || fallbackCode;
+  if (!cand.name) return current;
+  if (current === fallbackCode && cand.name !== fallbackCode) return cand.name;
+  if (cand.name === fallbackCode && current !== fallbackCode) return current;
   const curHasCjk = CJK_RE.test(current);
-  if (cand.hasCjk && !curHasCjk) return candName;
+  if (cand.hasCjk && !curHasCjk) return cand.name;
   if (!cand.hasCjk && curHasCjk) return current;
-  return candName.length < current.length ? candName : current;
+  return cand.name.length < current.length ? cand.name : current;
 }
 
 /** 挑最短且清楚的公司簡稱（stock_dividends 官方簡稱優先，否則取各投信裡最短的名稱）。 */
@@ -384,8 +467,9 @@ function pickStockName(
  * - 所有已取得最新收盤價的持股（含債券／美股／海外 ETF）均計入總市值分母，
  *   單一個股佔比＝（直接持股市值 ＋ Σ 各 ETF 市值 × 該股佔 ETF 淨值% ）÷ 投組總市值。
  * - 台股 ETF、海外 ETF 與跨市場主動式 ETF 皆展開台股與海外股票成分；公會月報的海外 ISIN 透過
- *   ISIN_TICKER 對照表轉成「代號 交易所」與主動式持股合併，查無對照時仍以 ISIN 保留。
- * - 直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」），
+ *   ISIN_TICKER 對照表轉成「代號 交易所」與主動式持股合併，再經 SHARE_CLASS_ALIAS 將同公司不同股別
+ *   （如 GOOG／GOOGL、BRK.A／BRK.B、005935／005930）合併至代表鍵並保留來源股別明細，查無對照時仍以 ISIN 保留。
+ * - 直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」並套用股別合併），
  *   與 ETF 穿透之同一家公司合併；美股掛牌 ETF（m='us' 且無 k）維持無法穿透。
  * - 債券 ETF（cat-bond）、美股掛牌 ETF、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
  * - 主動式 ETF 的期貨部位（含 TX／WTX 等）與公會月報的債券／國外掛牌 ETF 不計為個股曝險。
@@ -538,13 +622,16 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       const norm = normalizeForeignTicker(r.code, 'US') ?? {
         key: `${r.code} US`,
         displayCode: r.code,
+        rawDisplayCode: r.code,
+        classLabel: undefined,
         marketLabel: '美股',
       };
+      const rawUsName = input.usStockNames?.get(r.code) ?? input.usNames?.get(r.code) ?? '';
       if (r.value !== null) {
         foreignStockValue += r.value;
         addExposure(
           norm.key,
-          r.name,
+          rawUsName,
           {
             code: r.code,
             name: r.name,
@@ -553,6 +640,9 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
             amount: r.value,
             pctOfPortfolio,
             asof: null,
+            ...(norm.classLabel
+              ? { shareClasses: [{ code: norm.rawDisplayCode, label: norm.classLabel, weight: 100 }] }
+              : {}),
           },
           {
             displayCode: norm.displayCode,
@@ -651,7 +741,11 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
 
     // 分流展開台股普通股（既有規則不變）與海外股票（排除期貨 TX／WTX、債券 ISIN 與國外掛牌 ETF）
     const twComponents: Array<{ sid: string; name: string; pct: number }> = [];
-    const foreignCompMap = new Map<string, ParsedForeign & { name: string; pct: number }>();
+    const foreignCompMap = new Map<string, ParsedForeign & {
+      name: string;
+      pct: number;
+      classMap: Map<string, ShareClassPart>;
+    }>();
 
     for (const [sid, item] of hs.w) {
       if (!(item.pct > 0)) continue;
@@ -666,11 +760,21 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       if (prev) {
         prev.pct += item.pct;
         prev.name = pickForeignStockName(item.name, prev.name, parsed.displayCode);
+        if (parsed.classLabel) {
+          const prevCls = prev.classMap.get(parsed.rawDisplayCode);
+          if (prevCls) prevCls.weight += item.pct;
+          else prev.classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
+        }
       } else {
+        const classMap = new Map<string, ShareClassPart>();
+        if (parsed.classLabel) {
+          classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
+        }
         foreignCompMap.set(parsed.key, {
           ...parsed,
           name: pickForeignStockName(item.name, undefined, parsed.displayCode),
           pct: item.pct,
+          classMap,
         });
       }
     }
@@ -721,6 +825,11 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       for (const comp of foreignComponents) {
         const amt = r.value * (comp.pct / 100);
         etfForeignPenetrated += amt;
+        const shareClasses = comp.classMap.size > 0
+          ? [...comp.classMap.values()].sort(
+              (a, b) => shareClassRank(a.label) - shareClassRank(b.label) || a.code.localeCompare(b.code),
+            )
+          : undefined;
         addExposure(
           comp.key,
           comp.name,
@@ -732,6 +841,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
             amount: amt,
             pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
             asof: hs.asof,
+            ...(shareClasses ? { shareClasses } : {}),
           },
           {
             displayCode: comp.displayCode,
