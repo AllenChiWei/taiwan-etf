@@ -11,15 +11,19 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { fetchCb, fetchCbMarket, fetchCbSeries, fetchCbConv } from '../api/extras';
+import { fetchPe, fetchHighs } from '../api/stocks';
+import { fetchMarginState, type MarginState } from '../api/market';
 import { fetchNews } from '../api/news';
 import {
   cbStats, byIndustry, filterBonds, outPct, yi, ytp, ytm, putDate, convertible, daysBetween,
   convPct, monthlyConv, bondFloor, cbasPrem, CBAS_RATE, type CbConv,
-  marketRows, rankInHistory, loadCbFavs, saveCbFavs,
+  marketRows, rankInHistory, loadCbFavs, saveCbFavs, type CbUnderlyingMetrics,
   BUCKETS, HIGH_BUCKETS, CB_SORTS, CB_PRESETS, MARKET_METRICS, ANY,
   type CbData, type CbBond, type CbSort, type CbStats, type CbFilter, type CbMarket, type CbSeriesPoint, type Range,
 } from '../lib/cb';
 import type { NewsData } from '../lib/news';
+import type { PeData } from '../lib/cheap';
+import type { Highs } from '../lib/stock';
 import { relativeTime } from '../lib/news';
 import { EmptyState } from '../components/EmptyState';
 import { StockSheet } from '../components/StockSheet';
@@ -282,18 +286,21 @@ function RangeInput({ label, r, onChange, unit }: { label: string; r: Range; onC
 }
 
 type Cond = Required<Pick<CbFilter, 'px' | 'prem' | 'cv' | 'out' | 'ytp' | 'ytm' | 'yrs' | 'conv' | 'cbas'>> & {
+  stockPe: Range; stockR20: Range; stockMargin: Range;
   putWithin: number | null; issuedWithin: number | null; guarantee: string | null;
   convertibleOnly: boolean; minVol: number | null; favOnly: boolean;
 };
 
 const EMPTY: Cond = {
-  px: ANY, prem: ANY, cv: ANY, out: ANY, ytp: ANY, ytm: ANY, yrs: ANY, conv: ANY, cbas: ANY, putWithin: null, issuedWithin: null,
+  px: ANY, prem: ANY, cv: ANY, out: ANY, ytp: ANY, ytm: ANY, yrs: ANY, conv: ANY, cbas: ANY,
+  stockPe: ANY, stockR20: ANY, stockMargin: ANY, putWithin: null, issuedWithin: null,
   guarantee: null, convertibleOnly: false, minVol: null, favOnly: false,
 };
 
 function condCount(c: Cond): number {
   const r = (x: Range) => (x.min !== null || x.max !== null ? 1 : 0);
-  return r(c.px) + r(c.prem) + r(c.cv) + r(c.out) + r(c.ytp) + r(c.ytm) + r(c.yrs) + r(c.conv) + r(c.cbas) + (c.putWithin !== null ? 1 : 0)
+  return r(c.px) + r(c.prem) + r(c.cv) + r(c.out) + r(c.ytp) + r(c.ytm) + r(c.yrs) + r(c.conv) + r(c.cbas)
+    + r(c.stockPe) + r(c.stockR20) + r(c.stockMargin) + (c.putWithin !== null ? 1 : 0)
     + (c.issuedWithin !== null ? 1 : 0) + (c.guarantee ? 1 : 0) + (c.convertibleOnly ? 1 : 0)
     + (c.minVol !== null ? 1 : 0) + (c.favOnly ? 1 : 0);
 }
@@ -468,6 +475,9 @@ export function CbPage() {
   const navigate = useNavigate();
   const [data, setData] = useState<CbData | null | undefined>(undefined);
   const [market, setMarket] = useState<CbMarket | null>(null);
+  const [stockFilterData, setStockFilterData] = useState<{
+    pe: PeData | null; highs: Highs | null; margin: MarginState | null;
+  } | undefined>(undefined);
   const [news, setNews] = useState<NewsData | null | undefined>(undefined);
   const [onlyTraded, setOnlyTraded] = useState(false);
   const [q, setQ] = useState('');
@@ -487,6 +497,11 @@ export function CbPage() {
     const ac = new AbortController();
     fetchCb(ac.signal).then(d => { if (!ac.signal.aborted) setData(d); }).catch(() => setData(null));
     fetchCbMarket(ac.signal).then(d => { if (!ac.signal.aborted) setMarket(d); }).catch(() => {});
+    Promise.all([
+      fetchPe(ac.signal).catch(() => null), fetchHighs(ac.signal).catch(() => null), fetchMarginState().catch(() => null),
+    ]).then(([pe, highs, margin]) => {
+      if (!ac.signal.aborted) setStockFilterData({ pe, highs, margin });
+    });
     return () => ac.abort();
   }, []);
 
@@ -505,14 +520,20 @@ export function CbPage() {
   }, [pick, news]);
 
   const asOf = data?.meta.date ?? '';
+  const underlying = useMemo<CbUnderlyingMetrics>(() => ({
+    pe: new Map((stockFilterData?.pe?.rows ?? []).filter(r => Number.isFinite(r.pe)).map(r => [r.c, r.pe])),
+    r20: new Map((stockFilterData?.highs?.rows ?? []).filter(r => r.r20 != null && Number.isFinite(r.r20)).map(r => [r.c, r.r20!])),
+    margin: new Map(Object.entries(stockFilterData?.margin?.m ?? {}).filter(([, v]) => Number.isFinite(v))),
+  }), [stockFilterData]);
   const stats = useMemo(() => (data ? cbStats(data.bonds, onlyTraded) : null), [data, onlyTraded]);
   const inds = useMemo(() => (data ? byIndustry(data.bonds, data.upcoming, data.meta.date) : []), [data]);
   const rows = useMemo(() => (data ? filterBonds(data.bonds, {
     q, bucket, ind, onlyTraded, sort, desc, asOf,
     px: cond.px, prem: cond.prem, cv: cond.cv, out: cond.out, ytp: cond.ytp, ytm: cond.ytm, yrs: cond.yrs, conv: cond.conv, cbas: cond.cbas,
+    stockPe: cond.stockPe, stockR20: cond.stockR20, stockMargin: cond.stockMargin,
     putWithin: cond.putWithin, issuedWithin: cond.issuedWithin, guarantee: cond.guarantee,
     convertibleOnly: cond.convertibleOnly, minVol: cond.minVol, favs: cond.favOnly ? favs : null,
-  }) : []), [data, q, bucket, ind, onlyTraded, sort, desc, asOf, cond, favs]);
+  }, underlying) : []), [data, q, bucket, ind, onlyTraded, sort, desc, asOf, cond, favs, underlying]);
 
   if (data === undefined) return <p className="py-12 text-center text-[13px] text-muted">載入可轉債資料中…</p>;
   if (data === null || !stats) {
@@ -622,6 +643,9 @@ export function CbPage() {
             <RangeInput label="剩餘年期" r={cond.yrs} onChange={r => setC({ yrs: r })} unit="年" />
             <RangeInput label="近一月轉換" r={cond.conv} onChange={r => setC({ conv: r })} unit="%" />
             <RangeInput label="CBAS 權利金" r={cond.cbas} onChange={r => setC({ cbas: r })} />
+            <RangeInput label="標的本益比" r={cond.stockPe} onChange={r => setC({ stockPe: r })} />
+            <RangeInput label="標的近 20 日漲跌" r={cond.stockR20} onChange={r => setC({ stockR20: r })} unit="%" />
+            <RangeInput label="標的融資維持率" r={cond.stockMargin} onChange={r => setC({ stockMargin: r })} unit="%" />
             <RangeInput label="餘額比例" r={cond.out} onChange={r => setC({ out: r })} unit="%" />
             <label className="flex items-center gap-1.5 text-[12px] text-muted">
               <span className="w-[4.5rem] shrink-0">距賣回</span>
@@ -660,6 +684,10 @@ export function CbPage() {
             </label>
           </div>
         )}
+        <p className="mt-1 text-[10.5px] leading-relaxed text-faint">
+          標的條件資料{stockFilterData ? `日期：本益比 ${stockFilterData.pe?.meta.date ?? '無資料'}、近 20 日漲跌 ${stockFilterData.highs?.meta.date ?? '無資料'}、融資維持率 ${stockFilterData.margin?.d ?? '無資料'}` : '載入中'}。
+          本益比為交易所近四季公布值；20 日漲跌採還原股價；融資維持率由 XQ 平均成本公式推算。套用條件時缺值的標的債券會排除，交換債不參與標的條件。
+        </p>
 
         {/* 可點的欄位標題：點一下用那一欄排序，再點一次反過來。手機上只有兩欄，標題改成一排按鈕 */}
         <div className="mt-3 flex border-b border-line pb-1 pl-7 text-[11.5px] font-semibold text-muted">

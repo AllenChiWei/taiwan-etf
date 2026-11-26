@@ -71,8 +71,14 @@ export const fetchNextday = (signal?: AbortSignal) =>
   load<NextdayData>('nextday.json', d => Array.isArray(d.bands), signal);
 
 /** 可轉債（scripts/fetch_cb.py，部署時產生） */
-export const fetchCb = (signal?: AbortSignal) =>
-  load<CbData>('cb.json', d => Array.isArray(d.bonds) && Boolean(d.meta), signal);
+let cbPromise: Promise<CbData | null> | null = null;
+export const fetchCb = (_signal?: AbortSignal) => {
+  if (!cbPromise) {
+    cbPromise = load<CbData>('cb.json', d => Array.isArray(d.bonds) && Boolean(d.meta))
+      .catch(() => { cbPromise = null; return null; });
+  }
+  return cbPromise;
+};
 
 /** 可轉債市場溫度計歷史（2017 起每天一列） */
 export const fetchCbMarket = (signal?: AbortSignal) =>

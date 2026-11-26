@@ -431,6 +431,12 @@ export interface CbFilter {
   conv?: Range;
   /** CBAS 權利金粗估（每 100 元面額） */
   cbas?: Range;
+  /** 標的股近四季本益比（交易所公布） */
+  stockPe?: Range;
+  /** 標的股近 20 個交易日漲跌幅（%） */
+  stockR20?: Range;
+  /** 標的股融資維持率（XQ 平均成本公式推算，%） */
+  stockMargin?: Range;
   /** 距最近賣回日幾天內（null＝不限） */
   putWithin?: number | null;
   /** 發行幾天內（null＝不限） */
@@ -445,6 +451,12 @@ export interface CbFilter {
   favs?: ReadonlySet<string> | null;
   /** 判斷「幾天內」「已可轉換」的基準日（資料日期） */
   asOf?: string;
+}
+
+export interface CbUnderlyingMetrics {
+  pe?: ReadonlyMap<string, number>;
+  r20?: ReadonlyMap<string, number>;
+  margin?: ReadonlyMap<string, number>;
 }
 
 const inRange = (v: number | null, r?: Range) =>
@@ -474,7 +486,9 @@ export const CB_PRESETS: CbPreset[] = [
     f: { out: { min: null, max: 20 }, sort: 'outPct', desc: false } },
 ];
 
-export function filterBonds(bonds: CbBond[], f: CbFilter): CbBond[] {
+export function filterBonds(
+  bonds: CbBond[], f: CbFilter, underlying: CbUnderlyingMetrics = {},
+): CbBond[] {
   const q = f.q.trim().toLowerCase();
   const bk = [...BUCKETS, ...HIGH_BUCKETS].find(b => b.id === f.bucket) ?? null;
   const asOf = f.asOf ?? new Date().toISOString().slice(0, 10);
@@ -487,6 +501,12 @@ export function filterBonds(bonds: CbBond[], f: CbFilter): CbBond[] {
     && inRange(outPct(b), f.out) && inRange(ytp(b, asOf), f.ytp)
     && inRange(ytm(b, asOf), f.ytm) && inRange(yearsLeft(b, asOf), f.yrs)
     && inRange(convPct(b), f.conv) && inRange(cbasPrem(b, asOf), f.cbas)
+    && (!f.stockPe || (f.stockPe.min === null && f.stockPe.max === null)
+      || (!b.exch && inRange(underlying.pe?.get(b.s) ?? null, f.stockPe)))
+    && (!f.stockR20 || (f.stockR20.min === null && f.stockR20.max === null)
+      || (!b.exch && inRange(underlying.r20?.get(b.s) ?? null, f.stockR20)))
+    && (!f.stockMargin || (f.stockMargin.min === null && f.stockMargin.max === null)
+      || (!b.exch && inRange(underlying.margin?.get(b.s) ?? null, f.stockMargin)))
     && (f.putWithin == null || (() => { const d = putDate(b); return Boolean(d && d >= asOf && daysBetween(asOf, d) <= f.putWithin!); })())
     && (f.issuedWithin == null || Boolean(b.issue && b.issue <= asOf && daysBetween(b.issue, asOf) <= f.issuedWithin))
     && (!f.guarantee || b.g === f.guarantee)

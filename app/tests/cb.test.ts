@@ -118,6 +118,23 @@ test('篩選器：區間、距賣回、已可轉換、成交量、收藏', () =>
   assert.equal(convertible(rows[1], '2026-11-04'), false);
 });
 
+test('可轉債標的條件：套用本益比、20 日漲跌與融資維持率，交換債與缺值排除', () => {
+  const rows = [
+    bond({ c: 'a', s: '1101' }),
+    bond({ c: 'b', s: '2330' }),
+    bond({ c: 'x', s: '1101', exch: true }),
+    bond({ c: 'missing', s: '9999' }),
+  ];
+  const metrics = {
+    pe: new Map([['1101', 12], ['2330', 25]]),
+    r20: new Map([['1101', -3], ['2330', 8]]),
+    margin: new Map([['1101', 145], ['2330', 180]]),
+  };
+  const f = { ...BASE, stockPe: { min: null, max: 15 }, stockR20: { min: -5, max: 0 }, stockMargin: { min: 130, max: 160 } };
+  assert.deepEqual(filterBonds(rows, f, metrics).map(b => b.c), ['a']);
+  assert.deepEqual(filterBonds(rows, { ...BASE, stockPe: { min: null, max: 15 } }, metrics).map(b => b.c), ['a']);
+});
+
 test('依成交量排序：高→低，沒成交的排後面', () => {
   const rows = [bond({ c: 'a', vol: 5 }), bond({ c: 'b', vol: null }), bond({ c: 'c', vol: 80 })];
   assert.deepEqual(filterBonds(rows, { ...BASE, sort: 'vol', desc: true }).map(b => b.c), ['c', 'a', 'b']);

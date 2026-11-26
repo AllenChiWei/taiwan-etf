@@ -11,6 +11,11 @@
 
 `scripts/fetch_stocks.py`，來源全是官方免費端點，**不動用 FinLab 額度**。產出三份：
 
+個股頁與 `StockSheet` 共用 `StockConvertibleBonds` 顯示該公司掛牌可轉債，依 `cb.json` 的標的代號 `s` 對應，
+排除 `exch: true` 的交換債；價格、溢價率、轉換價、賣回申請迄日與到期日取自同一份資料。
+「近月」張數為上月底餘額減少，可能包含轉換、賣回或買回，不能視為純轉換量。`cb.json` 缺席時顯示資料暫時讀不到，
+沒有符合債券時顯示目前沒有掛牌債券，不影響個股其他內容。
+
 | 檔案 | 進版控？ | 誰產生 |
 | --- | --- | --- |
 | `app/public/data/fin_history.json` | **是** | 每日更新流程（`--no-chips`），它才會 commit |

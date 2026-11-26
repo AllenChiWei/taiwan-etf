@@ -23,6 +23,7 @@ import { TONE_CLASS } from '../lib/format';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
 import { EmptyState } from '../components/EmptyState';
 import { StockSheet } from '../components/StockSheet';
+import { StockConvertibleBonds } from '../components/StockConvertibleBonds';
 import { FundamentalsBoard } from '../components/FundamentalsBoard';
 import { ValuationBoard } from '../components/ValuationBoard';
 import { HoldersSection } from '../components/HoldersSection';
@@ -769,6 +770,7 @@ export function StockPage() {
       {data && (
         <>
           <InfoSection data={data} />
+          <div className="mt-3"><StockConvertibleBonds code={data.code} /></div>
           {(highRow || rankRow) && (
             <div className={`mt-3 grid grid-cols-1 gap-3 [&>section]:mt-0 ${
               highRow ? 'xl:grid-cols-2 xl:items-stretch xl:gap-4' : ''}`}>

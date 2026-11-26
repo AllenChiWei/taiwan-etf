@@ -18,6 +18,7 @@ import {
 } from './StockBoard';
 import { FundamentalsBoard } from './FundamentalsBoard';
 import { ValuationBoard } from './ValuationBoard';
+import { StockConvertibleBonds } from './StockConvertibleBonds';
 
 interface Props {
   code: string | null;
@@ -113,6 +114,7 @@ export function StockSheet({ code, name, onClose, extra }: Props) {
           )}
           {state === 'ready' && data && (
             <>
+              <StockConvertibleBonds code={data.code} />
               <PositionSection row={row} />
               <PercentileSection row={row} allHighs={highs?.rows ?? []}
                                  rank={rank} allRanks={ranking?.rows ?? []} />
