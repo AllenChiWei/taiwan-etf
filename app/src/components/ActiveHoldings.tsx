@@ -8,11 +8,17 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { fetchActive } from '../api/extras';
+import { fetchChips } from '../api/chips';
+import { fetchHighs, fetchPe } from '../api/stocks';
+import { fetchMarginState } from '../api/market';
 import {
   KIND_LABEL, groupChanges, latestChange, netChange, consensus, sharesLabel, aggregateTop,
-  afterReturn, scorecard, bookSummary, holdingLinkKind,
+  afterReturn, scorecard, bookSummary, holdingLinkKind, netFlowTop,
   type ActiveData, type ChangeDay, type ChangeItem, type ChangeKind,
 } from '../lib/active';
+import { enrich } from '../lib/cheap';
+import type { ChipsData } from '../lib/chips';
+import type { MarginState } from '../api/market';
 import { managerBoard } from '../lib/holders';
 import { StockSheet } from './StockSheet';
 
@@ -30,6 +36,64 @@ type Last = ActiveData['last'];
 const yi = (v: number) => `${nf2.format(v / 1e8)} 億`;
 const tone = (v: number | null | undefined) => (v == null || v === 0 ? 'text-muted' : v > 0 ? 'text-up' : 'text-down');
 const pctTxt = (v: number) => `${v > 0 ? '+' : ''}${nf1.format(v * 100)}%`;
+
+interface Signals {
+  pe: Map<string, number>;
+  peDate: string | null;
+  highs: Map<string, boolean>;
+  highsDate: string | null;
+  margin: MarginState | null;
+  chips: ChipsData | null;
+}
+
+function StockSignals({ code, signals, onDate }: {
+  code: string; signals: Signals | null; onDate: string | null;
+}) {
+  if (!signals) return null;
+  const pe = signals.pe.get(code);
+  const high = signals.highs.get(code);
+  const margin = signals.margin?.m?.[code];
+  const chips = signals.chips;
+  const sameDay = Boolean(onDate && chips?.meta?.date === onDate);
+  const buyTop = sameDay && [chips?.top?.twse?.投信?.buy, chips?.top?.tpex?.投信?.buy]
+    .some(rows => rows?.some(r => r.code === code));
+  const sellTop = sameDay && [chips?.top?.twse?.投信?.sell, chips?.top?.tpex?.投信?.sell]
+    .some(rows => rows?.some(r => r.code === code));
+  if (pe == null && high == null && margin == null && !buyTop && !sellTop) return null;
+  return (
+    <span className="mt-0.5 flex flex-wrap gap-x-2 gap-y-0.5 text-[10.5px] text-faint">
+      {pe != null && <span>預估本益比 {nf1.format(pe)} 倍</span>}
+      {high != null && <span>{high ? '創 200 日新高' : '未創 200 日新高'}</span>}
+      {margin != null && <span>融資維持率（估） {nf1.format(margin)}%</span>}
+      {buyTop && <span className="text-up">同日投信買超前十</span>}
+      {sellTop && <span className="text-down">同日投信賣超前十</span>}
+    </span>
+  );
+}
+
+function NetFlowList({ title, rows, signals, date, onPick }: {
+  title: string; rows: ReturnType<typeof netFlowTop>['buy']; signals: Signals | null; date: string | null;
+  onPick: (code: string, name?: string) => void;
+}) {
+  return (
+    <div className="min-w-0 rounded-lg border border-line bg-bg p-2.5">
+      <h3 className="text-[12px] font-bold text-ink">{title}</h3>
+      {rows.length ? <ol className="mt-1">
+        {rows.map((r, i) => (
+          <li key={r.code} className="grid grid-cols-[1.3em_minmax(0,1fr)_auto] items-center gap-x-2 border-b border-line/60 py-1.5 last:border-0">
+            <span className="text-right font-mono text-[11px] text-faint">{i + 1}</span>
+            <span className="min-w-0">
+              <HoldingLabel code={r.code} name={r.name} onPick={onPick} className="block text-[12.5px]" codeClass="text-[11px]" />
+              <span className="block text-[10px] text-faint">{r.etfs.length} 檔有股數變化</span>
+              <StockSignals code={r.code} signals={signals} onDate={date} />
+            </span>
+            <span className={`whitespace-nowrap text-right font-mono text-[12px] tabular-nums ${tone(r.amount)}`}>{r.amount > 0 ? '+' : '−'}{yi(Math.abs(r.amount))}</span>
+          </li>
+        ))}
+      </ol> : <p className="mt-2 text-[12px] text-muted">這段期間沒有可估值的個股變動。</p>}
+    </div>
+  );
+}
 
 /** 2026-10-26：當天買進／賣出估值與淨額（股數變化 × 當日均價） */
 function Valuation({ day }: { day: ChangeDay }) {
@@ -164,6 +228,8 @@ function DayDetail({ day, last, onPick }: {
 
 export function ActiveHoldings() {
   const [data, setData] = useState<ActiveData | null | undefined>(undefined);
+  const [signals, setSignals] = useState<Signals | null>(null);
+  const [flowDays, setFlowDays] = useState<5 | 20>(5);
   const [code, setCode] = useState('');
   const [openDay, setOpenDay] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
@@ -181,8 +247,31 @@ export function ActiveHoldings() {
     return () => ac.abort();
   }, []);
 
+  useEffect(() => {
+    const ac = new AbortController();
+    Promise.all([
+      fetchPe(ac.signal).catch(() => null),
+      fetchHighs(ac.signal).catch(() => null),
+      fetchMarginState().catch(() => null),
+      fetchChips(ac.signal).catch(() => null),
+    ]).then(([pe, highs, margin, chips]) => {
+      if (ac.signal.aborted) return;
+      const peMap = new Map<string, number>();
+      if (pe?.rows) for (const row of enrich(pe.rows)) peMap.set(row.c, row.fpe);
+      const highMap = new Map<string, boolean>();
+      if (highs?.rows) for (const row of highs.rows) {
+        const value = row.w?.['200']?.nh;
+        if (value === 0 || value === 1) highMap.set(row.c, value === 1);
+      }
+      setSignals({ pe: peMap, peDate: pe?.meta.date ?? null, highs: highMap,
+        highsDate: highs?.meta.date ?? null, margin, chips });
+    });
+    return () => ac.abort();
+  }, []);
+
   const cons = useMemo(() => (data ? consensus(data) : null), [data]);
   const agg = useMemo(() => (data ? aggregateTop(data) : null), [data]);
+  const flows = useMemo(() => data ? netFlowTop(data, flowDays) : null, [data, flowDays]);
   const board = useMemo(() => (data ? managerBoard(data) : []), [data]);
 
   if (data === undefined) return <p className="py-10 text-center text-[13px] text-muted">載入持股資料中…</p>;
@@ -199,6 +288,37 @@ export function ActiveHoldings() {
 
   return (
     <div className="pt-4">
+      {flows && (
+        <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-bold text-ink">全體主動式 ETF 淨買賣估算前十大</h2>
+              <p className="mt-0.5 text-[11px] text-faint">
+                {flows.dates.length ? `${flows.dates[0]}～${flows.dates[flows.dates.length - 1]}｜${flows.dates.length} 個有換股資料的交易日` : '目前沒有換股紀錄'}
+              </p>
+            </div>
+            <div className="flex gap-1" aria-label="淨買賣估算期間">
+              {([5, 20] as const).map(n => (
+                <Chip key={n} active={flowDays === n} onClick={() => setFlowDays(n)}>近 {n} 日</Chip>
+              ))}
+            </div>
+          </div>
+          {flows.dates.length ? (
+            <div className="mt-2 grid min-w-0 gap-2 lg:grid-cols-2">
+              <NetFlowList title="淨買超估算" rows={flows.buy} signals={signals} date={flows.dates[flows.dates.length - 1] ?? null} onPick={pickStock} />
+              <NetFlowList title="淨賣超估算" rows={flows.sell} signals={signals} date={flows.dates[flows.dates.length - 1] ?? null} onPick={pickStock} />
+            </div>
+          ) : <p className="mt-2 text-[12px] text-muted">還沒有可用的換股日資料。</p>}
+          <p className="mt-2 text-[10.5px] leading-relaxed text-faint">
+            以各 ETF 已公告股數變化 × 換股日均價加總，買超與賣超各列前十；缺少均價的紀錄不計，張數變化可能包含申購／贖回，不代表實際成交金額或投資建議。估值、新高、融資維持率及投信前十大依各資料源當日可用性顯示；投信榜僅在日期相同時標示。
+          </p>
+          <p className="text-[10px] text-faint">
+            {signals
+              ? <>資料日期：預估本益比 {signals.peDate ?? '暫時讀不到'} · 200 日高點 {signals.highsDate ?? '暫時讀不到'} · 融資維持率 {signals.margin?.d ?? '暫時讀不到'} · 投信買賣超 {signals.chips?.meta?.date ?? '暫時讀不到'}。</>
+              : '其他指標資料載入中…'}
+          </p>
+        </section>
+      )}
       {(board.some(r => r.edge != null) || (agg && agg.rows.length > 0)) && (
         <div className={board.some(r => r.edge != null) && agg && agg.rows.length > 0
           ? 'mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>section]:mb-0'
@@ -256,6 +376,7 @@ export function ActiveHoldings() {
                 <span className="min-w-0">
                   <HoldingLabel code={r.code} name={r.name} onPick={pickStock} reverse
                                 className="block text-[13.5px]" codeClass="text-[11.5px]" />
+                  <StockSignals code={r.code} signals={signals} onDate={data.last?.d ?? null} />
                   <span className="block truncate text-[10.5px] text-faint">
                     {r.etfs.length} 檔持有：<EtfLinks codes={r.etfs} />
                   </span>
@@ -294,8 +415,11 @@ export function ActiveHoldings() {
           </div>
           <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
             {cons.rows.slice(0, 10).map(r => (
-              <li key={r.code} className="flex items-baseline justify-between gap-2 rounded-lg border border-line bg-bg px-2.5 py-1.5">
-                <HoldingLabel code={r.code} name={r.name} onPick={pickStock} className="text-[13px]" />
+              <li key={r.code} className="flex min-w-0 items-center justify-between gap-2 rounded-lg border border-line bg-bg px-2.5 py-1.5">
+                <span className="min-w-0">
+                  <HoldingLabel code={r.code} name={r.name} onPick={pickStock} className="text-[13px]" />
+                  <StockSignals code={r.code} signals={signals} onDate={cons.date} />
+                </span>
                 <span className="shrink-0 text-[11.5px]">
                   {r.buy.length > 0 && <span className="text-up">買 <EtfLinks codes={r.buy} className="font-mono hover:underline" /></span>}
                   {r.buy.length > 0 && r.sell.length > 0 && <span className="text-faint"> · </span>}

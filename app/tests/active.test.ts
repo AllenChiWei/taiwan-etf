@@ -5,10 +5,30 @@ import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 
 import {
-  kindOf, netChange, groupChanges, consensus, sharesLabel, aggregateTop,
+  kindOf, netChange, groupChanges, consensus, sharesLabel, aggregateTop, netFlowTop,
   afterReturn, scorecard, bookSummary, holdingLinkKind,
   type ActiveData, type ActiveEtf, type ChangeDay,
 } from '../src/lib/active.ts';
+
+test('近 N 日全體主動式 ETF 淨買賣估算排行', () => {
+  const data: ActiveData = { meta: { updated: '', minChange: 0, blocked: [], source: '', errors: [] }, last: { d: '2026-11-26', px: {} }, etfs: {
+    A: { name: 'A', issuer: '', asof: '', holdings: [], changes: [
+      { d: '2026-11-20', p: '', f: 0, items: [['2330', '台積電', 0, 100, 1, 100], ['2317', '鴻海', 200, 0, 1, 100]] },
+      { d: '2026-11-24', p: '', f: 0, items: [['2330', '台積電', 100, 200, 1, 110], ['0050', 'ETF', 0, 100, 1, 100]] },
+    ] },
+    B: { name: 'B', issuer: '', asof: '', holdings: [], changes: [
+      { d: '2026-11-24', p: '', f: 0, items: [['2330', '台灣積體', 0, 100, 1, 110], ['2454', '聯發科', 100, 0, 1, 50]] },
+    ] },
+  } };
+  const top = netFlowTop(data, 1);
+  assert.deepEqual(top.dates, ['2026-11-24']);
+  assert.equal(top.buy[0].code, '2330');
+  assert.equal(top.buy[0].amount, 22000);
+  assert.deepEqual(top.buy[0].etfs, ['A', 'B']);
+  assert.equal(top.sell[0].code, '2454');
+  assert.equal(top.sell[0].amount, -5000);
+  assert.deepEqual(netFlowTop(data, 0).dates, []);
+});
 
 test('換股成效與持股損益（2026-10-26）', () => {
   const last = { d: '2026-10-23', px: { '2330': 110, '3711': 90, '2454': 50 } };

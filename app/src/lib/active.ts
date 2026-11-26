@@ -171,6 +171,52 @@ export interface Consensus {
   sell: string[];
 }
 
+export interface NetFlowRow {
+  code: string;
+  name: string;
+  /** 合計淨買賣估算（元）：股數變化 × 換股日均價 */
+  amount: number;
+  etfs: string[];
+}
+
+export interface NetFlowTop {
+  dates: string[];
+  buy: NetFlowRow[];
+  sell: NetFlowRow[];
+}
+
+/**
+ * 近 N 個有換股資料的交易日，全體主動式 ETF 的股數變化估值加總。
+ * 張數變化可能含申購／贖回；缺均價的紀錄不估值，海外股與期貨排除。
+ */
+export function netFlowTop(data: ActiveData, days = 5, limit = 10): NetFlowTop {
+  const count = Number.isFinite(days) ? Math.max(0, Math.floor(days)) : 0;
+  const allDates = [...new Set(Object.values(data.etfs).flatMap(e => e.changes.map(c => c.d)))].sort();
+  const dates = count ? allDates.slice(-count) : [];
+  const selected = new Set(dates);
+  const map = new Map<string, NetFlowRow>();
+  for (const [etfCode, etf] of Object.entries(data.etfs)) {
+    for (const day of etf.changes) {
+      if (!selected.has(day.d)) continue;
+      for (const item of day.items) {
+        const [code, name, before, after, , price] = item;
+        if (holdingLinkKind(code) !== 'stock' || !(price && Number.isFinite(price))) continue;
+        const row = map.get(code) ?? { code, name, amount: 0, etfs: [] };
+        row.amount += (after - before) * price;
+        if (!row.etfs.includes(etfCode)) row.etfs.push(etfCode);
+        if (name.length < row.name.length) row.name = name;
+        map.set(code, row);
+      }
+    }
+  }
+  const rows = [...map.values()].filter(r => r.amount !== 0);
+  return {
+    dates,
+    buy: rows.filter(r => r.amount > 0).sort((a, b) => b.amount - a.amount).slice(0, limit),
+    sell: rows.filter(r => r.amount < 0).sort((a, b) => a.amount - b.amount).slice(0, limit),
+  };
+}
+
 /**
  * 各檔「最新一次換股」合起來看：同一檔股票被幾檔主動式 ETF 同時買或賣。
  *
