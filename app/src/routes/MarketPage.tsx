@@ -4,6 +4,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { fetchChips } from '../api/chips';
+import { fetchExdivPoints } from '../api/exdivPts';
+import type { ExdivPointsData } from '../lib/exdivPts';
 import type { ChipsData } from '../lib/chips';
 import { LEVEL_LABEL, headline, marketItems, type Level, type MarketItem, type NextdayLite } from '../lib/marketSummary';
 
@@ -14,14 +16,16 @@ const GROUPS: MarketItem['group'][] = ['信用交易', '波動與選擇權', '�
 export function MarketPage() {
   const [chips, setChips] = useState<ChipsData | null | undefined>(undefined);
   const [nd, setNd] = useState<NextdayLite | null>(null);
+  const [exdiv, setExdiv] = useState<ExdivPointsData | null>(null);
   useEffect(() => {
     const ac = new AbortController();
     fetchChips(ac.signal).then(d => { if (!ac.signal.aborted) setChips(d); }).catch(() => { if (!ac.signal.aborted) setChips(null); });
     fetch(`${import.meta.env.BASE_URL}data/nextday.json`, { signal: ac.signal, cache: 'no-cache' })
       .then(r => (r.ok ? r.json() : null)).then(j => { if (!ac.signal.aborted && j?.bands) setNd(j as NextdayLite); }).catch(() => {});
+    fetchExdivPoints(ac.signal).then(d => { if (!ac.signal.aborted) setExdiv(d); }).catch(() => {});
     return () => ac.abort();
   }, []);
-  const items = useMemo(() => (chips ? marketItems(chips, nd) : []), [chips, nd]);
+  const items = useMemo(() => (chips ? marketItems(chips, nd, exdiv) : []), [chips, nd, exdiv]);
   const hl = useMemo(() => headline(items), [items]);
 
   if (chips === undefined) return <p className="mt-6 text-center text-sm text-muted">載入中…</p>;

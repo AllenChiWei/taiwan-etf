@@ -31,6 +31,9 @@ import { Fold, MoreFold } from '../components/Fold';
 import { Link } from '@tanstack/react-router';
 import { headline, marketItems } from '../lib/marketSummary';
 import { StockSheet } from '../components/StockSheet';
+import { fetchExdivPoints } from '../api/exdivPts';
+import type { ExdivPointsData } from '../lib/exdivPts';
+import { knownExdivPoints } from '../lib/exdivPts';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 1 });
@@ -940,7 +943,7 @@ function AlignedCharts({ charts, cut }: { charts: AlignedChart[]; cut: string })
 }
 
 /** 台股情緒：加權指數、騰落線、臺指 VIX、期貨正逆價差，共用一條日期軸。只有折線，數字只留最新一個 */
-function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
+function TwMoodSection({ tw, shorts, exdiv }: { tw?: TwMood; shorts?: ShortRow[]; exdiv?: ExdivPointsData | null }) {
   const [years, setYears] = useState(1);
   const charts = useMemo<AlignedChart[]>(() => {
     if (!tw) return [];
@@ -974,6 +977,18 @@ function TwMoodSection({ tw, shorts }: { tw?: TwMood; shorts?: ShortRow[] }) {
         ))}
       </div>
       <AlignedCharts charts={charts} cut={cut} />
+      {tw.basis.length > 0 && (() => {
+        const last = tw.basis[tw.basis.length - 1];
+        const points = knownExdivPoints(exdiv, last[0]);
+        if (points === null) return null;
+        const spread = last[1] - last[2];
+        return (
+          <div className="mt-2 rounded-lg border border-line bg-sunken/40 px-3 py-2 text-[12px] leading-relaxed text-muted">
+            <b className="text-ink">扣除已知除息後：</b>期貨正逆價差 {signed(spread)} 點，估計除息 {nf1.format(points)} 點，調整後約 {signed(spread + points)} 點。
+            <span className="block text-[10.5px] text-faint">資料截至 {exdiv?.meta.date}；只計已公告、除息日在 {exdiv?.meta.date} 之後至 {exdiv?.meta.to}（含）的上市公司，為下限。</span>
+          </div>
+        );
+      })()}
       <Fold summary={<>怎麼看：上下同一位置是同一天；指數漲、騰落線或站上均線比例卻往下＝少數股撐盤，VIX 越高越恐慌</>}>
         這幾張圖用同一條日期軸，上下同一個位置就是同一天；點一下或左右拖，每張圖都會標出那一天的值。
         臺指 VIX 是期交所用選擇權價格算的市場預期波動，越高越恐慌；期交所只公開近 3 個月，所以從 2026-08 開始累積，前面是空白。
@@ -1749,9 +1764,11 @@ export function ChipsPage() {
   const [data, setData] = useState<ChipsData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
   const [message, setMessage] = useState('');
+  const [exdiv, setExdiv] = useState<ExdivPointsData | null>(null);
 
   useEffect(() => {
     const ac = new AbortController();
+    fetchExdivPoints(ac.signal).then(d => { if (!ac.signal.aborted) setExdiv(d); }).catch(() => {});
     fetchChips(ac.signal)
       .then(d => {
         if (ac.signal.aborted) return;
@@ -1846,7 +1863,7 @@ export function ChipsPage() {
         <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
       </Group>
       <Group id="mood" title="市場情緒與資金" hint="台股、美股情緒，類股、法人、定期定額">
-        <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
+        <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} exdiv={exdiv} /></div>
         <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
         <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>div>section]:mt-0 xl:[&>div>section]:flex xl:[&>div>section]:grow xl:[&>div>section]:flex-col">
           <div id="sec-sector" className="min-w-0 scroll-mt-16 xl:flex xl:flex-col"><SectorSection data={data} /></div>

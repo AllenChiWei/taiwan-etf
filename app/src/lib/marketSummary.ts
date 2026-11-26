@@ -10,6 +10,7 @@
 import {
   MAINT_T, distView, maintLevel, maintSeries, retailRatioSeries, txEquivalent, type ChipsData,
 } from './chips.ts';
+import { knownExdivPoints, type ExdivPointsData } from './exdivPts.ts';
 
 export type Level = 0 | 1 | 2;
 export const LEVEL_LABEL = ['正常', '注意', '警戒'] as const;
@@ -52,7 +53,7 @@ function lastIdx(a: (number | null)[]): number {
   return -1;
 }
 
-export function marketItems(c: ChipsData, nd?: NextdayLite | null): MarketItem[] {
+export function marketItems(c: ChipsData, nd?: NextdayLite | null, exdiv?: ExdivPointsData | null): MarketItem[] {
   const out: MarketItem[] = [];
   const m = c.margin;
 
@@ -149,11 +150,14 @@ export function marketItems(c: ChipsData, nd?: NextdayLite | null): MarketItem[]
   }
   const bs = c.tw?.basis ?? [];
   if (bs.length > 60) {
+    const last = bs[bs.length - 1];
+    const exdivPoints = knownExdivPoints(exdiv, last[0]) ?? 0;
     const pts = bs.map(r => (r[1] - r[2]) / r[2] * 100);
     const v = pts[pts.length - 1];
     const r = pctRank(pts, v);
-    out.push({ key: 'basis', group: '期貨籌碼', label: '期貨正逆價差', value: `${sg(bs[bs.length - 1][1] - bs[bs.length - 1][2], 0)} 點`,
-      sub: `${sg(v, 2)}%・2021 起第 ${f0(r * 100)} 百分位`,
+    const spread = last[1] - last[2];
+    out.push({ key: 'basis', group: '期貨籌碼', label: '期貨正逆價差', value: `${sg(spread, 0)} 點`,
+      sub: `${sg(v, 2)}%・2021 起第 ${f0(r * 100)} 百分位${exdivPoints > 0 ? `・扣除已知除息後約 ${sg(spread + exdivPoints, 0)} 點（${exdiv?.meta.date} 資料；已公告上市公司下限）` : ''}`,
       level: r <= 0.05 ? 2 : r <= 0.15 ? 1 : 0,
       text: r <= 0.05 ? '深度逆價差：期貨比現貨悲觀很多（7～8 月除息季除外）' : r <= 0.15 ? '逆價差偏大，期貨偏悲觀' : '正常', to: '/chips' });
   }

@@ -85,6 +85,7 @@ jobs:
       EHOLD_FILES: app/public/data/etf_holders.json
       DMIX_FILES: app/public/data/div_mix.json
       SDIV_FILES: app/public/data/stock_dividends.json
+      EXDIV_FILES: app/public/data/exdiv_pts.json
     outputs:
       changed: ${{ steps.commit.outputs.changed }}
       pending: ${{ steps.tidy.outputs.pending }}
@@ -340,6 +341,16 @@ jobs:
           python scripts/fetch_stock_dividends.py
           cd app && node --test tests/stockDividend.test.ts
 
+      # ── 區塊十：已公告上市股除息點數（失敗保留前版）──────────────
+      # 只做輕量公開資料估算；calendar.json 與 atm.json 從目前網站讀取，不依賴 FinLab。
+      - name: 已知除息點數
+        id: exdiv
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/fetch_exdiv_pts.py
+          python scripts/test_fetch_exdiv_pts.py
+
       - name: 存下 FinLab 資料集快取
         if: ${{ hashFiles('.cache/finlab_db/*') != '' }}
         uses: actions/cache/save@v4
@@ -376,6 +387,7 @@ jobs:
           note ETF受益人數  '${{ steps.eholders.outcome }}' $EHOLD_FILES
           note ETF配息組成  '${{ steps.dmix.outcome }}'  $DMIX_FILES
           note 個股配息     '${{ steps.sdiv.outcome }}'   $SDIV_FILES
+          note 已知除息點數 '${{ steps.exdiv.outcome }}'  $EXDIV_FILES
 
           echo "pending=${pending}" >> $GITHUB_OUTPUT
           {
@@ -394,12 +406,13 @@ jobs:
             echo "| ETF 受益人數 | ${{ steps.eholders.outcome }} |"
             echo "| ETF 配息組成 | ${{ steps.dmix.outcome }} |"
             echo "| 個股配息 | ${{ steps.sdiv.outcome }} |"
+            echo "| 已知除息點數 | ${{ steps.exdiv.outcome }} |"
           } >> $GITHUB_STEP_SUMMARY
 
       - name: 提交變更
         id: commit
         run: |
-          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES $EHOLD_FILES $DMIX_FILES $SDIV_FILES"
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $TOP10_FILES $EHOLD_FILES $DMIX_FILES $SDIV_FILES $EXDIV_FILES"
           if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT
