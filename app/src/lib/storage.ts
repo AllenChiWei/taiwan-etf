@@ -2,10 +2,17 @@
    無痕模式、封鎖 cookie、或儲存空間已滿時每個存取都可能丟例外，
    所以一律 try/catch，失敗就退回記憶體內的值，頁面照常運作。 */
 
+import type { DefRow } from './defensive.ts';
+
 const KEY_FAVORITES = 'twetf.favorites';
 const KEY_THEME = 'twetf.theme';
 const KEY_CHANGELOG = 'twetf.changelogSeen';
 const KEY_FUTURES = 'twetf.futuresPrefs';
+const KEY_DEFENSIVE_CUSTOM = 'twetf.defensiveCustom';
+const KEY_DEFENSIVE_CACHE = 'twetf.defensiveCache';
+
+/** 自選存股上限：每檔要打 3 次 FinMind，設上限避免重抓時一次耗盡免費額度（每小時 300 次）。 */
+export const MAX_DEFENSIVE_CUSTOM = 20;
 
 function read<T>(key: string, fallback: T): T {
   try {
@@ -97,4 +104,47 @@ export function loadFuturesPrefs(fallback: FuturesPrefs): FuturesPrefs {
 
 export function saveFuturesPrefs(p: FuturesPrefs): void {
   write(KEY_FUTURES, p);
+}
+
+/** 民生股頁「自選存股」代號清單（存在瀏覽器本機，不回傳伺服器）。 */
+export function loadDefensiveCustom(): string[] {
+  const v = read<unknown>(KEY_DEFENSIVE_CUSTOM, []);
+  if (!Array.isArray(v)) return [];
+  const out: string[] = [];
+  for (const x of v) {
+    if (typeof x !== 'string') continue;
+    const c = x.trim().toUpperCase();
+    if (/^[0-9A-Z]{4,6}$/.test(c) && !out.includes(c)) out.push(c);
+    if (out.length >= MAX_DEFENSIVE_CUSTOM) break;
+  }
+  return out;
+}
+
+export function saveDefensiveCustom(codes: readonly string[]): void {
+  write(KEY_DEFENSIVE_CUSTOM, codes.slice(0, MAX_DEFENSIVE_CUSTOM));
+}
+
+export interface CachedDefensiveRow {
+  /** 抓取的台北日期（YYYY-MM-DD） */
+  fetched: string;
+  row: DefRow;
+}
+
+/** 自選存股計算結果快取（每檔約 600 bytes，同日重開頁不重打 FinMind，失敗時也可降級沿用）。 */
+export function loadDefensiveCache(): Record<string, CachedDefensiveRow> {
+  const v = read<unknown>(KEY_DEFENSIVE_CACHE, null);
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return {};
+  const out: Record<string, CachedDefensiveRow> = {};
+  for (const [k, item] of Object.entries(v as Record<string, unknown>)) {
+    if (!item || typeof item !== 'object') continue;
+    const rec = item as Partial<CachedDefensiveRow>;
+    if (typeof rec.fetched === 'string' && rec.row && typeof rec.row === 'object' && typeof rec.row.c === 'string') {
+      out[k] = { fetched: rec.fetched, row: rec.row };
+    }
+  }
+  return out;
+}
+
+export function saveDefensiveCache(cache: Record<string, CachedDefensiveRow>): void {
+  write(KEY_DEFENSIVE_CACHE, cache);
 }

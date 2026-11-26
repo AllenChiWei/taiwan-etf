@@ -24,7 +24,7 @@ import sys
 import time
 import urllib.parse
 import urllib.request
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, 'app', 'public', 'data', 'defensive.json')
@@ -81,16 +81,18 @@ def rank(xs, x):
     return sum(1 for v in xs if v <= x) / len(xs) if xs else None
 
 
-def one(code, cat, today):
+def compute(code, cat, today, per, px, dv):
+    u"""純函式：用 FinMind 的 PER／Price／Dividend 原始列算出單檔民生股區間（與前端 lib/defensive.ts 共用同一套口徑）。"""
+    if isinstance(today, str):
+        today = date.fromisoformat(today)
     start10 = (today - timedelta(days=365 * YEARS)).isoformat()
-    per = [r for r in fm('TaiwanStockPER', code, start10) if r.get('date')]
-    px = fm('TaiwanStockPrice', code, (today - timedelta(days=400)).isoformat())
-    dv = fm('TaiwanStockDividend', code, '2000-01-01')
+    per = sorted([r for r in per if r.get('date') and r['date'] >= start10], key=lambda r: r['date'])
+    px = sorted([r for r in px if r.get('date') and r.get('close') is not None and float(r['close']) > 0], key=lambda r: r['date'])
     if not px or not per:
         raise RuntimeError(u'沒有股價或本益比資料')
     price = float(px[-1]['close'])
     pdate = px[-1]['date']
-    closes = [float(r['close']) for r in px if r.get('close')]
+    closes = [float(r['close']) for r in px]
     last250 = closes[-250:]
     # 每年現金股利（依除息日的年份合計；同年多次配息加總）
     by_year = {}
@@ -144,6 +146,14 @@ def one(code, cat, today):
         'since': per[0]['date'],
     }
     return out
+
+
+def one(code, cat, today):
+    start10 = (today - timedelta(days=365 * YEARS)).isoformat()
+    per = fm('TaiwanStockPER', code, start10)
+    px = fm('TaiwanStockPrice', code, (today - timedelta(days=400)).isoformat())
+    dv = fm('TaiwanStockDividend', code, '2000-01-01')
+    return compute(code, cat, today, per, px, dv)
 
 
 def main():

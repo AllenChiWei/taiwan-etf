@@ -12,6 +12,7 @@ import type { FmRow } from '../lib/fundamentals.ts';
 import type { UsPriceRow, FxRow } from '../lib/usDividend.ts';
 import { latestMidRate } from '../lib/usDividend.ts';
 import type { PerRow, PriceRow } from '../lib/valuation.ts';
+import { DEFENSIVE_YEARS, shiftDays, todayTaipei, type FinMindDividendRow } from '../lib/defensive.ts';
 
 const API = 'https://api.finmindtrade.com/api/v4/data';
 
@@ -82,6 +83,49 @@ export function fetchValuation(code: string, signal?: AbortSignal): Promise<ValS
   }));
   valCache.set(code, p);
   p.catch(() => valCache.delete(code));
+  return p;
+}
+
+/* ── 民生股自選存股（10 年殖利率／本益比／淨值比區間）────────
+ * 與 scripts/fetch_defensive.py 用同一組三個端點與起算視窗（近 10 年 PER、近 400 天股價、2000 起股利）。
+ * 由瀏覽器直打 FinMind，額度算在瀏覽者自己的 IP，不佔 CI 每日更新額度。
+ */
+
+export interface DefensiveFinMindInputs {
+  per: PerRow[];
+  price: PriceRow[];
+  dividend: FinMindDividendRow[];
+}
+
+const defCache = new Map<string, Promise<DefensiveFinMindInputs>>();
+
+export function clearDefensiveInputCache(code?: string): void {
+  if (code) defCache.delete(code);
+  else defCache.clear();
+}
+
+export function fetchDefensiveInputs(code: string, signal?: AbortSignal): Promise<DefensiveFinMindInputs> {
+  const hit = defCache.get(code);
+  if (hit) return hit;
+  const today = todayTaipei();
+  const startPer = shiftDays(today, -365 * DEFENSIVE_YEARS);
+  const startPx = shiftDays(today, -400);
+  const p = Promise.all([
+    rows<PerRow>('TaiwanStockPER', code, startPer, signal),
+    rows<PriceRow>('TaiwanStockPrice', code, startPx, signal),
+    rows<FinMindDividendRow>('TaiwanStockDividend', code, '2000-01-01', signal),
+  ]).then(([per, price, dividend]) => ({
+    per: per.map(r => ({ date: r.date, PER: Number(r.PER), PBR: Number(r.PBR), dividend_yield: Number(r.dividend_yield) })),
+    price: price.map(r => ({ date: r.date, close: Number(r.close) })),
+    dividend: dividend.map(r => ({
+      date: r.date ?? '',
+      CashEarningsDistribution: Number(r.CashEarningsDistribution ?? 0),
+      CashStatutorySurplus: Number(r.CashStatutorySurplus ?? 0),
+      CashExDividendTradingDate: r.CashExDividendTradingDate ?? '',
+    })),
+  }));
+  defCache.set(code, p);
+  p.catch(() => defCache.delete(code));
   return p;
 }
 
