@@ -12,6 +12,7 @@ import type { StockDividendData, EtfDividendData, YieldData } from '../lib/divid
 import type { MacroData } from '../lib/macro.ts';
 import type { CalendarData } from '../lib/calendar.ts';
 import type { CbData, CbMarket, CbSeriesPoint, CbConv } from '../lib/cb.ts';
+import type { NextdayData } from '../lib/nextday.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -64,6 +65,10 @@ export const fetchMacro = (signal?: AbortSignal) =>
   load<MacroData>('macro.json', d => Boolean(d.series && d.meta), signal);
 export const fetchCalendar = (signal?: AbortSignal) =>
   load<CalendarData>('calendar.json', d => Array.isArray(d.exdiv) && Array.isArray(d.meetings), signal);
+
+/** 隔日加權指數漲跌幅與近 500 日實際高低／維持率（scripts/fetch_nextday.py，進版控） */
+export const fetchNextday = (signal?: AbortSignal) =>
+  load<NextdayData>('nextday.json', d => Array.isArray(d.bands), signal);
 
 /** 可轉債（scripts/fetch_cb.py，部署時產生） */
 export const fetchCb = (signal?: AbortSignal) =>

@@ -27,6 +27,7 @@ import { TONE_CLASS } from '../lib/format';
 import { loadFuturesPrefs, saveFuturesPrefs, type FuturesPrefs } from '../lib/storage';
 import { EmptyState } from '../components/EmptyState';
 import { PnlChart, type PnlLine } from '../components/PnlChart';
+import { FuturesEnvReview } from '../components/FuturesEnvReview';
 import { Vault } from '../lib/vault';
 
 /* 私人：當年度對帳單（2026-10-28 使用者要求放進私人頁）。DashBoard_AI\statement_export.py 把 EasyWin 匯出的
@@ -981,7 +982,7 @@ export function FuturesPage() {
           <strong className="text-ink">程式交易</strong>（小台指、小電子）、
           <strong className="text-ink">主觀交易</strong>（其他期貨，多半是個股期貨）與
           <strong className="text-ink">選擇權</strong>（台指選擇權，再分賣方策略與避險）
-          三種方式，各自算年度、月份績效、勝率、賠率與獲利因子。不同月份的合約視為同一個商品。
+          三種方式，各自算年度、月份績效、勝率、賠率與獲利因子，並依平倉日對齊站內市場環境（大盤維持率、結算日、高波動日、星期幾）交叉復盤。不同月份的合約視為同一個商品。
           <strong className="text-ink">檔案不會離開這台裝置</strong> ——
           這個網站沒有後端，解析與計算都在你的瀏覽器裡跑完，關掉分頁就沒了。
         </p>
@@ -1072,9 +1073,12 @@ export function FuturesPage() {
       </section>
 
       {!files.length && !busy && !error && (
-        <EmptyState title="還沒有對帳單"
-                    hint="元大期貨 EasyWin → 帳務查詢 → 已實現損益 → 匯出。"
-                    icon="📄" />
+        <>
+          <EmptyState title="還沒有對帳單"
+                      hint="元大期貨 EasyWin → 帳務查詢 → 已實現損益 → 匯出。"
+                      icon="📄" />
+          <FuturesEnvReview trades={[]} periodLabel="待匯入對帳單" pickKey="all" />
+        </>
       )}
 
       {all.length > 0 && (
@@ -1150,6 +1154,10 @@ export function FuturesPage() {
           {picked.length > 0 && (
             <LossBreakdown trades={picked} label={`${PICK_LABEL(pickKey)} · ${pLabel}`}
                            monthView={period.length === 7} onDay={pickDay} />
+          )}
+
+          {inPeriod.length > 0 && (
+            <FuturesEnvReview trades={inPeriod} periodLabel={pLabel} pickKey={pickKey} />
           )}
 
           <Section title={`年度績效 · ${PICK_LABEL(pickKey)}`} hint="不受上面的期間篩選影響">

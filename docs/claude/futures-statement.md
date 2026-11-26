@@ -33,10 +33,18 @@ localStorage（`twetf.futuresPrefs`），不存交易內容。委託單號的字
 賣方本來就勝率高賠率低、避險本來就大多賠掉權利金，拿同一組數字比會誤導。
 
 期間篩選是 'all'／'YYYY'／'YYYY-MM'（`inPeriodOf`）。點月績效格子切到那個月，整頁
-（比較表、曲線、績效、虧損來源、明細）都跟著換；「虧損來源」區塊列交易方式 × 當沖／留倉、
+（比較表、曲線、績效、虧損來源、市場環境復盤、明細）都跟著換；「虧損來源」區塊列交易方式 × 當沖／留倉、
 單月時的每日損益長條、虧最多的日子與 10 筆，點日子會切到明細並只看那天。這是使用者
 為了找 2026 年 7 月大虧原因要的（當時答案：程式交易的當沖 183 筆勝率 19%、−298 萬，
 留倉反而 +77 萬）。
+
+**市場環境復盤（2026-11-26，`lib/futuresEnv.ts`、`components/FuturesEnvReview.tsx`、`tests/futuresEnv.test.ts`）**：
+把當前選定期間內的已實現損益依平倉日（`Trade.date`）對齊站內四個環境維度，全部在瀏覽器端計算，並同時拆解程式／主觀／選擇權：
+- 大盤維持率：門檻沿用 `MAINT_T.calm`（165%，證交所口徑）；優先讀 `chips.json` 的 `maintSeries(margin)`（2009 起），若 `chips.json` 缺檔（如本機無部署檔）則以 `nextday.json` 的 `series[i].mt` 對應回 `series[i - 1].d` 作為備援。
+- 結算日：合併 `settle.json` 與 `atm.json`（`settleDates()`）的實際月選、週三與週五週選到期日（含假日順延）；只對已記錄區間內的日子分類，涵蓋期之外計入 `unmatchedDays` 不誤歸非結算日。
+- 高波動日：取臺指 VIX（`chips.json` `tw.vix`）或台指日振幅 `(h − l) ÷ b`（`nextday.json` `series`，排除 `f === 1` 明天列）各自歷史第 80 百分位（前 20%）聯集判定；刻意不用美股 `us.vix` 以免引入時差未來資訊。
+- 星期幾：沿用 `lib/atm.ts` 的 `weekdayOf()`／`WEEKDAY_LABEL`（週一～週五），不依賴外部資料。
+- 任一組別有效交易日少於 10 天標示不具代表性；任一外部 JSON 缺檔時僅提示該維度暫時讀不到，整頁正常運作。
 
 **使用者的對帳單是私人資料，絕對不要 commit。** `.gitignore` 已排除 *.xls／*.xlsx。
 
