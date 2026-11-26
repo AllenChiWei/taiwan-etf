@@ -148,6 +148,18 @@ test('新聞篩選', async (t) => {
     assert.equal(
       filterNews(rows, { source: '', query: '   ', onlyTracked: false }).length, 3);
   });
+
+  await t.test('只看我的收藏與持股使用 all，比對清單外的個股代號', () => {
+    assert.deepEqual(
+      filterNews(rows, { source: '', query: '', onlyTracked: false, mine: new Set(['9999']) })
+        .map(r => r.u), ['c']);
+  });
+
+  await t.test('收藏篩選遇到缺少 all 欄位時不會壞掉', () => {
+    const malformed = { ...news({ u: 'bad' }), all: undefined } as unknown as NewsItem;
+    assert.deepEqual(
+      filterNews([malformed], { source: '', query: '', onlyTracked: false, mine: new Set(['2330']) }), []);
+  });
 });
 
 test('重大訊息篩選', async (t) => {
@@ -167,6 +179,12 @@ test('重大訊息篩選', async (t) => {
     assert.deepEqual(
       filterFilings(rows, { market: '', query: '', onlyKnown: true })
         .map(r => r.code), ['2308']);
+  });
+
+  await t.test('只看我的收藏與持股使用公告代號比對', () => {
+    assert.deepEqual(
+      filterFilings(rows, { market: '', query: '', onlyKnown: false, mine: new Set(['6488']) })
+        .map(r => r.code), ['6488']);
   });
 
   await t.test('關鍵字比對主旨、公司名與代號', () => {

@@ -183,6 +183,8 @@ const macroRoute = createRoute({
 const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/calendar',
+  validateSearch: (search: Record<string, unknown>): { tab?: 'events' | 'etf' } =>
+    (search.tab === 'etf' ? { tab: 'etf' } : search.tab === 'events' ? { tab: 'events' } : {}),
   component: CalendarPage,
 });
 
@@ -201,7 +203,11 @@ const cbRoute = createRoute({
 const stockRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/stock',
-  validateSearch: (search: Record<string, unknown>) => ({ code: str(search.code) }),
+  validateSearch: (search: Record<string, unknown>): { code?: string; tab?: 'search' | 'rank' | 'cheap' | 'high' | 'ret' } => ({
+    ...(str(search.code) ? { code: str(search.code) } : {}),
+    ...(search.tab === 'rank' || search.tab === 'cheap' || search.tab === 'high' || search.tab === 'ret'
+      ? { tab: search.tab } : {}),
+  }),
   component: StockPage,
 });
 

@@ -596,7 +596,11 @@ export function StockPage() {
   const navigate = useNavigate({ from: '/stock' });
   const code = search.code;
   // 一進來如果網址帶了代號，就直接停在那一檔上，不要把人丟到排行榜
-  const [tab, setTab] = useState<Tab>('search');
+  const tab: Tab = search.tab ?? 'search';
+  const setTab = (next: Tab) => {
+    void navigate({ search: { ...(code ? { code } : {}), ...(next !== 'search' ? { tab: next } : {}) },
+      replace: true, resetScroll: false });
+  };
 
   const [index, setIndex] = useState<StockIndex | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
@@ -732,7 +736,7 @@ export function StockPage() {
               value={code}
               onChange={next => {
                 // 代號放網址上，重新整理與分享連結都還在同一檔
-                void navigate({ search: { code: next }, replace: true, resetScroll: false });
+                void navigate({ search: { ...(next ? { code: next } : {}) }, replace: true, resetScroll: false });
               }}
               placeholder="輸入代號或公司名稱…"
             />

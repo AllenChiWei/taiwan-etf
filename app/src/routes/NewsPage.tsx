@@ -9,6 +9,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { fetchNews } from '../api/news';
+import { loadCbFavs } from '../lib/cb';
+import { useFavoritesApi } from '../context/AppContext';
 import {
   relativeTime, timeOfDay, groupByDay, filterNews, filterFilings, sourcesOf,
   type NewsData, type NewsItem, type Filing,
@@ -16,6 +18,18 @@ import {
 import { EmptyState } from '../components/EmptyState';
 
 type Tab = 'news' | 'filings';
+
+/** 配息試算的台股持股。資料不存在或損毀時，篩選仍可正常顯示。 */
+function holdingCodes(): string[] {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem('twetf.holdings') ?? '[]');
+    if (!Array.isArray(value)) return [];
+    return value.filter(x => x && typeof x.code === 'string' && x.m !== 'us')
+      .map(x => x.code as string);
+  } catch {
+    return [];
+  }
+}
 
 /* ── 共用 ────────────────────────────────────────────────── */
 
@@ -74,17 +88,18 @@ function NewsRow({ item, now, multi }: { item: NewsItem; now: number; multi?: bo
   );
 }
 
-function NewsTab({ data }: { data: NewsData }) {
+function NewsTab({ data, mine }: { data: NewsData; mine: ReadonlySet<string> }) {
   const [source, setSource] = useState('');
   const [query, setQuery] = useState('');
   const [onlyTracked, setOnlyTracked] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(false);
   // 相對時間要固定在這一次渲染，不然同一份列表裡的「幾分鐘前」會互相矛盾
   const now = useMemo(() => Date.now(), [data]);
 
   const sources = useMemo(() => sourcesOf(data.news), [data.news]);
   const rows = useMemo(
-    () => filterNews(data.news, { source, query, onlyTracked }),
-    [data.news, source, query, onlyTracked]);
+    () => filterNews(data.news, { source, query, onlyTracked, mine: onlyMine ? mine : null }),
+    [data.news, source, query, onlyTracked, onlyMine, mine]);
   const groups = useMemo(() => groupByDay(rows), [rows]);
 
   return (
@@ -109,12 +124,18 @@ function NewsTab({ data }: { data: NewsData }) {
             <Chip active={onlyTracked} onClick={() => setOnlyTracked(v => !v)}>
               只看清單標的
             </Chip>
+            <Chip active={onlyMine} onClick={() => setOnlyMine(v => !v)}>
+              只看我的收藏與持股（{mine.size}）
+            </Chip>
           </div>
         </div>
       </div>
 
       {rows.length === 0 ? (
-        <EmptyState title="沒有符合的新聞" hint="換個關鍵字，或把來源改成全部。" />
+        <EmptyState title="沒有符合的新聞"
+                    hint={onlyMine && mine.size === 0
+                      ? '目前沒有可用的收藏或持股代號；可到 ETF 清單收藏，或在配息試算加入持股。'
+                      : '換個關鍵字，或把來源改成全部。'} />
       ) : (
         <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
           {groups.map(g => {
@@ -162,14 +183,15 @@ function FilingRow({ item, multi }: { item: Filing; multi?: boolean }) {
   );
 }
 
-function FilingsTab({ data }: { data: NewsData }) {
+function FilingsTab({ data, mine }: { data: NewsData; mine: ReadonlySet<string> }) {
   const [market, setMarket] = useState('');
   const [query, setQuery] = useState('');
   const [onlyKnown, setOnlyKnown] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(false);
 
   const rows = useMemo(
-    () => filterFilings(data.filings, { market, query, onlyKnown }),
-    [data.filings, market, query, onlyKnown]);
+    () => filterFilings(data.filings, { market, query, onlyKnown, mine: onlyMine ? mine : null }),
+    [data.filings, market, query, onlyKnown, onlyMine, mine]);
   const groups = useMemo(() => groupByDay(rows), [rows]);
   const knownCount = useMemo(
     () => data.filings.filter(r => r.known).length, [data.filings]);
@@ -197,6 +219,9 @@ function FilingsTab({ data }: { data: NewsData }) {
             <Chip active={onlyKnown} onClick={() => setOnlyKnown(v => !v)}>
               只看清單標的（{knownCount}）
             </Chip>
+            <Chip active={onlyMine} onClick={() => setOnlyMine(v => !v)}>
+              只看我的收藏與持股（{mine.size}）
+            </Chip>
           </div>
         </div>
         <p className="mt-1.5 max-w-[78ch] text-[11px] text-faint">
@@ -206,9 +231,11 @@ function FilingsTab({ data }: { data: NewsData }) {
 
       {rows.length === 0 ? (
         <EmptyState title="沒有符合的公告"
-                    hint={onlyKnown && knownCount === 0
-                      ? '今天沒有清單內標的的公告，把這個篩選關掉可以看全部。'
-                      : '換個關鍵字，或把市場改成上市＋上櫃。'} />
+                    hint={onlyMine && mine.size === 0
+                      ? '目前沒有可用的收藏或持股代號；可到 ETF 清單收藏，或在配息試算加入持股。'
+                      : onlyKnown && knownCount === 0
+                        ? '今天沒有清單內標的的公告，把這個篩選關掉可以看全部。'
+                        : '換個關鍵字，或把市場改成上市＋上櫃。'} />
       ) : (
         <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
           {groups.map(g => {
@@ -235,6 +262,10 @@ function FilingsTab({ data }: { data: NewsData }) {
 /* ── 頁面 ────────────────────────────────────────────────── */
 
 export function NewsPage() {
+  const favorites = useFavoritesApi();
+  const mine = useMemo(
+    () => new Set([...favorites.codes, ...holdingCodes(), ...loadCbFavs()]),
+    [favorites.codes]);
   const [tab, setTab] = useState<Tab>('news');
   const [data, setData] = useState<NewsData | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'missing' | 'error'>('loading');
@@ -291,7 +322,7 @@ export function NewsPage() {
         ))}
       </div>
 
-      {tab === 'news' ? <NewsTab data={data} /> : <FilingsTab data={data} />}
+      {tab === 'news' ? <NewsTab data={data} mine={mine} /> : <FilingsTab data={data} mine={mine} />}
 
       <p className="mt-4 mb-2 max-w-[78ch] text-[11.5px] leading-relaxed text-faint">
         {data.meta.note} 來源：{data.meta.sources.join('、')}。

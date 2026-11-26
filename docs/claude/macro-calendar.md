@@ -5,6 +5,8 @@
 
 ## 美國總經與台股行事曆
 
+`/calendar` 的「行事曆／ETF 除息」分頁以 `?tab=` 保存在網址；預設行事曆分頁省略參數，切換後可重新整理或分享連結還原。
+
 `/macro`：`scripts/fetch_macro.py` → `macro.json`，換算在 `lib/macro.ts`（`tests/macro.test.ts`）。
 **FRED 上不是每條都能轉載** —— S&P、ICE 美銀債券指數、Moody's 那些著作權屬於第三方。只收原始
 發佈者是美國聯邦政府機關的（BLS、BEA、DOL、Fed、EIA），加數列前先看 FRED 頁面的 Source。

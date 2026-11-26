@@ -132,16 +132,20 @@ export interface NewsFilter {
   query: string;
   /** 只看有掛到站上追蹤代號的新聞 */
   onlyTracked: boolean;
+  /** 只看使用者收藏與持股；使用來源提供的全部代號比對。 */
+  mine?: ReadonlySet<string> | null;
 }
 
 export function filterNews(rows: NewsItem[], f: NewsFilter): NewsItem[] {
   const q = f.query.trim().toLowerCase();
   return rows.filter(r => {
     if (f.source && r.s !== f.source) return false;
-    if (f.onlyTracked && r.codes.length === 0) return false;
+    if (f.onlyTracked && (!Array.isArray(r.codes) || r.codes.length === 0)) return false;
+    const mine = f.mine;
+    if (mine && !(Array.isArray(r.all) && r.all.some(c => mine.has(c)))) return false;
     if (!q) return true;
-    return r.t.toLowerCase().includes(q)
-      || r.all.some(c => c.toLowerCase().includes(q));
+    return (typeof r.t === 'string' && r.t.toLowerCase().includes(q))
+      || (Array.isArray(r.all) && r.all.some(c => typeof c === 'string' && c.toLowerCase().includes(q)));
   });
 }
 
@@ -151,6 +155,8 @@ export interface FilingFilter {
   query: string;
   /** 只看站上追蹤的標的 */
   onlyKnown: boolean;
+  /** 只看使用者收藏與持股。 */
+  mine?: ReadonlySet<string> | null;
 }
 
 export function filterFilings(rows: Filing[], f: FilingFilter): Filing[] {
@@ -158,6 +164,7 @@ export function filterFilings(rows: Filing[], f: FilingFilter): Filing[] {
   return rows.filter(r => {
     if (f.market && r.market !== f.market) return false;
     if (f.onlyKnown && !r.known) return false;
+    if (f.mine && !f.mine.has(r.code)) return false;
     if (!q) return true;
     return r.subject.toLowerCase().includes(q)
       || r.name.toLowerCase().includes(q)

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { fetchCalendar, fetchCb, fetchEtfDividends, fetchYields } from '../api/extras';
 import { cbEvents, loadCbFavs, type CbData } from '../lib/cb';
 import {
@@ -246,13 +246,18 @@ function EtfExDivTab({ calendar, today, query, mine }: {
 }
 
 export function CalendarPage() {
+  const search = useSearch({ from: '/calendar' });
+  const navigate = useNavigate({ from: '/calendar' });
   const fav = useFavoritesApi();
   const [data, setData] = useState<CalendarData | null>(null);
   const [state, setState] = useState<'loading' | 'ready'>('loading');
   const [kinds, setKinds] = useState<Set<EventKind>>(() => new Set(KINDS));
   const [query, setQuery] = useState('');
   const [onlyMine, setOnlyMine] = useState(false);
-  const [tab, setTab] = useState<'events' | 'etf'>('events');
+  const tab = search.tab ?? 'events';
+  const setTab = (next: 'events' | 'etf') => {
+    void navigate({ search: { tab: next }, replace: true, resetScroll: false });
+  };
 
   // 可轉債的賣回、到期、轉換價生效、新上櫃（cb.json）。另外載入，缺檔不影響其他事件
   const [cb, setCb] = useState<CbData | null>(null);
