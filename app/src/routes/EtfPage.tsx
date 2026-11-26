@@ -12,12 +12,14 @@ import { useEtfData, useFavoritesApi } from '../context/AppContext';
 import { fetchDivMix, fetchEtfDividends, fetchYields } from '../api/extras';
 import { fetchUsDataset } from '../api/usEtfs';
 import { useCalcIndex } from '../hooks/useCalcIndex';
+import { useFillSummary } from '../hooks/useFillSummary';
 import { runBacktest, type CalcSeries } from '../lib/backtest';
 import { incomeRow, type DivMixData } from '../lib/monthlyIncome';
 import { exchangeName, formatAdv, nasdaqUrl, returnBasisNote } from '../lib/format';
 import type { EtfDividendData, YieldData } from '../lib/dividend';
 import type { UsEtfDataset } from '../types';
 import { DivMixDetail } from '../components/DivMixDetail';
+import { EtfFillSummary } from '../components/FillSummary';
 import { FavButton } from '../components/FavButton';
 import { GrowthChart, type GrowthPoint } from '../components/GrowthChart';
 import { SearchableSelect, type SelectOption } from '../components/SearchableSelect';
@@ -69,6 +71,7 @@ export function EtfPage() {
 
   const extras = useEtfExtras();
   const { index } = useCalcIndex();
+  const fillSummary = useFillSummary();
   const [div, setDiv] = useState<{ d: EtfDividendData | null; y: YieldData | null; m: DivMixData | null } | null>(null);
   const [series, setSeries] = useState<CalcSeries | null>(null);
   const [copied, setCopied] = useState(false);
@@ -358,6 +361,7 @@ export function EtfPage() {
         )}
       </section>
       </div>
+      <EtfFillSummary code={etf.code} data={fillSummary} />
     </>
   );
 }

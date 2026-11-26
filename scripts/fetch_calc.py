@@ -62,6 +62,7 @@ from datetime import date as _date
 
 warnings.filterwarnings('ignore')
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fill_summary import summarize_fills
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTDIR = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
@@ -322,6 +323,7 @@ def main():
     log(u'月份範圍 %s ~ %s（%d 個月）' % (months[0], months[-1], len(months)))
 
     index = {'months': months, 'codes': {}}
+    fill_doc = {'asof': close.index[-1].strftime('%Y-%m-%d'), 'codes': {}}
     written = skipped = 0
     total_bytes = 0
     src_count = collections.Counter()
@@ -339,6 +341,12 @@ def main():
             continue
 
         p, d, q, src = monthly(sclose, divs, months, official_dates)
+        if r.get('kind', 'etf') == 'etf':
+            try:   # 填息摘要是附加功能，算不出來只略過這檔，不能讓整支試算資料失敗（Claude 驗收時加）
+                fill_doc['codes'][code] = dict(
+                    {'name': r['name']}, **summarize_fills(sclose, divs))
+            except Exception as e:  # noqa: BLE001
+                log(u'  填息摘要略過 %s：%s' % (code, str(e)[:80]))
         have = [i for i, v in enumerate(p) if v is not None]
         if not have:
             skipped += 1
@@ -387,6 +395,7 @@ def main():
         }
 
     write_json(os.path.join(OUTDIR, 'index.json'), index)
+    write_json(os.path.join(OUTDIR, 'fill.json'), fill_doc)
     log(u'  台股 %d 檔（略過 %d 檔資料過短或無報價），共 %.1f MB，平均每檔 %.1f KB'
         % (written, skipped, total_bytes / 1e6, total_bytes / max(1, written) / 1024))
     log(u'  配息來源：官方 %d 檔、混合 %d 檔、回推 %d 檔'

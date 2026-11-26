@@ -122,10 +122,10 @@ jobs:
 
       # 上一次產生的 FinLab 資料（試算資料、創新高）。
       #
-      # 鍵上的 v3 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用
+      # 鍵上的 v4 是**資料格式版本**：改了產出的結構就要跟著加一號，否則部署會沿用
       # 舊格式的快取，而新版前端讀不懂它。創新高從單一窗口改成三個窗口時踩過一次。
-      # v2 -> v3 是因為績效曲線整個搬離 FinLab，這份快取不再包含 series 與
-      # 解鎖 manifest（曲線有自己的快取，見下面「取回績效曲線快取」）。
+      # v3 -> v4 新增 calc/fill.json；v2 -> v3 是因為績效曲線整個搬離 FinLab，
+      # 這份快取不再包含 series 與解鎖 manifest（曲線有自己的快取，見下方）。
       - name: 取回上次的 FinLab 資料
         id: datacache
         uses: actions/cache/restore@v4
@@ -133,9 +133,9 @@ jobs:
           path: |
             app/public/data/calc
             app/public/data/highs.json
-          key: finlab-data-v3-${{ github.run_id }}
+          key: finlab-data-v4-${{ github.run_id }}
           restore-keys: |
-            finlab-data-v3-
+            finlab-data-v4-
 
       - name: 決定要不要重抓 FinLab
         id: plan
@@ -480,7 +480,7 @@ jobs:
           path: |
             app/public/data/calc
             app/public/data/highs.json
-          key: finlab-data-v3-${{ github.run_id }}
+          key: finlab-data-v4-${{ github.run_id }}
 
       - name: 驗證資料
         run: |

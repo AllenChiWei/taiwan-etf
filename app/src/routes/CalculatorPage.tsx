@@ -15,6 +15,8 @@ import { NumberInput as SharedNumberInput } from '../components/NumberInput';
 import { EmptyState } from '../components/EmptyState';
 import { MonthlyIncome } from '../components/MonthlyIncome';
 import { useCalcIndex } from '../hooks/useCalcIndex';
+import { useFillSummary } from '../hooks/useFillSummary';
+import { FillBrowser } from '../components/FillSummary';
 import {
   runBacktest, project, monthIndex,
   type CalcIndex, type CalcSeries, type Timing, type ProjectYear,
@@ -786,6 +788,7 @@ export function CalculatorPage() {
   const [tab, setTab] = useState<Tab>('backtest');
   // 索引與配息頁共用同一個 hook，兩頁的載入與錯誤狀態才不會各長一套
   const { index, error } = useCalcIndex();
+  const fillSummary = useFillSummary();
 
   const TABS: Array<{ id: Tab; label: string }> = [
     { id: 'backtest', label: '歷史回測' },
@@ -834,6 +837,8 @@ export function CalculatorPage() {
           歷史績效不代表未來報酬。
         </p>
       )}
+
+      <FillBrowser data={fillSummary} />
     </>
   );
 }
