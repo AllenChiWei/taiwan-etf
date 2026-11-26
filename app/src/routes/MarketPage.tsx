@@ -63,8 +63,8 @@ export function MarketPage() {
               <h2 className="text-[13px] font-bold text-ink">{g}</h2>
               <ul className="mt-1 divide-y divide-line">
                 {list.map(i => (
-                  <li key={i.key}>
-                    <Link to={i.to} className="block py-2 hover:bg-sunken/40">
+                  <li key={i.key} className="flex items-start gap-2">
+                    <Link to={i.to} className="block min-w-0 flex-1 py-2 hover:bg-sunken/40">
                       <div className="flex items-baseline justify-between gap-2">
                         <span className="flex min-w-0 items-baseline gap-1.5 text-[13px] text-ink">
                           <span aria-hidden className="inline-block h-2.5 w-2.5 shrink-0 translate-y-[1px] rounded-full" style={{ background: LEVEL_COLOR[i.level] }} />
@@ -76,6 +76,10 @@ export function MarketPage() {
                       <div className="mt-0.5 pl-4 text-[12px] leading-snug text-muted">{i.text}</div>
                       {i.sub && <div className="pl-4 text-[11px] text-faint">{i.sub}</div>}
                     </Link>
+                    {i.key === 'dist130' && <Link to="/stock" search={{ tab: 'margin' }}
+                      className="mt-2 shrink-0 rounded-md border border-line px-2 py-1 text-[11px] font-semibold text-accent hover:bg-sunken">
+                      個股明細
+                    </Link>}
                   </li>
                 ))}
               </ul>

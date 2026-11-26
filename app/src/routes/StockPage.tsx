@@ -26,6 +26,7 @@ import { StockSheet } from '../components/StockSheet';
 import { FundamentalsBoard } from '../components/FundamentalsBoard';
 import { ValuationBoard } from '../components/ValuationBoard';
 import { HoldersSection } from '../components/HoldersSection';
+import { MarginRankTab } from '../components/MarginRankTab';
 // 面板抽在 StockBoard，因為清單的抽屜要用同一組（見那個檔案的說明）
 import {
   Chip, Cell, InfoSection, RevenueSection, FinancialSection, PositionSection,
@@ -581,7 +582,7 @@ function CheapTab() {
 
 /* ── 頁面 ───────────────────────────────────────────────── */
 
-type Tab = 'search' | 'rank' | 'cheap' | 'high' | 'ret';
+type Tab = 'search' | 'rank' | 'cheap' | 'high' | 'ret' | 'margin';
 
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'search', label: '查個股' },
@@ -589,6 +590,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'cheap', label: '低本益比' },
   { id: 'high', label: '創新高' },
   { id: 'ret', label: '漲跌幅' },
+  { id: 'margin', label: '維持率' },
 ];
 
 export function StockPage() {
@@ -665,14 +667,14 @@ export function StockPage() {
     })), [index]);
 
   const tabBar = (
-    <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1 sm:inline-flex">
+    <div className="mt-4 flex gap-1.5 overflow-x-auto rounded-lg bg-sunken p-1 sm:inline-flex">
       {TABS.map(t => (
         <button
           key={t.id}
           type="button"
           onClick={() => setTab(t.id)}
           aria-pressed={tab === t.id}
-          className={`h-9 flex-1 rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
+          className={`h-9 flex-1 whitespace-nowrap rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
             tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
         >
           {t.label}
@@ -691,6 +693,7 @@ export function StockPage() {
         {tab === 'cheap' && <CheapTab />}
         {tab === 'high' && <HighsTab />}
         {tab === 'ret' && <ReturnsTab />}
+        {tab === 'margin' && <MarginRankTab />}
       </>
     );
   }

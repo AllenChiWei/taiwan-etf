@@ -203,9 +203,9 @@ const cbRoute = createRoute({
 const stockRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/stock',
-  validateSearch: (search: Record<string, unknown>): { code?: string; tab?: 'search' | 'rank' | 'cheap' | 'high' | 'ret' } => ({
+  validateSearch: (search: Record<string, unknown>): { code?: string; tab?: 'search' | 'rank' | 'cheap' | 'high' | 'ret' | 'margin' } => ({
     ...(str(search.code) ? { code: str(search.code) } : {}),
-    ...(search.tab === 'rank' || search.tab === 'cheap' || search.tab === 'high' || search.tab === 'ret'
+    ...(search.tab === 'rank' || search.tab === 'cheap' || search.tab === 'high' || search.tab === 'ret' || search.tab === 'margin'
       ? { tab: search.tab } : {}),
   }),
   component: StockPage,

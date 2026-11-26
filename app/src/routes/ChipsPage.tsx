@@ -765,7 +765,10 @@ function MarginDist({ rows, shorts }: { rows: DistRow[]; shorts: ShortRow[] }) {
   return (
     <div id="sec-margin-dist" className="mt-3 scroll-mt-16 border-t border-line pt-3">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-[13px] font-bold text-ink">個股融資維持率分布（家數）</h3>
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+          <h3 className="text-[13px] font-bold text-ink">個股融資維持率分布（家數）</h3>
+          <Link to="/stock" search={{ tab: 'margin' }} className="text-[11.5px] font-semibold text-accent hover:underline">看低維持率個股 →</Link>
+        </div>
         <span className="text-[11.5px] text-faint">{rows[0][0]} 起 · 最新 {d0} · 融資股 {nf0.format(v.last.n)} 檔</span>
       </div>
       <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
