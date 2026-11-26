@@ -6,7 +6,9 @@ import assert from 'node:assert/strict';
 
 import {
   requiredEquity, callEv, countOuts, hitChance, ruleOfTwoFour,
-  expandHand, rangeEquity, allHandKeys, rfiAnswer, defenseAnswer, makeQuestion,
+  expandHand, rangeEquity, rangeStandardError, allHandKeys, rfiAnswer,
+  defenseAnswer, makeQuestion, hasQuizSpots, parseMissMeta, filterMisses,
+  questionFromMiss, recordMiss, removeMiss, pickMissQuestion,
 } from '../src/lib/pokerTools.ts';
 import { parseCard } from '../src/lib/equity.ts';
 import { actionRank, SEAT_ORDER, PREFLOP_ORDER, POSTFLOP_ORDER } from '../src/lib/ranges.ts';
@@ -86,6 +88,22 @@ test('對範圍的勝率', async (t) => {
   await t.test('範圍整個被擋掉時回 null', () => {
     assert.equal(rangeEquity(cards('As Ah'), ['AKs'].filter(() => false), []), null);
   });
+
+  await t.test('保留勝平負次數且可依實際結果算標準誤', () => {
+    const r = rangeEquity(cards('As Ah'), ['KK'], [], 4_000, rand)!;
+    assert.equal(r.win + r.tie + r.lose, r.trials);
+    assert.ok(Math.abs(r.equity - ((r.win + r.tie / 2) / r.trials) * 100) < 1e-9);
+    const se = rangeStandardError(r);
+    assert.ok(se > 0 && se < 1.5, `標準誤 ${se}`);
+
+    // 公牌已是皇家同花順時必平手，標準誤必須是 0
+    const allTie = rangeEquity(cards('2c 3d'), ['76o'], cards('As Ks Qs Js Ts'), 500, rand)!;
+    assert.equal(allTie.win, 0);
+    assert.equal(allTie.tie, 500);
+    assert.equal(allTie.lose, 0);
+    assert.equal(allTie.equity, 50);
+    assert.equal(rangeStandardError(allTie), 0);
+  });
 });
 
 test('測驗答案：3-bet 優先於跟注', () => {
@@ -108,6 +126,77 @@ test('出題：答案平均分布，而且都在選項裡', () => {
   // 蓋牌不該壓倒性多（依組合數隨便抽的話會超過七成）
   assert.ok((counts.fold ?? 0) / 600 < 0.5, `蓋牌佔 ${counts.fold}/600`);
   for (const a of ['open', '3bet', 'call']) assert.ok((counts[a] ?? 0) > 50, `${a} 太少：${counts[a]}`);
+});
+
+test('測驗分類篩選與錯題重做', async (t) => {
+  let seed = 19;
+  const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+
+  await t.test('位置與動作分類合法性檢查', () => {
+    assert.equal(hasQuizSpots({ position: 'BB', spotType: 'rfi' }), false);
+    assert.equal(hasQuizSpots({ position: 'UTG', spotType: 'vs' }), false);
+    assert.equal(hasQuizSpots({ position: 'UTG', spotType: 'rfi' }), true);
+    assert.equal(hasQuizSpots({ position: 'BB', spotType: 'vs' }), true);
+    assert.equal(hasQuizSpots({ position: 'CO', spotType: 'all' }), true);
+  });
+
+  await t.test('依位置與動作分類出題', () => {
+    for (let i = 0; i < 30; i++) {
+      const utg = makeQuestion(rand, { position: 'UTG' });
+      assert.equal(utg.position, 'UTG');
+      assert.equal(utg.spotType, 'rfi');
+
+      const bb = makeQuestion(rand, { position: 'BB' });
+      assert.equal(bb.position, 'BB');
+      assert.equal(bb.spotType, 'vs');
+
+      const coVs = makeQuestion(rand, { position: 'CO', spotType: 'vs' });
+      assert.equal(coVs.position, 'CO');
+      assert.equal(coVs.spotType, 'vs');
+      assert.deepEqual(coVs.choices, ['3bet', 'call', 'fold']);
+
+      const rfiOnly = makeQuestion(rand, { spotType: 'rfi' });
+      assert.equal(rfiOnly.spotType, 'rfi');
+      assert.deepEqual(rfiOnly.choices, ['open', 'fold']);
+    }
+    assert.throws(() => makeQuestion(rand, { position: 'BB', spotType: 'rfi' }));
+    assert.throws(() => makeQuestion(rand, { position: 'UTG', spotType: 'vs' }));
+  });
+
+  await t.test('舊版錯題紀錄可解析、篩選、還原與訂正移出', () => {
+    const m1 = { spot: 'CO（關煞位），前面的人都蓋牌', hand: 'A9o', answer: 'open' as const, picked: 'fold' as const };
+    const m2 = { spot: '你在 BB，UTG 開牌加注，輪到你', hand: 'KJs', answer: '3bet' as const, picked: 'call' as const };
+
+    assert.deepEqual(parseMissMeta(m1), { position: 'CO', spotType: 'rfi', opener: null });
+    assert.deepEqual(parseMissMeta(m2), { position: 'BB', spotType: 'vs', opener: 'UTG' });
+
+    const list = recordMiss(recordMiss([], m1), m2);
+    assert.equal(list.length, 2);
+    assert.equal(filterMisses(list, { position: 'CO' }).length, 1);
+    assert.equal(filterMisses(list, { spotType: 'vs' }).length, 1);
+    assert.equal(filterMisses(list, { position: 'UTG' }).length, 0);
+
+    // 同題重錯不重複堆積
+    const dup = recordMiss(list, { ...m1, picked: 'fold' });
+    assert.equal(dup.length, 2);
+    assert.equal(dup[0].hand, 'A9o');
+
+    // 還原成完整題目
+    const q = questionFromMiss(m2);
+    assert.equal(q.position, 'BB');
+    assert.equal(q.spotType, 'vs');
+    assert.deepEqual(q.choices, ['3bet', 'call', 'fold']);
+    assert.ok(q.why.includes('3-bet'));
+
+    // 超過一題時盡量避開剛做過的那題
+    const picked = pickMissQuestion(list, rand, m2)!;
+    assert.equal(picked.hand, 'A9o');
+
+    // 答對移出後若清空則回 null
+    const after = removeMiss(removeMiss(list, m1), m2);
+    assert.equal(after.length, 0);
+    assert.equal(pickMissQuestion(after, rand), null);
+  });
 });
 
 test('六人桌的行動順序', () => {

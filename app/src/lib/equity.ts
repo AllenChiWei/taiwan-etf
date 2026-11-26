@@ -354,10 +354,16 @@ function sample(
 /**
  * 抽樣結果的標準誤（百分點）。
  *
- * 讓畫面能說「65.3% ± 0.2%」而不是假裝抽樣出來的數字是精確值。
+ * 平手算半勝，單次試驗結果為 0／0.5／1，依三值樣本變異計算：
+ * Var = (勝×1 + 平×0.25)/n − p²（p = (勝 + 0.5×平)/n），SE = √(Var/n)。
+ * 避免直接套用二元公式 √(p(1−p)/n) 在有平手時高估誤差（全平時實際變異為 0）。
  */
-export function standardError(result: EquityResult): number {
-  if (result.exact || !result.iterations) return 0;
-  const p = result.equity / 100;
-  return Math.sqrt((p * (1 - p)) / result.iterations) * 100;
+export function standardError(
+  result: Pick<EquityResult, 'win' | 'tie' | 'iterations'> & { exact?: boolean },
+): number {
+  const n = result.iterations;
+  if (result.exact || n <= 0) return 0;
+  const p = (result.win + 0.5 * result.tie) / n;
+  const variance = Math.max(0, (result.win + 0.25 * result.tie) / n - p * p);
+  return Math.sqrt(variance / n) * 100;
 }

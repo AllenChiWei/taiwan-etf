@@ -218,3 +218,39 @@ describe('權益計算', () => {
       /重複/);
   });
 });
+
+describe('標準誤公式（0／0.5／1 三值樣本變異）', () => {
+  test('全勝時標準誤為 0', () => {
+    const se = standardError({
+      win: 1000, tie: 0, lose: 0, equity: 100, exact: false, iterations: 1000,
+    });
+    assert.equal(se, 0);
+  });
+
+  test('全平時標準誤為 0（每次分數都是 0.5，實際變異為 0）', () => {
+    const se = standardError({
+      win: 0, tie: 1000, lose: 0, equity: 50, exact: false, iterations: 1000,
+    });
+    assert.equal(se, 0);
+  });
+
+  test('一半勝一半負（無平手）等於二元公式 √(p(1−p)/n)', () => {
+    const se = standardError({
+      win: 500, tie: 0, lose: 500, equity: 50, exact: false, iterations: 1000,
+    });
+    const binary = Math.sqrt((0.5 * 0.5) / 1000) * 100;
+    assert.ok(Math.abs(se - binary) < 1e-12, `得到 ${se}，預期 ${binary}`);
+  });
+
+  test('有平手時嚴格小於二元公式，且符合三值變異公式', () => {
+    const n = 1000;
+    const se = standardError({
+      win: 300, tie: 400, lose: 300, equity: 50, exact: false, iterations: n,
+    });
+    const p = (300 + 0.5 * 400) / n;
+    const expected = Math.sqrt(((300 + 0.25 * 400) / n - p * p) / n) * 100;
+    const binary = Math.sqrt((p * (1 - p)) / n) * 100;
+    assert.ok(Math.abs(se - expected) < 1e-12, `得到 ${se}，預期 ${expected}`);
+    assert.ok(se < binary, `有平手時 SE (${se}) 應小於二元公式 (${binary})`);
+  });
+});

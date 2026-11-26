@@ -15,7 +15,7 @@ import {
 } from '../lib/equity';
 import {
   requiredEquity, callEv, countOuts, hitChance, ruleOfTwoFour, rangeEquity,
-  type RangeEquity,
+  rangeStandardError, type RangeEquity,
 } from '../lib/pokerTools';
 import { parseRange } from '../lib/poker';
 import { POSITIONS, VS_OPEN, HERO_SPOT_LABEL, resolve, resolveDefense } from '../lib/ranges';
@@ -182,6 +182,7 @@ export function EquityCalculator() {
   const ev = equity === null ? null : callEv(equity, potN, callN);
 
   const se = result ? standardError(result) : 0;
+  const rangeSe = rangeRes ? rangeStandardError(rangeRes) : 0;
   const street = board.length === 0 ? '翻牌前'
     : board.length === 3 ? '翻牌圈'
       : board.length === 4 ? '轉牌圈' : '河牌圈';
@@ -331,13 +332,17 @@ export function EquityCalculator() {
                 範圍 {rangeRes.combos} 個組合（已扣掉撞牌的）· 抽樣 {rangeRes.trials.toLocaleString('en-US')} 次
               </span>
             </div>
-            <div className="mt-2 flex items-baseline gap-2">
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span className="font-mono text-[34px] leading-none font-bold tabular-nums text-up">
                 {rangeRes.equity.toFixed(1)}%
               </span>
-              <span className="font-mono text-[13px] tabular-nums text-muted">± 0.5</span>
+              <span className="font-mono text-[13px] tabular-nums text-muted">
+                ± {rangeSe.toFixed(2)}%（標準誤 SE）
+              </span>
             </div>
-            <p className="mt-0.5 text-[11.5px] text-faint">對這個範圍的平均勝率（平手算半勝）</p>
+            <p className="mt-0.5 text-[11.5px] text-faint">
+              對這個範圍的平均勝率（平手算半勝；± 為 1 倍標準誤 SE，95% 抽樣誤差約 ± {(rangeSe * 1.96).toFixed(2)}%）
+            </p>
           </>
         )}
 
@@ -354,18 +359,20 @@ export function EquityCalculator() {
               </span>
             </div>
 
-            <div className="mt-2 flex items-baseline gap-2">
+            <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
               <span className="font-mono text-[34px] leading-none font-bold tabular-nums text-up">
                 {result.equity.toFixed(2)}%
               </span>
               {!result.exact && (
                 <span className="font-mono text-[13px] tabular-nums text-muted">
-                  ± {se.toFixed(2)}
+                  ± {se.toFixed(2)}%（標準誤 SE）
                 </span>
               )}
             </div>
             <p className="mt-0.5 text-[11.5px] text-faint">
-              勝率（平手算半勝）
+              {result.exact
+                ? '勝率（平手算半勝）'
+                : `勝率（平手算半勝；± 為 1 倍標準誤 SE，95% 抽樣誤差約 ± ${(se * 1.96).toFixed(2)}%）`}
             </p>
 
             {/* 勝／平／負的長條 */}
