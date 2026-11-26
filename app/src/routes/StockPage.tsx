@@ -764,25 +764,25 @@ export function StockPage() {
           <InfoSection data={data} />
           {(highRow || rankRow) && (
             <div className={`mt-3 grid grid-cols-1 gap-3 [&>section]:mt-0 ${
-              highRow ? 'xl:grid-cols-2 xl:items-start xl:gap-4' : ''}`}>
+              highRow ? 'xl:grid-cols-2 xl:items-stretch xl:gap-4' : ''}`}>
               <PositionSection row={highRow} />
               <PercentileSection row={highRow} allHighs={highs?.rows ?? []}
                                  rank={rankRow} allRanks={ranking?.rows ?? []} />
             </div>
           )}
           {data.chips && (
-            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>section]:mt-0">
               <ChipsVisual data={data} />
               <InstDailySection data={data} />
             </div>
           )}
-          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>section]:mt-0">
             <RevenueSection data={data} />
             <FinancialSection data={data} />
           </div>
           <ValuationBoard code={data.code} industry={data.info.industry} months={data.m} />
           <FundamentalsBoard code={data.code} />
-          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-stretch xl:gap-4 [&>section]:mt-0">
             <ChipsSection data={data} />
             <HoldersSection code={data.code} />
           </div>
