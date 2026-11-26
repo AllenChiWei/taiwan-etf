@@ -17,16 +17,18 @@ function dayLabel(iso: string): string {
   return `${iso.slice(5).replace('-', '/')}${wd === null ? '' : `（${WEEKDAY_LABEL[wd]}）`}`;
 }
 
-export function NextDaySection() {
-  const [d, setD] = useState<NextdayData | null>(null);
+export function NextDaySection({ data }: { data?: NextdayData } = {}) {
+  const [fetched, setFetched] = useState<NextdayData | null>(null);
   useEffect(() => {
+    if (data) return;
     const ac = new AbortController();
     fetch(`${import.meta.env.BASE_URL}data/nextday.json`, { signal: ac.signal, cache: 'no-cache' })
       .then(r => (r.ok ? r.json() : null))
-      .then(j => { if (!ac.signal.aborted && j?.bands) setD(j as NextdayData); })
+      .then(j => { if (!ac.signal.aborted && j?.bands) setFetched(j as NextdayData); })
       .catch(() => {});
     return () => ac.abort();
-  }, []);
+  }, [data]);
+  const d = data ?? fetched;
   if (!d) return null;
   const m = d.meta;
   const close = m.close;
