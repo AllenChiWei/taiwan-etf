@@ -43,12 +43,16 @@ System (US)、Release 為 H.10 Foreign Exchange Rates（紐約中午銀行間電
 一條數列抓不到就略過並記在 `meta.errors`，其他照常寫出；一條都沒有才失敗。
 """
 import csv
+import html.parser
 import io
 import json
 import os
+import re
 import sys
 import time
 import urllib.request
+import zipfile
+import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -62,6 +66,10 @@ UA = ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
 CSV_URL = 'https://fred.stlouisfed.org/graph/fredgraph.csv?id=%s&cosd=%s'
 DELAY = 1.5                     # robots.txt: Crawl-delay: 1
 TIMEOUT = 40
+DATA_GOV_UA = ('Mozilla/5.0 (compatible; TaiwanETF/1.0; '
+               '+https://allenchiwei.github.io/taiwan-etf/) Taiwan macro indicators')
+NDC_DATASET_URL = 'https://data.gov.tw/dataset/6099'
+CUSTOMS_CSV_URL = 'https://opendata.customs.gov.tw/data/6053/csv.csv'
 
 MONTHLY_YEARS = 20
 DAILY_YEARS = 10
@@ -169,6 +177,185 @@ def fetch_eia_weekly(series_id, since):
     return [d[i] for i in keep], [v[i] for i in keep]
 
 
+class DownloadLinkParser(html.parser.HTMLParser):
+    """只從 data.gov.tw 的資料集頁面找目前公布的國發會 ZIP 下載連結。"""
+    def __init__(self):
+        html.parser.HTMLParser.__init__(self)
+        self.links = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != 'a':
+            return
+        href = dict(attrs).get('href', '')
+        if 'ws.ndc.gov.tw/Download.ashx' in href and '.zip' in href.lower():
+            self.links.append(href.replace('&amp;', '&'))
+
+
+def fetch_ndc_zip():
+    """用資料集頁的當期資源連結，避免每月更新後沿用失效的檔案識別碼。"""
+    req = urllib.request.Request(NDC_DATASET_URL, headers={'User-Agent': DATA_GOV_UA})
+    page = urllib.request.urlopen(req, timeout=TIMEOUT).read().decode('utf-8', 'replace')
+    parser = DownloadLinkParser()
+    parser.feed(page)
+    if not parser.links:
+        raise ValueError(u'資料集 6099 找不到國發會 ZIP 下載連結')
+    req = urllib.request.Request(parser.links[0], headers={'User-Agent': DATA_GOV_UA})
+    raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
+    if not raw.startswith(b'PK'):
+        raise ValueError(u'資料集 6099 下載內容不是 ZIP')
+    return raw
+
+
+def _decode_csv(raw):
+    for enc in ('utf-8-sig', 'cp950', 'big5'):
+        try:
+            return raw.decode(enc)
+        except UnicodeDecodeError:
+            pass
+    raise ValueError(u'CSV 編碼無法辨識')
+
+
+def _ndc_rows(raw):
+    """讀取資料集 6099 ZIP 內的 CSV 或 XLSX；欄名以資料集公布名稱為準。"""
+    with zipfile.ZipFile(io.BytesIO(raw)) as zf:
+        names = [n for n in zf.namelist() if n.lower().endswith('.csv') and not n.startswith('__MACOSX/')]
+        # 2026-11 實際 ZIP 有 6 個 CSV（manifest、schema-*、各構成項目），燈號在「景氣指標與燈號.csv」；
+        # 只取第一個會讀到 manifest.csv（Claude 驗收時實際下載才發現）
+        names = sorted(names, key=lambda n: (u'景氣指標與燈號' not in n, n.startswith('schema-'), n))
+        if names:
+            content = _decode_csv(zf.read(names[0]))
+            rows = list(csv.DictReader(io.StringIO(content)))
+        else:
+            books = [n for n in zf.namelist() if n.lower().endswith('.xlsx') and not n.startswith('__MACOSX/')]
+            if not books:
+                raise ValueError(u'資料集 6099 ZIP 內沒有 CSV 或 XLSX 資源')
+            ns = {'m': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main',
+                  'r': 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'}
+            shared = []
+            if 'xl/sharedStrings.xml' in zf.namelist():
+                root = ET.fromstring(zf.read('xl/sharedStrings.xml'))
+                shared = [''.join(t.text or '' for t in si.findall('.//m:t', ns))
+                          for si in root.findall('m:si', ns)]
+            wb = ET.fromstring(zf.read('xl/workbook.xml'))
+            first = wb.find('m:sheets/m:sheet', ns)
+            if first is None:
+                raise ValueError(u'XLSX 沒有工作表')
+            rel_id = first.attrib.get('{%s}id' % ns['r'])
+            rels = ET.fromstring(zf.read('xl/_rels/workbook.xml.rels'))
+            target = next((r.attrib['Target'] for r in rels
+                           if r.attrib.get('Id') == rel_id), None)
+            if not target:
+                raise ValueError(u'XLSX 找不到第一張工作表')
+            sheet_path = target.lstrip('/') if target.startswith('/') else 'xl/' + target
+            sheet = ET.fromstring(zf.read(sheet_path))
+            matrix = []
+            for row in sheet.findall('.//m:sheetData/m:row', ns):
+                cells = []
+                for cell in row.findall('m:c', ns):
+                    ref = cell.attrib.get('r', '')
+                    col = 0
+                    for ch in re.match(r'[A-Z]+', ref).group(0):
+                        col = col * 26 + ord(ch) - 64
+                    col -= 1
+                    while len(cells) <= col:
+                        cells.append('')
+                    val = cell.find('m:v', ns)
+                    value = val.text if val is not None else ''
+                    if cell.attrib.get('t') == 's' and value:
+                        value = shared[int(value)]
+                    elif cell.attrib.get('t') == 'inlineStr':
+                        value = ''.join(t.text or '' for t in cell.findall('.//m:t', ns))
+                    cells[col] = value
+                matrix.append(cells)
+            required = ('Date', '景氣對策信號綜合分數', '景氣對策信號')
+            header_at = next((i for i, row in enumerate(matrix)
+                              if any(x in row for x in required)), None)
+            if header_at is None:
+                raise ValueError(u'XLSX 找不到景氣信號欄位標題')
+            headers = [str(x).strip() for x in matrix[header_at]]
+            rows = [dict(zip(headers, row)) for row in matrix[header_at + 1:] if row]
+    if not rows:
+        raise ValueError(u'資料集 6099 CSV 沒有資料')
+    return rows
+
+
+def _field(row, wanted):
+    normalized = {re.sub(r'\s+', '', k).strip('\ufeff'): v for k, v in row.items() if k}
+    for key in wanted:
+        if key in normalized:
+            return normalized[key]
+    return None
+
+
+def fetch_taiwan_macro():
+    """台灣景氣對策信號 + 海關出口年增率。任一來源可獨立失敗。"""
+    block = {'signal': [], 'exports': []}
+    errors = []
+    try:
+        rows = _ndc_rows(fetch_ndc_zip())
+        for row in rows:
+            d = _field(row, ('Date', '日期', '年月', '月份'))
+            score = _field(row, ('景氣對策信號綜合分數',))
+            light = _field(row, ('景氣對策信號',))
+            if not d or score is None or light is None:
+                continue
+            digits = re.findall(r'\d+', d)
+            if len(digits) == 1 and len(digits[0]) == 6:      # 實際格式是 202609（年月連寫）
+                digits = [digits[0][:4], digits[0][4:]]
+            if len(digits) < 2:
+                continue
+            year, month = int(digits[0]), int(digits[1])
+            if year < 1911:
+                year += 1911
+            try:
+                block['signal'].append({'d': '%04d-%02d' % (year, month),
+                                        'score': float(str(score).replace(',', '')),
+                                        'light': str(light).strip()})
+            except ValueError:
+                continue
+        block['signal'].sort(key=lambda p: p['d'])
+        if not block['signal']:
+            raise ValueError(u'ZIP 欄位或日期格式與資料集說明不符')
+        log(u'  國發會景氣信號 %d 筆，最新 %s' %
+            (len(block['signal']), block['signal'][-1]['d']))
+    except Exception as e:                                # noqa: BLE001
+        errors.append(u'國發會景氣信號：%s' % str(e)[:100])
+        log(u'  國發會景氣信號失敗：%s' % str(e)[:100])
+
+    try:
+        req = urllib.request.Request(CUSTOMS_CSV_URL, headers={'User-Agent': DATA_GOV_UA})
+        raw = urllib.request.urlopen(req, timeout=TIMEOUT).read()
+        rows = list(csv.DictReader(io.StringIO(_decode_csv(raw))))
+        monthly = {}
+        for row in rows:
+            y = _field(row, ('年度', '年'))
+            m = _field(row, ('月份', '月'))
+            total = _field(row, ('出口總值(新臺幣千元)', '出口總值（新臺幣千元）',
+                                 '出口總值(新台幣千元)', '出口總值（新台幣千元）', '出口總值'))
+            if not y or not m or total is None:
+                continue
+            try:
+                year, month = int(float(y)), int(float(m))
+                if year < 1911:
+                    year += 1911
+                monthly['%04d-%02d' % (year, month)] = float(str(total).replace(',', ''))
+            except ValueError:
+                continue
+        for period, value in sorted(monthly.items()):
+            y, m = int(period[:4]), period[5:]
+            base = monthly.get('%04d-%s' % (y - 1, m))
+            if base:
+                block['exports'].append({'d': period, 'v': round((value / base - 1) * 100, 4)})
+        if not block['exports']:
+            raise ValueError(u'CSV 欄位或年度月份格式與資料集說明不符')
+        log(u'  海關出口年增率 %d 筆，最新 %s' %
+            (len(block['exports']), block['exports'][-1]['d']))
+    except Exception as e:                                # noqa: BLE001
+        errors.append(u'海關出口年增率：%s' % str(e)[:100])
+        log(u'  海關出口年增率失敗：%s' % str(e)[:100])
+    return block, errors
+
+
 def value_on_or_before(dates, values, day):
     u"""某一天（含）以前最近的一個值；曲線的「一個月前」遇到假日要往前找。"""
     best = None
@@ -242,6 +429,10 @@ def main():
             d, v = curves[tenor]
             out['series'][key] = {'id': dict(TENORS)[tenor], 'label': u'%s 公債殖利率' % tenor,
                                   'unit': '%', 'freq': 'D', 'src': 'Fed', 'd': d, 'v': v}
+
+    taiwan, taiwan_errors = fetch_taiwan_macro()
+    out['taiwan'] = taiwan
+    errors.extend(taiwan_errors)
 
     if not out['series']:
         log(u'一條數列都沒抓到，不寫出')

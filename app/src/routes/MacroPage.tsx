@@ -242,6 +242,60 @@ function CurveCard({ curve }: { curve: MacroCurve }) {
   );
 }
 
+/* ── 台灣景氣 ──────────────────────────────────────────────── */
+
+function TaiwanMacro({ data, years }: { data: NonNullable<MacroData['taiwan']>; years: number }) {
+  const signals = data.signal ?? [];
+  const exports = data.exports ?? [];
+  const lastSignal = signals[signals.length - 1];
+  const lastExport = exports[exports.length - 1];
+  const exportPoints = useMemo(() => thinWeekly(lastYears(exports.map(p => ({ ...p })), years)), [exports, years]);
+  const lightColors: Record<string, string> = {
+    '藍燈': 'bg-blue-600', '黃藍燈': 'bg-yellow-500', '綠燈': 'bg-green-600',
+    '黃紅燈': 'bg-orange-500', '紅燈': 'bg-red-600',
+  };
+  return (
+    <section className="mt-6 border-t border-line pt-5">
+      <h2 className="mb-2 text-sm font-bold text-ink">台灣景氣</h2>
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 lg:gap-4">
+        <div className="min-w-0 rounded-xl border border-line bg-surface p-3.5">
+          <h3 className="text-[13px] font-bold text-ink">景氣對策信號</h3>
+          {lastSignal ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className={`inline-block h-3 w-3 rounded-full ${lightColors[lastSignal.light] ?? 'bg-muted'}`} aria-hidden="true" />
+                <span className="text-[22px] font-bold tabular-nums text-ink">{lastSignal.score} 分</span>
+                <span className="rounded bg-sunken px-2 py-1 text-[12px] font-semibold text-ink">{lastSignal.light}</span>
+                <span className="text-[11.5px] text-faint">{period(`${lastSignal.d}-01`, 'M')}</span>
+              </div>
+              {signals.length > 1 && <MacroLine pts={signals.map(p => ({ d: `${p.d}-01`, v: p.score }))}
+                guides={[16, 22, 31, 37]} digits={0} freq="M" />}
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">
+                國發會公布的綜合分數與燈號，歷史值可能隨月報回溯修正；燈號顏色代表官方景氣區間。
+              </p>
+            </>
+          ) : <p className="mt-2 text-[12px] text-muted">景氣信號資料暫時讀不到。</p>}
+        </div>
+        <div className="min-w-0 rounded-xl border border-line bg-surface p-3.5">
+          <h3 className="text-[13px] font-bold text-ink">海關出口年增率</h3>
+          {lastExport ? (
+            <>
+              <div className="mt-2 flex flex-wrap items-baseline gap-x-2">
+                <span className="font-mono text-[22px] font-bold tabular-nums text-ink">{fmt(lastExport.v, 1)}%</span>
+                <span className="text-[11.5px] text-faint">{period(`${lastExport.d}-01`, 'M')}</span>
+              </div>
+              <MacroLine pts={exportPoints} guides={[0]} digits={1} freq="M" />
+              <p className="mt-1.5 text-[11.5px] leading-relaxed text-muted">
+                依財政部關務署月出口總值計算：本月較去年同月的變動率；新臺幣計價，含復出口。
+              </p>
+            </>
+          ) : <p className="mt-2 text-[12px] text-muted">出口資料暫時讀不到。</p>}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 /* ── 頁面 ─────────────────────────────────────────────────── */
 
 export function MacroPage() {
@@ -275,8 +329,8 @@ export function MacroPage() {
     <>
       <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h1 className="text-lg font-bold text-ink">美國總經</h1>
-          <p className="text-[12px] text-muted">通膨、就業、成長、利率、匯率與能源・資料更新 {data.meta.updated}</p>
+          <h1 className="text-lg font-bold text-ink">總經</h1>
+          <p className="text-[12px] text-muted">美國總經與台灣景氣・資料更新 {data.meta.updated}</p>
         </div>
         <div role="tablist" aria-label="走勢期間" className="flex gap-1 rounded-lg bg-sunken p-1">
           {RANGES.map(r => (
@@ -360,9 +414,12 @@ export function MacroPage() {
         );
       })()}
 
+      {data.taiwan && <TaiwanMacro data={data.taiwan} years={years} />}
+
       <p className="mt-5 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         來源：{data.meta.source}；原油庫存取自美國能源資訊署（EIA）。全部為美國聯邦政府機關發佈之公開資料，
         經 FRED 彙整。「較前期」的紅綠只表示數字上升或下降，不代表好壞。
+        資料來源：國家發展委員會「景氣指標及燈號」（資料集 6099）、財政部關務署「海關進出口貿易統計」（資料集 6053）；依政府資料開放授權條款第 1 版利用。
         日資料的走勢圖以每週最後一個交易日繪製。本頁僅供參考，不構成投資建議。
         {data.meta.errors.length > 0 && ` 這次有 ${data.meta.errors.length} 條數列沒抓到，會在下次部署時補上。`}
       </p>

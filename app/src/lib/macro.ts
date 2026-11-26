@@ -34,6 +34,12 @@ export interface MacroData {
   meta: { updated: string; source: string; errors: string[] };
   series: Record<string, MacroSeries>;
   curve: MacroCurve | null;
+  taiwan?: TaiwanMacroData;
+}
+
+export interface TaiwanMacroData {
+  signal: { d: string; score: number; light: string }[];
+  exports: { d: string; v: number }[];
 }
 
 export interface Point { d: string; v: number }
