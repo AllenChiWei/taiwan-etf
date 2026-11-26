@@ -11,9 +11,11 @@ import { EtfListing } from '../components/EtfListing';
 import { EmptyState } from '../components/EmptyState';
 import type { Etf } from '../types';
 
-// 兩個附加分頁各自抓自己的資料，沒點進去的人不必下載那段程式
+// 三個附加分頁各自抓自己的資料，沒點進去的人不必下載那段程式
 const ActiveHoldings = lazy(() => import('../components/ActiveHoldings')
   .then(m => ({ default: m.ActiveHoldings })));
+const EtfFlow = lazy(() => import('../components/EtfFlow')
+  .then(m => ({ default: m.EtfFlow })));
 const Top10Modal = lazy(() => import('../components/Top10Modal')
   .then(m => ({ default: m.Top10Modal })));
 const UpcomingEtfs = lazy(() => import('../components/UpcomingEtfs')
@@ -21,6 +23,7 @@ const UpcomingEtfs = lazy(() => import('../components/UpcomingEtfs')
 
 const VIEWS = [
   { id: '', label: 'ETF 清單' },
+  { id: 'flow', label: '資金流向' },
   { id: 'active', label: '主動式換股' },
   { id: 'upcoming', label: '即將上市' },
 ] as const;
@@ -44,12 +47,12 @@ function ViewTabs({ view }: { view: string }) {
 
 export function ListPage() {
   const { view } = useSearch({ from: '/' });
-  if (view === 'active' || view === 'upcoming') {
+  if (view === 'flow' || view === 'active' || view === 'upcoming') {
     return (
       <>
         <ViewTabs view={view} />
         <Suspense fallback={<p className="py-10 text-center text-[13px] text-muted">載入中…</p>}>
-          {view === 'active' ? <ActiveHoldings /> : <UpcomingEtfs />}
+          {view === 'flow' ? <EtfFlow /> : view === 'active' ? <ActiveHoldings /> : <UpcomingEtfs />}
         </Suspense>
       </>
     );

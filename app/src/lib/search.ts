@@ -85,6 +85,7 @@ export function cbSearchItems(
 /** 站上的頁面（含分頁）。私人頁不放（要密碼，也不該被搜尋露出） */
 export const PAGES: SearchItem[] = [
   { kind: 'page', name: '台股 ETF 清單', to: '/', keywords: '台股 清單 篩選 報酬 殖利率 保管銀行' },
+  { kind: 'page', name: 'ETF 資金流向榜（受益人與淨申贖）', to: '/', search: { view: 'flow' }, keywords: '資金流向 受益人 人氣 淨申購 淨贖回 申贖 流通張數 集保 分割' },
   { kind: 'page', name: '主動式換股', to: '/', search: { view: 'active' }, keywords: '主動式 經理人 排行 換股 持股 損益 估值' },
   { kind: 'page', name: '即將上市 ETF', to: '/', search: { view: 'upcoming' }, keywords: '新上市 募集 即將上市' },
   { kind: 'page', name: '美股 ETF', to: '/us', keywords: '美股 美國 ETF' },
