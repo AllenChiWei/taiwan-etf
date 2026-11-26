@@ -85,3 +85,31 @@ test('缺了的數列不會變成空卡；倒掛判斷', () => {
   assert.equal(curveInverted({ ...data.curve!, now: [5.3, 4.9] }), true);
   assert.equal(curveInverted(null), null);
 });
+
+test('美元兌台幣匯率（DEXTAUS）：有兩筆以上才出現，缺值不擋其他指標', () => {
+  const data: MacroData = {
+    meta: { updated: '2026-11-26', source: '', errors: [] },
+    series: {
+      usdtwd: { id: 'DEXTAUS', label: '美元兌台幣匯率', unit: '台幣/美元', freq: 'D', src: 'Fed',
+        d: ['2026-11-19', '2026-11-20'], v: [32.25, 32.5] },
+    },
+    curve: null,
+  };
+  const [fx] = buildIndicators(data);
+  assert.equal(fx.key, 'usdtwd');
+  assert.equal(fx.group, '匯率');
+  assert.equal(fx.src, 'Fed');
+  assert.equal(fx.freq, 'D');
+  assert.equal(fx.digits, 2);
+  assert.deepEqual(latest(fx.pts), {
+    last: P('2026-11-20', 32.5),
+    prev: P('2026-11-19', 32.25),
+    delta: 0.25,
+  });
+
+  const single: MacroData = {
+    ...data,
+    series: { usdtwd: { ...data.series.usdtwd, d: ['2026-11-20'], v: [32.5] } },
+  };
+  assert.deepEqual(buildIndicators(single), []);
+});

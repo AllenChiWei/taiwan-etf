@@ -1,4 +1,4 @@
-/* 美國總經：通膨、就業、成長、利率、能源，外加殖利率曲線。
+/* 美國總經：通膨、就業、成長、利率、匯率、能源，外加殖利率曲線。
  *
  * 資料是 FRED 與 EIA 的美國政府機關原始數列（scripts/fetch_macro.py），換算在
  * lib/macro.ts。這一頁只負責呈現：每張卡片是「最新值、跟上一期比、一年前、走勢」。
@@ -276,7 +276,7 @@ export function MacroPage() {
       <div className="mt-4 flex flex-wrap items-end justify-between gap-2">
         <div>
           <h1 className="text-lg font-bold text-ink">美國總經</h1>
-          <p className="text-[12px] text-muted">通膨、就業、成長、利率與能源・資料更新 {data.meta.updated}</p>
+          <p className="text-[12px] text-muted">通膨、就業、成長、利率、匯率與能源・資料更新 {data.meta.updated}</p>
         </div>
         <div role="tablist" aria-label="走勢期間" className="flex gap-1 rounded-lg bg-sunken p-1">
           {RANGES.map(r => (
@@ -314,24 +314,44 @@ export function MacroPage() {
       })}
 
       {(() => {
-        // 成長（1 張卡）與能源（2 張卡）在寬螢幕同排湊滿 3 欄，避免單張卡佔滿整排留下大量空白
+        // 成長（1 張卡）、匯率（1 張卡）與能源（2 張卡）在寬螢幕同排湊滿 4 欄（缺匯率時退回 3 欄），
+        // 避免單張卡佔滿整排留下大量空白
         const growth = indicators.filter(i => i.group === '成長');
+        const fx = indicators.filter(i => i.group === '匯率');
         const energy = indicators.filter(i => i.group === '能源');
-        if (!growth.length && !energy.length) return null;
+        if (!growth.length && !fx.length && !energy.length) return null;
+        const fourCol = growth.length > 0 && fx.length > 0 && energy.length > 0;
+        const wrapCls = fourCol
+          ? 'mt-5 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4 xl:items-stretch lg:gap-4'
+          : 'mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-stretch lg:gap-4';
+        const singleCls = fourCol
+          ? 'min-w-0 sm:col-span-1 flex flex-col'
+          : 'min-w-0 lg:col-span-1 lg:flex lg:flex-col';
+        const energyCls = fourCol
+          ? 'min-w-0 sm:col-span-2 flex flex-col'
+          : 'min-w-0 lg:col-span-2 lg:flex lg:flex-col';
         return (
-          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-stretch lg:gap-4">
+          <div className={wrapCls}>
             {growth.length > 0 && (
-              <section className="min-w-0 lg:col-span-1 lg:flex lg:flex-col">
+              <section className={singleCls}>
                 <h2 className="mb-2 text-sm font-bold text-ink">成長</h2>
-                <div className="grid gap-3 lg:grow">
+                <div className="grid gap-3 grow">
                   {growth.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
                 </div>
               </section>
             )}
+            {fx.length > 0 && (
+              <section className={singleCls}>
+                <h2 className="mb-2 text-sm font-bold text-ink">匯率</h2>
+                <div className="grid gap-3 grow">
+                  {fx.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
+                </div>
+              </section>
+            )}
             {energy.length > 0 && (
-              <section className="min-w-0 lg:col-span-2 lg:flex lg:flex-col">
+              <section className={energyCls}>
                 <h2 className="mb-2 text-sm font-bold text-ink">能源</h2>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grow lg:gap-4">
+                <div className="grid gap-3 sm:grid-cols-2 grow lg:gap-4">
                   {energy.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
                 </div>
               </section>

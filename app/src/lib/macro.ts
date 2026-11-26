@@ -141,7 +141,7 @@ export function yearAgo(pts: Point[]): Point | null {
 
 export interface Indicator {
   key: string;
-  group: '通膨' | '就業' | '成長' | '利率' | '能源';
+  group: '通膨' | '就業' | '成長' | '利率' | '匯率' | '能源';
   title: string;
   unit: string;
   digits: number;
@@ -192,6 +192,9 @@ export function buildIndicators(data: MacroData): Indicator[] {
     { key: 's10_3m', group: '利率', title: '10 年減 3 個月利差', unit: '百分點', digits: 2,
       pts: spread(p('y10'), p('y3m')), guides: [0], src: 'Fed', freq: 'D',
       note: '紐約聯準會的衰退機率模型用的是這一組，不是 10 年減 2 年。' },
+    { key: 'usdtwd', group: '匯率', title: '美元兌台幣匯率', unit: '台幣/美元', digits: 2,
+      pts: p('usdtwd'), guides: [], src: 'Fed', freq: 'D',
+      note: '聯準會 H.10 紐約中午參考匯率（每週一公佈前週日資料）；數字上升代表美元升值、台幣貶值。' },
     { key: 'wti', group: '能源', title: 'WTI 原油現貨', unit: '美元/桶', digits: 2,
       pts: p('wti'), guides: [], src: 'EIA', freq: 'D',
       note: '美國西德州原油的現貨價。' },

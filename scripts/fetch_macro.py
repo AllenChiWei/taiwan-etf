@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-u"""美國總經數據：通膨、就業、利率與殖利率曲線、原油。FRED 為主，原油庫存取自 EIA。
+u"""美國總經數據：通膨、就業、利率與殖利率曲線、匯率、原油。FRED 為主，原油庫存取自 EIA。
 
     python scripts/fetch_macro.py [outfile]
 
@@ -18,8 +18,14 @@ FRED（聖路易聯邦準備銀行）把美國各政府機關發佈的數列集�
     勞工統計局 BLS     CPI、核心 CPI、失業率、非農就業
     經濟分析局 BEA     核心 PCE、實質 GDP
     勞工部 DOL         初領失業救濟金
-    聯準會 Fed         聯邦基金利率目標區間、有效利率、公債殖利率（H.15）
+    聯準會 Fed         聯邦基金利率目標區間、有效利率、公債殖利率（H.15）、
+                       美元兌台幣匯率（H.10，DEXTAUS）
     能源資訊署 EIA     WTI 現貨價；原油商業庫存直接取自 EIA（見下）
+
+美元兌台幣匯率（DEXTAUS）的 FRED Source 為 Board of Governors of the Federal Reserve
+System (US)、Release 為 H.10 Foreign Exchange Rates（紐約中午銀行間電匯買入價，每週一
+發佈前週日資料）；原始發佈者屬美國聯邦政府機關，不受著作權保護，符合
+`docs/claude/macro-calendar.md` 的轉載規則。
 
 原油商業庫存（不含戰略儲備，WCESTUS1）FRED 沒有收，改抓 EIA 自己的歷史表
 `dnav/pet/hist/LeafHandler.ashx`。eia.gov 的 robots.txt 對所有人 `Allow: /`，`/dnav/` 不在
@@ -73,6 +79,7 @@ SERIES = [
     ('fed_upper', 'DFEDTARU',       u'聯邦基金利率目標上限', '%',   'D', 'Fed'),
     ('fed_lower', 'DFEDTARL',       u'聯邦基金利率目標下限', '%',   'D', 'Fed'),
     ('effr',     'DFF',             u'有效聯邦基金利率', '%',       'D', 'Fed'),
+    ('usdtwd',   'DEXTAUS',         u'美元兌台幣匯率',   u'台幣/美元', 'D', 'Fed'),
     ('wti',      'DCOILWTICO',      u'WTI 原油現貨',     u'美元/桶', 'D', 'EIA'),
 ]
 
