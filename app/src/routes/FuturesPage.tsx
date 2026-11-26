@@ -976,7 +976,7 @@ export function FuturesPage() {
 
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">期貨對帳單分析</h2>
-        <p className="mt-1 text-[12px] leading-relaxed text-muted">
+        <p className="mt-1 max-w-[80ch] text-[12px] leading-relaxed text-muted">
           丟進元大期貨的「已實現損益」檔案，分成
           <strong className="text-ink">程式交易</strong>（小台指、小電子）、
           <strong className="text-ink">主觀交易</strong>（其他期貨，多半是個股期貨）與
@@ -1064,7 +1064,7 @@ export function FuturesPage() {
           );
         })()}
 
-        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+        <p className="mt-2 max-w-[80ch] text-[11px] leading-relaxed text-faint">
           支援 .xls／.xlsx／.csv，可以一次選好幾份（例如每年一份），期間重疊的部分只算一次。
           <strong className="text-muted">能匯出 CSV 的話建議用 CSV</strong> ——
           讀 .xls 需要一個第三方解析器，所以那段跑在獨立的 Web Worker 裡隔離起來；CSV 則完全不經過它。
@@ -1193,7 +1193,7 @@ export function FuturesPage() {
         </>
       )}
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         數字全部來自你提供的對帳單，本頁只做整理與統計，不構成投資建議。
         歷史績效不代表未來報酬。
       </p>

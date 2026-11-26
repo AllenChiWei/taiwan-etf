@@ -68,39 +68,40 @@ export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset
     // 手機上不黏頂：搜尋 + 四個選單疊起來有五排，黏著會吃掉半個螢幕，
     // 需要時用右下角的「回到頂部」回來就好。桌機只佔兩排，黏頂很有用。
     <div className="-mx-3 mt-4 border-b border-line bg-bg px-3 py-2.5
-                    sm:-mx-4 sm:px-4 md:sticky md:top-0 md:z-20">
-      <div className="relative">
-        <span aria-hidden="true"
-              className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm opacity-60">
-          🔍
-        </span>
-        <input
-          ref={searchRef}
-          type="search"
-          value={draft}
-          onChange={e => setDraft(e.target.value)}
-          placeholder="搜尋代號、名稱或保管銀行…"
-          aria-label="搜尋 ETF"
-          autoComplete="off"
-          /* 16px 是 iOS Safari 聚焦時不自動放大頁面的最低字級 */
-          className="h-11 w-full rounded-lg border border-line bg-surface pr-9 pl-9 text-base
-                     text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none
-                     [&::-webkit-search-cancel-button]:hidden"
-        />
-        {draft && (
-          <button
-            type="button"
-            aria-label="清除搜尋"
-            onClick={() => { setDraft(''); searchRef.current?.focus(); }}
-            className="absolute top-1/2 right-1.5 grid h-7 w-7 -translate-y-1/2 place-items-center
-                       rounded-full text-xs text-muted hover:bg-hover hover:text-ink"
-          >
-            ✕
-          </button>
-        )}
-      </div>
+                    sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 xl:-mx-8 xl:px-8 md:sticky md:top-0 md:z-20">
+      <div className="xl:grid xl:grid-cols-[minmax(220px,1.5fr)_repeat(5,minmax(0,1fr))_auto] xl:items-end xl:gap-2.5">
+        <div className="relative">
+          <span aria-hidden="true"
+                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm opacity-60">
+            🔍
+          </span>
+          <input
+            ref={searchRef}
+            type="search"
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            placeholder="搜尋代號、名稱或保管銀行…"
+            aria-label="搜尋 ETF"
+            autoComplete="off"
+            /* 16px 是 iOS Safari 聚焦時不自動放大頁面的最低字級 */
+            className="h-11 w-full rounded-lg border border-line bg-surface pr-9 pl-9 text-base
+                       text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none
+                       [&::-webkit-search-cancel-button]:hidden xl:h-10 xl:text-[14.5px]"
+          />
+          {draft && (
+            <button
+              type="button"
+              aria-label="清除搜尋"
+              onClick={() => { setDraft(''); searchRef.current?.focus(); }}
+              className="absolute top-1/2 right-1.5 grid h-7 w-7 -translate-y-1/2 place-items-center
+                         rounded-full text-xs text-muted hover:bg-hover hover:text-ink"
+            >
+              ✕
+            </button>
+          )}
+        </div>
 
-      <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:grid-cols-[repeat(5,1fr)_auto] lg:items-end">
+        <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:grid-cols-[repeat(5,1fr)_auto] lg:items-end xl:contents">
         <div className="flex flex-col gap-1">
           <label className={labelCls} htmlFor="f-cust">保管銀行</label>
           <select id="f-cust" className={selectCls} value={filters.cust}
@@ -169,6 +170,7 @@ export function FilterBar({ data, filters, sort, onChange, onSortChange, onReset
         >
           清除
         </button>
+        </div>
       </div>
     </div>
   );

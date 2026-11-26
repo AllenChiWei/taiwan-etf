@@ -73,7 +73,7 @@ export function AppShell() {
                       etfs={state.status === 'ready' ? state.data.etfs : []} />
 
       <header className="border-b border-line bg-surface pt-[env(safe-area-inset-top)]">
-        <div className="mx-auto flex w-full max-w-6xl items-start justify-between gap-3 px-3 pt-4 pb-3 sm:px-4">
+        <div className="mx-auto flex w-full max-w-[1536px] items-start justify-between gap-3 px-3 pt-4 pb-3 sm:px-4 lg:px-6 xl:px-8">
           <div className="min-w-0">
             <h1 className="text-xl font-bold tracking-tight">職業賭徒日誌</h1>
             <p className="mt-0.5 text-[12.5px] text-muted">
@@ -106,7 +106,7 @@ export function AppShell() {
           </div>
         </div>
 
-        <nav aria-label="主要導覽" className="mx-auto w-full max-w-6xl px-3 sm:px-4">
+        <nav aria-label="主要導覽" className="mx-auto w-full max-w-[1536px] px-3 sm:px-4 lg:px-6 xl:px-8">
           <div className="flex gap-1 border-b border-line">
             {GROUPS.map(g => {
               const on = groupOf(pathname) === g.key;
@@ -160,7 +160,7 @@ export function AppShell() {
       {/* 資料超過 2 個交易日沒更新就提醒（2026-09 曾停在 9/25 好幾天沒人發現） */}
       <StaleBanner updated={meta?.updated} />
 
-      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl overflow-x-clip px-3 pb-10 sm:px-4">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-[1536px] overflow-x-clip px-3 pb-10 sm:px-4 lg:px-6 xl:px-8">
         {state.status === 'loading' && (
           <p className="py-16 text-center text-muted">載入資料中…</p>
         )}
@@ -187,8 +187,8 @@ export function AppShell() {
 
       {/* 頁尾講的是 ETF 資料來源，撲克頁跟那些資料無關 ——
           掛在那裡會讓人以為那張開牌表也是從 TWSE 來的。 */}
-      <footer className="mx-auto w-full max-w-6xl border-t border-line px-3 py-6 text-center
-                         text-[12.5px] text-faint sm:px-4">
+      <footer className="mx-auto w-full max-w-[1536px] border-t border-line px-3 py-6 text-center
+                         text-[12.5px] text-faint sm:px-4 lg:px-6 xl:px-8">
         {pathname === '/poker' ? (
           <p>開牌範圍為公開的近似範圍，僅供參考。</p>
         ) : (

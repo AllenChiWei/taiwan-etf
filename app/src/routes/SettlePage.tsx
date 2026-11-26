@@ -6,7 +6,7 @@ import { SettleSection } from '../components/SettleSection';
 
 export function SettlePage() {
   return (
-    <div className="mx-auto max-w-2xl">
+    <div>
       <div className="mt-3 flex justify-end">
         <Link to="/nextday"
               className="rounded-lg border border-line bg-surface px-3 py-1.5 text-[12.5px] font-semibold text-accent hover:border-accent">

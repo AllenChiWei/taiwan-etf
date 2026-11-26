@@ -73,7 +73,8 @@ export function PerformanceChart({ result, height = 300, colorOf }: Props) {
   const hoverIdx = hover === null ? null : Math.max(0, Math.min(dates.length - 1, hover));
 
   return (
-    <div className="rounded-xl border border-line bg-surface p-2">
+    <div className="rounded-xl border border-line bg-surface p-2 sm:p-3">
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.65fr)_minmax(0,1fr)] xl:items-start xl:gap-4">
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="h-auto w-full touch-pan-y"
@@ -130,7 +131,8 @@ export function PerformanceChart({ result, height = 300, colorOf }: Props) {
 
       {/* 圖例兼讀值：沒有 hover 時顯示期末報酬，有 hover 時顯示該日。
           預設依期末報酬由高到低排名（hover 時順序不跳，免得游標移動時清單一直重排） */}
-      <div className="mt-1 flex items-center justify-between gap-2 px-1">
+      <div className="min-w-0">
+      <div className="mt-1 flex items-center justify-between gap-2 px-1 xl:mt-0">
         <span className="text-[11.5px] text-faint">
           {hoverIdx === null ? '期間報酬' : `${dates[hoverIdx]} 的累積報酬`}
         </span>
@@ -139,7 +141,7 @@ export function PerformanceChart({ result, height = 300, colorOf }: Props) {
           {ranked ? '依報酬高→低 ↓' : '依勾選順序'}
         </button>
       </div>
-      <ol className="mt-0.5 grid grid-cols-1 gap-x-4 px-1 text-[13px] sm:grid-cols-2">
+      <ol className="mt-0.5 grid grid-cols-1 gap-x-4 px-1 text-[13px] sm:grid-cols-2 xl:grid-cols-1">
         {legend.map(({ s, i }, rank) => {
           const v = hoverIdx === null ? s.totalReturn : (s.points[hoverIdx] ?? null);
           const shown = hoverIdx === null ? v : (v === null ? null : v - 100);
@@ -158,6 +160,8 @@ export function PerformanceChart({ result, height = 300, colorOf }: Props) {
           );
         })}
       </ol>
+      </div>
+      </div>
     </div>
   );
 }

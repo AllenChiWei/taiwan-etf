@@ -48,7 +48,8 @@ export function PokerQuiz() {
   const kind = q.hand.length === 2 ? '口袋對子' : q.hand.endsWith('s') ? '同花' : '不同花';
 
   return (
-    <div className="mt-3">
+    <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-start">
+      <div className="min-w-0">
       <div className="grid grid-cols-3 gap-2 text-center">
         {([['答對率', stats.total ? `${Math.round((stats.right / stats.total) * 100)}%` : '—'],
            ['連續答對', String(stats.streak)], ['最佳紀錄', String(stats.best)]] as const).map(([k, v]) => (
@@ -93,9 +94,11 @@ export function PokerQuiz() {
           </div>
         )}
       </section>
+      </div>
 
+      <div className="min-w-0 space-y-3">
       {stats.misses.length > 0 && (
-        <section className="mt-3 rounded-xl border border-line bg-surface p-3.5">
+        <section className="rounded-xl border border-line bg-surface p-3.5">
           <button type="button" onClick={() => setShowMisses(v => !v)} aria-expanded={showMisses}
                   className="flex w-full items-baseline justify-between text-left">
             <span className="text-sm font-bold text-ink">錯題回顧（最近 {stats.misses.length} 題）</span>
@@ -121,11 +124,12 @@ export function PokerQuiz() {
         </section>
       )}
 
-      <p className="mt-3 rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
+      <p className="rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
         答案以這一頁的範圍表為準（6 人桌、100bb、與 solver 方向一致的公開近似範圍）。
         題目刻意讓答案平均分布：開牌題一半在範圍內、一半在範圍外，應對題 3-bet、跟注、蓋牌各三分之一，
         所以練到的都是需要想一下的牌，而不是一眼就蓋的垃圾牌。成績只存在這台裝置。
       </p>
+      </div>
     </div>
   );
 }

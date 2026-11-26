@@ -51,7 +51,7 @@ export function HandMatrix({ actions, assign, showLegend = true }: Props) {
   return (
     <div>
       <div
-        className="grid gap-px overflow-hidden rounded-lg border border-line bg-line"
+        className="grid max-w-[540px] gap-px overflow-hidden rounded-lg border border-line bg-line"
         style={{ gridTemplateColumns: 'repeat(13, minmax(0, 1fr))' }}
         role="table"
         aria-label="起手牌矩陣"

@@ -173,7 +173,7 @@ export function FavoritesPage() {
   return (
     <div className="pt-4">
       <h2 className="mb-1 text-base font-bold text-ink">績效比較</h2>
-      <p className="mb-3 text-[13px] text-muted">
+      <p className="mb-3 max-w-[78ch] text-[13px] text-muted">
         勾選要比較的 ETF（最多 {MAX_COMPARE} 檔）。
         起點會自動取<strong className="text-ink">最晚上市那一檔的上市日</strong>，
         所有曲線在該點都歸零成 100，之後的差距才是真正的績效差。
@@ -249,7 +249,7 @@ export function FavoritesPage() {
         )}
       </div>
 
-      <ul className="flex flex-col gap-1.5">
+      <ul className="grid grid-cols-1 gap-2 xl:grid-cols-2">
         {shown.map(it => {
           const checked = selected.includes(it.code);
           const color = checked ? colorOf(it.code) : undefined;

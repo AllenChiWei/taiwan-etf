@@ -145,8 +145,8 @@ function StatsBoard({ s, onBucket }: { s: CbStats; onBucket: (id: string) => voi
         </table>
       </div>
 
-      <div className="mt-3 grid gap-3 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-lg border border-line bg-bg">
+      <div className="mt-3 grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.25fr)] xl:items-stretch">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-line bg-bg">
           <Row label="平均價格" value={f1(s.avgPx)} strong />
           <Row label="PR75 最高價" value={f1(s.pr75)} />
           <Row label="PR90 高高價" value={f1(s.pr90)} />
@@ -157,7 +157,7 @@ function StatsBoard({ s, onBucket }: { s: CbStats; onBucket: (id: string) => voi
           <Row label="平均轉換價值" value={f1(s.avgCv)} strong />
           <Row label="平均轉換溢價率" value={pct(s.avgPrem)} strong />
         </div>
-        <div className="overflow-hidden rounded-lg border border-line bg-bg">
+        <div className="min-w-0 overflow-hidden rounded-lg border border-line bg-bg">
           <Row label="轉換價值 ≥ 100 時的平均溢價率" value={pct(s.avgPremItm)} strong />
           <Row label="轉換價值 ≥ 100 檔數" value={String(s.cvGe100)} />
           <Row label="轉換價值 ≥ 120 檔數" value={String(s.cvGe120)} />
@@ -165,29 +165,31 @@ function StatsBoard({ s, onBucket }: { s: CbStats; onBucket: (id: string) => voi
           <Row label="溢價率 ≥ 50% 檔數" value={String(s.premGe50)} />
           <Row label="溢價率 ≥ 100% 檔數" value={String(s.premGe100)} />
         </div>
-      </div>
 
-      {/* 價格區間分布長條圖 */}
-      <div className="mt-4">
-        <h3 className="text-[12.5px] font-bold text-ink">價格區間分布</h3>
-        <div className="mt-2 flex h-44 items-end gap-2 border-b border-line px-1 sm:gap-4">
-          {s.buckets.map(b => (
-            <button key={b.bucket.id} type="button" onClick={() => onBucket(b.bucket.id)}
-                    aria-label={`${b.bucket.label}：${b.count} 檔`}
-                    className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end">
-              <span className="mb-1 font-mono text-[12px] font-bold tabular-nums text-ink">{b.count}</span>
-              <span className="w-full max-w-14 rounded-t bg-accent group-hover:opacity-80"
-                    style={{ height: `${(b.count / max) * 82}%` }} />
-            </button>
-          ))}
-        </div>
-        <div className="flex gap-2 px-1 sm:gap-4">
-          {s.buckets.map(b => (
-            // 手機上一格只有 50px 寬，「100~105」放不下：在 ~ 後面允許換行，不要截成「100~1…」
-            <span key={b.bucket.id} className="min-w-0 flex-1 pt-1 text-center text-[11px] leading-tight text-muted">
-              {b.bucket.label.replace('~', '~​')}
-            </span>
-          ))}
+        {/* 價格區間分布長條圖 */}
+        <div className="flex min-w-0 flex-col justify-between rounded-lg border border-line bg-bg p-3 lg:col-span-2 xl:col-span-1">
+          <h3 className="text-[12.5px] font-bold text-ink">價格區間分布</h3>
+          <div>
+            <div className="mt-2 flex h-44 items-end gap-1.5 border-b border-line px-1 sm:gap-2">
+              {s.buckets.map(b => (
+                <button key={b.bucket.id} type="button" onClick={() => onBucket(b.bucket.id)}
+                        aria-label={`${b.bucket.label}：${b.count} 檔`}
+                        className="group flex h-full min-w-0 flex-1 flex-col items-center justify-end">
+                  <span className="mb-1 font-mono text-[12px] font-bold tabular-nums text-ink">{b.count}</span>
+                  <span className="w-full max-w-14 rounded-t bg-accent group-hover:opacity-80"
+                        style={{ height: `${(b.count / max) * 82}%` }} />
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-1.5 px-1 sm:gap-2">
+              {s.buckets.map(b => (
+                // 手機上一格只有 50px 寬，「100~105」放不下：在 ~ 後面允許換行，不要截成「100~1…」
+                <span key={b.bucket.id} className="min-w-0 flex-1 pt-1 text-center text-[11px] leading-tight text-muted">
+                  {b.bucket.label.replace('~', '~​')}
+                </span>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </>
@@ -551,7 +553,7 @@ export function CbPage() {
   const planned = data.planned ?? [];
 
   return (
-    <div className="mx-auto max-w-5xl px-4 pb-16 pt-4">
+    <div className="pt-4 pb-6">
       <header>
         <h1 className="text-lg font-bold text-ink">可轉債</h1>
         <p className="mt-1 text-[12.5px] text-muted">
@@ -600,7 +602,7 @@ export function CbPage() {
         </div>
 
         {showCond && (
-          <div className="mt-2 grid gap-2 rounded-lg border border-line bg-bg p-3 sm:grid-cols-2">
+          <div className="mt-2 grid gap-2 rounded-lg border border-line bg-bg p-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             <RangeInput label="價格" r={cond.px} onChange={r => setC({ px: r })} />
             <RangeInput label="溢價率" r={cond.prem} onChange={r => setC({ prem: r })} unit="%" />
             <RangeInput label="轉換價值" r={cond.cv} onChange={r => setC({ cv: r })} />
@@ -650,7 +652,7 @@ export function CbPage() {
 
         {/* 可點的欄位標題：點一下用那一欄排序，再點一次反過來。手機上只有兩欄，標題改成一排按鈕 */}
         <div className="mt-3 flex border-b border-line pb-1 pl-7 text-[11.5px] font-semibold text-muted">
-          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))]">
+          <div className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))] xl:grid-cols-[minmax(0,2.1fr)_repeat(5,minmax(0,1fr))]">
             <div className="flex flex-wrap gap-x-3 gap-y-1">
               <SortHead id="code" label="代號" />
               <span className="sm:hidden contents">
@@ -682,7 +684,7 @@ export function CbPage() {
                 </button>
                 <button type="button" onClick={() => setPick(b)}
                         className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2 text-left hover:bg-sunken/60
-                                   sm:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))]">
+                                   sm:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))] xl:grid-cols-[minmax(0,2.1fr)_repeat(5,minmax(0,1fr))]">
                   <div className="min-w-0">
                     <span className="font-mono text-[12px] text-muted">{b.c}</span>
                     <span className="ml-1.5 text-[13.5px] font-semibold text-ink">{b.n}</span>
@@ -750,7 +752,8 @@ export function CbPage() {
 
       {market && <div id="cb-hist" className="scroll-mt-16"><MarketHistory market={market} /></div>}
 
-      <div id="cb-up" className="scroll-mt-16">
+      <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] xl:items-start xl:gap-4 [&>div>section]:mt-0">
+      <div id="cb-up" className="min-w-0 scroll-mt-16">
       <Section title="待發行" hint={`${data.upcoming.length} 檔　發行日或上櫃日在 ${md(data.meta.date)} 之後`}>
         {data.upcoming.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">目前沒有排定發行的公開募集可轉債。</p>
@@ -788,7 +791,7 @@ export function CbPage() {
       </Section>
       </div>
 
-      <div id="cb-plan" className="scroll-mt-16">
+      <div id="cb-plan" className="min-w-0 scroll-mt-16">
       <Section title="籌備中" hint={`${planned.length} 則　重大訊息提到發行可轉債、之後還沒發新債的`}>
         {planned.length === 0 ? (
           <p className="mt-2 text-[12.5px] text-muted">
@@ -812,10 +815,11 @@ export function CbPage() {
         </p>
       </Section>
       </div>
+      </div>
 
       <div id="cb-ind" className="scroll-mt-16">
       <Section title="發行公司依產業" hint="近 180 天新發行＋待發行多的排前面；點產業看清單">
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {inds.map(r => (
             <button key={r.ind} type="button" onClick={() => goList(() => setInd(r.ind))}
                     className={`rounded-lg border px-3 py-2 text-left hover:border-accent ${ind === r.ind ? 'border-accent' : 'border-line'} bg-bg`}>
@@ -837,7 +841,7 @@ export function CbPage() {
       </div>
 
 
-      <p className="mt-4 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         資料來源：{data.meta.source}。更新時間 {data.meta.updated}。轉換價、賣回、贖回由發行公司輸入櫃買資訊看板，
         以公司公告為準。餘額是上月底的數字。
       </p>

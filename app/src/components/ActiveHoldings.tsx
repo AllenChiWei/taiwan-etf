@@ -143,8 +143,12 @@ export function ActiveHoldings() {
 
   return (
     <div className="pt-4">
+      {(board.some(r => r.edge != null) || (agg && agg.rows.length > 0)) && (
+        <div className={board.some(r => r.edge != null) && agg && agg.rows.length > 0
+          ? 'mb-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mb-0'
+          : ''}>
       {board.some(r => r.edge != null) && (
-        <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <section className="mb-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <h2 className="text-sm font-bold text-ink">經理人排行（選股力）</h2>
             <span className="text-[11.5px] text-faint">近 60 次換股，算到 {data.last?.d} 收盤</span>
@@ -176,7 +180,7 @@ export function ActiveHoldings() {
       )}
 
       {agg && agg.rows.length > 0 && (
-        <section className="mb-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <section className="mb-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-x-3">
             <h2 className="text-sm font-bold text-ink">市值前十大主動式 ETF 合計持股</h2>
             <span className="text-[11.5px] text-faint">權重 × ETF 市值加總，依金額排</span>
@@ -210,6 +214,8 @@ export function ActiveHoldings() {
           </p>
         </section>
       )}
+        </div>
+      )}
 
       {cons && cons.rows.length > 0 && (
         <section className="rounded-xl border border-line bg-surface p-3.5 sm:p-4">
@@ -217,7 +223,7 @@ export function ActiveHoldings() {
             <h2 className="text-sm font-bold text-ink">幾檔一起動的股票</h2>
             <span className="text-[11.5px] text-faint">{cons.date} · 各檔最新一次換股</span>
           </div>
-          <ul className="mt-2 grid gap-1.5 sm:grid-cols-2">
+          <ul className="mt-2 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
             {cons.rows.slice(0, 10).map(r => (
               <li key={r.code} className="flex items-baseline justify-between gap-2 rounded-lg border border-line bg-bg px-2.5 py-1.5">
                 <span className="min-w-0 truncate text-[13px] text-ink">
@@ -269,8 +275,11 @@ export function ActiveHoldings() {
           </>
         )}
 
+        {((sc.buy.n > 0 || sc.sell.n > 0) || bk) && (
+          <div className={`mt-4 grid grid-cols-1 gap-3 ${
+            (sc.buy.n > 0 || sc.sell.n > 0) && bk ? 'lg:grid-cols-2 lg:items-start' : ''}`}>
         {(sc.buy.n > 0 || sc.sell.n > 0) && (
-          <div className="mt-4 rounded-lg border border-line bg-bg p-3">
+          <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 className="text-[13px] font-bold text-ink">換股成效</h3>
               <span className="text-[11px] text-faint">{sc.from} ～ {sc.to} 的換股，算到 {data.last?.d} 收盤</span>
@@ -295,7 +304,7 @@ export function ActiveHoldings() {
         )}
 
         {bk && (
-          <div className="mt-3 rounded-lg border border-line bg-bg p-3">
+          <div className="min-w-0 rounded-lg border border-line bg-bg p-3">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h3 className="text-[13px] font-bold text-ink">持股損益</h3>
               <span className="text-[11px] text-faint">{bk.since} 起算（成本＝當天收盤）→ {bk.asof}</span>
@@ -336,60 +345,68 @@ export function ActiveHoldings() {
             </p>
           </div>
         )}
-
-        <h3 className="mt-4 text-[13px] font-bold text-ink">近期換股紀錄</h3>
-        <ul className="mt-1">
-          {history.map(day => {
-            const g = groupChanges(day);
-            const open = openDay === day.d;
-            return (
-              <li key={day.d} className="border-b border-line/60 last:border-0">
-                <button type="button" onClick={() => setOpenDay(open ? null : day.d)}
-                        aria-expanded={open}
-                        className="flex w-full items-baseline justify-between gap-2 py-1.5 text-left">
-                  <span className="font-mono text-[12.5px] text-ink">{day.d}</span>
-                  <span className="text-[11.5px]">
-                    {KIND_ORDER.map(k => g[k].length > 0 && (
-                      <span key={k} className={`ml-2 ${k === 'new' || k === 'add' ? 'text-up' : 'text-down'}`}>
-                        {KIND_LABEL[k]} {g[k].length}
-                      </span>
-                    ))}
-                    {day.items.length === 0 && <span className="text-faint">沒有換股</span>}
-                    {day.v && (day.v[0] || day.v[1]) ? (
-                      <span className={`ml-2 font-mono ${tone(day.v[0] - day.v[1])}`}>
-                        淨 {day.v[0] - day.v[1] > 0 ? '+' : ''}{yi(day.v[0] - day.v[1])}
-                      </span>
-                    ) : null}
-                    <span className="ml-2 text-faint">{open ? '▲' : '▼'}</span>
-                  </span>
-                </button>
-                {open && <div className="pb-2">{day.v && <Valuation day={day} />}<DayDetail day={day} last={data.last} /></div>}
-              </li>
-            );
-          })}
-        </ul>
-
-        <h3 className="mt-4 text-[13px] font-bold text-ink">目前持股（依權重）</h3>
-        <ul className="mt-1">
-          {holdings.map(([c, n, sh, w]) => (
-            <li key={c} className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 border-b border-line/60 py-1 last:border-0">
-              <span className="min-w-0 truncate text-[13px] text-ink">
-                <span className="font-mono text-[12px] text-muted">{c}</span> {n}
-              </span>
-              <span className="font-mono text-[11.5px] tabular-nums text-faint">{sharesLabel(c, sh, n)}</span>
-              <span className="w-[4.5em] text-right font-mono text-[12.5px] tabular-nums text-ink">{nf2.format(w)}%</span>
-            </li>
-          ))}
-        </ul>
-        {etf.holdings.length > 15 && (
-          <button type="button" onClick={() => setShowAll(v => !v)}
-                  className="mt-1.5 text-[12.5px] font-semibold text-accent">
-            {showAll ? '收起' : `顯示全部 ${etf.holdings.length} 檔`}
-          </button>
+          </div>
         )}
+
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2 lg:items-start lg:gap-6">
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-bold text-ink">近期換股紀錄</h3>
+            <ul className="mt-1">
+              {history.map(day => {
+                const g = groupChanges(day);
+                const open = openDay === day.d;
+                return (
+                  <li key={day.d} className="border-b border-line/60 last:border-0">
+                    <button type="button" onClick={() => setOpenDay(open ? null : day.d)}
+                            aria-expanded={open}
+                            className="flex w-full items-baseline justify-between gap-2 py-1.5 text-left">
+                      <span className="font-mono text-[12.5px] text-ink">{day.d}</span>
+                      <span className="text-[11.5px]">
+                        {KIND_ORDER.map(k => g[k].length > 0 && (
+                          <span key={k} className={`ml-2 ${k === 'new' || k === 'add' ? 'text-up' : 'text-down'}`}>
+                            {KIND_LABEL[k]} {g[k].length}
+                          </span>
+                        ))}
+                        {day.items.length === 0 && <span className="text-faint">沒有換股</span>}
+                        {day.v && (day.v[0] || day.v[1]) ? (
+                          <span className={`ml-2 font-mono ${tone(day.v[0] - day.v[1])}`}>
+                            淨 {day.v[0] - day.v[1] > 0 ? '+' : ''}{yi(day.v[0] - day.v[1])}
+                          </span>
+                        ) : null}
+                        <span className="ml-2 text-faint">{open ? '▲' : '▼'}</span>
+                      </span>
+                    </button>
+                    {open && <div className="pb-2">{day.v && <Valuation day={day} />}<DayDetail day={day} last={data.last} /></div>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          <div className="min-w-0">
+            <h3 className="text-[13px] font-bold text-ink">目前持股（依權重）</h3>
+            <ul className="mt-1">
+              {holdings.map(([c, n, sh, w]) => (
+                <li key={c} className="grid grid-cols-[1fr_auto_auto] items-baseline gap-3 border-b border-line/60 py-1 last:border-0">
+                  <span className="min-w-0 truncate text-[13px] text-ink">
+                    <span className="font-mono text-[12px] text-muted">{c}</span> {n}
+                  </span>
+                  <span className="font-mono text-[11.5px] tabular-nums text-faint">{sharesLabel(c, sh, n)}</span>
+                  <span className="w-[4.5em] text-right font-mono text-[12.5px] tabular-nums text-ink">{nf2.format(w)}%</span>
+                </li>
+              ))}
+            </ul>
+            {etf.holdings.length > 15 && (
+              <button type="button" onClick={() => setShowAll(v => !v)}
+                      className="mt-1.5 text-[12.5px] font-semibold text-accent">
+                {showAll ? '收起' : `顯示全部 ${etf.holdings.length} 檔`}
+              </button>
+            )}
+          </div>
+        </div>
       </section>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-faint">
+      <p className="mt-3 max-w-[78ch] text-[11px] leading-relaxed text-faint">
         資料來源：{data.meta.source}，每天收盤後更新。加碼／減碼會扣掉資金進出：主動式 ETF 是現金申購，如果某天所有持股都同比例增減，
         那是資金進出而不是看好哪一檔，所以只有偏離整體比例超過 {nf1.format(data.meta.minChange * 100)}% 的才算
         （目前這幾檔多數日子股數完全不動，這個調整幾乎沒有作用）。

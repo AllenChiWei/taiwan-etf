@@ -187,9 +187,10 @@ export function EquityCalculator() {
       : board.length === 4 ? '轉牌圈' : '河牌圈';
 
   return (
-    <>
+    <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] lg:items-start">
+      <div className="min-w-0">
       {/* 三個牌格 */}
-      <div className="mt-3 flex gap-1.5 rounded-lg bg-sunken p-1" role="group" aria-label="對手">
+      <div className="flex gap-1.5 rounded-lg bg-sunken p-1" role="group" aria-label="對手">
         {([['random', '對手隨機'], ['cards', '指定手牌'], ['range', '對手範圍']] as const).map(([m, label]) => (
           <button key={m} type="button" aria-pressed={villainMode === m}
                   onClick={() => { setVillainMode(m); if (m !== 'cards') { setVillain([]); if (slot === 'villain') setSlot('board'); } }}
@@ -307,9 +308,11 @@ export function EquityCalculator() {
           每一列是一個花色：{SUIT_LABELS.map((s, i) => `${s}${['黑桃', '紅心', '方塊', '梅花'][i]}`).join('　')}
         </p>
       </div>
+      </div>
 
       {/* 結果 */}
-      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <div className="min-w-0">
+      <section className="rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         {!ready && (
           <p className="py-6 text-center text-[13px] text-muted">
             先選你的兩張手牌，就會開始算。
@@ -492,6 +495,7 @@ export function EquityCalculator() {
         「對手隨機」當成完全隨機的兩張牌，會低估真實對手（會跟你打到底的人通常不是隨機牌），
         所以實戰建議用「對手範圍」：對方開牌就選他位置的開牌範圍、3-bet 就選 3-bet 範圍。
       </p>
-    </>
+      </div>
+    </div>
   );
 }

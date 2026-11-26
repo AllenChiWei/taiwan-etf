@@ -37,8 +37,8 @@ function Chip({ active, onClick, children }: {
 
 function DayHeading({ label, count }: { label: string; count: number }) {
   return (
-    <div className="sticky top-0 z-10 -mx-3.5 mb-1 bg-surface/95 px-3.5 py-1.5
-                    text-[11.5px] font-semibold text-muted backdrop-blur sm:-mx-4 sm:px-4">
+    <div className="sticky top-0 z-10 -mx-3.5 mb-1 rounded-t-xl border-b border-line/60 bg-surface/95
+                    px-3.5 py-1.5 text-[11.5px] font-semibold text-muted backdrop-blur sm:-mx-4 sm:px-4">
       {label}
       <span className="ml-1.5 font-mono text-[11px] text-faint">{count}</span>
     </div>
@@ -47,9 +47,9 @@ function DayHeading({ label, count }: { label: string; count: number }) {
 
 /* ── 新聞 ────────────────────────────────────────────────── */
 
-function NewsRow({ item, now }: { item: NewsItem; now: number }) {
+function NewsRow({ item, now, multi }: { item: NewsItem; now: number; multi?: boolean }) {
   return (
-    <li className="border-b border-line/60 py-2 last:border-0">
+    <li className={`border-b border-line/60 py-2 last:border-0 ${multi ? 'lg:last:border-b' : ''}`}>
       <a href={item.u} target="_blank" rel="noopener noreferrer"
          className="block hover:opacity-80">
         <span className="text-[13.5px] leading-snug font-semibold text-ink">
@@ -90,39 +90,46 @@ function NewsTab({ data }: { data: NewsData }) {
   return (
     <>
       <div className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-        <input
-          type="search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="搜尋標題或代號…"
-          aria-label="搜尋新聞"
-          className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-base
-                     text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft
-                     focus:outline-none"
-        />
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          <Chip active={source === ''} onClick={() => setSource('')}>全部來源</Chip>
-          {sources.map(s => (
-            <Chip key={s} active={source === s} onClick={() => setSource(s)}>{s}</Chip>
-          ))}
-          <Chip active={onlyTracked} onClick={() => setOnlyTracked(v => !v)}>
-            只看清單標的
-          </Chip>
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="搜尋標題或代號…"
+            aria-label="搜尋新聞"
+            className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-base
+                       text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft
+                       focus:outline-none lg:h-10 lg:w-80 lg:shrink-0 lg:text-[14.5px]"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            <Chip active={source === ''} onClick={() => setSource('')}>全部來源</Chip>
+            {sources.map(s => (
+              <Chip key={s} active={source === s} onClick={() => setSource(s)}>{s}</Chip>
+            ))}
+            <Chip active={onlyTracked} onClick={() => setOnlyTracked(v => !v)}>
+              只看清單標的
+            </Chip>
+          </div>
         </div>
       </div>
 
       {rows.length === 0 ? (
         <EmptyState title="沒有符合的新聞" hint="換個關鍵字，或把來源改成全部。" />
       ) : (
-        <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-          {groups.map(g => (
-            <section key={g.key || 'unknown'}>
-              <DayHeading label={g.label} count={g.rows.length} />
-              <ul>
-                {g.rows.map(r => <NewsRow key={r.u} item={r} now={now} />)}
-              </ul>
-            </section>
-          ))}
+        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
+          {groups.map(g => {
+            const multi = g.rows.length >= 3;
+            return (
+              <section key={g.key || 'unknown'}
+                       className={`min-w-0 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4 ${
+                         multi ? 'lg:col-span-2 2xl:col-span-3' : ''}`}>
+                <DayHeading label={g.label} count={g.rows.length} />
+                <ul className={multi ? 'grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3' : ''}>
+                  {g.rows.map(r => <NewsRow key={r.u} item={r} now={now} multi={multi} />)}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </>
@@ -133,9 +140,9 @@ function NewsTab({ data }: { data: NewsData }) {
 
 const MARKETS = ['', '上市', '上櫃'];
 
-function FilingRow({ item }: { item: Filing }) {
+function FilingRow({ item, multi }: { item: Filing; multi?: boolean }) {
   return (
-    <li className="border-b border-line/60 py-2 last:border-0">
+    <li className={`border-b border-line/60 py-2 last:border-0 ${multi ? 'lg:last:border-b' : ''}`}>
       <a href={item.u} target="_blank" rel="noopener noreferrer"
          className="block hover:opacity-80">
         <span className="flex flex-wrap items-baseline gap-x-2">
@@ -170,27 +177,29 @@ function FilingsTab({ data }: { data: NewsData }) {
   return (
     <>
       <div className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-        <input
-          type="search"
-          value={query}
-          onChange={e => setQuery(e.target.value)}
-          placeholder="搜尋公司、代號或主旨…"
-          aria-label="搜尋重大訊息"
-          className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-base
-                     text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft
-                     focus:outline-none"
-        />
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {MARKETS.map(m => (
-            <Chip key={m || 'all'} active={market === m} onClick={() => setMarket(m)}>
-              {m || '上市＋上櫃'}
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:gap-3">
+          <input
+            type="search"
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            placeholder="搜尋公司、代號或主旨…"
+            aria-label="搜尋重大訊息"
+            className="h-11 w-full rounded-lg border border-line bg-bg px-3 text-base
+                       text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft
+                       focus:outline-none lg:h-10 lg:w-80 lg:shrink-0 lg:text-[14.5px]"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {MARKETS.map(m => (
+              <Chip key={m || 'all'} active={market === m} onClick={() => setMarket(m)}>
+                {m || '上市＋上櫃'}
+              </Chip>
+            ))}
+            <Chip active={onlyKnown} onClick={() => setOnlyKnown(v => !v)}>
+              只看清單標的（{knownCount}）
             </Chip>
-          ))}
-          <Chip active={onlyKnown} onClick={() => setOnlyKnown(v => !v)}>
-            只看清單標的（{knownCount}）
-          </Chip>
+          </div>
         </div>
-        <p className="mt-1.5 text-[11px] text-faint">
+        <p className="mt-1.5 max-w-[78ch] text-[11px] text-faint">
           公司依法公告的原始重大訊息，沒有經過任何編輯判斷。點開是公開資訊觀測站該公司的公告頁。
         </p>
       </div>
@@ -201,17 +210,22 @@ function FilingsTab({ data }: { data: NewsData }) {
                       ? '今天沒有清單內標的的公告，把這個篩選關掉可以看全部。'
                       : '換個關鍵字，或把市場改成上市＋上櫃。'} />
       ) : (
-        <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-          {groups.map(g => (
-            <section key={g.key || 'unknown'}>
-              <DayHeading label={g.label} count={g.rows.length} />
-              <ul>
-                {g.rows.map((r, i) => (
-                  <FilingRow key={`${r.code}-${r.at ?? ''}-${i}`} item={r} />
-                ))}
-              </ul>
-            </section>
-          ))}
+        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
+          {groups.map(g => {
+            const multi = g.rows.length >= 3;
+            return (
+              <section key={g.key || 'unknown'}
+                       className={`min-w-0 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4 ${
+                         multi ? 'lg:col-span-2 2xl:col-span-3' : ''}`}>
+                <DayHeading label={g.label} count={g.rows.length} />
+                <ul className={multi ? 'grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3' : ''}>
+                  {g.rows.map((r, i) => (
+                    <FilingRow key={`${r.code}-${r.at ?? ''}-${i}`} item={r} multi={multi} />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
     </>
@@ -262,14 +276,14 @@ export function NewsPage() {
     <>
       <h1 className="sr-only">新聞</h1>
 
-      <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1">
+      <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1 sm:inline-flex">
         {TABS.map(t => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             aria-pressed={tab === t.id}
-            className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
+            className={`h-9 flex-1 rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
               tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {t.label}
@@ -279,7 +293,7 @@ export function NewsPage() {
 
       {tab === 'news' ? <NewsTab data={data} /> : <FilingsTab data={data} />}
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[78ch] text-[11.5px] leading-relaxed text-faint">
         {data.meta.note} 來源：{data.meta.sources.join('、')}。
         標題與連結屬原始媒體與發佈公司所有，本頁僅供索引，不構成投資建議。
       </p>

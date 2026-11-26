@@ -22,11 +22,11 @@ export function OverlapSection({ codes }: { codes: string[] }) {
   return (
     <section className="mt-6" aria-label="持股重疊">
       <h2 className="mb-1 text-base font-bold text-ink">持股重疊</h2>
-      <p className="mb-2 text-[12.5px] text-muted">
+      <p className="mb-2 max-w-[78ch] text-[12.5px] text-muted">
         收藏中兩兩比較前十大持股：重疊度 = 共同持股取兩檔裡較小的佔比相加（佔淨值 %）。只看前十大，
         實際重疊只會更多。資料：投信投顧公會月報（{data?.meta.ym.slice(0, 4)}/{data?.meta.ym.slice(4)}）。點一列看共同持股。
       </p>
-      <ul className="flex flex-col gap-1.5">
+      <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:items-start">
         {res.pairs.map(p => {
           const key = `${p.a}-${p.b}`;
           const lvl = p.overlap >= 30 ? 'text-up font-semibold' : p.overlap >= 15 ? 'text-ink font-semibold' : 'text-muted';

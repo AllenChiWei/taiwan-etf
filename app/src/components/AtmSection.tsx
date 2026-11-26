@@ -331,33 +331,38 @@ export function AtmSection() {
         ))}
       </div>
 
-      {ranges.length > 0 && (
-        <div className="mt-3 rounded-lg border border-line bg-sunken/40 p-2.5">
-          <h3 className="text-[12.5px] font-bold text-ink">預估區間</h3>
-          <p className="mt-0.5 text-[11px] text-faint">
-            價平和就是市場對「到到期為止會走多少」的定價：走得比它多，買方賺；
-            走得比它少，賣方賺。以最新收盤指數為中心上下各一個價平和。
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {ranges.map(r => <RangeCard key={r.series} r={r} />)}
-          </div>
-        </div>
-      )}
+      {(ranges.length > 0 || walls.length > 0) && (
+        <div className={`mt-3 grid grid-cols-1 gap-3 ${
+          ranges.length > 0 && walls.length > 0 ? 'xl:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)] xl:items-stretch' : ''}`}>
+          {ranges.length > 0 && (
+            <div className="min-w-0 rounded-lg border border-line bg-sunken/40 p-2.5">
+              <h3 className="text-[12.5px] font-bold text-ink">預估區間</h3>
+              <p className="mt-0.5 text-[11px] text-faint">
+                價平和就是市場對「到到期為止會走多少」的定價：走得比它多，買方賺；
+                走得比它少，賣方賺。以最新收盤指數為中心上下各一個價平和。
+              </p>
+              <div className={`mt-2 grid gap-2 sm:grid-cols-2 ${walls.length > 0 ? 'xl:grid-cols-1' : ''}`}>
+                {ranges.map(r => <RangeCard key={r.series} r={r} />)}
+              </div>
+            </div>
+          )}
 
-      {walls.length > 0 && (
-        <div className="mt-3 rounded-lg border border-line bg-sunken/40 p-2.5">
-          <h3 className="text-[12.5px] font-bold text-ink">支撐與壓力</h3>
-          <p className="mt-0.5 text-[11px] text-faint">
-            價外未平倉堆最多的履約價：價平以上 Call 最大的常被當成壓力、價平以下 Put 最大的當成支撐。
-            這是解讀，不是機制 —— 指數照樣可以穿過去，所以附上過去的到期結果。
-            剛換倉的新合約未平倉還很薄，前幾名的意義不大，要看總未平倉的厚薄。
-          </p>
-          <div className="mt-2 grid gap-2 sm:grid-cols-2">
-            {walls.map(w => (
-              <WallsCard key={w.series} w={w}
-                         past={wallOutcomes(data.rows, taiex, w.series, 50, settles)} />
-            ))}
-          </div>
+          {walls.length > 0 && (
+            <div className="min-w-0 rounded-lg border border-line bg-sunken/40 p-2.5">
+              <h3 className="text-[12.5px] font-bold text-ink">支撐與壓力</h3>
+              <p className="mt-0.5 text-[11px] text-faint">
+                價外未平倉堆最多的履約價：價平以上 Call 最大的常被當成壓力、價平以下 Put 最大的當成支撐。
+                這是解讀，不是機制 —— 指數照樣可以穿過去，所以附上過去的到期結果。
+                剛換倉的新合約未平倉還很薄，前幾名的意義不大，要看總未平倉的厚薄。
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {walls.map(w => (
+                  <WallsCard key={w.series} w={w}
+                             past={wallOutcomes(data.rows, taiex, w.series, 50, settles)} />
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

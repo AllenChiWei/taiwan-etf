@@ -235,10 +235,10 @@ function BacktestTab({ index }: { index: CalcIndex }) {
   const info = index.codes[code];
 
   return (
-    <>
-      {/* 標的與金額 —— 最常調整的兩件事放最上面 */}
-      <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-        <div className="grid gap-3 sm:grid-cols-2">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)] xl:items-start">
+      {/* 標的與金額 —— 最常調整的兩件事放最上面（寬螢幕放左欄，調參數時右邊數字與圖同步更新） */}
+      <section className="min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <Field label="標的"
                  hint={info ? `資料自 ${info.first}　近一年配息 ${info.payouts} 次` : undefined}>
             <SearchableSelect
@@ -321,6 +321,7 @@ function BacktestTab({ index }: { index: CalcIndex }) {
         </details>
       </section>
 
+      <div className="min-w-0">
       {loadError && (
         <EmptyState icon="⚠️" title="這檔的回測資料載入失敗" hint={loadError} />
       )}
@@ -333,7 +334,7 @@ function BacktestTab({ index }: { index: CalcIndex }) {
                         hint="調整起始月或結束月再試一次。" />
           ) : (
             <>
-              <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+              <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
                 <Stat label="總投入" value={money(result.totalInvested)}
                       sub={`${result.months} 個月`} />
                 <Stat label="期末總值" value={money(result.finalValue)}
@@ -500,7 +501,8 @@ function BacktestTab({ index }: { index: CalcIndex }) {
           )}
         </>
       )}
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -652,8 +654,9 @@ function RetireTab({ index }: { index: CalcIndex }) {
     })), [result.rows]);
 
   return (
-    <>
-      <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-[420px_minmax(0,1fr)] xl:items-start">
+      <div className="min-w-0">
+      <section className="rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <Field label="用實際標的的歷史數字帶入假設"
                hint="取該檔最長可用期間的年化報酬與目前殖利率。近幾年是一段大多頭，
                      直接拿來推估未來會過度樂觀 —— 帶進來是給一個起點，不是預測。">
@@ -692,7 +695,7 @@ function RetireTab({ index }: { index: CalcIndex }) {
           </p>
         )}
 
-        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4 xl:grid-cols-2">
           <Field label="目前資產">
             <NumberInput value={initial} onChange={setInitial} step={100_000} suffix="元" />
           </Field>
@@ -743,7 +746,16 @@ function RetireTab({ index }: { index: CalcIndex }) {
         </p>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+      <p className="mt-3 rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
+        這一頁是<strong className="text-ink">推估</strong>，不是回測：假設每個月固定報酬、
+        沒有下跌年份。真實市場會有連續幾年不漲的時候，同樣的平均年化報酬會因為
+        順序不同而得到不同的結果 —— 特別是退休後才遇到大跌（報酬順序風險）。
+        想看真實走勢請用「歷史回測」。
+      </p>
+      </div>
+
+      <div className="min-w-0">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
         <Stat label={`${years} 年後資產`} value={money(result.total)} tone="up"
               sub={reinvest
                 ? `投入 ${money(result.totalInvested)}`
@@ -763,14 +775,8 @@ function RetireTab({ index }: { index: CalcIndex }) {
       </section>
 
       <RetireTable rows={result.rows} initial={initial} reinvest={reinvest} />
-
-      <p className="mt-3 rounded-lg bg-sunken px-3 py-2.5 text-[12px] leading-relaxed text-muted">
-        這一頁是<strong className="text-ink">推估</strong>，不是回測：假設每個月固定報酬、
-        沒有下跌年份。真實市場會有連續幾年不漲的時候，同樣的平均年化報酬會因為
-        順序不同而得到不同的結果 —— 特別是退休後才遇到大跌（報酬順序風險）。
-        想看真實走勢請用「歷史回測」。
-      </p>
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -793,14 +799,14 @@ export function CalculatorPage() {
     <>
       <h1 className="sr-only">投資試算</h1>
 
-      <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1">
+      <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1 sm:inline-flex">
         {TABS.map(t => (
           <button
             key={t.id}
             type="button"
             onClick={() => setTab(t.id)}
             aria-pressed={tab === t.id}
-            className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
+            className={`h-9 flex-1 rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
               tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {t.label}
@@ -822,7 +828,7 @@ export function CalculatorPage() {
       {tab === 'monthly' && <div className="mt-4"><MonthlyIncome /></div>}
 
       {index && needsIndex && (
-        <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+        <p className="mt-4 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
           回測用每月第一個交易日與除息日的實際收盤價，配息為實際除息金額，
           股價已還原分割。結果不含賣出時的證交稅與可能的匯費，也假設每一筆都成交得到。
           歷史績效不代表未來報酬。

@@ -106,7 +106,7 @@ export function EtfPage() {
     return (
       <>
         <h1 className="sr-only">ETF 個別頁</h1>
-        <div className="mt-4">{picker}</div>
+        <div className="mt-4 lg:max-w-md">{picker}</div>
         <EmptyState icon="🔎" title={code ? `找不到 ${code}` : '選一檔 ETF'}
                     hint="輸入代號或名稱；也可以在任何一頁按 Ctrl＋K（手機點右上角放大鏡）搜尋。" />
       </>
@@ -129,7 +129,7 @@ export function EtfPage() {
   return (
     <>
       <h1 className="sr-only">{etf.code} {etf.name}</h1>
-      <div className="mt-4">{picker}</div>
+      <div className="mt-4 lg:max-w-md">{picker}</div>
 
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex items-start justify-between gap-3">
@@ -184,13 +184,14 @@ export function EtfPage() {
         </section>
       )}
 
-      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2 lg:items-start lg:gap-4 [&>section]:mt-0">
+      <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">配息紀錄</h2>
         {!div && <p className="py-6 text-center text-[13px] text-muted">載入中…</p>}
         {div && !events.length && <p className="py-4 text-[13px] text-muted">還沒有配息紀錄。</p>}
         {events.length > 0 && (
           <>
-            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-4">
+            <ul className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-4 lg:grid-cols-2">
               {events.slice(-8).reverse().map(([d, v]) => (
                 <li key={d} className="flex justify-between gap-2 border-b border-line/60 py-1">
                   <span className="font-mono text-[12px] text-muted">{d}</span>
@@ -210,7 +211,7 @@ export function EtfPage() {
         )}
       </section>
 
-      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3">
           <h2 className="text-sm font-bold text-ink">前十大持股</h2>
           {asof && <span className="text-[11.5px] text-faint">{asof}</span>}
@@ -222,6 +223,7 @@ export function EtfPage() {
           </Link>
         )}
       </section>
+      </div>
     </>
   );
 }

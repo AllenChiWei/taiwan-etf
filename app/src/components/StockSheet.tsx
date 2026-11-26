@@ -82,7 +82,7 @@ export function StockSheet({ code, name, onClose, extra }: Props) {
               className="absolute inset-0 bg-black/45" />
 
       <div className="relative flex max-h-[88vh] w-full max-w-2xl flex-col rounded-t-2xl
-                      bg-bg shadow-xl sm:max-h-[86vh] sm:rounded-2xl">
+                      bg-bg shadow-xl sm:max-h-[86vh] sm:rounded-2xl lg:max-w-4xl">
         {/* 標題列固定住，捲動的是內容 —— 不然滑到一半就找不到關閉鈕 */}
         <div className="flex items-center justify-between gap-3 border-b border-line px-4 py-3">
           <div className="min-w-0">

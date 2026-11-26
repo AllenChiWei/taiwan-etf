@@ -37,7 +37,7 @@ export function DividendPie({ rows, total, colorOf }: {
   const shown = expanded || rest.count === 0 ? slices : slices.slice(0, TOP_N);
 
   return (
-    <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-sm font-bold text-ink">年配息來源</h2>
         <span className="text-[11.5px] text-faint">

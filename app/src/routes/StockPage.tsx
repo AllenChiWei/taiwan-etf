@@ -113,21 +113,21 @@ function RankingTab() {
             </Chip>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-faint">
+        <p className="mt-1.5 max-w-[78ch] text-[11px] text-faint">
           營收門檻不是可有可無的：建設公司依完工比例認列，去年同月常常接近零，
           年增率會出現百萬 % 而把整張排行洗掉。
         </p>
       </section>
 
       <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-        <ol>
+        <ol className="grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3">
           {rows.map((r, i) => (
             <li key={r.c}
                 onClick={() => setSheet(r.c)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(r.c); } }}
                 className="cursor-pointer hover:bg-sunken/50 grid grid-cols-[1.6em_1fr_auto] items-baseline gap-2
-                           border-b border-line/60 py-1.5 last:border-0">
+                           border-b border-line/60 py-1.5 last:border-0 lg:px-1.5 lg:last:border-b">
               <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
               <span className="min-w-0">
                 <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
@@ -217,7 +217,7 @@ function HighsTab() {
           ))}
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-3 gap-2 lg:max-w-2xl">
           <Cell label="創新高" value={`${nf0.format(data.meta.newHighs[String(win)] ?? 0)} 檔`}
                 tone="text-up" />
           <Cell label="創新低" value={`${nf0.format(data.meta.newLows[String(win)] ?? 0)} 檔`}
@@ -242,7 +242,7 @@ function HighsTab() {
       </section>
 
       <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-        <ol>
+        <ol className="grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3">
           {rows.map(r => {
             const w = r.w[String(win)];
             return (
@@ -251,7 +251,7 @@ function HighsTab() {
                   role="button" tabIndex={0}
                   onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(r.c); } }}
                   className="cursor-pointer hover:bg-sunken/50 grid grid-cols-[1fr_auto] items-baseline gap-2
-                             border-b border-line/60 py-1.5 last:border-0">
+                             border-b border-line/60 py-1.5 last:border-0 lg:px-1.5 lg:last:border-b">
                 <span className="min-w-0">
                   <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
                   <span className="ml-1.5 text-[12.5px] text-muted">{r.n}</span>
@@ -358,21 +358,21 @@ function ReturnsTab() {
             </Chip>
           ))}
         </div>
-        <p className="mt-1.5 text-[11px] text-faint">
+        <p className="mt-1.5 max-w-[78ch] text-[11px] text-faint">
           以還原股價計算（含除權息），期間以交易日計：一週 5 日、一月 20 日、
           一季 60 日、半年 120 日。上市不足該期間的不列入。
         </p>
       </section>
 
       <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-        <ol>
+        <ol className="grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3">
           {rows.map((r, i) => (
             <li key={r.c}
                 onClick={() => setSheet(r.c)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(r.c); } }}
                 className="cursor-pointer hover:bg-sunken/50 grid grid-cols-[1.6em_1fr_auto] items-baseline gap-2
-                           border-b border-line/60 py-1.5 last:border-0">
+                           border-b border-line/60 py-1.5 last:border-0 lg:px-1.5 lg:last:border-b">
               <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
               <span className="min-w-0">
                 <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
@@ -484,7 +484,7 @@ function CheapTab() {
           <span className="text-[11.5px] text-faint">收盤 {data.meta.date ?? '—'}</span>
         </div>
 
-        <div className="mt-2 grid grid-cols-3 gap-2">
+        <div className="mt-2 grid grid-cols-3 gap-2 lg:max-w-2xl">
           <Cell label="符合條件" value={`${nf0.format(rows.length)} 檔`} />
           <Cell label="全市場預估" value={medFpe === null ? '—' : `${nf1.format(medFpe)} 倍`} sub="中位數" />
           <Cell label="全市場近四季" value={medPe === null ? '—' : `${nf1.format(medPe)} 倍`} sub="中位數" />
@@ -514,7 +514,7 @@ function CheapTab() {
           <Chip active={exFinancial} onClick={() => setExFinancial(v => !v)}>排除金融股</Chip>
           <Chip active={exCyclical} onClick={() => setExCyclical(v => !v)}>排除景氣循環</Chip>
         </div>
-        <p className="mt-1.5 text-[11px] leading-relaxed text-faint">
+        <p className="mt-1.5 max-w-[78ch] text-[11px] leading-relaxed text-faint">
           預估本益比 ＝ 收盤價 ÷（近四季 EPS × 近 3 個月營收比去年同期的倍數），假設淨利率不變，
           跟個股頁「營收推估」同一個算法；月營收目前累積到 {months.join('、') || '—'}。
           營收門檻套在今年與去年同期兩邊：建設公司去年同月常常接近零，成長率上百萬 %，
@@ -524,14 +524,14 @@ function CheapTab() {
       </section>
 
       <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 py-2 sm:px-4">
-        <ol>
+        <ol className="grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3">
           {rows.slice(0, shown).map((r, i) => (
             <li key={r.c}
                 onClick={() => setSheet(r.c)}
                 role="button" tabIndex={0}
                 onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSheet(r.c); } }}
                 className="cursor-pointer hover:bg-sunken/50 grid grid-cols-[1.9em_1fr_auto] items-baseline gap-2
-                           border-b border-line/60 py-1.5 last:border-0">
+                           border-b border-line/60 py-1.5 last:border-0 lg:px-1.5 lg:last:border-b">
               <span className="font-mono text-[11.5px] text-faint">{i + 1}</span>
               <span className="min-w-0">
                 <span className="font-mono text-[13px] font-bold text-ink">{r.c}</span>
@@ -569,7 +569,7 @@ function CheapTab() {
         )}
       </div>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-faint">
+      <p className="mt-3 max-w-[78ch] text-[11px] leading-relaxed text-faint">
         本益比低不等於便宜：近四季有一次性獲利（處分資產、業外收益）的會特別低，
         景氣循環股在獲利高峰時本益比最低。點一檔可以看它自己的歷史本益比河流圖，
         比跟全市場比更有意義。來源：{data.meta.source}。本頁僅供參考，不構成投資建議。
@@ -661,14 +661,14 @@ export function StockPage() {
     })), [index]);
 
   const tabBar = (
-    <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1">
+    <div className="mt-4 flex gap-1.5 rounded-lg bg-sunken p-1 sm:inline-flex">
       {TABS.map(t => (
         <button
           key={t.id}
           type="button"
           onClick={() => setTab(t.id)}
           aria-pressed={tab === t.id}
-          className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
+          className={`h-9 flex-1 rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
             tab === t.id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
         >
           {t.label}
@@ -724,23 +724,25 @@ export function StockPage() {
       {tabBar}
 
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-        <h2 className="text-sm font-bold text-ink">搜尋個股</h2>
-        <div className="mt-2">
-          <SearchableSelect
-            options={options}
-            value={code}
-            onChange={next => {
-              // 代號放網址上，重新整理與分享連結都還在同一檔
-              void navigate({ search: { code: next }, replace: true, resetScroll: false });
-            }}
-            placeholder="輸入代號或公司名稱…"
-          />
+        <div className="lg:flex lg:items-center lg:gap-4">
+          <h2 className="shrink-0 text-sm font-bold text-ink">搜尋個股</h2>
+          <div className="mt-2 lg:mt-0 lg:w-[420px] lg:shrink-0">
+            <SearchableSelect
+              options={options}
+              value={code}
+              onChange={next => {
+                // 代號放網址上，重新整理與分享連結都還在同一檔
+                void navigate({ search: { code: next }, replace: true, resetScroll: false });
+              }}
+              placeholder="輸入代號或公司名稱…"
+            />
+          </div>
+          <p className="mt-1 text-[11px] text-faint lg:mt-0">
+            上市與上櫃共 {nf0.format(index.meta.stocks)} 家。
+            財報 {index.meta.quarters.join('、') || '—'}、
+            月營收 {index.meta.months.join('、') || '—'}。
+          </p>
         </div>
-        <p className="mt-1 text-[11px] text-faint">
-          上市與上櫃共 {nf0.format(index.meta.stocks)} 家。
-          財報 {index.meta.quarters.join('、') || '—'}、
-          月營收 {index.meta.months.join('、') || '—'}。
-        </p>
       </section>
 
       {!code && (
@@ -760,21 +762,34 @@ export function StockPage() {
       {data && (
         <>
           <InfoSection data={data} />
-          <HoldersSection code={data.code} />
-          <PositionSection row={highRow} />
-          <PercentileSection row={highRow} allHighs={highs?.rows ?? []}
-                             rank={rankRow} allRanks={ranking?.rows ?? []} />
-          <ChipsVisual data={data} />
-          <InstDailySection data={data} />
-          <RevenueSection data={data} />
-          <FinancialSection data={data} />
+          {(highRow || rankRow) && (
+            <div className={`mt-3 grid grid-cols-1 gap-3 [&>section]:mt-0 ${
+              highRow ? 'xl:grid-cols-2 xl:items-start xl:gap-4' : ''}`}>
+              <PositionSection row={highRow} />
+              <PercentileSection row={highRow} allHighs={highs?.rows ?? []}
+                                 rank={rankRow} allRanks={ranking?.rows ?? []} />
+            </div>
+          )}
+          {data.chips && (
+            <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+              <ChipsVisual data={data} />
+              <InstDailySection data={data} />
+            </div>
+          )}
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+            <RevenueSection data={data} />
+            <FinancialSection data={data} />
+          </div>
           <ValuationBoard code={data.code} industry={data.info.industry} months={data.m} />
           <FundamentalsBoard code={data.code} />
-          <ChipsSection data={data} />
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>section]:mt-0">
+            <ChipsSection data={data} />
+            <HoldersSection code={data.code} />
+          </div>
         </>
       )}
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[78ch] text-[11.5px] leading-relaxed text-faint">
         {index.meta.note} 來源：{index.meta.source}。
         本頁僅供參考，不構成投資建議。
       </p>

@@ -46,7 +46,7 @@ export function UpcomingEtfs() {
         )}
 
         {items.length > 0 && (
-          <ul className="mt-2 space-y-2">
+          <ul className="mt-2 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:items-start">
             {items.map(it => {
               const expanded = open === it.code;
               const left = daysUntil(it.listing, today);
@@ -125,7 +125,7 @@ export function UpcomingEtfs() {
         )}
       </section>
 
-      <p className="mt-3 text-[11px] leading-relaxed text-faint">
+      <p className="mt-3 max-w-[78ch] text-[11px] leading-relaxed text-faint">
         官方沒有「已核准、募集中」ETF 的清單（查過證交所、集保、投信投顧公會），所以這份清單是
         從鉅亨網近兩個多月的新聞裡找出還沒上市的代號，再從新聞推出名稱、投信與日期 ——
         推不出來的就留空，一切以投信公告為準。上市前一天證交所會發布新上市簡介，那時會換成

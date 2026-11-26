@@ -339,102 +339,108 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   return (
     <>
       <section className="mt-4 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-        <h2 className="text-sm font-bold text-ink">加入持股</h2>
-        {/* 手機上搜尋框自己佔一列。三個控制項擠在同一列時，1fr 只剩一百多 px，
-            打「國泰」就看不到自己打了什麼，選單也被壓在螢幕邊上。 */}
-        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
-          <SearchableSelect
-            options={options}
-            value={pick}
-            onChange={setPick}
-            placeholder="輸入代號或名稱…"
-            className="min-w-0"
-          />
-          <div className="grid grid-cols-[1fr_auto] gap-2 sm:contents">
-            <NumberInput
-              value={shares}
-              onChange={setShares}
-              step={1000}
-              suffix="股"
-              aria-label="股數"
-              className={`${inputCls} w-full sm:w-28`}
-            />
-            <button
-              type="button"
-              onClick={add}
-              disabled={!pick || !(shares > 0)}
-              className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
-                         transition-opacity disabled:opacity-40"
-            >
-              加入
-            </button>
+        <div className="lg:grid lg:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] lg:items-start lg:gap-6">
+          <div className="min-w-0">
+            <h2 className="text-sm font-bold text-ink">加入持股</h2>
+            {/* 手機上搜尋框自己佔一列。三個控制項擠在同一列時，1fr 只剩一百多 px，
+                打「國泰」就看不到自己打了什麼，選單也被壓在螢幕邊上。 */}
+            <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+              <SearchableSelect
+                options={options}
+                value={pick}
+                onChange={setPick}
+                placeholder="輸入代號或名稱…"
+                className="min-w-0"
+              />
+              <div className="grid grid-cols-[1fr_auto] gap-2 sm:contents">
+                <NumberInput
+                  value={shares}
+                  onChange={setShares}
+                  step={1000}
+                  suffix="股"
+                  aria-label="股數"
+                  className={`${inputCls} w-full sm:w-28`}
+                />
+                <button
+                  type="button"
+                  onClick={add}
+                  disabled={!pick || !(shares > 0)}
+                  className="h-11 rounded-lg bg-accent px-4 text-sm font-semibold text-accent-ink
+                             transition-opacity disabled:opacity-40"
+                >
+                  加入
+                </button>
+              </div>
+            </div>
+            <p className="mt-1.5 text-[11px] text-faint">
+              以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
+              下面會另外算出每個帳戶各領多少。
+            </p>
+          </div>
+          <div className="mt-2 min-w-0 lg:mt-0 lg:border-l lg:border-line lg:pl-6">
+            {/* 帳戶的新增、改名、刪除都放在這裡，跟選帳戶同一列。
+                只放在下方「各帳戶配息」的話，空帳戶（那一區要有持股才出現）會找不到地方刪 */}
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+              <label htmlFor="div-acct" className="text-muted">配息進</label>
+              {renaming?.from === acct ? (
+                <span className="flex items-center gap-1.5">
+                  <input value={renaming.to} autoFocus aria-label="帳戶名稱"
+                         onChange={e => setRenaming({ from: acct, to: e.target.value })}
+                         onKeyDown={e => {
+                           if (e.key === 'Enter') commitRename();
+                           if (e.key === 'Escape') setRenaming(null);
+                         }}
+                         className="h-9 w-32 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink" />
+                  <button type="button" onClick={commitRename}
+                          className="h-9 px-1 font-semibold text-accent">儲存</button>
+                  <button type="button" onClick={() => setRenaming(null)}
+                          className="h-9 px-1 font-semibold text-muted">取消</button>
+                </span>
+              ) : (
+                <select id="div-acct" value={acct}
+                        onChange={e => { setAcct(e.target.value); setDeleting(null); }}
+                        className="h-9 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink">
+                  {accounts.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              )}
+              <button type="button" onClick={newAccount}
+                      className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
+                ＋ 新增帳戶
+              </button>
+              {renaming?.from !== acct && (
+                <button type="button" onClick={() => setRenaming({ from: acct, to: acct })}
+                        className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
+                  改名
+                </button>
+              )}
+              {accounts.length > 1 && (deleting === acct ? (
+                <span className="flex items-center gap-1.5">
+                  <button type="button" onClick={() => deleteAccount(acct)}
+                          className="h-9 rounded-lg px-1.5 font-semibold text-up">
+                    確定刪除「{acct}」{(() => {
+                      const n = entries.filter(e => e.acct === acct).length;
+                      return n > 0 ? `（連同 ${n} 檔持股）` : '';
+                    })()}
+                  </button>
+                  <button type="button" onClick={() => setDeleting(null)}
+                          className="h-9 rounded-lg px-1.5 font-semibold text-muted">取消</button>
+                </span>
+              ) : (
+                <button type="button" onClick={() => setDeleting(acct)}
+                        className="h-9 rounded-lg px-1.5 font-semibold text-muted hover:text-up">
+                  刪除帳戶
+                </button>
+              ))}
+            </div>
+            <HoldingsSync entries={entries} accounts={accounts} onLoad={(hold, accs) => {
+              const list = accountList(accs, hold);
+              setAccounts(list);
+              setEntries(withAccounts(hold, list[0]));
+              setAcct(list[0]);
+              setEditing(null); setDeleting(null); setRenaming(null);
+            }} />
           </div>
         </div>
-        {/* 帳戶的新增、改名、刪除都放在這裡，跟選帳戶同一列。
-            只放在下方「各帳戶配息」的話，空帳戶（那一區要有持股才出現）會找不到地方刪 */}
-        <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-          <label htmlFor="div-acct" className="text-muted">配息進</label>
-          {renaming?.from === acct ? (
-            <span className="flex items-center gap-1.5">
-              <input value={renaming.to} autoFocus aria-label="帳戶名稱"
-                     onChange={e => setRenaming({ from: acct, to: e.target.value })}
-                     onKeyDown={e => {
-                       if (e.key === 'Enter') commitRename();
-                       if (e.key === 'Escape') setRenaming(null);
-                     }}
-                     className="h-9 w-32 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink" />
-              <button type="button" onClick={commitRename}
-                      className="h-9 px-1 font-semibold text-accent">儲存</button>
-              <button type="button" onClick={() => setRenaming(null)}
-                      className="h-9 px-1 font-semibold text-muted">取消</button>
-            </span>
-          ) : (
-            <select id="div-acct" value={acct}
-                    onChange={e => { setAcct(e.target.value); setDeleting(null); }}
-                    className="h-9 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink">
-              {accounts.map(a => <option key={a} value={a}>{a}</option>)}
-            </select>
-          )}
-          <button type="button" onClick={newAccount}
-                  className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
-            ＋ 新增帳戶
-          </button>
-          {renaming?.from !== acct && (
-            <button type="button" onClick={() => setRenaming({ from: acct, to: acct })}
-                    className="h-9 rounded-lg px-1.5 font-semibold text-accent hover:underline">
-              改名
-            </button>
-          )}
-          {accounts.length > 1 && (deleting === acct ? (
-            <span className="flex items-center gap-1.5">
-              <button type="button" onClick={() => deleteAccount(acct)}
-                      className="h-9 rounded-lg px-1.5 font-semibold text-up">
-                確定刪除「{acct}」{(() => {
-                  const n = entries.filter(e => e.acct === acct).length;
-                  return n > 0 ? `（連同 ${n} 檔持股）` : '';
-                })()}
-              </button>
-              <button type="button" onClick={() => setDeleting(null)}
-                      className="h-9 rounded-lg px-1.5 font-semibold text-muted">取消</button>
-            </span>
-          ) : (
-            <button type="button" onClick={() => setDeleting(acct)}
-                    className="h-9 rounded-lg px-1.5 font-semibold text-muted hover:text-up">
-              刪除帳戶
-            </button>
-          ))}
-        </div>
-        <p className="mt-1 text-[11px] text-faint">
-          以股為單位。一張 = 1000 股，零股直接填實際股數。有好幾個證券戶時，選配息進哪個帳戶，
-          下面會另外算出每個帳戶各領多少。
-        </p>
-        <HoldingsSync entries={entries} accounts={accounts} onLoad={(hold, accs) => {
-          const list = accountList(accs, hold);
-          setAccounts(list);
-          setEntries(withAccounts(hold, list[0]));
-          setAcct(list[0]);
-          setEditing(null); setDeleting(null); setRenaming(null);
-        }} />
       </section>
 
       {entries.length === 0 && (
@@ -474,7 +480,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             <Stat label="整體殖利率" value={`${nf2.format(portfolio.yieldPct)}%`} tone="yield" />
           </div>
 
-          <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+          <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start xl:gap-4 [&>section]:mt-0">
+          <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">配息月曆</h2>
               <span className="text-[11.5px] text-faint">月份以除息日為準・依一年可領金額排序・點月份看組成</span>
@@ -553,6 +560,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           </section>
 
           <DividendPie rows={rows} total={portfolio.annual} colorOf={colorOf} />
+          </div>
 
           {accounts.length > 1 && (
             <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
@@ -728,8 +736,8 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
             </ul>
           </section>
 
-          <div className="mt-3 space-y-1.5 rounded-lg bg-sunken px-3 py-2.5
-                          text-[12px] leading-relaxed text-muted">
+          <div className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 rounded-lg bg-sunken px-3 py-2.5
+                          text-[12px] leading-relaxed text-muted lg:grid-cols-2">
             <p>
               年配息 = <strong className="text-ink">最近一次配息 × 一年配幾次</strong>。
               一年幾次以公告的配息頻率為準，除息月份則照這檔實際發生過的月份排

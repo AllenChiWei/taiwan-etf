@@ -45,14 +45,14 @@ export function PokerPage() {
       <h1 className="mt-4 text-lg font-bold text-ink">6 人桌範圍表</h1>
       <p className="mt-1 text-[12.5px] leading-relaxed text-muted">100bb 現金局。</p>
 
-      <div className="mt-3 flex gap-1.5 rounded-lg bg-sunken p-1">
+      <div className="mt-3 flex gap-1.5 rounded-lg bg-sunken p-1 sm:inline-flex">
         {([['rfi', '開牌範圍'], ['vs', '面對開牌'], ['equity', '勝率試算'], ['quiz', '範圍測驗']] as const).map(([id, label]) => (
           <button
             key={id}
             type="button"
             onClick={() => setMode(id)}
             aria-pressed={mode === id}
-            className={`h-9 flex-1 rounded-md text-[13px] font-semibold transition-colors ${
+            className={`h-9 flex-1 rounded-md px-3 text-[13px] font-semibold transition-colors sm:flex-initial sm:px-5 ${
               mode === id ? 'bg-surface text-ink shadow-sm' : 'text-muted hover:text-ink'}`}
           >
             {label}
@@ -63,12 +63,13 @@ export function PokerPage() {
       {mode === 'vs' && <VsOpenView />}
       {mode === 'equity' && <EquityCalculator />}
       {mode === 'quiz' && <PokerQuiz />}
-      {mode === 'rfi' && <>
-
+      {mode === 'rfi' && (
+      <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)] lg:items-start [&>section]:mt-0">
       <PokerTable selected={posId} onSelect={setPosId} />
 
+      <div className="min-w-0">
       {/* 位置選擇。用按鈕列而不是下拉 —— 六個選項，而且使用者會想來回比較 */}
-      <div className="mt-3 flex gap-1.5 overflow-x-auto pb-1">
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
         {POSITIONS.map(p => {
           const on = p.id === posId;
           return (
@@ -129,13 +130,14 @@ export function PokerPage() {
           </details>
         )}
       </section>
-
-      </>}
+      </div>
+      </div>
+      )}
 
       {mode !== 'equity' && (
       <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <h2 className="text-sm font-bold text-ink">這些範圍怎麼來的</h2>
-        <div className="mt-1.5 space-y-2 text-[12px] leading-relaxed text-muted">
+        <div className="mt-1.5 max-w-[78ch] space-y-2 text-[12px] leading-relaxed text-muted">
           <p>
             這是<strong className="text-ink">與求解器方向一致的公開近似範圍</strong>，
             不是任何付費求解器的解算輸出。
@@ -178,10 +180,11 @@ function VsOpenView() {
   const openerRange = opener.rfi ? resolve(opener.rfi) : null;
 
   return (
-    <>
-      <div className="mt-3">
+    <div className="mt-3 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)] lg:items-start">
+      <div className="min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <div>
         <span className="text-[11.5px] font-semibold text-muted">誰開的牌</span>
-        <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1">
+        <div className="mt-1 flex gap-1.5 overflow-x-auto pb-1 lg:flex-wrap">
           {VS_OPEN.map(v => {
             const on = v.vs === vsId;
             const p = POSITIONS.find(x => x.id === v.vs)!;
@@ -207,7 +210,7 @@ function VsOpenView() {
         </div>
       </div>
 
-      <div className="mt-2">
+      <div className="mt-2.5">
         <span className="text-[11.5px] font-semibold text-muted">你在哪</span>
         <div className="mt-1 flex flex-wrap gap-1.5">
           {entry.defenses.map(d => {
@@ -230,8 +233,9 @@ function VsOpenView() {
           })}
         </div>
       </div>
+      </div>
 
-      <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+      <section className="min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
           <h2 className="text-base font-bold text-ink">
             {opener.label} 開牌
@@ -275,6 +279,6 @@ function VsOpenView() {
           </dl>
         </details>
       </section>
-    </>
+    </div>
   );
 }

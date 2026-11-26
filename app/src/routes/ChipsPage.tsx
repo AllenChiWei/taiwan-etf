@@ -46,7 +46,7 @@ function Section({ title, hint, children }: {
   title: string; hint?: string; children: React.ReactNode;
 }) {
   return (
-    <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-sm font-bold text-ink">{title}</h2>
         {hint && <span className="text-[11.5px] text-faint">{hint}</span>}
@@ -257,6 +257,14 @@ function FuturesSection({ data }: { data: ChipsData }) {
 
   const equiv = WHO_ORDER.map(who => ({ who, row: txEquivalentLatest(data.futures, who) }));
   const foreignLine = txEquivalent(data.futHistory, '外資');
+  const whoCards = WHO_ORDER.flatMap(who => {
+    const row = rows.find(r => r.w === who);
+    const line = series[who] ?? [];
+    const latest = row ? row.n : lastValue(line);
+    return latest === null ? [] : [{ who, row, line, latest }];
+  });
+  // 臺股期貨只有三大法人（3 張卡），用 3 欄避免第 2 列右半留空；小台／微台含散戶（4 張卡）維持 2×2
+  const futCols = whoCards.length + (retail ? 1 : 0) === 3 ? 'lg:grid-cols-3' : 'lg:grid-cols-2';
 
   return (
     <Section title="三大法人期貨未平倉"
@@ -285,34 +293,28 @@ function FuturesSection({ data }: { data: ChipsData }) {
 
       <Switch options={contracts} value={contract} onChange={setContract} label="期貨契約" />
 
-      <div className="mt-2.5 space-y-2.5">
-        {WHO_ORDER.map(who => {
-          const row = rows.find(r => r.w === who);
-          const line = series[who] ?? [];
-          const latest = row ? row.n : lastValue(line);
-          if (latest === null) return null;
-          return (
-            <div key={who} className="rounded-lg border border-line bg-bg p-2.5">
-              <div className="flex flex-wrap items-baseline justify-between gap-x-3">
-                {/* 不再給每家法人一個代表色：柱子的顏色現在表示多空（紅多綠空），
-                    旁邊再放一個不同色的點只會讓人以為那是這條資料的顏色 */}
-                <span className="text-[13px] font-semibold text-ink">{who}</span>
-                <span className={`font-mono text-[15px] font-bold tabular-nums
-                                  ${TONE_CLASS[netTone(latest)]}`}>
-                  {signed(latest)} 口
-                </span>
-              </div>
-              {row && (
-                <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px] text-muted">
-                  <span>契約金額 {signedYi(toYi(row.a))} 億</span>
-                  <span>多 {nf0.format(row.bn)} / 空 {nf0.format(row.sn)}</span>
-                  <span>當日淨 {signed(row.tn)} 口</span>
-                </div>
-              )}
-              <Bars values={line} />
+      <div className={`mt-2.5 grid grid-cols-1 gap-2.5 ${futCols}`}>
+        {whoCards.map(({ who, row, line, latest }) => (
+          <div key={who} className="min-w-0 rounded-lg border border-line bg-bg p-2.5">
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              {/* 不再給每家法人一個代表色：柱子的顏色現在表示多空（紅多綠空），
+                  旁邊再放一個不同色的點只會讓人以為那是這條資料的顏色 */}
+              <span className="text-[13px] font-semibold text-ink">{who}</span>
+              <span className={`font-mono text-[15px] font-bold tabular-nums
+                                ${TONE_CLASS[netTone(latest)]}`}>
+                {signed(latest)} 口
+              </span>
             </div>
-          );
-        })}
+            {row && (
+              <div className="mt-0.5 flex flex-wrap gap-x-3 text-[11.5px] text-muted">
+                <span>契約金額 {signedYi(toYi(row.a))} 億</span>
+                <span>多 {nf0.format(row.bn)} / 空 {nf0.format(row.sn)}</span>
+                <span>當日淨 {signed(row.tn)} 口</span>
+              </div>
+            )}
+            <Bars values={line} />
+          </div>
+        ))}
 
         {retail && (
           <div className="rounded-lg border border-dashed border-line bg-bg p-2.5">
@@ -1426,12 +1428,12 @@ function Side({ label, lots: n, pct, tone }: {
   );
 }
 
-function LargeTable({ rows }: { rows: LargeRow[] }) {
+function LargeTable({ rows, wide = false }: { rows: LargeRow[]; wide?: boolean }) {
   if (rows.length === 0) {
     return <p className="mt-2 py-4 text-center text-[12.5px] text-muted">這個分類今天沒有資料。</p>;
   }
   return (
-    <ul className="mt-2 space-y-2">
+    <ul className={`mt-2 ${wide ? (rows.length === 3 ? 'grid grid-cols-1 gap-2 lg:grid-cols-3' : 'grid grid-cols-1 gap-2 lg:grid-cols-2') : 'space-y-2'}`}>
       {rows.map((r, i) => {
         const b5 = sharePct(r.b5, r.oi);
         const s5 = sharePct(r.s5, r.oi);
@@ -1470,7 +1472,7 @@ const LARGE_KIND = ['期貨', '選擇權'] as const;
 const LARGE_WHO = ['全部交易人', '特定法人'] as const;
 
 /** 2026-11-18 籌碼頁依商品分段：期貨段、選擇權段各放一份，各自固定商品類別（kind），就不再顯示商品切換 */
-function LargeSection({ data, kind: fixed }: { data: ChipsData; kind?: (typeof LARGE_KIND)[number] }) {
+function LargeSection({ data, kind: fixed, wide = false }: { data: ChipsData; kind?: (typeof LARGE_KIND)[number]; wide?: boolean }) {
   const [pick, setKind] = useState<(typeof LARGE_KIND)[number]>('期貨');
   const kind = fixed ?? pick;
   const [who, setWho] = useState<(typeof LARGE_WHO)[number]>('全部交易人');
@@ -1488,7 +1490,7 @@ function LargeSection({ data, kind: fixed }: { data: ChipsData; kind?: (typeof L
       {!fixed && <Switch options={LARGE_KIND} value={kind} onChange={setKind} label="商品類別" />}
       <Switch options={LARGE_WHO} value={who} onChange={setWho} label="交易人類別" />
       {products.length > 1 && cur && <Switch options={products} value={cur} onChange={setProd} label="契約" />}
-      <LargeTable rows={shown} />
+      <LargeTable rows={shown} wide={wide} />
       <p className="mt-2 text-[11px] text-faint">
         「特定法人」是大額交易人裡的法人部分，與「全部交易人」是包含關係，不能相減。
         期交所的臺股期貨含小型臺指與微型臺指的換算口數。
@@ -1808,8 +1810,10 @@ export function ChipsPage() {
       <JumpNav />
       {/* 2026-11-18 站主：依商品分五段（之前期貨、選擇權、現貨交錯排）。各區塊原本的 sec-* 錨點保留 */}
       <Group id="today" title="今日重點">
-        <MaintAlert data={data} />
-        <MarketLine data={data} />
+        <div className="mt-2.5 grid grid-cols-1 gap-2.5 lg:grid-flow-col lg:auto-cols-fr [&>*]:mt-0 [&>*]:min-w-0">
+          <MaintAlert data={data} />
+          <MarketLine data={data} />
+        </div>
         <MoreFold summary="更多：今日數字一覽（外資、散戶、P/C、融資、維持率、VIX、恐懼貪婪）與極端值">
           <ExtremeLine data={data} />
           <SummaryStrip data={data} />
@@ -1817,19 +1821,23 @@ export function ChipsPage() {
       </Group>
       <Group id="fut" title="期貨" hint="法人、散戶、大額交易人">
         <div id="sec-fut" className="scroll-mt-16"><FuturesSection data={data} /></div>
-        <div id="sec-retail" className="scroll-mt-16"><RetailSection /></div>
-        <div id="sec-large" className="scroll-mt-16"><LargeSection data={data} kind="期貨" /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
+          <div id="sec-retail" className="min-w-0 scroll-mt-16"><RetailSection /></div>
+          <div id="sec-large" className="min-w-0 scroll-mt-16"><LargeSection data={data} kind="期貨" /></div>
+        </div>
       </Group>
       <Group id="opt" title="選擇權" hint="Put/Call、法人、價平和、大額交易人">
-        <div id="sec-pc" className="scroll-mt-16"><PcSection data={data} /></div>
-        <div id="sec-opt" className="scroll-mt-16"><OptionsSection data={data} /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
+          <div id="sec-pc" className="min-w-0 scroll-mt-16"><PcSection data={data} /></div>
+          <div id="sec-opt" className="min-w-0 scroll-mt-16"><OptionsSection data={data} /></div>
+        </div>
         <div id="sec-atm" className="scroll-mt-16">
           <AtmSection />
           <SettleLink />
           <SellerDecisionCard />
           <AtmIntradaySection />
         </div>
-        <div id="sec-large-opt" className="scroll-mt-16"><LargeSection data={data} kind="選擇權" /></div>
+        <div id="sec-large-opt" className="scroll-mt-16"><LargeSection data={data} kind="選擇權" wide /></div>
       </Group>
       <Group id="credit" title="信用交易" hint="融資、融券、借券、維持率與追繳">
         <div id="sec-margin" className="scroll-mt-16"><MarginSection data={data} /></div>
@@ -1837,12 +1845,14 @@ export function ChipsPage() {
       <Group id="mood" title="市場情緒與資金" hint="台股、美股情緒，類股、法人、定期定額">
         <div id="sec-tw" className="scroll-mt-16"><TwMoodSection tw={data.tw} shorts={data.margin?.shortHist} /></div>
         <div id="sec-us" className="scroll-mt-16"><SentimentSection data={data} /></div>
-        <div id="sec-sector" className="scroll-mt-16"><SectorSection data={data} /></div>
+        <div className="mt-3 grid grid-cols-1 gap-3 xl:grid-cols-2 xl:items-start xl:gap-4 [&>div>section]:mt-0">
+          <div id="sec-sector" className="min-w-0 scroll-mt-16"><SectorSection data={data} /></div>
+          <div id="sec-dca" className="min-w-0 scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
+        </div>
         <div id="sec-top" className="scroll-mt-16"><TopSection data={data} onPick={setSheet} /></div>
-        <div id="sec-dca" className="scroll-mt-16"><DcaSection data={data} onPick={setSheet} /></div>
       </Group>
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[78ch] text-[11.5px] leading-relaxed text-faint">
         籌碼資料為交易所與期交所的公開統計，僅供參考，不構成投資建議。
         未平倉與買賣超反映的是已經發生的部位，不預測後市。
       </p>

@@ -108,7 +108,7 @@ export function ComparePage() {
   return (
     <>
       <h1 className="mt-4 text-lg font-bold text-ink">ETF 持股比對</h1>
-      <p className="mt-1 text-[12.5px] text-muted">
+      <p className="mt-1 max-w-[75ch] text-[12.5px] text-muted">
         選兩檔 ETF，看它們有哪些共同持股、各佔多少比例。主動式 ETF 用投信每日公告的持股，其他用投信投顧公會的月報前十大。
       </p>
 
@@ -207,7 +207,7 @@ export function ComparePage() {
             <OnlyList code={b} other={sa} rows={cmp.onlyB} />
           </section>
 
-          <p className="mt-3 text-[11.5px] leading-relaxed text-faint">
+          <p className="mt-3 max-w-[75ch] text-[11.5px] leading-relaxed text-faint">
             重疊度只算看得到的持股：月報只有前十大，前十大以外的共同持股算不到，所以實際重疊只會更多。
             {sa.kind !== sb.kind && ' 兩檔資料來源不同（每日 vs 月報），日期也不同，比例僅供參考。'}
             期貨部位不算持股。

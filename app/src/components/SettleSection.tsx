@@ -177,6 +177,9 @@ export function SettleSection({ page = false }: { page?: boolean }) {
 
   if (dates === null) return null;
 
+  const hasUpcoming = upcoming.some(u => u.e >= now.date);
+  const hasSide = page && (hist.length > 0 || hasUpcoming);
+
   return (
     <section id="sec-settle" className="mt-3 scroll-mt-16 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex items-baseline justify-between gap-2">
@@ -184,78 +187,86 @@ export function SettleSection({ page = false }: { page?: boolean }) {
         <span className="text-[11.5px] text-muted">週三／週五選擇權（含月選）</span>
       </div>
 
-      {pred && liveToday ? (
-        <div className="mt-2 rounded-lg border border-line bg-bg px-3 py-2.5">
-          <div className="text-[11.5px] text-muted">
-            {settleCardTitle(pred.final, !!exact)}
-          </div>
-          <div className={`mt-0.5 font-mono font-bold tabular-nums text-ink ${page ? 'text-[48px] leading-tight' : 'text-[28px]'}`}>{nf0.format(pred.rounded)}</div>
-          <div className="mt-1 text-[11.5px] text-faint">
-            加權指數 <span className="font-mono tabular-nums text-muted">{nf2.format(exactClose?.v ?? liveToday.z)}</span>
-            {' · '}{exactClose ? secLabel(exactClose.sec) : liveToday.t}
-            {' · '}已確定 <span className="font-mono tabular-nums">{pred.fixed}</span>／{TOTAL} 筆
-            {pred.interpolated > 0 && <>（{pred.interpolated} 筆用每分鐘資料內插{pred.final && '，證交所每 5 秒資料公布後自動校正'}）</>}
-            {!exact && pred.final && pred.interpolated === 0 && '（證交所每 5 秒資料公布後自動校正）'}
-            {exact && pred.interpolated === 0 && '（證交所每 5 秒資料）'}
-          </div>
-          {error && <div className="mt-1 text-[11.5px] text-ink">⚠ {error}，5 秒後重試</div>}
-          {!pred.final && <StrikeTable pred={pred} z={liveToday.z} />}
-          {todayCurve.length > 1 && <SettleChart curve={todayCurve} />}
-        </div>
-      ) : (
-        <div className="mt-2 rounded-lg border border-line bg-bg px-3 py-2.5 text-[12.5px] text-muted">
-          {error ? (
-            <span className="text-ink">⚠ {error}，5 秒後重試</span>
-          ) : isToday ? (
-            now.sec >= START ? '抓取即時指數中…' : <>今天 {dayLabel(now.date)} 是結算日，<b className="text-ink">13:00</b> 起每 5 秒即時預測。</>
-          ) : next ? (
-            <>下一個結算日 <b className="text-ink">{dayLabel(next)}</b>，當天 13:00 起每 5 秒即時預測。</>
-          ) : '目前查不到下一個結算日。'}
-        </div>
-      )}
+      <div className={hasSide ? 'mt-2 grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] lg:items-start' : ''}>
+        <div className="min-w-0">
+          {pred && liveToday ? (
+            <div className={`${hasSide ? '' : 'mt-2'} rounded-lg border border-line bg-bg px-3 py-2.5`}>
+              <div className="text-[11.5px] text-muted">
+                {settleCardTitle(pred.final, !!exact)}
+              </div>
+              <div className={`mt-0.5 font-mono font-bold tabular-nums text-ink ${page ? 'text-[48px] leading-tight' : 'text-[28px]'}`}>{nf0.format(pred.rounded)}</div>
+              <div className="mt-1 text-[11.5px] text-faint">
+                加權指數 <span className="font-mono tabular-nums text-muted">{nf2.format(exactClose?.v ?? liveToday.z)}</span>
+                {' · '}{exactClose ? secLabel(exactClose.sec) : liveToday.t}
+                {' · '}已確定 <span className="font-mono tabular-nums">{pred.fixed}</span>／{TOTAL} 筆
+                {pred.interpolated > 0 && <>（{pred.interpolated} 筆用每分鐘資料內插{pred.final && '，證交所每 5 秒資料公布後自動校正'}）</>}
+                {!exact && pred.final && pred.interpolated === 0 && '（證交所每 5 秒資料公布後自動校正）'}
+                {exact && pred.interpolated === 0 && '（證交所每 5 秒資料）'}
+              </div>
+              {error && <div className="mt-1 text-[11.5px] text-ink">⚠ {error}，5 秒後重試</div>}
+              {!pred.final && <StrikeTable pred={pred} z={liveToday.z} />}
+              {todayCurve.length > 1 && <SettleChart curve={todayCurve} />}
+            </div>
+          ) : (
+            <div className={`${hasSide ? '' : 'mt-2'} rounded-lg border border-line bg-bg px-3 py-2.5 text-[12.5px] text-muted`}>
+              {error ? (
+                <span className="text-ink">⚠ {error}，5 秒後重試</span>
+              ) : isToday ? (
+                now.sec >= START ? '抓取即時指數中…' : <>今天 {dayLabel(now.date)} 是結算日，<b className="text-ink">13:00</b> 起每 5 秒即時預測。</>
+              ) : next ? (
+                <>下一個結算日 <b className="text-ink">{dayLabel(next)}</b>，當天 13:00 起每 5 秒即時預測。</>
+              ) : '目前查不到下一個結算日。'}
+            </div>
+          )}
 
-      {!(pred && liveToday && todayCurve.length > 1) && lastHist && (
-        <div className="mt-3">
-          <h2 className="text-[13px] font-bold text-ink">
-            前次結算 {dayLabel(lastHist.row.d)}：<span className="font-mono tabular-nums">{nf0.format(lastHist.row.settle)}</span>
-          </h2>
-          <p className="text-[11.5px] text-muted">
-            {lastHist.row.fsp === undefined ? '期交所公告還沒抓到'
-              : lastHist.row.fsp === lastHist.row.settle ? `期交所公告 ${nf0.format(lastHist.row.fsp)}，和自算相同`
-              : `期交所公告 ${nf0.format(lastHist.row.fsp)}（自算不同，以公告為準）`}
-            {' · '}{lastHist.row.c.join('／')}
+          {!(pred && liveToday && todayCurve.length > 1) && lastHist && (
+            <div className="mt-3">
+              <h2 className="text-[13px] font-bold text-ink">
+                前次結算 {dayLabel(lastHist.row.d)}：<span className="font-mono tabular-nums">{nf0.format(lastHist.row.settle)}</span>
+              </h2>
+              <p className="text-[11.5px] text-muted">
+                {lastHist.row.fsp === undefined ? '期交所公告還沒抓到'
+                  : lastHist.row.fsp === lastHist.row.settle ? `期交所公告 ${nf0.format(lastHist.row.fsp)}，和自算相同`
+                  : `期交所公告 ${nf0.format(lastHist.row.fsp)}（自算不同，以公告為準）`}
+                {' · '}{lastHist.row.c.join('／')}
+              </p>
+              <SettleChart curve={lastHist.curve} />
+              <p className="mt-0.5 text-[11px] text-faint">
+                細線是加權指數，粗線是站在當時看的預測結算價：越接近 13:25 越定，最後一點就是結算價。
+              </p>
+            </div>
+          )}
+
+          <p className="mt-3 max-w-[75ch] text-[11px] leading-relaxed text-faint">
+            期交所算法：結算日 13:00（不含）～13:25（含）每 5 秒的加權指數 300 筆，加 13:30 收盤指數，
+            共 301 筆平均、四捨五入到 1 點。預測＝已過的取樣＋目前指數 × 還沒到的筆數。
+            用 2025-12-12～2026-11-20 共 95 個結算日核對，算法和公告結算價全部相同。網頁 13:00 後才打開時，
+            前面每 5 秒的指數由轉接站補上（轉接站平日 13:00～13:30 自己每 5 秒記一次）；轉接站也沒有的部分
+            用每分鐘資料補（整分那一筆不一定有代表性，最多可能差 30 點），收盤後證交所公布每 5 秒資料時自動校正。
           </p>
-          <SettleChart curve={lastHist.curve} />
-          <p className="mt-0.5 text-[11px] text-faint">
-            細線是加權指數，粗線是站在當時看的預測結算價：越接近 13:25 越定，最後一點就是結算價。
-          </p>
         </div>
-      )}
 
-      {page && hist.length > 0 && <SettleHistTable hist={hist} />}
+        {hasSide && (
+          <div className="min-w-0 space-y-4 [&>div]:mt-0">
+            {hasUpcoming && (
+              <div>
+                <h2 className="text-[13px] font-bold text-ink">接下來的結算日</h2>
+                <ul className="mt-1 divide-y divide-line rounded-lg border border-line bg-bg text-[12.5px]">
+                  {upcoming.filter(u => u.e >= now.date).slice(0, 6).map(u => (
+                    <li key={u.e} className="flex items-baseline justify-between gap-2 px-3 py-1.5">
+                      <span className={u.e === now.date ? 'font-bold text-ink' : 'text-ink'}>{dayLabel(u.e)}{u.e === now.date && ' 今天'}</span>
+                      <span className="text-muted">{seriesOf(u.c)}<span className="ml-1.5 font-mono text-faint">{u.c}</span></span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-1 text-[11px] text-faint">來自期交所每日選擇權行情的合約到期日（遇假日順延已含），每個交易日收盤後更新。</p>
+              </div>
+            )}
 
-      {page && upcoming.some(u => u.e >= now.date) && (
-        <div className="mt-3">
-          <h2 className="text-[13px] font-bold text-ink">接下來的結算日</h2>
-          <ul className="mt-1 divide-y divide-line rounded-lg border border-line bg-bg text-[12.5px]">
-            {upcoming.filter(u => u.e >= now.date).slice(0, 6).map(u => (
-              <li key={u.e} className="flex items-baseline justify-between gap-2 px-3 py-1.5">
-                <span className={u.e === now.date ? 'font-bold text-ink' : 'text-ink'}>{dayLabel(u.e)}{u.e === now.date && ' 今天'}</span>
-                <span className="text-muted">{seriesOf(u.c)}<span className="ml-1.5 font-mono text-faint">{u.c}</span></span>
-              </li>
-            ))}
-          </ul>
-          <p className="mt-1 text-[11px] text-faint">來自期交所每日選擇權行情的合約到期日（遇假日順延已含），每個交易日收盤後更新。</p>
-        </div>
-      )}
-
-      <p className="mt-2 text-[11px] leading-relaxed text-faint">
-        期交所算法：結算日 13:00（不含）～13:25（含）每 5 秒的加權指數 300 筆，加 13:30 收盤指數，
-        共 301 筆平均、四捨五入到 1 點。預測＝已過的取樣＋目前指數 × 還沒到的筆數。
-        用 2025-12-12～2026-11-20 共 95 個結算日核對，算法和公告結算價全部相同。網頁 13:00 後才打開時，
-        前面每 5 秒的指數由轉接站補上（轉接站平日 13:00～13:30 自己每 5 秒記一次）；轉接站也沒有的部分
-        用每分鐘資料補（整分那一筆不一定有代表性，最多可能差 30 點），收盤後證交所公布每 5 秒資料時自動校正。
-      </p>
+            {hist.length > 0 && <SettleHistTable hist={hist} />}
+          </div>
+        )}
+      </div>
     </section>
   );
 }

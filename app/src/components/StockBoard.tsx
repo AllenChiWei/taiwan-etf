@@ -53,7 +53,7 @@ export function Section({ title, hint, children }: {
   title: string; hint?: string; children: React.ReactNode;
 }) {
   return (
-    <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+    <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <h2 className="text-sm font-bold text-ink">{title}</h2>
         {hint && <span className="text-[11.5px] text-faint">{hint}</span>}

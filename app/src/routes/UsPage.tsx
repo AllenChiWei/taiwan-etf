@@ -75,60 +75,65 @@ export function UsPage() {
   return (
     <>
       <div className="pt-4">
-        <div className="rounded-xl border border-line bg-surface px-4 py-3 text-[13px] text-muted">
-          <p>
-            共 <strong className="tabular font-mono text-ink">{meta!.total}</strong> 檔美股 ETF，
-            其中 <strong className="tabular font-mono text-ink">{meta!.liquid}</strong> 檔日均成交額達
-            <span className="tabular font-mono"> {formatAdv(meta!.liquidMinAdv)}</span> 以上
-            {meta!.liquidMinDays ? '，且有滿 3 個月的價格資料' : ''}。
-            價格資料截至 {meta!.asof}。
-          </p>
-          {meta!.totalReturn ? (
-            <p className="mt-1">
-              標示<span className="mx-0.5 rounded bg-accent-soft px-1 text-[11px] font-semibold text-accent">含息</span>的
-              {' '}<strong className="tabular font-mono text-ink">{meta!.totalReturn}</strong> 檔，報酬率是
-              <strong className="text-ink">含息總報酬</strong>（配息再投入，截至 {meta!.totalReturnAsOf}），
-              可以直接跟台股頁的報酬率比。其餘沒有標示的是<strong className="text-up">價格報酬、不含配息</strong>
-              —— 含息的價格要一檔一個請求，三千七百檔每天跑不完，所以只做成交量夠大的那些。
-              全部都是累積、非年化。
+        <div className="rounded-xl border border-line bg-surface px-4 py-3 text-[13px] text-muted
+                        lg:grid lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)] lg:items-start lg:gap-6">
+          <div className="min-w-0">
+            <p>
+              共 <strong className="tabular font-mono text-ink">{meta!.total}</strong> 檔美股 ETF，
+              其中 <strong className="tabular font-mono text-ink">{meta!.liquid}</strong> 檔日均成交額達
+              <span className="tabular font-mono"> {formatAdv(meta!.liquidMinAdv)}</span> 以上
+              {meta!.liquidMinDays ? '，且有滿 3 個月的價格資料' : ''}。
+              價格資料截至 {meta!.asof}。
             </p>
-          ) : (
-            <p className="mt-1">
-              報酬率為<strong className="text-up">價格報酬，不含配息</strong>、累積非年化。
-            </p>
-          )}
-          <p className="mt-1">
+            {meta!.totalReturn ? (
+              <p className="mt-1">
+                標示<span className="mx-0.5 rounded bg-accent-soft px-1 text-[11px] font-semibold text-accent">含息</span>的
+                {' '}<strong className="tabular font-mono text-ink">{meta!.totalReturn}</strong> 檔，報酬率是
+                <strong className="text-ink">含息總報酬</strong>（配息再投入，截至 {meta!.totalReturnAsOf}），
+                可以直接跟台股頁的報酬率比。其餘沒有標示的是<strong className="text-up">價格報酬、不含配息</strong>
+                —— 含息的價格要一檔一個請求，三千七百檔每天跑不完，所以只做成交量夠大的那些。
+                全部都是累積、非年化。
+              </p>
+            ) : (
+              <p className="mt-1">
+                報酬率為<strong className="text-up">價格報酬，不含配息</strong>、累積非年化。
+              </p>
+            )}
+          </div>
+          <p className="mt-1 min-w-0 lg:mt-0 lg:rounded-lg lg:bg-sunken/50 lg:px-3.5 lg:py-2.5">
             兩者差很多的例子：QYLD 近 5 年的<em>價格</em>跌 12.66%，把配息計入後總報酬約 +48%；
             槓桿型的 AAPU 每年 12 月配一大筆資本利得，近 3 年價格報酬 +87%、含息 +141%。
           </p>
         </div>
       </div>
 
-      <div className="-mx-3 mt-4 border-b border-line bg-bg px-3 py-2.5 sm:-mx-4 sm:px-4 md:sticky md:top-0 md:z-20">
-        <div className="relative">
-          <span aria-hidden="true"
-                className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm opacity-60">🔍</span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            placeholder="搜尋代號或名稱…"
-            aria-label="搜尋美股 ETF"
-            autoComplete="off"
-            className="h-11 w-full rounded-lg border border-line bg-surface pr-9 pl-9 text-base
-                       text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none
-                       [&::-webkit-search-cancel-button]:hidden"
-          />
-          {draft && (
-            <button type="button" aria-label="清除搜尋"
-                    onClick={() => { setDraft(''); searchRef.current?.focus(); }}
-                    className="absolute top-1/2 right-1.5 grid h-7 w-7 -translate-y-1/2 place-items-center
-                               rounded-full text-xs text-muted hover:bg-hover hover:text-ink">✕</button>
-          )}
-        </div>
+      <div className="-mx-3 mt-4 border-b border-line bg-bg px-3 py-2.5
+                      sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 xl:-mx-8 xl:px-8 md:sticky md:top-0 md:z-20">
+        <div className="lg:grid lg:grid-cols-[minmax(240px,1.6fr)_1fr_1fr_auto] lg:items-end lg:gap-2.5">
+          <div className="relative">
+            <span aria-hidden="true"
+                  className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-sm opacity-60">🔍</span>
+            <input
+              ref={searchRef}
+              type="search"
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              placeholder="搜尋代號或名稱…"
+              aria-label="搜尋美股 ETF"
+              autoComplete="off"
+              className="h-11 w-full rounded-lg border border-line bg-surface pr-9 pl-9 text-base
+                         text-ink focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none
+                         [&::-webkit-search-cancel-button]:hidden lg:h-10 lg:text-[14.5px]"
+            />
+            {draft && (
+              <button type="button" aria-label="清除搜尋"
+                      onClick={() => { setDraft(''); searchRef.current?.focus(); }}
+                      className="absolute top-1/2 right-1.5 grid h-7 w-7 -translate-y-1/2 place-items-center
+                                 rounded-full text-xs text-muted hover:bg-hover hover:text-ink">✕</button>
+            )}
+          </div>
 
-        <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] lg:items-end">
+          <div className="grid grid-cols-1 gap-2.5 pt-2.5 sm:grid-cols-2 lg:contents">
           <div className="flex flex-col gap-1">
             <label className={labelCls} htmlFor="us-liquid">顯示範圍</label>
             <select id="us-liquid" className={selectCls} value={liquidOnly ? 'liquid' : 'all'}
@@ -164,6 +169,7 @@ export function UsPage() {
                              disabled:hover:bg-transparent sm:col-span-2 lg:col-span-1">
             清除
           </button>
+          </div>
         </div>
       </div>
 

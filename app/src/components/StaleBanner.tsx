@@ -7,7 +7,7 @@ export function StaleBanner({ updated }: { updated: string | null | undefined })
   const n = missedTradingDays(updated);
   if (n < STALE_AFTER) return null;
   return (
-    <div role="status" className="mx-auto mt-2 w-full max-w-6xl px-3 sm:px-4">
+    <div role="status" className="mx-auto mt-2 w-full max-w-[1536px] px-3 sm:px-4 lg:px-6 xl:px-8">
       <p className="rounded-lg border border-up/50 bg-surface px-3 py-2 text-[12.5px] text-ink">
         <span className="font-semibold text-up">資料可能沒有更新：</span>
         最新資料是 {updated}，之後已經過了 {n} 個交易日。遇到連假可以忽略；否則多半是資料來源出問題，

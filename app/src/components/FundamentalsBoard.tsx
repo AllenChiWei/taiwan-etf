@@ -191,7 +191,7 @@ export function FundamentalsBoard({ code }: { code: string }) {
             {/* 杜邦拆解樹 */}
             <div className="mt-3 rounded-lg p-3" style={{ background: C.panel, border: `1px solid ${C.border}` }}>
               <div className="text-[12px] font-bold" style={{ color: C.text }}>杜邦分析：ROE 是怎麼來的</div>
-              <div className="mt-2 flex flex-col items-center">
+              <div className="mx-auto mt-2 flex max-w-3xl flex-col items-center">
                 <div className="rounded-lg px-4 py-2 text-center" style={{ border: `1.5px solid ${C.cyan}`, background: '#0e2233' }}>
                   <div className="text-[11px]" style={{ color: C.muted }}>ROE</div>
                   <div className="font-mono text-[24px] font-bold tabular-nums" style={{ color: C.cyan }}>{f1(last.roe, '%')}</div>
@@ -238,7 +238,7 @@ export function FundamentalsBoard({ code }: { code: string }) {
             </div>
 
             {/* 趨勢小圖 */}
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
               <Trend title="獲利能力（單季）" labels={labels} unit="%" lines={[
                 { name: '毛利率', color: C.amber, values: s('gm') },
                 { name: '營益率', color: C.cyan, values: s('om') },
@@ -272,7 +272,7 @@ export function FundamentalsBoard({ code }: { code: string }) {
               )}
             </div>
 
-            <p className="mt-3 text-[11px] leading-relaxed" style={{ color: C.faint }}>
+            <p className="mt-3 max-w-[82ch] text-[11px] leading-relaxed" style={{ color: C.faint }}>
               比率用近四季合計（TTM）的損益與現金流，除以一年前與現在的平均餘額；毛利率等獲利率是單季。
               ROE 用歸屬母公司的淨利與權益。存貨週轉率 = 營業成本 ÷ 平均存貨，天數 = 365 ÷ 週轉率；
               現金轉換循環 = 存貨天數 + 應收天數 − 應付天數，越短代表錢被卡在營運裡的時間越短。

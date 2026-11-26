@@ -57,10 +57,10 @@ function when(n: number): string {
   return `${n} 天後`;
 }
 
-function EventRow({ e }: { e: CalEvent }) {
+function EventRow({ e, multi }: { e: CalEvent; multi?: boolean }) {
   const isStock = e.code !== null && /^\d{4}$/.test(e.code);
   return (
-    <li className="flex gap-2.5 border-b border-line/60 py-2 last:border-0">
+    <li className={`flex gap-2.5 border-b border-line/60 py-2 last:border-0 ${multi ? 'lg:last:border-b' : ''}`}>
       <span className={`mt-0.5 h-fit shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold ${KIND_CLASS[e.kind]}`}>
         {KIND_LABEL[e.kind]}
       </span>
@@ -95,11 +95,11 @@ function fmtCash(v: number): string {
   return (Math.round(v * 10000) / 10000).toString();
 }
 
-function ExDivRow({ r, today, y }: { r: EtfExDivRow; today: string; y: number | null | undefined }) {
+function ExDivRow({ r, today, y, multi }: { r: EtfExDivRow; today: string; y: number | null | undefined; multi?: boolean }) {
   const n = daysUntil(r.d, today);
   const status = n < 0 ? '已除息' : n === 0 ? '今天除息' : n === 1 ? '明天除息' : `${n} 天後`;
   return (
-    <li className="flex items-start gap-2.5 border-b border-line/60 py-2 last:border-0">
+    <li className={`flex items-start gap-2.5 border-b border-line/60 py-2 last:border-0 ${multi ? 'lg:last:border-b' : ''}`}>
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-baseline gap-x-2">
           <span className="font-mono text-[12.5px] font-bold text-muted">{r.code}</span>
@@ -211,23 +211,30 @@ function EtfExDivTab({ calendar, today, query, mine }: {
                       icon="💰" />
         )
       ) : (
-        <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4">
-          {groups.map(g => (
-            <div key={g.d}>
-              <div className="sticky top-[env(safe-area-inset-top,0px)] z-10 -mx-3.5 border-b border-line/60
-                              bg-surface/95 px-3.5 py-1.5 backdrop-blur sm:-mx-4 sm:px-4">
-                <span className="text-[12.5px] font-bold text-ink">{dayLabel(g.d)}</span>
-                <span className="ml-1.5 font-mono text-[11px] text-faint">{g.items.length}</span>
-              </div>
-              <ul>{g.items.map(r => (
-                <ExDivRow key={`${r.code}-${r.d}`} r={r} today={today} y={yields?.yields[r.code]?.y} />
-              ))}</ul>
-            </div>
-          ))}
+        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
+          {groups.map(g => {
+            const multi = g.items.length >= 3;
+            return (
+              <section key={g.d}
+                       className={`min-w-0 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4 ${
+                         multi ? 'lg:col-span-2 2xl:col-span-3' : ''}`}>
+                <div className="sticky top-[env(safe-area-inset-top,0px)] z-10 -mx-3.5 rounded-t-xl border-b border-line/60
+                                bg-surface/95 px-3.5 py-1.5 backdrop-blur sm:-mx-4 sm:px-4">
+                  <span className="text-[12.5px] font-bold text-ink">{dayLabel(g.d)}</span>
+                  <span className="ml-1.5 font-mono text-[11px] text-faint">{g.items.length}</span>
+                </div>
+                <ul className={multi ? 'grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3' : ''}>
+                  {g.items.map(r => (
+                    <ExDivRow key={`${r.code}-${r.d}`} r={r} today={today} y={yields?.yields[r.code]?.y} multi={multi} />
+                  ))}
+                </ul>
+              </section>
+            );
+          })}
         </div>
       )}
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         除息日與每股金額來源：臺灣證券交易所、證券櫃檯買賣中心公告（配息紀錄＋除權息預告），以公告為準，
         投信可能更改日期或金額。交易所還沒填金額時，改用投信在 e添富發布的收益分配公告：
         標「預估」的是評價日估算的金額，實際金額通常在除息前幾天公布、可能略有不同。
@@ -328,24 +335,26 @@ export function CalendarPage() {
         </p>
       )}
 
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {KINDS.map(k => (
-          <button key={k} type="button" aria-pressed={kinds.has(k)} onClick={() => toggle(k)}
-                  className={`h-8 rounded-lg px-3 text-[12.5px] font-semibold transition-colors ${
-                    kinds.has(k) ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
-            {KIND_LABEL[k]}
-          </button>
-        ))}
-      </div>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <input type="search" value={query} onChange={e => setQuery(e.target.value)}
-               placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"
-               className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[13px]
-                          text-ink placeholder:text-faint sm:max-w-xs" />
-        <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-muted">
-          <input type="checkbox" checked={onlyMine} onChange={e => setOnlyMine(e.target.checked)} />
-          只看收藏與持股（{mine.size}）
-        </label>
+      <div className="mt-3 flex flex-col gap-2 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-wrap gap-1.5">
+          {KINDS.map(k => (
+            <button key={k} type="button" aria-pressed={kinds.has(k)} onClick={() => toggle(k)}
+                    className={`h-8 rounded-lg px-3 text-[12.5px] font-semibold transition-colors ${
+                      kinds.has(k) ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}>
+              {KIND_LABEL[k]}
+            </button>
+          ))}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 xl:shrink-0">
+          <input type="search" value={query} onChange={e => setQuery(e.target.value)}
+                 placeholder="搜尋代號或名稱" aria-label="搜尋代號或名稱"
+                 className="h-9 min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 text-[13px]
+                            text-ink placeholder:text-faint sm:max-w-xs xl:w-56 xl:flex-initial" />
+          <label className="flex h-9 items-center gap-1.5 text-[12.5px] text-muted">
+            <input type="checkbox" checked={onlyMine} onChange={e => setOnlyMine(e.target.checked)} />
+            只看收藏與持股（{mine.size}）
+          </label>
+        </div>
       </div>
 
       {groups.length === 0 ? (
@@ -355,12 +364,15 @@ export function CalendarPage() {
                       : '換個篩選條件試試。'}
                     icon="📅" />
       ) : (
-        <div className="mt-3 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4">
+        <div className="mt-3 grid grid-cols-1 gap-2.5 lg:grid-cols-2 lg:gap-3 2xl:grid-cols-3">
           {groups.map(g => {
             const n = daysUntil(g.d, today);
+            const multi = g.items.length >= 3;
             return (
-              <div key={g.d}>
-                <div className="sticky top-[env(safe-area-inset-top,0px)] z-10 -mx-3.5 border-b border-line/60
+              <section key={g.d}
+                       className={`min-w-0 rounded-xl border border-line bg-surface px-3.5 pb-1 sm:px-4 ${
+                         multi ? 'lg:col-span-2 2xl:col-span-3' : ''}`}>
+                <div className="sticky top-[env(safe-area-inset-top,0px)] z-10 -mx-3.5 rounded-t-xl border-b border-line/60
                                 bg-surface/95 px-3.5 py-1.5 backdrop-blur sm:-mx-4 sm:px-4">
                   <span className="text-[12.5px] font-bold text-ink">{dayLabel(g.d)}</span>
                   <span className={`ml-2 text-[11.5px] ${n <= 1 ? 'font-semibold text-up' : 'text-faint'}`}>
@@ -368,14 +380,16 @@ export function CalendarPage() {
                   </span>
                   <span className="ml-1.5 font-mono text-[11px] text-faint">{g.items.length}</span>
                 </div>
-                <ul>{g.items.map((e, i) => <EventRow key={`${e.kind}-${e.code}-${i}`} e={e} />)}</ul>
-              </div>
+                <ul className={multi ? 'grid grid-cols-1 lg:grid-cols-2 lg:gap-x-6 2xl:grid-cols-3' : ''}>
+                  {g.items.map((e, i) => <EventRow key={`${e.kind}-${e.code}-${i}`} e={e} multi={multi} />)}
+                </ul>
+              </section>
             );
           })}
         </div>
       )}
 
-      <p className="mt-4 mb-2 text-[11.5px] leading-relaxed text-faint">
+      <p className="mt-4 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         除權息與股東會來源：{data?.meta.source ?? '臺灣證券交易所、證券櫃檯買賣中心'}，以公告為準，
         公司可能更改日期。財報與月營收是一般產業的<strong>法定最晚期限</strong>（證券交易法第 36 條），
         公司可以提早、金融保險業另有規定；期貨結算日是依「每月第三個星期三」推算，遇假日順延。

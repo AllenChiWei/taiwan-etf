@@ -15,7 +15,7 @@ export function Fold({ summary, children, className = 'mt-2' }: {
         {summary}
         <span className="ml-1 text-faint group-open:hidden">（說明）</span>
       </summary>
-      <div className="mt-1 pl-3.5">{children}</div>
+      <div className="mt-1 max-w-[78ch] pl-3.5">{children}</div>
     </details>
   );
 }

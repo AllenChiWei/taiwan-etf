@@ -20,7 +20,7 @@ const RANGES = [
   { id: 10, label: '10 年' }, { id: 20, label: '20 年' },
 ] as const;
 
-const GROUPS: Indicator['group'][] = ['通膨', '就業', '成長', '利率', '能源'];
+const FULL_GROUPS: Indicator['group'][] = ['通膨', '就業', '利率'];
 
 function fmt(v: number, digits: number): string {
   return v.toLocaleString('zh-TW', { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -140,8 +140,8 @@ function IndicatorCard({ ind, years }: { ind: Indicator; years: number }) {
 /* ── 殖利率曲線 ───────────────────────────────────────────── */
 
 function CurveCard({ curve }: { curve: MacroCurve }) {
-  const W = 320;
-  const H = 150;
+  const W = 460;
+  const H = 160;
   const lines = [
     { key: 'y1' as const, label: '一年前', cls: 'text-faint', dash: '2 3' },
     { key: 'm1' as const, label: '一個月前', cls: 'text-muted', dash: '5 3' },
@@ -152,8 +152,8 @@ function CurveCard({ curve }: { curve: MacroCurve }) {
   const lo = Math.floor(Math.min(...all) * 4) / 4 - 0.25;
   const hi = Math.ceil(Math.max(...all) * 4) / 4 + 0.25;
   const n = curve.tenors.length;
-  const x = (i: number) => 24 + (i / (n - 1)) * (W - 32);
-  const y = (v: number) => 8 + (1 - (v - lo) / (hi - lo)) * (H - 16);
+  const x = (i: number) => 28 + (i / (n - 1)) * (W - 38);
+  const y = (v: number) => 10 + (1 - (v - lo) / (hi - lo)) * (H - 20);
   const path = (vals: (number | null)[]) => {
     let d = '';
     vals.forEach((v, i) => {
@@ -165,7 +165,7 @@ function CurveCard({ curve }: { curve: MacroCurve }) {
   const inv = curveInverted(curve);
   const ticks = [lo, (lo + hi) / 2, hi];
   return (
-    <div className="min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:col-span-2">
+    <div className="min-w-0 rounded-xl border border-line bg-surface p-3.5">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[13px] font-bold text-ink">美國公債殖利率曲線</h3>
         <span className="text-[11.5px] text-faint">{curve.dates.now ?? ''}・Fed H.15</span>
@@ -176,63 +176,67 @@ function CurveCard({ curve }: { curve: MacroCurve }) {
           <strong className={inv ? 'text-up' : 'text-ink'}>{inv ? '倒掛' : '正斜率（沒有倒掛）'}</strong>
         </p>
       )}
-      <svg viewBox={`0 0 ${W} ${H + 16}`} role="img" aria-label="殖利率曲線"
-           className="mt-2 w-full">
-        {ticks.map(t => (
-          <g key={t}>
-            <line x1="24" x2={W - 8} y1={y(t)} y2={y(t)} stroke="currentColor"
-                  className="text-line" strokeWidth="0.6" />
-            <text x="0" y={y(t) + 3} fontSize="8" fill="currentColor" className="text-faint">
-              {t.toFixed(2)}
-            </text>
-          </g>
-        ))}
-        {lines.map(l => (
-          <path key={l.key} d={path(curve[l.key])} fill="none" stroke="currentColor"
-                strokeWidth={l.key === 'now' ? 2 : 1.3} strokeDasharray={l.dash}
-                className={l.cls} />
-        ))}
-        {curve.now.map((v, i) => v != null && (
-          <circle key={i} cx={x(i)} cy={y(v)} r="2" fill="currentColor" className="text-accent" />
-        ))}
-        {curve.tenors.map((t, i) => (
-          <text key={t} x={x(i)} y={H + 12} fontSize="8" textAnchor="middle"
-                fill="currentColor" className="text-muted">{t}</text>
-        ))}
-      </svg>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[11.5px]">
-        {lines.slice().reverse().map(l => (
-          <span key={l.key} className="flex items-center gap-1.5">
-            <svg width="18" height="6" aria-hidden="true">
-              <line x1="0" x2="18" y1="3" y2="3" stroke="currentColor" strokeWidth="2"
-                    strokeDasharray={l.dash} className={l.cls} />
-            </svg>
-            <span className="text-muted">{l.label}</span>
-            <span className="text-faint">{curve.dates[l.key] ?? ''}</span>
-          </span>
-        ))}
-      </div>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full min-w-[520px] text-right text-[11.5px] tabular-nums">
-          <thead>
-            <tr className="text-faint">
-              <th className="py-1 text-left font-semibold">殖利率（%）</th>
-              {curve.tenors.map(t => <th key={t} className="py-1 font-semibold">{t}</th>)}
-            </tr>
-          </thead>
-          <tbody>
+      <div className="mt-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.25fr)] lg:items-center lg:gap-6">
+        <svg viewBox={`0 0 ${W} ${H + 18}`} role="img" aria-label="殖利率曲線"
+             className="w-full">
+          {ticks.map(t => (
+            <g key={t}>
+              <line x1="28" x2={W - 10} y1={y(t)} y2={y(t)} stroke="currentColor"
+                    className="text-line" strokeWidth="0.7" />
+              <text x="0" y={y(t) + 3.5} fontSize="9.5" fill="currentColor" className="text-faint">
+                {t.toFixed(2)}
+              </text>
+            </g>
+          ))}
+          {lines.map(l => (
+            <path key={l.key} d={path(curve[l.key])} fill="none" stroke="currentColor"
+                  strokeWidth={l.key === 'now' ? 2.2 : 1.4} strokeDasharray={l.dash}
+                  className={l.cls} />
+          ))}
+          {curve.now.map((v, i) => v != null && (
+            <circle key={i} cx={x(i)} cy={y(v)} r="2.4" fill="currentColor" className="text-accent" />
+          ))}
+          {curve.tenors.map((t, i) => (
+            <text key={t} x={x(i)} y={H + 13} fontSize="9.5" textAnchor="middle"
+                  fill="currentColor" className="text-muted">{t}</text>
+          ))}
+        </svg>
+        <div className="mt-2 min-w-0 lg:mt-0">
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11.5px]">
             {lines.slice().reverse().map(l => (
-              <tr key={l.key} className="border-t border-line/60">
-                <td className="py-1 text-left text-muted">{l.label}</td>
-                {curve[l.key].map((v, i) => (
-                  <td key={i} className={l.key === 'now' ? 'font-semibold text-ink' : 'text-muted'}>
-                    {v == null ? '—' : v.toFixed(2)}
-                  </td>
-                ))}
-              </tr>
+              <span key={l.key} className="flex items-center gap-1.5">
+                <svg width="18" height="6" aria-hidden="true">
+                  <line x1="0" x2="18" y1="3" y2="3" stroke="currentColor" strokeWidth="2"
+                        strokeDasharray={l.dash} className={l.cls} />
+                </svg>
+                <span className="text-muted">{l.label}</span>
+                <span className="text-faint">{curve.dates[l.key] ?? ''}</span>
+              </span>
             ))}
-          </tbody>
-        </table>
+          </div>
+          <div className="mt-2 overflow-x-auto">
+            <table className="w-full min-w-[520px] text-right text-[11.5px] tabular-nums">
+              <thead>
+                <tr className="text-faint">
+                  <th className="py-1 text-left font-semibold">殖利率（%）</th>
+                  {curve.tenors.map(t => <th key={t} className="py-1 font-semibold">{t}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {lines.slice().reverse().map(l => (
+                  <tr key={l.key} className="border-t border-line/60">
+                    <td className="py-1 text-left text-muted">{l.label}</td>
+                    {curve[l.key].map((v, i) => (
+                      <td key={i} className={l.key === 'now' ? 'font-semibold text-ink' : 'text-muted'}>
+                        {v == null ? '—' : v.toFixed(2)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -286,21 +290,57 @@ export function MacroPage() {
         </div>
       </div>
 
-      {GROUPS.map(g => {
+      {FULL_GROUPS.map(g => {
         const list = indicators.filter(i => i.group === g);
         if (!list.length && !(g === '利率' && data.curve)) return null;
+        const gridCls = list.length === 4
+          ? 'grid gap-3 sm:grid-cols-2 xl:grid-cols-4 lg:gap-4'
+          : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4';
         return (
           <section key={g} className="mt-5">
             <h2 className="mb-2 text-sm font-bold text-ink">{g}</h2>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {g === '利率' && data.curve && <CurveCard curve={data.curve} />}
-              {list.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
-            </div>
+            {g === '利率' && data.curve && (
+              <div className="mb-3 lg:mb-4">
+                <CurveCard curve={data.curve} />
+              </div>
+            )}
+            {list.length > 0 && (
+              <div className={gridCls}>
+                {list.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
+              </div>
+            )}
           </section>
         );
       })}
 
-      <p className="mt-5 mb-2 text-[11.5px] leading-relaxed text-faint">
+      {(() => {
+        // 成長（1 張卡）與能源（2 張卡）在寬螢幕同排湊滿 3 欄，避免單張卡佔滿整排留下大量空白
+        const growth = indicators.filter(i => i.group === '成長');
+        const energy = indicators.filter(i => i.group === '能源');
+        if (!growth.length && !energy.length) return null;
+        return (
+          <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3 lg:items-start lg:gap-4">
+            {growth.length > 0 && (
+              <section className="min-w-0 lg:col-span-1">
+                <h2 className="mb-2 text-sm font-bold text-ink">成長</h2>
+                <div className="grid gap-3">
+                  {growth.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
+                </div>
+              </section>
+            )}
+            {energy.length > 0 && (
+              <section className="min-w-0 lg:col-span-2">
+                <h2 className="mb-2 text-sm font-bold text-ink">能源</h2>
+                <div className="grid gap-3 sm:grid-cols-2 lg:gap-4">
+                  {energy.map(i => <IndicatorCard key={i.key} ind={i} years={years} />)}
+                </div>
+              </section>
+            )}
+          </div>
+        );
+      })()}
+
+      <p className="mt-5 mb-2 max-w-[80ch] text-[11.5px] leading-relaxed text-faint">
         來源：{data.meta.source}；原油庫存取自美國能源資訊署（EIA）。全部為美國聯邦政府機關發佈之公開資料，
         經 FRED 彙整。「較前期」的紅綠只表示數字上升或下降，不代表好壞。
         日資料的走勢圖以每週最後一個交易日繪製。本頁僅供參考，不構成投資建議。

@@ -4,7 +4,7 @@ import { NextDaySection } from '../components/NextDaySection';
 
 export function NextDayPage() {
   return (
-    <div className="mx-auto max-w-2xl">
+    <div>
       <NextDaySection />
     </div>
   );

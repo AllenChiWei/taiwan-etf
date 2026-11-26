@@ -259,47 +259,53 @@ export function ValuationBoard({ code, industry, months }: { code: string; indus
             )}
             {loss && <p className="mt-2 text-[12px] text-muted">近四季虧損，本益比沒有意義，改看淨值比。</p>}
 
-            {rv ? <RiverChart points={rv} multiples={s.bands!} keyName={k} />
-              : <p className="py-6 text-center text-[13px] text-muted">有效天數太少（{s.n} 天），畫不出{KEY_LABEL[k]}河流。</p>}
+            <div className="mt-2 grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] xl:items-start xl:gap-5">
+              <div className="min-w-0">
+                {rv ? <RiverChart points={rv} multiples={s.bands!} keyName={k} />
+                  : <p className="py-6 text-center text-[13px] text-muted">有效天數太少（{s.n} 天），畫不出{KEY_LABEL[k]}河流。</p>}
+              </div>
 
-            <h3 className="mt-4 text-[13px] font-bold text-ink">預估本益比</h3>
-            <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
-              用預估的未來四季 EPS 算本益比，跟近 {years} 年的本益比分布比；下方五格是各百分位倍數 × 這個 EPS 對應的股價。
-            </p>
-            {!pe.bands ? (
-              <p className="mt-2 text-[12.5px] text-muted">本益比歷史不足或近期虧損，無法推估。</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {est ? (
-                  <EstimateRow
-                    title="營收推估（推估值，僅供參考）"
-                    note={`${est.months[0]}～${est.months[est.months.length - 1]} 營收年增 ${est.growth >= 0 ? '+' : ''}${nf2.format(est.growth)}%`}
-                    eps={est.eps} price={latest.close} hist={hist} pe={pe} />
+              <div className="min-w-0">
+                <h3 className="mt-2 text-[13px] font-bold text-ink xl:mt-1">預估本益比</h3>
+                <p className="mt-0.5 text-[11px] leading-relaxed text-faint">
+                  用預估的未來四季 EPS 算本益比，跟近 {years} 年的本益比分布比；下方五格是各百分位倍數 × 這個 EPS 對應的股價。
+                </p>
+                {!pe.bands ? (
+                  <p className="mt-2 text-[12.5px] text-muted">本益比歷史不足或近期虧損，無法推估。</p>
                 ) : (
-                  <p className="text-[12.5px] text-muted">沒有月營收年增率可用，無法用營收推估。</p>
-                )}
-                {est && (
-                  <p className="text-[11px] leading-relaxed text-faint">
-                    假設淨利率不變：近四季 EPS {x2(latest.eps, ' 元')} × 近 {est.months.length} 個月營收成長。
-                    毛利率變動、業外損益、匯兌、一次性收益都不在裡面；營收大起大落的公司誤差很大。
-                  </p>
-                )}
-                <div className="rounded-lg border border-line bg-bg px-3 py-2">
-                  <label className="flex flex-wrap items-center gap-2 text-[12.5px] font-semibold text-ink">
-                    自己輸入未來四季 EPS
-                    <span className="w-36">
-                      <NumberInput value={myEps} onChange={setMyEps} step={0.1} decimal suffix="元"
-                                   aria-label="自己預估的未來四季 EPS"
-                                   className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-base text-ink" />
-                    </span>
-                  </label>
-                </div>
-                {myEps > 0 && (
-                  <EstimateRow title="你的預估" note="自己輸入" eps={myEps} price={latest.close} hist={hist} pe={pe} />
+                  <div className="mt-2 space-y-2">
+                    {est ? (
+                      <EstimateRow
+                        title="營收推估（推估值，僅供參考）"
+                        note={`${est.months[0]}～${est.months[est.months.length - 1]} 營收年增 ${est.growth >= 0 ? '+' : ''}${nf2.format(est.growth)}%`}
+                        eps={est.eps} price={latest.close} hist={hist} pe={pe} />
+                    ) : (
+                      <p className="text-[12.5px] text-muted">沒有月營收年增率可用，無法用營收推估。</p>
+                    )}
+                    {est && (
+                      <p className="text-[11px] leading-relaxed text-faint">
+                        假設淨利率不變：近四季 EPS {x2(latest.eps, ' 元')} × 近 {est.months.length} 個月營收成長。
+                        毛利率變動、業外損益、匯兌、一次性收益都不在裡面；營收大起大落的公司誤差很大。
+                      </p>
+                    )}
+                    <div className="rounded-lg border border-line bg-bg px-3 py-2">
+                      <label className="flex flex-wrap items-center gap-2 text-[12.5px] font-semibold text-ink">
+                        自己輸入未來四季 EPS
+                        <span className="w-36">
+                          <NumberInput value={myEps} onChange={setMyEps} step={0.1} decimal suffix="元"
+                                       aria-label="自己預估的未來四季 EPS"
+                                       className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-base text-ink" />
+                        </span>
+                      </label>
+                    </div>
+                    {myEps > 0 && (
+                      <EstimateRow title="你的預估" note="自己輸入" eps={myEps} price={latest.close} hist={hist} pe={pe} />
+                    )}
+                  </div>
                 )}
               </div>
-            )}
-            <p className="mt-3 text-[11px] leading-relaxed text-faint">
+            </div>
+            <p className="mt-3 max-w-[78ch] text-[11px] leading-relaxed text-faint">
               百分位是跟這檔股票自己的歷史比，不是跟同業比；成長期改變或產業結構改變時，過去的區間不一定適用。
             </p>
           </>

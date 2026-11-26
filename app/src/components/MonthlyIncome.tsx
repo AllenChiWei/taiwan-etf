@@ -70,9 +70,9 @@ export function MonthlyIncome() {
                aria-label="每月想領（元）" className="h-8 w-24 rounded-lg border border-line bg-bg px-2 text-[13px] text-ink" />
       </div>
 
-      <ul className="mt-2.5">
+      <ul className="mt-2.5 grid grid-cols-1 gap-x-6 lg:grid-cols-2 lg:items-start">
         {rows.map(r => (
-          <li key={r.code} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1.5 last:border-0">
+          <li key={r.code} className="grid grid-cols-[1fr_auto] items-baseline gap-2 border-b border-line/60 py-1.5 last:border-0 lg:last:border-b">
             <span className="min-w-0">
               <span className="block truncate text-[13px] text-ink">
                 <button type="button" aria-expanded={open === r.code} onClick={() => setOpen(o => (o === r.code ? null : r.code))}
@@ -109,7 +109,7 @@ export function MonthlyIncome() {
         </button>
         {msg && <span className="text-[11.5px] text-muted">{msg}</span>}
       </div>
-      <p className="mt-1.5 text-[10.5px] leading-relaxed text-faint">
+      <p className="mt-1.5 max-w-[82ch] text-[10.5px] leading-relaxed text-faint">
         年配息＝最近一年實際配發（季配取最近 4 次、月配 12 次），不是「最近一次 × 次數」——今年配息成長快的會被高估。上市未滿一年的用已配發的平均每次 × 一年次數推估。
         二代健保補充保費只算配息裡的股利所得、利息所得（單筆達 2 萬元扣 2.11%）；收益平準金、已實現資本利得（含掩護性買權的選擇權權利金）不扣健保、也不課所得稅。
         配息組成用集保 ETF 觀測站最近一次公告的預估占比，實際以投信的收益分配通知為準；未計股利所得稅。配息會變動、也可能來自本金，過去不代表未來，非投資建議。
