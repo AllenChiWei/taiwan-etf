@@ -53,6 +53,8 @@ export interface CbBond {
   cv1?: number | null;
   cv3?: number | null;
   cvM?: string | null;
+  /** 報價新鮮度（2026-11-26）：今日無成交時，參考價與先前連續幾個交易日看板參考價相同；今日有成交為 0，舊版 cb.json 可能缺席 */
+  stale?: number | null;
 }
 
 export interface CbUpcoming {
@@ -349,6 +351,70 @@ export function yearsLeft(b: CbBond, asOf: string): number | null {
   return b.mat && b.mat >= asOf ? daysBetween(asOf, b.mat) / 365.25 : null;
 }
 
+/** 報價新鮮度提醒門檻：今日無成交且參考價連續至少幾個交易日未變動才標示 */
+export const STALE_MIN_DAYS = 5;
+
+/**
+ * 報價新鮮度：今日無成交時，參考價已連續幾個交易日未變動。
+ * - 今日有成交（b.close !== null）回 0；缺少價格回 null。
+ * - 優先使用 cb.json 的 b.stale（fetch_cb.py 由歷史看板計算）；
+ *   若舊版 cb.json 缺此欄位且呼叫端已載入 cb_series 走勢，以同一口徑回推；皆無則回 null。
+ */
+export function staleRefDays(b: CbBond, asOf?: string, series?: CbSeriesPoint[] | null): number | null {
+  if (b.px === null) return null;
+  if (b.close !== null) return 0;
+  if (b.stale != null && Number.isFinite(b.stale)) return Math.max(0, Math.floor(b.stale));
+  if (!series || series.length === 0) return null;
+  const cur = Math.round(b.px * 100);
+  let n = 0;
+  for (let i = series.length - 1; i >= 0; i--) {
+    const [d, px] = series[i];
+    if (asOf && d >= asOf) continue;
+    if (Math.round(px * 100) === cur) n += 1;
+    else break;
+  }
+  return n;
+}
+
+export type PutStatus = 'none' | 'upcoming' | 'open' | 'passed';
+
+export interface CbSchedule {
+  putStatus: PutStatus;
+  putS: string | null;
+  putE: string | null;
+  putP: number | null;
+  /** 距賣回截止日（putE ?? putS）天數；無賣回條款為 null，已過為負數 */
+  putDays: number | null;
+  /** 距賣回起日（putS）天數；無 putS 為 null，已開始為 ≤ 0 */
+  putStartDays: number | null;
+  mat: string | null;
+  /** 距到期日天數；缺到期日為 null，已到期為負數 */
+  matDays: number | null;
+  coupon: number | null;
+}
+
+/** 單檔可轉債的賣回／到期時程摘要（詳情抽屜用）。 */
+export function cbSchedule(b: CbBond, asOf: string): CbSchedule {
+  const pd = putDate(b);
+  let putStatus: PutStatus = 'none';
+  if (pd) {
+    if (asOf && pd < asOf) putStatus = 'passed';
+    else if (asOf && b.putS && b.putS <= asOf) putStatus = 'open';
+    else putStatus = 'upcoming';
+  }
+  return {
+    putStatus,
+    putS: b.putS,
+    putE: b.putE,
+    putP: b.putP,
+    putDays: pd && asOf ? daysBetween(asOf, pd) : null,
+    putStartDays: b.putS && asOf ? daysBetween(asOf, b.putS) : null,
+    mat: b.mat,
+    matDays: b.mat && asOf ? daysBetween(asOf, b.mat) : null,
+    coupon: b.coupon,
+  };
+}
+
 /** 近一個月轉換（餘額減少）佔原始發行的比例（%）；面額十萬一張 */
 export function convPct(b: CbBond): number | null {
   return b.cv1 != null && b.tot ? (b.cv1 * 1e5 / b.tot) * 100 : null;
@@ -459,9 +525,21 @@ export interface CbUnderlyingMetrics {
   margin?: ReadonlyMap<string, number>;
 }
 
-const inRange = (v: number | null, r?: Range) =>
-  !r || (r.min === null && r.max === null)
-  || (v !== null && (r.min === null || v >= r.min) && (r.max === null || v <= r.max));
+/** 區間上下限是否反轉（下限大於上限）；任一端未填或相等都算有效 */
+export function isRangeInvalid(r?: Range): boolean {
+  return Boolean(r && r.min !== null && r.max !== null && r.min > r.max);
+}
+
+/** 區間是否有效啟用（至少填了一端，且沒有下限大於上限） */
+export function isRangeActive(r?: Range): boolean {
+  return Boolean(r && (r.min !== null || r.max !== null) && !isRangeInvalid(r));
+}
+
+/** 數值是否落在區間內；未填或下限大於上限時視為沒填，避免結果直接清空 */
+export function inRange(v: number | null, r?: Range): boolean {
+  if (!isRangeActive(r)) return true;
+  return v !== null && (r!.min === null || v >= r!.min) && (r!.max === null || v <= r!.max);
+}
 
 /** 預設策略：一鍵套用一組條件（使用者 11-04 要的「可轉債篩選器」） */
 export interface CbPreset {
@@ -501,12 +579,9 @@ export function filterBonds(
     && inRange(outPct(b), f.out) && inRange(ytp(b, asOf), f.ytp)
     && inRange(ytm(b, asOf), f.ytm) && inRange(yearsLeft(b, asOf), f.yrs)
     && inRange(convPct(b), f.conv) && inRange(cbasPrem(b, asOf), f.cbas)
-    && (!f.stockPe || (f.stockPe.min === null && f.stockPe.max === null)
-      || (!b.exch && inRange(underlying.pe?.get(b.s) ?? null, f.stockPe)))
-    && (!f.stockR20 || (f.stockR20.min === null && f.stockR20.max === null)
-      || (!b.exch && inRange(underlying.r20?.get(b.s) ?? null, f.stockR20)))
-    && (!f.stockMargin || (f.stockMargin.min === null && f.stockMargin.max === null)
-      || (!b.exch && inRange(underlying.margin?.get(b.s) ?? null, f.stockMargin)))
+    && (!isRangeActive(f.stockPe) || (!b.exch && inRange(underlying.pe?.get(b.s) ?? null, f.stockPe)))
+    && (!isRangeActive(f.stockR20) || (!b.exch && inRange(underlying.r20?.get(b.s) ?? null, f.stockR20)))
+    && (!isRangeActive(f.stockMargin) || (!b.exch && inRange(underlying.margin?.get(b.s) ?? null, f.stockMargin)))
     && (f.putWithin == null || (() => { const d = putDate(b); return Boolean(d && d >= asOf && daysBetween(asOf, d) <= f.putWithin!); })())
     && (f.issuedWithin == null || Boolean(b.issue && b.issue <= asOf && daysBetween(b.issue, asOf) <= f.issuedWithin))
     && (!f.guarantee || b.g === f.guarantee)

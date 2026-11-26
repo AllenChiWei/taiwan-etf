@@ -151,6 +151,23 @@ def snapshot(board):
     return out
 
 
+def unchanged_days(days, prev_dates, code, px, close):
+    u"""今天沒成交時，參考價與先前連續幾個交易日的看板參考價相同；今天有成交或無價回 0。"""
+    if close is not None or px is None:
+        return 0
+    cur = round(px, 2)
+    n = 0
+    for d in prev_dates:
+        v = days[d].get(code)
+        if not v or v[0] is None:
+            break
+        if round(v[0], 2) == cur:
+            n += 1
+        else:
+            break
+    return n
+
+
 def percentile(values, p):
     u"""等同 Excel PERCENTILE.INC（跟 lib/cb.ts 的 percentile 一樣）。"""
     if not values:
@@ -430,6 +447,10 @@ def build(today, store):
 
     record_outs(store, board_day, board)
     filled = update_store(store, board_day, board)
+    days = store.get('days') or {}
+    prev_dates = sorted((d for d in days if d < quote_day), reverse=True)
+    for r in rows:
+        r['stale'] = unchanged_days(days, prev_dates, r['c'], r['px'], r['close'])
     log(u'  走勢快取 %d 天（這次補抓 %d 天）' % (len(store.get('days', {})), filled))
     planned = update_planned(store, info, issued, quote_day)
     return {

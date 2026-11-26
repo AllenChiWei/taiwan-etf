@@ -8,6 +8,8 @@ import {
   percentile, cbStats, byIndustry, filterBonds, outPct, addDays, yi,
   ytp, ytm, convertible, cbEvents, marketRows, rankInHistory, CB_PRESETS, MARKET_METRICS,
   type CbBond, type CbUpcoming, type CbData, type CbFilter,
+  isRangeInvalid, isRangeActive, inRange, staleRefDays, STALE_MIN_DAYS, cbSchedule,
+  type CbSeriesPoint,
 } from '../src/lib/cb.ts';
 
 function bond(p: Partial<CbBond>): CbBond {
@@ -187,4 +189,78 @@ test('轉換分析與 CBAS 權利金粗估、剩餘年期與新條件篩選', as
   assert.deepEqual(filterBonds([bond({ c: 'A', cv1: 50 }), bond({ c: 'B', cv1: 10 }), bond({ c: 'C', cv1: null })], f).map(x => x.c), ['A']);
   const g: CbFilter = { ...f, conv: undefined, sort: 'cbas', desc: false, cbas: { min: null, max: 10 } };
   assert.deepEqual(filterBonds([b, bond({ c: 'D', px: 130, putS: '2027-11-05', putE: '2027-11-05', putP: 101 })], g).map(x => x.c), ['11011']);
+});
+
+test('區間篩選防呆：下限大於上限視為沒填，不清空清單也不誤排交換債', () => {
+  assert.equal(isRangeInvalid({ min: 120, max: 100 }), true);
+  assert.equal(isRangeInvalid({ min: -5, max: -10 }), true);
+  assert.equal(isRangeInvalid({ min: 100, max: 100 }), false);
+  assert.equal(isRangeInvalid({ min: 100, max: null }), false);
+  assert.equal(isRangeInvalid(undefined), false);
+
+  assert.equal(isRangeActive({ min: 120, max: 100 }), false);
+  assert.equal(isRangeActive({ min: null, max: null }), false);
+  assert.equal(isRangeActive({ min: 100, max: 100 }), true);
+  assert.equal(isRangeActive({ min: null, max: 105 }), true);
+
+  assert.equal(inRange(95, { min: 120, max: 100 }), true);
+  assert.equal(inRange(null, { min: 120, max: 100 }), true);
+  assert.equal(inRange(95, { min: 100, max: 120 }), false);
+
+  const rows = [
+    bond({ c: 'a', s: '1101', px: 95, prem: 2 }),
+    bond({ c: 'b', s: '2330', px: null, prem: 10 }),
+    bond({ c: 'x', s: '1101', px: 110, prem: 3, exch: true }),
+  ];
+  const metrics = { pe: new Map([['1101', 12]]) };
+  // 價格反轉當沒填，全部保留
+  assert.deepEqual(filterBonds(rows, { ...BASE, px: { min: 120, max: 100 } }, metrics).map(b => b.c).sort(), ['a', 'b', 'x']);
+  // 價格反轉同時溢價率有效 → 只套用溢價率
+  assert.deepEqual(filterBonds(rows, { ...BASE, px: { min: 120, max: 100 }, prem: { min: null, max: 5 } }, metrics).map(b => b.c).sort(), ['a', 'x']);
+  // 標的條件反轉 → 不排除交換債與缺值債券
+  assert.deepEqual(filterBonds(rows, { ...BASE, stockPe: { min: 30, max: 10 } }, metrics).map(b => b.c).sort(), ['a', 'b', 'x']);
+});
+
+test('報價新鮮度：今日有成交為 0、優先取 cb.json 的 stale、缺欄位時可由走勢回推', () => {
+  assert.equal(STALE_MIN_DAYS, 5);
+  assert.equal(staleRefDays(bond({ px: 102, close: 102, stale: 8 }), '2026-11-26'), 0);
+  assert.equal(staleRefDays(bond({ px: 102, close: null, stale: 7 }), '2026-11-26'), 7);
+  assert.equal(staleRefDays(bond({ px: 102, close: null }), '2026-11-26'), null);
+  assert.equal(staleRefDays(bond({ px: null, close: null }), '2026-11-26'), null);
+
+  const series: CbSeriesPoint[] = [
+    ['2026-11-18', 101.5, 50, 0],
+    ['2026-11-19', 102.0, 50, 0],
+    ['2026-11-20', 102.0, 50, 0],
+    ['2026-11-23', 102.0, 50, 0],
+    ['2026-11-24', 102.0, 50, 0],
+    ['2026-11-25', 102.0, 50, 0],
+    ['2026-11-26', 102.0, 50, 0],
+  ];
+  assert.equal(staleRefDays(bond({ px: 102.0, close: null }), '2026-11-26', series), 5);
+  assert.equal(staleRefDays(bond({ px: 102.0, close: null }), '2026-11-25', series), 4);
+});
+
+test('賣回／到期時程摘要：區分無賣回、未開始、受理中、已過與距今天數', () => {
+  const noPut = cbSchedule(bond({ putS: null, putE: null, putP: null, mat: '2029-11-26', coupon: 0 }), '2026-11-26');
+  assert.equal(noPut.putStatus, 'none');
+  assert.equal(noPut.putDays, null);
+  assert.equal(noPut.matDays, 1096);
+  assert.equal(noPut.coupon, 0);
+
+  const upcoming = cbSchedule(bond({ putS: '2027-10-27', putE: '2027-11-26', putP: 101, mat: '2029-11-26', coupon: 0.5 }), '2026-11-26');
+  assert.equal(upcoming.putStatus, 'upcoming');
+  assert.equal(upcoming.putStartDays, 335);
+  assert.equal(upcoming.putDays, 365);
+  assert.equal(upcoming.putP, 101);
+  assert.equal(upcoming.coupon, 0.5);
+
+  const open = cbSchedule(bond({ putS: '2026-11-01', putE: '2026-12-01', putP: 100.5 }), '2026-11-26');
+  assert.equal(open.putStatus, 'open');
+  assert.equal(open.putStartDays, -25);
+  assert.equal(open.putDays, 5);
+
+  const passed = cbSchedule(bond({ putS: '2026-01-01', putE: '2026-01-31', putP: 100 }), '2026-11-26');
+  assert.equal(passed.putStatus, 'passed');
+  assert.ok(passed.putDays! < 0);
 });

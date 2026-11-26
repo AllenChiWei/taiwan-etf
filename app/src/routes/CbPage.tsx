@@ -17,6 +17,7 @@ import { fetchNews } from '../api/news';
 import {
   cbStats, byIndustry, filterBonds, outPct, yi, ytp, ytm, putDate, convertible, daysBetween,
   convPct, monthlyConv, bondFloor, cbasPrem, CBAS_RATE, type CbConv,
+  staleRefDays, STALE_MIN_DAYS, cbSchedule, isRangeInvalid, isRangeActive,
   marketRows, rankInHistory, loadCbFavs, saveCbFavs, type CbUnderlyingMetrics,
   BUCKETS, HIGH_BUCKETS, CB_SORTS, CB_PRESETS, MARKET_METRICS, ANY,
   type CbData, type CbBond, type CbSort, type CbStats, type CbFilter, type CbMarket, type CbSeriesPoint, type Range,
@@ -271,17 +272,25 @@ function JumpNav() {
 
 function RangeInput({ label, r, onChange, unit }: { label: string; r: Range; onChange: (r: Range) => void; unit?: string }) {
   const num = (s: string) => (s.trim() === '' || Number.isNaN(Number(s)) ? null : Number(s));
-  const cls = 'h-8 w-16 rounded-lg border border-line bg-bg px-2 text-[12.5px] tabular-nums text-ink';
+  const invalid = isRangeInvalid(r);
+  const cls = `h-8 w-16 rounded-lg border bg-bg px-2 text-[12.5px] tabular-nums text-ink ${
+    invalid ? 'border-up ring-1 ring-up/30' : 'border-line'
+  }`;
   return (
-    <label className="flex items-center gap-1.5 text-[12px] text-muted">
-      <span className="w-[4.5rem] shrink-0">{label}</span>
-      <input inputMode="decimal" aria-label={`${label}下限`} placeholder="下限" className={cls}
-             value={r.min ?? ''} onChange={e => onChange({ ...r, min: num(e.target.value) })} />
-      <span>～</span>
-      <input inputMode="decimal" aria-label={`${label}上限`} placeholder="上限" className={cls}
-             value={r.max ?? ''} onChange={e => onChange({ ...r, max: num(e.target.value) })} />
-      {unit && <span>{unit}</span>}
-    </label>
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1.5 text-[12px] text-muted">
+        <span className="w-[4.5rem] shrink-0">{label}</span>
+        <input inputMode="decimal" aria-label={`${label}下限`} aria-invalid={invalid || undefined}
+               placeholder="下限" className={cls}
+               value={r.min ?? ''} onChange={e => onChange({ ...r, min: num(e.target.value) })} />
+        <span>～</span>
+        <input inputMode="decimal" aria-label={`${label}上限`} aria-invalid={invalid || undefined}
+               placeholder="上限" className={cls}
+               value={r.max ?? ''} onChange={e => onChange({ ...r, max: num(e.target.value) })} />
+        {unit && <span>{unit}</span>}
+      </div>
+      {invalid && <span role="alert" className="pl-[calc(4.5rem+0.375rem)] text-[11px] text-up">下限大於上限</span>}
+    </div>
   );
 }
 
@@ -297,12 +306,17 @@ const EMPTY: Cond = {
   guarantee: null, convertibleOnly: false, minVol: null, favOnly: false,
 };
 
+const RANGE_KEYS = ['px', 'prem', 'cv', 'out', 'ytp', 'ytm', 'yrs', 'conv', 'cbas', 'stockPe', 'stockR20', 'stockMargin'] as const;
+
 function condCount(c: Cond): number {
-  const r = (x: Range) => (x.min !== null || x.max !== null ? 1 : 0);
-  return r(c.px) + r(c.prem) + r(c.cv) + r(c.out) + r(c.ytp) + r(c.ytm) + r(c.yrs) + r(c.conv) + r(c.cbas)
-    + r(c.stockPe) + r(c.stockR20) + r(c.stockMargin) + (c.putWithin !== null ? 1 : 0)
+  return RANGE_KEYS.reduce((n, k) => n + (isRangeActive(c[k]) ? 1 : 0), 0)
+    + (c.putWithin !== null ? 1 : 0)
     + (c.issuedWithin !== null ? 1 : 0) + (c.guarantee ? 1 : 0) + (c.convertibleOnly ? 1 : 0)
     + (c.minVol !== null ? 1 : 0) + (c.favOnly ? 1 : 0);
+}
+
+function hasInvalidRange(c: Cond): boolean {
+  return RANGE_KEYS.some(k => isRangeInvalid(c[k]));
 }
 
 /* ── 點一檔之後：債的細節、走勢、公司新聞 ─────────────────── */
@@ -364,6 +378,35 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
   }, [conv]);
   const floor = bondFloor(b, asOf);
   const cbas = cbasPrem(b, asOf);
+  const ytpVal = ytp(b, asOf);
+  const ytmVal = ytm(b, asOf);
+  const stale = staleRefDays(b, asOf, series);
+  const isStale = stale !== null && stale >= STALE_MIN_DAYS;
+  const sched = cbSchedule(b, asOf);
+  const putRange = sched.putS && sched.putE && sched.putS !== sched.putE
+    ? `${md(sched.putS)}～${md(sched.putE)}`
+    : md(sched.putE ?? sched.putS);
+  const putPeriodVal = sched.putStatus === 'none'
+    ? '無賣回'
+    : sched.putStatus === 'passed'
+      ? '已過'
+      : putRange;
+  const putPeriodSub = sched.putStatus === 'none'
+    ? '無賣回條款'
+    : sched.putStatus === 'passed'
+      ? `最近期間 ${putRange}`
+      : sched.putStatus === 'open'
+        ? `受理中${sched.putDays !== null ? `・距截止 ${sched.putDays.toLocaleString('zh-TW')} 天` : ''}`
+        : sched.putStartDays !== null && sched.putDays !== null && sched.putStartDays !== sched.putDays
+          ? `距起日 ${sched.putStartDays.toLocaleString('zh-TW')} 天・距截止 ${sched.putDays.toLocaleString('zh-TW')} 天`
+          : sched.putDays !== null
+            ? `距今 ${sched.putDays.toLocaleString('zh-TW')} 天`
+            : undefined;
+  const matSub = sched.matDays === null
+    ? undefined
+    : sched.matDays >= 0
+      ? `距今 ${sched.matDays.toLocaleString('zh-TW')} 天（約 ${n1.format(sched.matDays / 365.25)} 年）`
+      : '已到期';
   const items = news ? news.news.filter(x => x.all.includes(b.s) || x.codes.includes(b.s)).slice(0, 8) : [];
   const filings = news ? news.filings.filter(f => f.code === b.s).slice(0, 8) : [];
   const pts: Pt[] = (series ?? [])
@@ -372,7 +415,7 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
   const pd = putDate(b);
   return (
     <>
-      <Section title={`${b.c} ${b.n}`} hint={`${b.close === null ? '今天沒成交，價格是參考價' : '收市價'}${b.exch ? '　交換債' : ''}`}>
+      <Section title={`${b.c} ${b.n}`} hint={`${b.close === null ? (isStale ? `今天沒成交・參考價已 ${stale} 個交易日沒變` : '今天沒成交，價格是參考價') : '收市價'}${b.exch ? '　交換債' : ''}`}>
         <button type="button" onClick={onFav} aria-pressed={fav}
                 className="mt-2 h-8 rounded-lg bg-sunken px-3 text-[12.5px] font-semibold text-muted hover:text-ink">
           {fav ? '★ 已收藏（行事曆「只看我的」會列出它的賣回與到期）' : '☆ 收藏這檔'}
@@ -380,14 +423,14 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
           <Cell label="可轉債價格" value={f2(b.px)}
                 tone={b.chg ? (b.chg > 0 ? 'text-up' : 'text-down') : undefined}
-                sub={b.chg ? `${b.chg > 0 ? '+' : ''}${f2(b.chg)}` : undefined} />
+                sub={b.chg ? `${b.chg > 0 ? '+' : ''}${f2(b.chg)}` : (isStale ? `參考價已 ${stale} 個交易日沒變` : undefined)} />
           <Cell label="轉換價" value={f2(b.cp)} sub={b.cpEff ? `生效 ${md(b.cpEff)}` : undefined} />
           <Cell label="標的股價" value={f2(b.sp)} />
           <Cell label="轉換價值" value={f1(b.cv)} />
           <Cell label="溢價率" value={pct(b.prem)} />
-          <Cell label="賣回殖利率" value={pct(ytp(b, asOf))}
+          <Cell label="賣回殖利率" value={pct(ytpVal)}
                 sub={pd && pd >= asOf ? `${md(pd)} 以 ${f2(b.putP)} 賣回` : '沒有尚未到期的賣回權'} />
-          <Cell label="到期殖利率" value={pct(ytm(b, asOf))} sub="假設到期以 100 償還" />
+          <Cell label="到期殖利率" value={pct(ytmVal)} sub="假設到期以 100 償還" />
           <Cell label="餘額／發行" value={yi(b.out)} sub={`${pct(outPct(b))}，原始 ${yi(b.tot)}`} />
           <Cell label="近一月轉換" value={b.cv1 == null ? '—' : `${b.cv1.toLocaleString('zh-TW')} 張`}
                 sub={b.cv1 == null ? '月資料不夠' : `佔發行 ${pct(convPct(b))}${b.cvM ? `・${b.cvM} 月底` : ''}${b.cv3 != null ? `；近 3 月 ${b.cv3.toLocaleString('zh-TW')} 張` : ''}`} />
@@ -400,7 +443,31 @@ function BondDetail({ b, news, asOf, fav, onFav }: {
         </div>
         <p className="mt-2 text-[11.5px] text-faint">
           轉換價是櫃買資訊看板的「下次生效日之後」的轉換價；生效日還沒到時，今天適用的可能仍是舊的。
-          殖利率不到 30 天的不算（年化後會失真）。
+          殖利率不到 30 天的不算（年化後會失真）。今日無成交且參考價連續 {STALE_MIN_DAYS} 個交易日以上未變動時會標示提醒；連日同價不一定是資料失效，常見原因為冷門債無成交沿用參考價。
+        </p>
+      </Section>
+
+      <Section title="賣回／到期時程摘要" hint={asOf ? `基準日 ${md(asOf)}` : undefined}>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <div className="col-span-2 rounded-lg border border-line bg-bg px-3 py-2 sm:col-span-1">
+            <div className="text-[11.5px] text-muted">下一個賣回期間</div>
+            <div className="mt-0.5 font-mono text-[14.5px] font-bold tabular-nums text-ink">{putPeriodVal}</div>
+            {putPeriodSub && <div className="mt-0.5 text-[11px] text-faint">{putPeriodSub}</div>}
+          </div>
+          <div className="col-span-2 rounded-lg border border-line bg-bg px-3 py-2 sm:col-span-1">
+            <div className="text-[11.5px] text-muted">到期日</div>
+            <div className="mt-0.5 font-mono text-[14.5px] font-bold tabular-nums text-ink">{md(sched.mat)}</div>
+            {matSub && <div className="mt-0.5 text-[11px] text-faint">{matSub}</div>}
+          </div>
+          <Cell label="賣回價" value={sched.putStatus === 'none' ? '無賣回' : f2(sched.putP)}
+                sub={sched.putStatus === 'upcoming' || sched.putStatus === 'open'
+                  ? (ytpVal !== null ? `賣回殖利率 ${pct(ytpVal)}` : '距截止不到 30 天不算年化')
+                  : sched.putStatus === 'passed' ? '最近賣回期間已過' : '無賣回條款'} />
+          <Cell label="票面利率" value={sched.coupon === null ? '—' : `${sched.coupon}%`}
+                sub={ytmVal !== null ? `到期殖利率 ${pct(ytmVal)}` : (b.g ?? undefined)} />
+        </div>
+        <p className="mt-2 text-[11px] leading-relaxed text-faint">
+          賣回期間為申請起迄日，與實際收款日不同；賣回與到期殖利率皆為估算（到期假設以 100 償還），實際條款以發行公司公告為準。
         </p>
       </Section>
 
@@ -581,6 +648,7 @@ export function CbPage() {
     );
   };
   const nCond = condCount(cond);
+  const badRange = hasInvalidRange(cond);
   const sel = 'h-8 rounded-lg border border-line bg-bg px-2 text-[12.5px] text-ink';
   const planned = data.planned ?? [];
 
@@ -625,7 +693,7 @@ export function CbPage() {
           <Chip active={onlyTraded} onClick={() => setOnlyTraded(v => !v)}>今天有成交</Chip>
           {bucketLabel && <Chip active onClick={() => setBucket(null)}>價格 {bucketLabel} ✕</Chip>}
           {ind && <Chip active onClick={() => setInd(null)}>{ind} ✕</Chip>}
-          {(nCond > 0 || bucket || ind || q) && (
+          {(nCond > 0 || badRange || bucket || ind || q) && (
             <button type="button" className="text-[12px] text-accent hover:underline"
                     onClick={() => { setCond(EMPTY); setPreset(null); setBucket(null); setInd(null); setQ(''); }}>
               清除全部
@@ -714,6 +782,8 @@ export function CbPage() {
           {rows.slice(0, limit).map(b => {
             const y = ytp(b, asOf);
             const pd = putDate(b);
+            const stale = staleRefDays(b, asOf);
+            const isStale = stale !== null && stale >= STALE_MIN_DAYS;
             return (
               <div key={b.c} className="flex items-stretch">
                 <button type="button" aria-label={favs.has(b.c) ? `取消收藏 ${b.n}` : `收藏 ${b.n}`}
@@ -725,8 +795,16 @@ export function CbPage() {
                         className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-0.5 py-2 text-left hover:bg-sunken/60
                                    sm:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))] xl:grid-cols-[minmax(0,2.1fr)_repeat(5,minmax(0,1fr))]">
                   <div className="min-w-0">
-                    <span className="font-mono text-[12px] text-muted">{b.c}</span>
-                    <span className="ml-1.5 text-[13.5px] font-semibold text-ink">{b.n}</span>
+                    <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                      <span className="font-mono text-[12px] text-muted">{b.c}</span>
+                      <span className="text-[13.5px] font-semibold text-ink">{b.n}</span>
+                      {isStale && (
+                        <span className="rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-medium text-yield"
+                              title="今日無成交，參考價已多日與先前櫃買資訊看板相同；連日同價可能是冷門無成交，不一定代表資料失效">
+                          參考價已 {stale} 個交易日沒變
+                        </span>
+                      )}
+                    </div>
                     <div className="truncate text-[11px] text-faint">
                       {sort === 'conv' && <span className="font-semibold text-ink">近月轉換 {pct(convPct(b))}（{b.cv1 ?? '—'} 張）　</span>}
                       {sort === 'cbas' && <span className="font-semibold text-ink">CBAS {f2(cbasPrem(b, asOf))}　</span>}
@@ -771,6 +849,7 @@ export function CbPage() {
         {rows.length === 0 && <p className="py-6 text-center text-[12.5px] text-muted">沒有符合條件的可轉債。</p>}
         <p className="mt-2 text-[11.5px] leading-relaxed text-faint">
           賣回殖利率＝用現在的價格買進、在最近一次賣回日以賣回價賣回的年化報酬；距離不到 30 天的不算。
+          今日無成交且參考價連續 {STALE_MIN_DAYS} 個交易日以上未變動時，列上會標示「參考價已 N 個交易日沒變」；連日同價不一定是資料失效，常見原因為冷門債無成交沿用參考價。
           收藏存在這台裝置的瀏覽器裡，行事曆的「只看我的」也會用到。
         </p>
       </section>
