@@ -133,6 +133,8 @@ const futuresRoute = createRoute({
 const dividendRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/dividend',
+  validateSearch: (search: Record<string, unknown>): { view?: 'xray' } =>
+    (search.view === 'xray' ? { view: 'xray' } : {}),
   component: DividendPage,
 });
 

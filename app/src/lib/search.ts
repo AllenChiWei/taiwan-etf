@@ -93,6 +93,7 @@ export const PAGES: SearchItem[] = [
   { kind: 'page', name: 'ETF 持股比對（兩檔共同持股）', to: '/compare', keywords: '比對 比較 共同持股 重疊 持股 成分股 兩檔' },
   { kind: 'page', name: '試算（回測、退休、月領）', to: '/calc', keywords: '試算 回測 退休 定期定額 月領 要買幾張 二代健保' },
   { kind: 'page', name: '配息規劃', to: '/dividend', keywords: '配息 月配 股息 存股 規劃' },
+  { kind: 'page', name: '持股健檢（穿透曝險與風險）', to: '/dividend', search: { view: 'xray' }, keywords: '持股 健檢 穿透 曝險 集中度 成分股 維持率 可轉債 除息 法說 股東會 重大訊息' },
   { kind: 'page', name: '期貨對帳單', to: '/futures', keywords: '對帳單 期貨 元大' },
   { kind: 'page', name: '籌碼（法人、選擇權）', to: '/chips', keywords: '籌碼 法人 外資 投信 選擇權 put call 大額 散戶 價平和' },
   { kind: 'page', name: '民生必需股（建議持有價）', to: '/defensive', keywords: '民生 必需 防禦 電信 中華電 台灣大 遠傳 台哥大 食品 超商 燃氣 便宜價 合理價 昂貴價 存股 殖利率' },

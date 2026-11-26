@@ -50,3 +50,21 @@
 匯率是 FinMind `TaiwanExchangeRate` 的台銀即期買賣中價。兩者都是**瀏覽器直接抓**（跟財務
 分析儀表板同一條路）：一檔一個請求、匯率一天一個並存在 localStorage，部署流程不碰。
 金額在進 `projectHolding` 前就乘上匯率，下游完全不知道有美元。
+
+## 持股穿透健檢（`/dividend?view=xray`，2026-11-26）
+
+配息頁上方分頁切換「配息試算／持股健檢」（路由參數 `?view=xray`），計算全在 `lib/portfolioXray.ts`
+（`tests/portfolioXray.test.ts`），元件在 `components/PortfolioXray.tsx`。不依賴 `calc/index.json`
+（FinLab 額度用完時仍可使用）。
+
+- **穿透展開**：讀取 `localStorage` 的 `twetf.holdings`（多帳戶先經 `mergeByCode` 合併），報價取
+  `yields.json`（ETF）、`stock_dividends.json`（個股）與美股 FinMind 即時日價×匯率；展開沿用
+  `lib/overlap.ts` 的 `holdingsOf()`（主動式用每日完整持股、其餘用公會月報前十大＝已知下限），
+  並以 `holdingLinkKind(code) === 'stock'` 過濾台股個股（排除主動式 `TX` 期貨、海外股與債券 ISIN）。
+  債券 ETF（`cat-bond`）、美股 ETF（`m === 'us'`）、純海外股 ETF、槓桿／反向與期貨 ETF 歸為無法穿透，
+  但仍計入總市值分母。
+- **四項交叉健檢**（皆容許部署時 JSON 缺檔，缺檔各自降級顯示）：
+  1. `margin_state.json`（`api/market.ts`）：低於 130%／150% 維持率警戒（XQ 公式估算值）。
+  2. `cb.json`：排除交換債（`exch: true`），標示強制贖回、近月餘額減少、負溢價與價內轉換賣壓。
+  3. `calendar.json`：未來 14 天除權息、法說會、股東會（同時含直接持有 ETF 除息與穿透成分股）。
+  4. `news.json`：公開資訊觀測站近期重大訊息（僅標題與外連）。
