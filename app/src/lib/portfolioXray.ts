@@ -10,7 +10,7 @@ import type { Etf } from '../types.ts';
 import { mergeByCode, type AcctEntry } from './accounts.ts';
 import { holdingLinkKind, type ActiveData } from './active.ts';
 import type { Top10Data } from './top10.ts';
-import { holdingsOf } from './overlap.ts';
+import { holdingsOf, type HoldingSet } from './overlap.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
 import {
   resolveShareClass,
@@ -466,6 +466,257 @@ function pickStockName(
   return clean.length < current.length ? clean : current;
 }
 
+interface ParsedTwComponent {
+  sid: string;
+  name: string;
+  pct: number;
+  twPct: number;
+  adrPct: number;
+  adrCode?: string;
+}
+
+interface ParsedForeignComponent extends ParsedForeign {
+  name: string;
+  pct: number;
+  classMap: Map<string, ShareClassPart>;
+}
+
+/** 分流展開單一 ETF 的台股普通股（另併入台灣公司美國 ADR）與海外股票（排除期貨、債券與連結型 ETF）。 */
+function splitEtfComponents(hs: HoldingSet): {
+  twComponents: ParsedTwComponent[];
+  foreignComponents: ParsedForeignComponent[];
+} {
+  const twCompMap = new Map<string, ParsedTwComponent>();
+  const foreignCompMap = new Map<string, ParsedForeignComponent>();
+
+  for (const [sid, item] of hs.w) {
+    if (!(item.pct > 0)) continue;
+    if (holdingLinkKind(sid) === 'stock') {
+      if (item.type && NON_STOCK_TYPE_RE.test(item.type)) continue;
+      const prev = twCompMap.get(sid);
+      if (prev) {
+        prev.pct += item.pct;
+        prev.twPct += item.pct;
+        const trimmed = item.name.trim();
+        if (trimmed && trimmed.length < prev.name.length) prev.name = trimmed;
+      } else {
+        twCompMap.set(sid, { sid, name: item.name, pct: item.pct, twPct: item.pct, adrPct: 0 });
+      }
+      continue;
+    }
+    const parsed = parseForeignComponent(sid, item.name, item.type);
+    if (!parsed) continue;
+    const adr = !parsed.isIsin ? resolveTwAdr(parsed.key) : null;
+    if (adr) {
+      const prev = twCompMap.get(adr.twCode);
+      if (prev) {
+        prev.pct += item.pct;
+        prev.adrPct += item.pct;
+        prev.adrCode = adr.adrCode;
+        if (adr.twName.length < prev.name.length) prev.name = adr.twName;
+      } else {
+        twCompMap.set(adr.twCode, {
+          sid: adr.twCode,
+          name: adr.twName,
+          pct: item.pct,
+          twPct: 0,
+          adrPct: item.pct,
+          adrCode: adr.adrCode,
+        });
+      }
+      continue;
+    }
+    const prev = foreignCompMap.get(parsed.key);
+    if (prev) {
+      prev.pct += item.pct;
+      prev.name = pickForeignStockName(item.name, prev.name, parsed.displayCode);
+      if (parsed.classLabel) {
+        const prevCls = prev.classMap.get(parsed.rawDisplayCode);
+        if (prevCls) prevCls.weight += item.pct;
+        else prev.classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
+      }
+    } else {
+      const classMap = new Map<string, ShareClassPart>();
+      if (parsed.classLabel) {
+        classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
+      }
+      foreignCompMap.set(parsed.key, {
+        ...parsed,
+        name: pickForeignStockName(item.name, undefined, parsed.displayCode),
+        pct: item.pct,
+        classMap,
+      });
+    }
+  }
+
+  return {
+    twComponents: [...twCompMap.values()],
+    foreignComponents: [...foreignCompMap.values()],
+  };
+}
+
+function twShareClasses(comp: ParsedTwComponent): ShareClassPart[] | undefined {
+  if (!comp.adrCode) return undefined;
+  const parts: ShareClassPart[] = [];
+  if (comp.twPct > 0) parts.push({ code: comp.sid, label: '台股', weight: comp.twPct });
+  if (comp.adrPct > 0) parts.push({ code: comp.adrCode, label: `${comp.adrCode} ADR`, weight: comp.adrPct });
+  return parts;
+}
+
+function foreignShareClasses(comp: ParsedForeignComponent): ShareClassPart[] | undefined {
+  if (comp.classMap.size === 0) return undefined;
+  return [...comp.classMap.values()].sort(
+    (a, b) => shareClassRank(a.label) - shareClassRank(b.label) || a.code.localeCompare(b.code),
+  );
+}
+
+export interface EtfHoldingRow {
+  /** 依合併後佔淨值由大到小排列的名次（1 起算） */
+  rank: number;
+  /** 合併鍵（台股如 2330；海外對照成功如 AAPL US；無對照為原 ISIN） */
+  code: string;
+  /** 畫面顯示用簡短代號（台股 2330；海外 AAPL；無對照為原 ISIN） */
+  displayCode: string;
+  name: string;
+  market: StockMarket;
+  marketLabel: string;
+  /** true 代表海外成分查無 ticker 對照、仍以 ISIN 呈現 */
+  isIsin?: boolean;
+  /** true 代表此台股列包含台灣公司美國 ADR 併入（例如 TSM→2330） */
+  hasAdr?: boolean;
+  /** 若含台灣公司 ADR，記錄該 ADR 簡短代號（例如 TSM） */
+  adrCode?: string;
+  /** 屬多股別合併標的或含台灣 ADR 時，記錄各股別／ADR 與權重 */
+  shareClasses?: ShareClassPart[];
+  /** 佔該 ETF 淨值（%） */
+  pct: number;
+  /** 你的約略曝險金額（台幣）＝這筆 ETF 持有市值 × (pct / 100)；缺市值時為 null */
+  exposureAmount: number | null;
+}
+
+export interface EtfHoldingsView {
+  kind: 'daily' | 'monthly';
+  /** 每日為 YYYY-MM-DD；月報為 YYYY/MM */
+  asof: string;
+  /** 標示資料來源與日期，例如「公會月報 2026/10，第 11 名以後未揭露」或「主動式每日持股 2026-11-26」 */
+  sourceLabel: string;
+  /** 依合併後佔淨值由大到小取前 limit 檔（預設 10） */
+  rows: EtfHoldingRow[];
+  /** 此 ETF 可展開的股票成分總檔數（主動式每日持股可能超過 10 檔） */
+  totalCount: number;
+  /** 上列顯示持股的佔淨值合計（%） */
+  shownPct: number;
+  /** 上列顯示持股的約略曝險金額合計（台幣）；缺市值時為 null */
+  shownAmount: number | null;
+}
+
+export type EtfHoldingsResult =
+  | { status: 'ready'; view: EtfHoldingsView }
+  | { status: 'empty'; reason: string };
+
+export interface EtfTopHoldingsInput {
+  code: string;
+  /** ETF 所屬分區（cat-domestic / cat-foreign / cat-bond / cat-leveraged…） */
+  sec?: Etf['sec'];
+  /** 使用者持有這筆 ETF 的市值（台幣）；缺收盤價或 <= 0 時傳 null */
+  holdingValue: number | null;
+  top10: Top10Data | null;
+  active: ActiveData | null;
+  /** 選填：提供時台股成分優先採用官方簡稱（同持股健檢） */
+  stockDivs?: StockDividendData | null;
+  /** 最多列出前幾名，預設 10 */
+  limit?: number;
+}
+
+/**
+ * 整理單一台灣掛牌 ETF 的前十大持股與約略曝險金額（配息試算「各檔明細」展開用）。
+ *
+ * 共用 holdingsOf() 與持股健檢的成分解析（市場小標籤、台灣 ADR 併回台股、
+ * 同公司多股別合併、排除期貨與債券／連結型 ETF），曝險金額＝這筆 ETF 持有市值 × 佔淨值%。
+ */
+export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
+  if (input.sec === 'cat-bond') {
+    return { status: 'empty', reason: '債券 ETF 主要持有公債或公司債，無股票前十大持股明細。' };
+  }
+  if (isDerivativeSec(input.sec)) {
+    return { status: 'empty', reason: '槓桿／反向與期貨 ETF 主要持有期貨與現金，無股票前十大持股明細。' };
+  }
+  if (!input.top10 && !input.active) {
+    return { status: 'empty', reason: '持股明細資料暫時讀不到。' };
+  }
+  const hs = holdingsOf(input.code, input.top10, input.active);
+  if (!hs) {
+    return { status: 'empty', reason: '查無這檔 ETF 的持股明細（可能為新上市、不動產或平衡型 ETF）。' };
+  }
+
+  const { twComponents, foreignComponents } = splitEtfComponents(hs);
+  if (twComponents.length === 0 && foreignComponents.length === 0) {
+    return { status: 'empty', reason: '這檔 ETF 的明細不含股票成分（可能為債券、期貨或連結型 ETF），無前十大持股明細。' };
+  }
+
+  const validValue = input.holdingValue !== null && Number.isFinite(input.holdingValue) && input.holdingValue > 0
+    ? input.holdingValue
+    : null;
+  const stockDivs = input.stockDivs ?? null;
+  const all: Omit<EtfHoldingRow, 'rank'>[] = [];
+
+  for (const comp of twComponents) {
+    const shareClasses = twShareClasses(comp);
+    all.push({
+      code: comp.sid,
+      displayCode: comp.sid,
+      name: pickStockName(comp.sid, comp.name, undefined, stockDivs),
+      market: 'tw',
+      marketLabel: '台股',
+      ...(comp.adrCode ? { hasAdr: true, adrCode: comp.adrCode } : {}),
+      ...(shareClasses ? { shareClasses } : {}),
+      pct: comp.pct,
+      exposureAmount: validValue !== null ? validValue * (comp.pct / 100) : null,
+    });
+  }
+
+  for (const comp of foreignComponents) {
+    const shareClasses = foreignShareClasses(comp);
+    all.push({
+      code: comp.key,
+      displayCode: comp.displayCode,
+      name: comp.name,
+      market: 'foreign',
+      marketLabel: comp.marketLabel,
+      ...(comp.isIsin ? { isIsin: true } : {}),
+      ...(shareClasses ? { shareClasses } : {}),
+      pct: comp.pct,
+      exposureAmount: validValue !== null ? validValue * (comp.pct / 100) : null,
+    });
+  }
+
+  all.sort((a, b) => b.pct - a.pct || a.code.localeCompare(b.code));
+  const cap = input.limit !== undefined && Number.isFinite(input.limit)
+    ? Math.max(1, Math.floor(input.limit))
+    : 10;
+  const rows: EtfHoldingRow[] = all.slice(0, cap).map((r, i) => ({ rank: i + 1, ...r }));
+  const shownPct = rows.reduce((s, r) => s + r.pct, 0);
+  const shownAmount = validValue !== null
+    ? rows.reduce((s, r) => s + (r.exposureAmount ?? 0), 0)
+    : null;
+  const sourceLabel = hs.kind === 'daily'
+    ? (hs.asof ? `主動式每日持股 ${hs.asof}` : '主動式每日持股')
+    : (hs.asof ? `公會月報 ${hs.asof}，第 11 名以後未揭露` : '公會月報，第 11 名以後未揭露');
+
+  return {
+    status: 'ready',
+    view: {
+      kind: hs.kind,
+      asof: hs.asof,
+      sourceLabel,
+      rows,
+      totalCount: all.length,
+      shownPct,
+      shownAmount,
+    },
+  };
+}
+
 /**
  * 執行持股穿透計算。
  *
@@ -797,82 +1048,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     }
 
     // 分流展開台股普通股（另併入台灣公司美國 ADR）與海外股票（排除期貨 TX／WTX、債券 ISIN 與國外掛牌 ETF）
-    const twCompMap = new Map<string, {
-      sid: string;
-      name: string;
-      pct: number;
-      twPct: number;
-      adrPct: number;
-      adrCode?: string;
-    }>();
-    const foreignCompMap = new Map<string, ParsedForeign & {
-      name: string;
-      pct: number;
-      classMap: Map<string, ShareClassPart>;
-    }>();
-
-    for (const [sid, item] of hs.w) {
-      if (!(item.pct > 0)) continue;
-      if (holdingLinkKind(sid) === 'stock') {
-        if (item.type && NON_STOCK_TYPE_RE.test(item.type)) continue;
-        const prev = twCompMap.get(sid);
-        if (prev) {
-          prev.pct += item.pct;
-          prev.twPct += item.pct;
-          const trimmed = item.name.trim();
-          if (trimmed && trimmed.length < prev.name.length) prev.name = trimmed;
-        } else {
-          twCompMap.set(sid, { sid, name: item.name, pct: item.pct, twPct: item.pct, adrPct: 0 });
-        }
-        continue;
-      }
-      const parsed = parseForeignComponent(sid, item.name, item.type);
-      if (!parsed) continue;
-      const adr = !parsed.isIsin ? resolveTwAdr(parsed.key) : null;
-      if (adr) {
-        const prev = twCompMap.get(adr.twCode);
-        if (prev) {
-          prev.pct += item.pct;
-          prev.adrPct += item.pct;
-          prev.adrCode = adr.adrCode;
-          if (adr.twName.length < prev.name.length) prev.name = adr.twName;
-        } else {
-          twCompMap.set(adr.twCode, {
-            sid: adr.twCode,
-            name: adr.twName,
-            pct: item.pct,
-            twPct: 0,
-            adrPct: item.pct,
-            adrCode: adr.adrCode,
-          });
-        }
-        continue;
-      }
-      const prev = foreignCompMap.get(parsed.key);
-      if (prev) {
-        prev.pct += item.pct;
-        prev.name = pickForeignStockName(item.name, prev.name, parsed.displayCode);
-        if (parsed.classLabel) {
-          const prevCls = prev.classMap.get(parsed.rawDisplayCode);
-          if (prevCls) prevCls.weight += item.pct;
-          else prev.classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
-        }
-      } else {
-        const classMap = new Map<string, ShareClassPart>();
-        if (parsed.classLabel) {
-          classMap.set(parsed.rawDisplayCode, { code: parsed.rawDisplayCode, label: parsed.classLabel, weight: item.pct });
-        }
-        foreignCompMap.set(parsed.key, {
-          ...parsed,
-          name: pickForeignStockName(item.name, undefined, parsed.displayCode),
-          pct: item.pct,
-          classMap,
-        });
-      }
-    }
-
-    const twComponents = [...twCompMap.values()];
-    const foreignComponents = [...foreignCompMap.values()];
+    const { twComponents, foreignComponents } = splitEtfComponents(hs);
 
     if (twComponents.length === 0 && foreignComponents.length === 0) {
       if (r.value !== null) unpenetrableValue += r.value;
@@ -898,16 +1074,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       for (const comp of twComponents) {
         const amt = r.value * (comp.pct / 100);
         etfTwPenetrated += amt;
-        let shareClasses: ShareClassPart[] | undefined;
-        if (comp.adrCode) {
-          shareClasses = [];
-          if (comp.twPct > 0) {
-            shareClasses.push({ code: comp.sid, label: '台股', weight: comp.twPct });
-          }
-          if (comp.adrPct > 0) {
-            shareClasses.push({ code: comp.adrCode, label: `${comp.adrCode} ADR`, weight: comp.adrPct });
-          }
-        }
+        const shareClasses = twShareClasses(comp);
         addExposure(
           comp.sid,
           comp.name,
@@ -930,11 +1097,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       for (const comp of foreignComponents) {
         const amt = r.value * (comp.pct / 100);
         etfForeignPenetrated += amt;
-        const shareClasses = comp.classMap.size > 0
-          ? [...comp.classMap.values()].sort(
-              (a, b) => shareClassRank(a.label) - shareClassRank(b.label) || a.code.localeCompare(b.code),
-            )
-          : undefined;
+        const shareClasses = foreignShareClasses(comp);
         addExposure(
           comp.key,
           comp.name,

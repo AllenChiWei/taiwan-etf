@@ -8,6 +8,8 @@ import { SearchableSelect, type SelectOption } from './SearchableSelect';
 import { NumberInput } from './NumberInput';
 import { DividendPie } from './DividendPie';
 import { HoldingsSync } from './HoldingsSync';
+import { EtfHoldingsTable, useEtfExtras } from './EtfExtras';
+import { StockSheet } from './StockSheet';
 import { rankColorMap, rankColor } from '../lib/palette';
 import {
   projectHolding, buildPortfolio, MONTH_LABELS, SHARES_PER_LOT,
@@ -137,6 +139,27 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     }
     return m;
   }, [dataset, index.codes]);
+  /** 代號 -> ETF 分區等基本資訊（各檔明細展開前十大持股時用來判斷債券／槓反） */
+  const etfByCode = useMemo(
+    () => new Map(dataset.status === 'ready' ? dataset.data.etfs.map(e => [e.code, e] as const) : []),
+    [dataset],
+  );
+  /** 各檔明細點開看前十大持股的台股 ETF；第一次點開才觸發下載 top10／active_holdings */
+  const [openTop10, setOpenTop10] = useState<Set<string>>(() => new Set());
+  const [top10Requested, setTop10Requested] = useState(false);
+  const etfExtras = useEtfExtras(top10Requested);
+  const toggleTop10 = useCallback((code: string) => {
+    setTop10Requested(true);
+    setOpenTop10(prev => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
+      return next;
+    });
+  }, []);
+  const [sheet, setSheet] = useState<{ code: string; name?: string } | null>(null);
+  const pickStock = useCallback((code: string, name?: string) => setSheet({ code, name }), []);
+  const closeSheet = useCallback(() => setSheet(null), []);
 
   // 美股 ETF 與個股：ETF 清單來自 us_etfs.json；個股清單 us_stocks.json 僅在使用者開始搜尋
   // （或已持有美股個股需顯示名稱）時才懶載入；日價與匯率由瀏覽器直接向 FinMind 抓（api/finmind.ts）
@@ -526,7 +549,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
               setAccounts(list);
               setEntries(withAccounts(hold, list[0]));
               setAcct(list[0]);
-              setEditing(null); setDeleting(null); setRenaming(null);
+              setEditing(null); setDeleting(null); setRenaming(null); setOpenTop10(new Set());
             }} />
           </div>
         </div>
@@ -670,21 +693,47 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           )}
 
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
-            <h2 className="text-sm font-bold text-ink">各檔明細</h2>
+            <div className="flex flex-wrap items-baseline justify-between gap-x-3">
+              <h2 className="text-sm font-bold text-ink">各檔明細</h2>
+              <span className="text-[11.5px] text-faint">點台股 ETF 可展開前十大持股與約略曝險</span>
+            </div>
             <ul className="mt-2 divide-y divide-line">
-              {rows.map(r => (
+              {rows.map(r => {
+                const isTwEtf = kindOf(r.code) === 'etf';
+                const isTop10Open = isTwEtf && openTop10.has(r.code);
+                return (
                 <li key={r.code} className="py-2.5 first:pt-0 last:pb-0">
-                  <div className="flex items-baseline justify-between gap-2">
+                  <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
-                            style={{ background: colorOf(r.code) }} />
-                      <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
-                      {usSet.has(r.code) && (
-                        <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-semibold text-muted">
-                          美股
-                        </span>
+                      {isTwEtf ? (
+                        <button
+                          type="button"
+                          data-testid={`plan-top10-toggle-${r.code}`}
+                          aria-expanded={isTop10Open}
+                          onClick={() => toggleTop10(r.code)}
+                          className="group flex min-w-0 max-w-full items-center gap-1.5 rounded text-left"
+                        >
+                          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                                style={{ background: colorOf(r.code) }} />
+                          <span className="font-mono text-[13.5px] font-bold text-ink group-hover:text-accent">{r.code}</span>
+                          <span className="truncate text-[13px] text-muted group-hover:text-accent">{r.name}</span>
+                          <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
+                            {isTop10Open ? '持股 ▴' : '前十大 ▾'}
+                          </span>
+                        </button>
+                      ) : (
+                        <>
+                          <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
+                                style={{ background: colorOf(r.code) }} />
+                          <span className="font-mono text-[13.5px] font-bold text-ink">{r.code}</span>
+                          {usSet.has(r.code) && (
+                            <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-semibold text-muted">
+                              美股
+                            </span>
+                          )}
+                          <span className="ml-1 truncate text-[13px] text-muted">{r.name}</span>
+                        </>
                       )}
-                      <span className="ml-1 truncate text-[13px] text-muted">{r.name}</span>
                     </div>
                     <span className="flex shrink-0 items-center gap-2.5">
                       {accounts.length > 1 && (
@@ -713,6 +762,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                         onClick={() => {
                           setEntries(prev => prev.filter(e => e.code !== r.code));
                           if (editing === r.code) setEditing(null);
+                          setOpenTop10(prev => {
+                            if (!prev.has(r.code)) return prev;
+                            const next = new Set(prev);
+                            next.delete(r.code);
+                            return next;
+                          });
                         }}
                         className="text-[11.5px] font-semibold text-muted hover:text-up"
                       >
@@ -838,8 +893,19 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       {r.payouts} 次。年配息按公告的次數算。
                     </p>
                   )}
+                  {isTop10Open && (
+                    <EtfHoldingsTable
+                      code={r.code}
+                      sec={etfByCode.get(r.code)?.sec}
+                      holdingValue={r.price > 0 ? r.value : null}
+                      data={etfExtras}
+                      stockDivs={stockDivs}
+                      onPickStock={pickStock}
+                    />
+                  )}
                 </li>
-              ))}
+                );
+              })}
             </ul>
           </section>
 
@@ -869,6 +935,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           </div>
         </>
       )}
+      <StockSheet code={sheet?.code ?? null} name={sheet?.name} onClose={closeSheet} />
     </>
   );
 }

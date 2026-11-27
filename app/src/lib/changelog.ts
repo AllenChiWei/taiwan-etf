@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-27',
     items: [
+      { kind: 'new', to: '/dividend',
+        text: '配息試算的「各檔明細」可以點開台股 ETF 查看前十大持股與你的約略曝險金額（主動式用每日持股、其餘用公會月報，海外成分比照持股健檢顯示市場標籤、合併同公司股別並將台灣 ADR 併回台股），點台股代號可直接開啟個股快覽。' },
       { kind: 'improve', to: '/dividend',
         text: '持股健檢把台灣公司的美國 ADR（例如台積電 TSM）併回台股計算。' },
       { kind: 'fix', to: '/dividend',

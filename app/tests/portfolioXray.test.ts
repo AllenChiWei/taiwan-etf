@@ -14,6 +14,7 @@ import {
   checkPortfolioFilings,
   checkPortfolioMargin,
   cleanForeignName,
+  etfTopHoldings,
   formatShareClasses,
   matchesHealthFilter,
   parseStoredHoldings,
@@ -1366,4 +1367,253 @@ test('真實資料整合（台灣 ADR 合併）：0050＋00830＋009815＋00409A
   assert.ok(Math.abs(
     xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
   ) < 1e-9);
+});
+
+test('etfTopHoldings：月報與主動式每日持股排序、來源標示與約略曝險金額計算（缺市值回 null）', () => {
+  // 月報 0050：市值 200,000 → 2330 (50% = 100,000)、2454 (10% = 20,000)，合計 60% = 120,000
+  const m = etfTopHoldings({
+    code: '0050',
+    sec: 'cat-domestic',
+    holdingValue: 200_000,
+    top10: TOP10,
+    active: ACTIVE,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(m.status, 'ready');
+  assert.equal(m.view.kind, 'monthly');
+  assert.equal(m.view.sourceLabel, '公會月報 2026/10，第 11 名以後未揭露');
+  assert.equal(m.view.rows.length, 2);
+  assert.equal(m.view.totalCount, 2);
+  assert.equal(m.view.rows[0].rank, 1);
+  assert.equal(m.view.rows[0].code, '2330');
+  assert.equal(m.view.rows[0].pct, 50);
+  assert.equal(m.view.rows[0].exposureAmount, 100_000);
+  assert.equal(m.view.rows[1].rank, 2);
+  assert.equal(m.view.rows[1].code, '2454');
+  assert.equal(m.view.rows[1].exposureAmount, 20_000);
+  assert.equal(m.view.shownPct, 60);
+  assert.equal(m.view.shownAmount, 120_000);
+
+  // 主動式每日 00981A：排除期貨 TX，台股簡稱優先，缺市值時曝險金額回 null
+  const d = etfTopHoldings({
+    code: '00981A',
+    sec: 'cat-domestic',
+    holdingValue: null,
+    top10: TOP10,
+    active: ACTIVE,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(d.status, 'ready');
+  assert.equal(d.view.kind, 'daily');
+  assert.equal(d.view.sourceLabel, '主動式每日持股 2026-11-25');
+  assert.equal(d.view.rows.some(r => r.code === 'TX'), false);
+  assert.equal(d.view.rows[0].name, '台積電');
+  assert.equal(d.view.rows[1].name, '奇鋐');
+  assert.equal(d.view.rows[0].exposureAmount, null);
+  assert.equal(d.view.shownAmount, null);
+
+  // 超過 10 檔的主動式持股依權重截前 10 大並保留 totalCount
+  const active12 = {
+    meta: { updated: '2026-11-27', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00999A': {
+        name: '測試主動12', issuer: '測試', asof: '2026-11-26', changes: [],
+        holdings: Array.from({ length: 12 }, (_, i) => [String(2001 + i), `股票${i + 1}`, 1000, i + 1]),
+      },
+    },
+  } as unknown as ActiveData;
+  const top = etfTopHoldings({
+    code: '00999A',
+    sec: 'cat-domestic',
+    holdingValue: 100_000,
+    top10: null,
+    active: active12,
+  });
+  assert.equal(top.status, 'ready');
+  assert.equal(top.view.totalCount, 12);
+  assert.equal(top.view.rows.length, 10);
+  assert.equal(top.view.rows[0].code, '2012');
+  assert.equal(top.view.rows[0].pct, 12);
+  assert.equal(top.view.rows[9].code, '2003');
+  assert.equal(top.view.rows[9].pct, 3);
+});
+
+test('etfTopHoldings：海外股別合併（Alphabet A＋C）與台灣 ADR 併回台股（TSM→2330）', () => {
+  const top10Foreign: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '009818': {
+        name: '華南永昌NASDAQ 100科技',
+        rows: [
+          [1, '國外股票(含承銷)', 'US0378331005', 'APPLE INC', 15.24],
+          [5, '國外股票(含承銷)', 'US02079K3059', 'ALPHABET INC-CL A', 5.92],
+          [7, '國外股票(含承銷)', 'US02079K1079', 'ALPHABET INC-CL C', 5.55],
+        ],
+      },
+      '00830': {
+        name: '國泰費城半導體',
+        rows: [
+          [1, '國外股票(含承銷)', 'US67066G1040', 'NVIDIA CORP', 12],
+          [7, '國外股票(含承銷)', 'US8740391003', '台灣積體電路製造股份有限公司', 4.22],
+        ],
+      },
+    },
+  };
+
+  // 009818：Alphabet A+C 合併為 GOOGL 11.47%，曝險 100,000 × 11.47% = 11,470
+  const r9818 = etfTopHoldings({
+    code: '009818',
+    sec: 'cat-foreign',
+    holdingValue: 100_000,
+    top10: top10Foreign,
+    active: null,
+  });
+  assert.equal(r9818.status, 'ready');
+  assert.equal(r9818.view.rows.length, 2);
+  const googl = r9818.view.rows[1];
+  assert.equal(googl.rank, 2);
+  assert.equal(googl.code, 'GOOGL US');
+  assert.equal(googl.displayCode, 'GOOGL');
+  assert.equal(googl.market, 'foreign');
+  assert.equal(googl.marketLabel, '美股');
+  assert.equal(googl.name, 'ALPHABET INC');
+  assert.ok(Math.abs(googl.pct - 11.47) < 1e-9);
+  assert.ok(Math.abs(googl.exposureAmount! - 11_470) < 1e-6);
+  assert.equal(formatShareClasses(googl.shareClasses!, googl.pct), 'A 股 5.92%＋C 股 5.55%＝11.47%');
+
+  // 00830：TSM ADR 併回台股 2330，曝險 100,000 × 4.22% = 4,220
+  const r830 = etfTopHoldings({
+    code: '00830',
+    sec: 'cat-foreign',
+    holdingValue: 100_000,
+    top10: top10Foreign,
+    active: null,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(r830.status, 'ready');
+  const tsmc = r830.view.rows.find(r => r.code === '2330');
+  assert.ok(tsmc, 'TSM ADR 應併回台股 2330');
+  assert.equal(tsmc.market, 'tw');
+  assert.equal(tsmc.name, '台積電');
+  assert.equal(tsmc.hasAdr, true);
+  assert.equal(tsmc.adrCode, 'TSM');
+  assert.ok(Math.abs(tsmc.exposureAmount! - 4_220) < 1e-6);
+  assert.equal(formatShareClasses(tsmc.shareClasses!, tsmc.pct), 'TSM ADR 4.22%');
+
+  // 跨市場主動式同時持 2330 (5%) 與 TSM US (3%) → 合併成單列 2330 (8%)
+  const activeBoth = {
+    meta: { updated: '2026-11-27', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00999X': {
+        name: '測試全球主動', issuer: '測試', asof: '2026-11-26', changes: [],
+        holdings: [
+          ['2330', '台灣積體電路製造', 1000, 5],
+          ['TSM US', 'TAIWAN SEMIC-ADR', 1000, 3],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const rBoth = etfTopHoldings({
+    code: '00999X',
+    sec: 'cat-foreign',
+    holdingValue: 50_000,
+    top10: null,
+    active: activeBoth,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(rBoth.status, 'ready');
+  assert.equal(rBoth.view.rows.length, 1);
+  assert.equal(rBoth.view.rows[0].code, '2330');
+  assert.equal(rBoth.view.rows[0].pct, 8);
+  assert.equal(rBoth.view.rows[0].exposureAmount, 4_000);
+  assert.equal(
+    formatShareClasses(rBoth.view.rows[0].shareClasses!, rBoth.view.rows[0].pct),
+    '台股 5.00%＋TSM ADR 3.00%＝8.00%',
+  );
+});
+
+test('etfTopHoldings：債券、槓反、新上市、僅持連結型 ETF 與缺資料檔皆回 empty 說明', () => {
+  const bond = etfTopHoldings({
+    code: '00679B', sec: 'cat-bond', holdingValue: 100_000, top10: TOP10, active: ACTIVE,
+  });
+  assert.equal(bond.status, 'empty');
+  assert.match(bond.reason, /債券/);
+
+  const lev = etfTopHoldings({
+    code: '00631L', sec: 'cat-leveraged', holdingValue: 100_000, top10: TOP10, active: ACTIVE,
+  });
+  assert.equal(lev.status, 'empty');
+  assert.match(lev.reason, /槓桿/);
+
+  const fresh = etfTopHoldings({
+    code: '009999', sec: 'cat-domestic', holdingValue: 100_000, top10: TOP10, active: ACTIVE,
+  });
+  assert.equal(fresh.status, 'empty');
+  assert.match(fresh.reason, /新上市/);
+
+  const feederTop10: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '0061': {
+        name: '元大標智滬深300',
+        rows: [[1, '國外掛牌交易之ETF', 'HK2827039002', 'W.I.S.E CSI 300', 95.55]],
+      },
+    },
+  };
+  const feeder = etfTopHoldings({
+    code: '0061', sec: 'cat-foreign', holdingValue: 100_000, top10: feederTop10, active: null,
+  });
+  assert.equal(feeder.status, 'empty');
+
+  const noData = etfTopHoldings({
+    code: '0050', sec: 'cat-domestic', holdingValue: 100_000, top10: null, active: null,
+  });
+  assert.equal(noData.status, 'empty');
+});
+
+test('etfTopHoldings 真實資料整合：0050、00403A、00646、00679B 口徑與持股健檢一致', {
+  skip: (!existsSync(ETFS_PATH) || !existsSync(TOP10_PATH) || !existsSync(ACTIVE_PATH)) && '缺少靜態資料檔',
+}, () => {
+  const etfs = (JSON.parse(readFileSync(ETFS_PATH, 'utf8')) as EtfDataset).etfs;
+  const secOf = (code: string) => etfs.find(e => e.code === code)?.sec;
+  const top10 = JSON.parse(readFileSync(TOP10_PATH, 'utf8')) as Top10Data;
+  const active = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as ActiveData;
+  const stockDivs = existsSync(SDIV_PATH) ? JSON.parse(readFileSync(SDIV_PATH, 'utf8')) as StockDividendData : null;
+
+  const r0050 = etfTopHoldings({
+    code: '0050', sec: secOf('0050'), holdingValue: 200_000, top10, active, stockDivs,
+  });
+  assert.equal(r0050.status, 'ready');
+  assert.equal(r0050.view.kind, 'monthly');
+  assert.equal(r0050.view.rows.length, 10);
+  assert.equal(r0050.view.rows[0].code, '2330');
+  const top1Pct = top10.etfs['0050']?.rows[0]?.[4] ?? 0;
+  assert.ok(Math.abs(r0050.view.rows[0].exposureAmount! - 200_000 * (top1Pct / 100)) < 1e-6);
+
+  if (active.etfs['00403A']?.holdings.length) {
+    const r403 = etfTopHoldings({
+      code: '00403A', sec: secOf('00403A'), holdingValue: 100_000, top10, active, stockDivs,
+    });
+    assert.equal(r403.status, 'ready');
+    assert.equal(r403.view.kind, 'daily');
+    assert.equal(r403.view.rows.length, 10);
+    assert.ok(r403.view.totalCount > 10);
+    assert.equal(r403.view.rows.some(r => r.code.startsWith('TX')), false);
+  }
+
+  const r646 = etfTopHoldings({
+    code: '00646', sec: secOf('00646'), holdingValue: 100_000, top10, active, stockDivs,
+  });
+  assert.equal(r646.status, 'ready');
+  assert.equal(r646.view.rows.some(r => r.code === 'GOOG US'), false, '00646 的 Alphabet C 股應已併入 GOOGL');
+  const googl646 = r646.view.rows.find(r => r.code === 'GOOGL US');
+  if (googl646) {
+    assert.equal(googl646.marketLabel, '美股');
+    assert.equal(googl646.displayCode, 'GOOGL');
+  }
+
+  const r679 = etfTopHoldings({
+    code: '00679B', sec: secOf('00679B'), holdingValue: 100_000, top10, active, stockDivs,
+  });
+  assert.equal(r679.status, 'empty');
 });
