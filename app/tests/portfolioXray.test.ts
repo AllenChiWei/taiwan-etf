@@ -18,6 +18,7 @@ import {
   matchesHealthFilter,
   parseStoredHoldings,
   SHARE_CLASS_ALIAS,
+  TW_ADR_TO_TW,
   type MarginStateLite,
 } from '../src/lib/portfolioXray.ts';
 import type { Etf, EtfDataset } from '../src/types.ts';
@@ -1053,4 +1054,316 @@ test('真實資料整合（009818 股別合併）：月報 ALPHABET A／C 股合
   assert.equal(googl.sources.length, 1);
   assert.ok(Math.abs(googl.sources[0].weightInSource - (clA + clC)) < 1e-9);
   assert.equal(googl.sources[0].shareClasses?.length, 2);
+});
+
+test('台灣 ADR 併回台股：0050（2330）＋00830 月報 TSM＋00409A 每日 TSM＋直接持有 TSM 合併成一列 2330，覆蓋度加總 100% 且四項台股健檢用合併佔比', () => {
+  const etfs: Etf[] = [
+    mkEtf('0050', '元大台灣50', 'cat-domestic'),
+    mkEtf('00830', '國泰費城半導體', 'cat-foreign'),
+    mkEtf('00409A', '主動復華全球未來50', 'cat-foreign', true),
+  ];
+  const top10: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '0050': {
+        name: '元大台灣50',
+        rows: [
+          [1, '國內上市', '2330', '台積電', 50],
+          [2, '國內上市', '2454', '聯發科', 10],
+        ],
+      },
+      '00830': {
+        name: '國泰費城半導體',
+        rows: [
+          [1, '國外股票(含承銷)', 'US67066G1040', 'NVIDIA CORP', 12],
+          [7, '國外股票(含承銷)', 'US8740391003', '台灣積體電路製造股份有限公司', 4.22],
+        ],
+      },
+    },
+  };
+  const active = {
+    meta: { updated: '2026-11-26', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00409A': {
+        name: '主動復華全球未來50', issuer: '復華投信', asof: '2026-11-25', changes: [],
+        holdings: [
+          ['TSM US', '台灣積體電路製造股份有限公司', 27000, 3.26],
+          ['NVDA US', '輝達公司', 46000, 4],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: {
+      '0050': { price: 100 },   // 1,000 股 = 100,000（2330: 50,000, 2454: 10,000）
+      '00830': { price: 50 },   // 2,000 股 = 100,000（NVDA: 12,000, TSM ADR: 4,220）
+      '00409A': { price: 50 },  // 1,000 股 = 50,000（TSM ADR: 1,630, NVDA: 2,000）
+    },
+  };
+
+  // 總市值 = 0050 (100,000) + 00830 (100,000) + 00409A (50,000) + 直接 TSM (10*5,000=50,000) = 300,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '0050', shares: 1000 },
+      { code: '00830', shares: 2000 },
+      { code: '00409A', shares: 1000 },
+      { code: 'TSM', shares: 10, m: 'us', k: 'stock', acct: '美股戶' },
+    ],
+    etfs,
+    top10,
+    active,
+    yields,
+    stockDivs: STOCK_DIVS,
+    usPricesTwd: new Map([['TSM', 5000]]),
+    usStockNames: new Map([['TSM', 'Taiwan Semiconductor Manufacturing']]),
+  });
+
+  assert.equal(xray.totalValue, 300_000);
+  assert.equal(xray.exposures.some(e => e.code === 'TSM US'), false, 'TSM US 必須併回 2330，不可另成海外列');
+
+  // 2330 合併金額 = 0050 (50,000) + 00830 TSM (4,220) + 00409A TSM (1,630) + 直接 TSM (50,000) = 105,850
+  const tsmc = xray.exposures[0];
+  assert.equal(tsmc.code, '2330');
+  assert.equal(tsmc.displayCode, '2330');
+  assert.equal(tsmc.name, '台積電');
+  assert.equal(tsmc.market, 'tw');
+  assert.equal(tsmc.marketLabel, '台股');
+  assert.equal(tsmc.hasAdr, true);
+  assert.equal(tsmc.isDirect, true);
+  assert.equal(tsmc.fromMonthly, true);
+  assert.equal(tsmc.directAmount, 50_000);
+  assert.ok(Math.abs(tsmc.etfAmount - 55_850) < 1e-6);
+  assert.ok(Math.abs(tsmc.amount - 105_850) < 1e-6);
+  const expectedTsmcPct = (105_850 / 300_000) * 100;
+  assert.ok(Math.abs(tsmc.pct - expectedTsmcPct) < 1e-9);
+  assert.equal(tsmc.sources.length, 4);
+
+  const srcDirect = tsmc.sources.find(s => s.kind === 'direct')!;
+  assert.equal(srcDirect.code, 'TSM');
+  assert.equal(srcDirect.adrCode, 'TSM');
+  assert.equal(srcDirect.amount, 50_000);
+  assert.deepEqual(srcDirect.shareClasses, [{ code: 'TSM', label: 'TSM ADR', weight: 100 }]);
+
+  const src00830 = tsmc.sources.find(s => s.code === '00830')!;
+  assert.equal(src00830.adrCode, 'TSM');
+  assert.equal(src00830.weightInSource, 4.22);
+  assert.ok(Math.abs(src00830.amount - 4_220) < 1e-6);
+  assert.equal(formatShareClasses(src00830.shareClasses!, src00830.weightInSource), 'TSM ADR 4.22%');
+
+  const src00409 = tsmc.sources.find(s => s.code === '00409A')!;
+  assert.equal(src00409.adrCode, 'TSM');
+  assert.ok(Math.abs(src00409.amount - 1_630) < 1e-6);
+  assert.equal(formatShareClasses(src00409.shareClasses!, src00409.weightInSource), 'TSM ADR 3.26%');
+
+  const src0050 = tsmc.sources.find(s => s.code === '0050')!;
+  assert.equal(src0050.adrCode, undefined);
+  assert.equal(src0050.shareClasses, undefined);
+
+  // 台股／海外家數：台股 2 檔（2330、2454），海外 1 檔（NVDA US）
+  assert.equal(xray.exposures.filter(e => e.market === 'tw').length, 2);
+  assert.equal(xray.exposures.filter(e => e.market === 'foreign').length, 1);
+
+  // 覆蓋度分類：直接持股(台股) 50,000 + ETF穿透台股 65,850 + 海外個股 14,000 + 未揭露 170,150 = 300,000（100%）
+  assert.equal(xray.directStockValue, 50_000);
+  assert.ok(Math.abs(xray.penetratedEtfValue - 65_850) < 1e-6);
+  assert.ok(Math.abs(xray.foreignStockValue - 14_000) < 1e-6);
+  assert.ok(Math.abs(xray.unrevealedEtfValue - 170_150) < 1e-6);
+  assert.equal(xray.unpenetrableValue, 0);
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9);
+  assert.ok(Math.abs(xray.knownTwPct - ((50_000 + 65_850) / 300_000) * 100) < 1e-9);
+
+  // 各檔穿透明細：00830 計為台股 1 檔 + 海外 1 檔；直接 TSM 標註併入台股 2330
+  const b00830 = xray.breakdown.find(b => b.code === '00830')!;
+  assert.equal(b00830.twStockCount, 1);
+  assert.equal(b00830.foreignStockCount, 1);
+  assert.equal(b00830.stockCount, 2);
+  const bTsm = xray.breakdown.find(b => b.code === 'TSM')!;
+  assert.equal(bTsm.twStockCount, 1);
+  assert.equal(bTsm.foreignStockCount, 0);
+  assert.match(bTsm.note ?? '', /2330/);
+
+  // 四項台股健檢皆須使用合併後的 2330 佔比（含 ADR），且直接持有 TSM 視同直接持有 2330
+  const margin: MarginStateLite = { d: '2026-11-26', m: { '2330': 142.5 } };
+  const mc = checkPortfolioMargin(xray, margin, 150);
+  assert.equal(mc.flagged.length, 1);
+  assert.equal(mc.flagged[0].code, '2330');
+  assert.equal(mc.flagged[0].isDirect, true);
+  assert.ok(Math.abs(mc.flagged[0].exposurePct - expectedTsmcPct) < 1e-9);
+  assert.deepEqual([...mc.flagged[0].viaEtfs].sort(), ['00409A', '0050', '00830']);
+
+  const cb: CbData = {
+    meta: { date: '2026-11-26', board: '2026-11-25', updated: '2026-11-26', count: 1, traded: 1, source: '', errors: [] },
+    bonds: [mkBond({ c: '23301', n: '台積一', s: '2330', sn: '台積電', cv1: 120, tot: 1e8, out: 8e7 })],
+    upcoming: [],
+  };
+  const cbc = checkPortfolioCb(xray, cb);
+  assert.equal(cbc.pressured.length, 1);
+  assert.equal(cbc.pressured[0].stockCode, '2330');
+  assert.equal(cbc.pressured[0].isDirect, true);
+  assert.ok(Math.abs(cbc.pressured[0].exposurePct - expectedTsmcPct) < 1e-9);
+
+  const cal: CalendarData = {
+    meta: { updated: '2026-11-26', until: '2027-02-01', source: '', errors: [] },
+    exdiv: [{ d: '2026-12-01', code: '2330', name: '台積電', k: '息', cash: 7, stock: null, m: 'twse' }],
+    meetings: [],
+    calls: [],
+  };
+  const evs = checkPortfolioEvents(xray, cal, '2026-11-26', 14);
+  assert.equal(evs.length, 1);
+  assert.equal(evs[0].code, '2330');
+  assert.equal(evs[0].isDirect, true);
+  assert.ok(Math.abs(evs[0].exposurePct - expectedTsmcPct) < 1e-9);
+
+  const news: NewsData = {
+    meta: { updated: '2026-11-26T12:00:00+08:00', sources: ['公開資訊觀測站'], note: '', news: 0, filings: 1 },
+    news: [],
+    filings: [
+      { code: '2330', name: '台積電', subject: '資本支出公告', at: '2026-11-26T10:00:00+08:00', market: '上市', clause: '11', u: 'https://mopsov.twse.com.tw/', known: true },
+    ],
+  };
+  const fils = checkPortfolioFilings(xray, news);
+  assert.equal(fils.length, 1);
+  assert.equal(fils[0].filing.code, '2330');
+  assert.equal(fils[0].isDirect, true);
+  assert.ok(Math.abs(fils[0].exposurePct - expectedTsmcPct) < 1e-9);
+});
+
+test('台灣 ADR 對照（UMC→2303、ASX→3711、CHT→2412）、同 ETF 同時含台股與 ADR 合併與無 stockDivs 後備名稱', () => {
+  const etfs: Etf[] = [
+    mkEtf('00999X', '測試全球半導體主動', 'cat-foreign', true),
+  ];
+  const active = {
+    meta: { updated: '2026-11-26', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00999X': {
+        name: '測試全球半導體主動', issuer: '測試投信', asof: '2026-11-26', changes: [],
+        holdings: [
+          ['2330', '台灣積體電路製造', 1000, 5],
+          ['TSM US', 'TAIWAN SEMIC-ADR', 1000, 3],
+          ['UMC UN', 'UNITED MICROELECTRONICS ADR', 1000, 4],
+          ['ASX US', 'ASE TECHNOLOGY HOLDING ADR', 1000, 3],
+          ['CHT US', 'CHUNGHWA TELECOM ADR', 1000, 2],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-26' },
+    yields: { '00999X': { price: 100 } }, // 1,000 股 = 100,000
+  };
+
+  // 直接持有 UMC (100 股 * 200 = 20,000) + 00999X (100,000) = 120,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: 'UMC', shares: 100, m: 'us', k: 'stock' },
+      { code: '00999X', shares: 1000 },
+    ],
+    etfs,
+    top10: null,
+    active,
+    yields,
+    stockDivs: null,
+    usPricesTwd: new Map([['UMC', 200]]),
+    usStockNames: new Map([['UMC', 'United Microelectronics Corp. ADR']]),
+  });
+
+  assert.equal(xray.totalValue, 120_000);
+  assert.equal(xray.foreignStockValue, 0, '全為台灣公司 ADR 併回台股，海外個股曝險應為 0');
+  assert.equal(xray.exposures.every(e => e.market === 'tw'), true);
+  assert.equal(xray.exposures.length, 4);
+
+  // UMC → 2303：直接 20,000 + ETF 4,000 = 24,000
+  const umc = xray.exposures.find(e => e.code === '2303');
+  assert.ok(umc, 'UMC US／UMC UN 應併回 2303');
+  assert.equal(umc.displayCode, '2303');
+  assert.equal(umc.name, '聯電', '無 stockDivs 時仍應採用預設台股簡稱');
+  assert.equal(umc.hasAdr, true);
+  assert.equal(umc.isDirect, true);
+  assert.equal(umc.directAmount, 20_000);
+  assert.equal(umc.etfAmount, 4_000);
+  assert.equal(umc.amount, 24_000);
+  assert.equal(umc.sources.length, 2);
+
+  // 同 ETF 同時持有 2330 (5%) 與 TSM US (3%) → 合併為單一來源 8%
+  const tsmc = xray.exposures.find(e => e.code === '2330')!;
+  assert.equal(tsmc.name, '台積電');
+  assert.equal(tsmc.hasAdr, true);
+  assert.equal(tsmc.amount, 8_000);
+  assert.equal(tsmc.sources.length, 1);
+  assert.equal(tsmc.sources[0].adrCode, 'TSM');
+  assert.equal(
+    formatShareClasses(tsmc.sources[0].shareClasses!, tsmc.sources[0].weightInSource),
+    '台股 5.00%＋TSM ADR 3.00%＝8.00%',
+  );
+
+  // ASX → 3711、CHT → 2412
+  const asx = xray.exposures.find(e => e.code === '3711');
+  assert.ok(asx && asx.name === '日月光投控' && asx.amount === 3_000 && asx.hasAdr === true);
+  const cht = xray.exposures.find(e => e.code === '2412');
+  assert.ok(cht && cht.name === '中華電' && cht.amount === 2_000 && cht.hasAdr === true);
+
+  // 覆蓋度加總仍為 100%
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9);
+
+  // 對照表覆蓋四檔指定台灣 ADR
+  assert.deepEqual(TW_ADR_TO_TW, {
+    'TSM US': '2330',
+    'UMC US': '2303',
+    'ASX US': '3711',
+    'CHT US': '2412',
+  });
+});
+
+test('真實資料整合（台灣 ADR 合併）：0050＋00830＋009815＋00409A 的 TSM 全部併入 2330 台股列', {
+  skip: (!existsSync(ETFS_PATH) || !existsSync(TOP10_PATH) || !existsSync(ACTIVE_PATH) || !existsSync(YIELDS_PATH))
+    && '缺少靜態資料檔',
+}, () => {
+  const etfs = (JSON.parse(readFileSync(ETFS_PATH, 'utf8')) as EtfDataset).etfs;
+  const top10 = JSON.parse(readFileSync(TOP10_PATH, 'utf8')) as Top10Data;
+  const active = JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as ActiveData;
+  const yields = JSON.parse(readFileSync(YIELDS_PATH, 'utf8')) as YieldData;
+  const stockDivs = existsSync(SDIV_PATH) ? JSON.parse(readFileSync(SDIV_PATH, 'utf8')) as StockDividendData : null;
+
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '0050', shares: 1000 },
+      { code: '00830', shares: 1000 },
+      { code: '009815', shares: 5000 },
+      { code: '00409A', shares: 5000 },
+    ],
+    etfs,
+    top10,
+    active,
+    yields,
+    stockDivs,
+  });
+
+  assert.equal(xray.exposures.some(e => e.code === 'TSM US'), false, '真實資料的 TSM 必須併入 2330');
+  const tsmc = xray.exposures.find(e => e.code === '2330');
+  assert.ok(tsmc, '應有合併後的 2330 台股列');
+  assert.equal(tsmc.market, 'tw');
+  assert.equal(tsmc.name, '台積電');
+
+  const has00830Tsm = (top10.etfs['00830']?.rows ?? []).some(r => r[2] === 'US8740391003' && (r[4] ?? 0) > 0);
+  if (has00830Tsm) {
+    assert.equal(tsmc.hasAdr, true);
+    assert.equal(tsmc.sources.find(s => s.code === '00830')?.adrCode, 'TSM');
+  }
+  const has009815Tsm = (top10.etfs['009815']?.rows ?? []).some(r => r[2] === 'US8740391003' && (r[4] ?? 0) > 0);
+  if (has009815Tsm) {
+    assert.equal(tsmc.sources.find(s => s.code === '009815')?.adrCode, 'TSM');
+  }
+  const has00409Tsm = (active.etfs['00409A']?.holdings ?? []).some(h => h[0] === 'TSM US' && h[3] > 0);
+  if (has00409Tsm) {
+    assert.equal(tsmc.sources.find(s => s.code === '00409A')?.adrCode, 'TSM');
+  }
+
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9);
 });

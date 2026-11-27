@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-27',
     items: [
+      { kind: 'improve', to: '/dividend',
+        text: '持股健檢把台灣公司的美國 ADR（例如台積電 TSM）併回台股計算。' },
       { kind: 'fix', to: '/dividend',
         text: '持股健檢把同一家公司的不同股別（例如 Alphabet A 股與 C 股）合併計算，並在展開來源時標示各股別比重。' },
       { kind: 'new', to: '/dividend',

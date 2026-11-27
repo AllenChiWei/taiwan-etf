@@ -14,13 +14,15 @@ import { holdingsOf } from './overlap.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
 import {
   resolveShareClass,
+  resolveTwAdr,
   SHARE_CLASS_ALIAS,
   SHARE_CLASS_LABEL,
   shareClassRank,
+  TW_ADR_TO_TW,
 } from './shareClassAlias.ts';
 import type { StockDividendData, YieldData } from './dividend.ts';
 
-export { SHARE_CLASS_ALIAS, SHARE_CLASS_LABEL };
+export { SHARE_CLASS_ALIAS, SHARE_CLASS_LABEL, TW_ADR_TO_TW };
 import {
   addDays, convPct, convertible, outPct,
   type CbBond, type CbData, type CbUpcoming,
@@ -135,8 +137,10 @@ export interface ExposureSource {
   /** 此來源貢獻的投組權重（%） */
   pctOfPortfolio: number;
   asof: string | null;
-  /** 屬多股別合併標的時，記錄此來源包含的各股別與權重（依股別順序排列） */
+  /** 屬多股別合併標的或含台灣 ADR 時，記錄此來源包含的各股別／ADR 與權重（依順序排列） */
   shareClasses?: ShareClassPart[];
+  /** 若此來源含台灣公司的美國 ADR（如 TSM→2330），記錄該 ADR 簡短代號（例如 TSM） */
+  adrCode?: string;
 }
 
 /**
@@ -170,6 +174,8 @@ export interface ExposureRow {
   marketLabel: string;
   /** true 代表海外成分查無 ticker 對照、仍以 ISIN 呈現 */
   isIsin?: boolean;
+  /** true 代表此台股列包含台灣公司的美國 ADR 併入（例如 TSM 併入 2330） */
+  hasAdr?: boolean;
   /** 合計曝險金額（台幣） */
   amount: number;
   /** 佔投組已定價總市值（%） */
@@ -469,7 +475,9 @@ function pickStockName(
  * - 台股 ETF、海外 ETF 與跨市場主動式 ETF 皆展開台股與海外股票成分；公會月報的海外 ISIN 透過
  *   ISIN_TICKER 對照表轉成「代號 交易所」與主動式持股合併，再經 SHARE_CLASS_ALIAS 將同公司不同股別
  *   （如 GOOG／GOOGL、BRK.A／BRK.B、005935／005930）合併至代表鍵並保留來源股別明細，查無對照時仍以 ISIN 保留。
- * - 直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」並套用股別合併），
+ * - 台灣公司的美國 ADR（TW_ADR_TO_TW：TSM→2330、UMC→2303、ASX→3711、CHT→2412）一律併回對應台股列，
+ *   套用於月報 ISIN、主動式每日持股與直接持有美股個股，金額歸入台股類別並保留 ADR 來源標示（市值曝險不受 ADR 換算股數影響）。
+ * - 其餘直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」並套用股別合併），
  *   與 ETF 穿透之同一家公司合併；美股掛牌 ETF（m='us' 且無 k）維持無法穿透。
  * - 債券 ETF（cat-bond）、美股掛牌 ETF、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
  * - 主動式 ETF 的期貨部位（含 TX／WTX 等）與公會月報的債券／國外掛牌 ETF 不計為個股曝險。
@@ -556,6 +564,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     market: StockMarket;
     marketLabel: string;
     isIsin: boolean;
+    hasAdr: boolean;
     amount: number;
     directAmount: number;
     etfAmount: number;
@@ -585,6 +594,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
         market: meta.market,
         marketLabel: meta.marketLabel,
         isIsin: meta.isIsin,
+        hasAdr: Boolean(source.adrCode),
         amount: source.amount,
         directAmount: source.kind === 'direct' ? source.amount : 0,
         etfAmount: source.kind === 'direct' ? 0 : source.amount,
@@ -599,6 +609,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
         prev.marketLabel = meta.marketLabel;
         prev.isIsin = false;
       }
+      if (source.adrCode) prev.hasAdr = true;
       prev.amount += source.amount;
       if (source.kind === 'direct') {
         prev.directAmount += source.amount;
@@ -626,6 +637,52 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
         classLabel: undefined,
         marketLabel: '美股',
       };
+      const adr = resolveTwAdr(norm.key);
+      if (adr) {
+        // 台灣公司的美國 ADR 併回台股列計算；金額已是台幣市值，不受 ADR 與普通股換算股數影響
+        if (r.value !== null) {
+          directStockValue += r.value;
+          addExposure(
+            adr.twCode,
+            adr.twName,
+            {
+              code: r.code,
+              name: r.name,
+              kind: 'direct',
+              weightInSource: 100,
+              amount: r.value,
+              pctOfPortfolio,
+              asof: null,
+              adrCode: adr.adrCode,
+              shareClasses: [{ code: adr.adrCode, label: `${adr.adrCode} ADR`, weight: 100 }],
+            },
+            {
+              displayCode: adr.twCode,
+              market: 'tw',
+              marketLabel: '台股',
+              isIsin: false,
+            },
+          );
+        }
+        breakdown.push({
+          code: r.code,
+          name: r.name,
+          kind: 'us-stock',
+          shares: r.shares,
+          price: r.price,
+          value: r.value,
+          pctOfPortfolio,
+          status: 'direct',
+          asof: null,
+          coveredPct: 100,
+          stockCount: 1,
+          twStockCount: 1,
+          foreignStockCount: 0,
+          note: `美股 ADR（直接持有，併入台股 ${adr.twCode}）`,
+        });
+        continue;
+      }
+
       const rawUsName = input.usStockNames?.get(r.code) ?? input.usNames?.get(r.code) ?? '';
       if (r.value !== null) {
         foreignStockValue += r.value;
@@ -739,8 +796,15 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       continue;
     }
 
-    // 分流展開台股普通股（既有規則不變）與海外股票（排除期貨 TX／WTX、債券 ISIN 與國外掛牌 ETF）
-    const twComponents: Array<{ sid: string; name: string; pct: number }> = [];
+    // 分流展開台股普通股（另併入台灣公司美國 ADR）與海外股票（排除期貨 TX／WTX、債券 ISIN 與國外掛牌 ETF）
+    const twCompMap = new Map<string, {
+      sid: string;
+      name: string;
+      pct: number;
+      twPct: number;
+      adrPct: number;
+      adrCode?: string;
+    }>();
     const foreignCompMap = new Map<string, ParsedForeign & {
       name: string;
       pct: number;
@@ -751,11 +815,39 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       if (!(item.pct > 0)) continue;
       if (holdingLinkKind(sid) === 'stock') {
         if (item.type && NON_STOCK_TYPE_RE.test(item.type)) continue;
-        twComponents.push({ sid, name: item.name, pct: item.pct });
+        const prev = twCompMap.get(sid);
+        if (prev) {
+          prev.pct += item.pct;
+          prev.twPct += item.pct;
+          const trimmed = item.name.trim();
+          if (trimmed && trimmed.length < prev.name.length) prev.name = trimmed;
+        } else {
+          twCompMap.set(sid, { sid, name: item.name, pct: item.pct, twPct: item.pct, adrPct: 0 });
+        }
         continue;
       }
       const parsed = parseForeignComponent(sid, item.name, item.type);
       if (!parsed) continue;
+      const adr = !parsed.isIsin ? resolveTwAdr(parsed.key) : null;
+      if (adr) {
+        const prev = twCompMap.get(adr.twCode);
+        if (prev) {
+          prev.pct += item.pct;
+          prev.adrPct += item.pct;
+          prev.adrCode = adr.adrCode;
+          if (adr.twName.length < prev.name.length) prev.name = adr.twName;
+        } else {
+          twCompMap.set(adr.twCode, {
+            sid: adr.twCode,
+            name: adr.twName,
+            pct: item.pct,
+            twPct: 0,
+            adrPct: item.pct,
+            adrCode: adr.adrCode,
+          });
+        }
+        continue;
+      }
       const prev = foreignCompMap.get(parsed.key);
       if (prev) {
         prev.pct += item.pct;
@@ -779,6 +871,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       }
     }
 
+    const twComponents = [...twCompMap.values()];
     const foreignComponents = [...foreignCompMap.values()];
 
     if (twComponents.length === 0 && foreignComponents.length === 0) {
@@ -805,6 +898,16 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       for (const comp of twComponents) {
         const amt = r.value * (comp.pct / 100);
         etfTwPenetrated += amt;
+        let shareClasses: ShareClassPart[] | undefined;
+        if (comp.adrCode) {
+          shareClasses = [];
+          if (comp.twPct > 0) {
+            shareClasses.push({ code: comp.sid, label: '台股', weight: comp.twPct });
+          }
+          if (comp.adrPct > 0) {
+            shareClasses.push({ code: comp.adrCode, label: `${comp.adrCode} ADR`, weight: comp.adrPct });
+          }
+        }
         addExposure(
           comp.sid,
           comp.name,
@@ -816,6 +919,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
             amount: amt,
             pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
             asof: hs.asof,
+            ...(comp.adrCode ? { adrCode: comp.adrCode } : {}),
+            ...(shareClasses ? { shareClasses } : {}),
           },
           { displayCode: comp.sid, market: 'tw', marketLabel: '台股', isIsin: false },
         );
@@ -857,16 +962,21 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       unrevealedEtfValue += Math.max(0, r.value - etfTwPenetrated - etfForeignPenetrated);
     }
 
-    const hasTw = twComponents.length > 0;
+    const hasTwDirect = twComponents.some(c => c.twPct > 0);
+    const hasTwAdr = twComponents.some(c => c.adrPct > 0);
     const hasForeign = foreignComponents.length > 0;
-    const note = hasTw && hasForeign
+    const note = hasTwDirect && hasForeign
       ? hs.kind === 'daily'
         ? '跨市場 ETF，台股與海外成分皆已展開（每日持股）'
         : '跨市場 ETF，台股與海外成分皆已展開（月報前十大，第 11 名以後未揭露）'
-      : hasForeign
+      : hasForeign || (!hasTwDirect && hasTwAdr)
         ? hs.kind === 'monthly'
-          ? '海外 ETF，已展開月報前十大（第 11 名以後未揭露）'
-          : '海外 ETF，已展開每日完整持股'
+          ? hasTwAdr
+            ? '海外 ETF，已展開月報前十大（含台灣 ADR 併入台股，第 11 名以後未揭露）'
+            : '海外 ETF，已展開月報前十大（第 11 名以後未揭露）'
+          : hasTwAdr
+            ? '海外 ETF，已展開每日完整持股（含台灣 ADR 併入台股）'
+            : '海外 ETF，已展開每日完整持股'
         : sec === 'cat-foreign'
           ? `跨市場 ETF，已展開台股成分（${hs.kind === 'daily' ? '每日持股' : '月報前十大'}）`
           : hs.kind === 'monthly'
@@ -901,6 +1011,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
         market: e.market,
         marketLabel: e.marketLabel,
         ...(e.isIsin ? { isIsin: true } : {}),
+        ...(e.hasAdr ? { hasAdr: true } : {}),
         amount: e.amount,
         pct: totalValue > 0 ? (e.amount / totalValue) * 100 : 0,
         directAmount: e.directAmount,
@@ -1202,7 +1313,7 @@ export function checkPortfolioEvents(
     const exp = expByCode.get(code);
     if (!direct && !exp) continue;
 
-    const isDirect = Boolean(direct);
+    const isDirect = Boolean(direct) || Boolean(exp?.isDirect);
     const targetKind: 'etf' | 'stock' = direct?.kind === 'etf' ? 'etf' : 'stock';
     const exposurePct = exp ? exp.pct : (direct?.pct ?? 0);
     const viaEtfs = exp ? exp.sources.filter(s => s.kind !== 'direct').map(s => s.code) : [];
@@ -1253,7 +1364,7 @@ export function checkPortfolioFilings(
 
     out.push({
       filing,
-      isDirect: Boolean(direct),
+      isDirect: Boolean(direct) || Boolean(exp?.isDirect),
       targetKind: direct?.kind === 'etf' ? 'etf' : 'stock',
       exposurePct: exp ? exp.pct : (direct?.pct ?? 0),
       viaEtfs: exp ? exp.sources.filter(s => s.kind !== 'direct').map(s => s.code) : [],

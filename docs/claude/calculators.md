@@ -82,7 +82,8 @@
     「代號 交易所」並做交易所別名正規化（如 `UW→US`、`JT→JP`、`KP→KS`、`GY→GR`、`C1/C2→CH`），
     再依股別對照表 `app/src/lib/shareClassAlias.ts`（`SHARE_CLASS_ALIAS`／`SHARE_CLASS_LABEL`）把同一家公司的不同股別（如 `GOOG→GOOGL`、`BRK.A→BRK.B`、`005935→005930`）合併成同一列代表鍵（套用於月報 ISIN、主動式每日持股與直接持有美股個股），代表列名稱會去掉 `-CL A`／`Class C`／`-PREF`／`特別股` 等股別字樣並於展開來源時標示各股別權重明細；查無對照的 ISIN 仍保留呈現。名稱優先取中文（含括號內中文），
     其次做輕度英文標點整理。
-  - 直接持有的美股個股（`m === 'us' && k === 'stock'`）算入「海外個股曝險」的**直接持有**（鍵 `CODE US`，例如 `ANT US`），與 ETF 穿透的同一家公司合併為同一列；債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'` 且無 `k`，站內無成分資料）、槓桿／反向與期貨 ETF、以及無可展開股票成分之 ETF 仍歸為無法穿透，並計入總市值分母。
+  - **台灣公司美國 ADR 併回台股（2026-11-27）**：同檔 `app/src/lib/shareClassAlias.ts` 維護 `TW_ADR_TO_TW`（`TSM US→2330`、`UMC US→2303`、`ASX US→3711`、`CHT US→2412`）與 `resolveTwAdr()`，套用於月報 ISIN（經 `isinTicker.ts` 轉為 `TSM US` 後）、主動式每日持股與直接持有美股個股。因口徑為市值曝險（持有市值 × 佔淨值%），ADR 與普通股的換算股數（如 1 ADR＝5 股）不影響金額；合併後維持為台股列（`market: 'tw'`、可點開 `StockSheet`、以合併後佔比參與四項台股健檢），金額改計入「直接持股（台股）」或「ETF 穿透台股」而不再算進「海外個股曝險」，整列標示「含 ADR」並於來源明細顯示 ADR 代號與權重（例：`00830（TSM ADR 4.22%）`、`直接持有 TSM ADR`）。
+  - 直接持有的非台灣 ADR 美股個股（`m === 'us' && k === 'stock'`）算入「海外個股曝險」的**直接持有**（鍵 `CODE US`，例如 `ANT US`），與 ETF 穿透的同一家公司合併為同一列；債券 ETF（`cat-bond`）、美股掛牌 ETF（`m === 'us'` 且無 `k`，站內無成分資料）、槓桿／反向與期貨 ETF、以及無可展開股票成分之 ETF 仍歸為無法穿透，並計入總市值分母。
 - **ISIN 對照表更新**：`python scripts/gen_isin_ticker.py` 讀取 `app/public/data/top10.json`
   非台股股票 ISIN，呼叫 OpenFIGI v3 mapping API（免 API key；每批 10 筆、節流 2.6 秒、遇 429/5xx
   自動重試），壓低美國場外粉紅單（`Foreign Sh.`／OTC）並優先選各國主要交易所綜合代碼，輸出至
