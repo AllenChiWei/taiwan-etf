@@ -19,7 +19,8 @@
 - **每 5 秒取樣（要在 Cloudflare 多設定）**：沒設定也能用，只是 13:00 後才打開網頁的人要靠每分鐘資料內插。
   1. Workers & Pages → **KV** → **Create namespace**，名稱 `twetf-settle-samples`。
   2. 回到 `twetf-settle` → **Settings → Bindings → Add → KV namespace**：Variable name 填 `SETTLE_KV`，選剛建的 namespace → Deploy。
-  3. 同頁 **Settings → Trigger events（Triggers）→ Add → Cron Triggers**，加兩條（UTC，＝台北 12:59～13:30 平日）：`59 4 * * 1-5`、`0-30 5 * * 1-5`。
+  3. 同頁 **Settings → Trigger events（Triggers）→ Add → Cron Triggers**，加兩條（UTC，＝台北 12:59～13:30 平日）：`59 4 * * MON-FRI`、`0-30 5 * * MON-FRI`。
+     **星期一定用英文縮寫**：Cloudflare 的星期是 1＝星期日、7＝星期六（和一般 cron 不同），2026-11-27 前寫的 `1-5` 其實是「週日～週四」，週五結算日整天沒取樣（11-27 週五 samples 0 筆、11-26 週四 92 筆）。
   4. 打開 `…/taiex` 看到 `"kv":true` 就是綁好了；平日 13:01 以後 `samples` 會開始有東西。
 - 免費方案用量：排程每天 32 次、KV 寫 32 次、讀約 1 千次以內（額度：每天 10 萬次請求、KV 寫 1 千／讀 10 萬）。
 
