@@ -695,7 +695,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">各檔明細</h2>
-              <span className="text-[11.5px] text-faint">點台股 ETF 可展開前十大持股與約略曝險</span>
+              <span className="text-[11.5px] text-faint">點台股 ETF 可展開持股明細與約略曝險</span>
             </div>
             <ul className="mt-2 divide-y divide-line">
               {rows.map(r => {
@@ -718,7 +718,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                           <span className="font-mono text-[13.5px] font-bold text-ink group-hover:text-accent">{r.code}</span>
                           <span className="truncate text-[13px] text-muted group-hover:text-accent">{r.name}</span>
                           <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
-                            {isTop10Open ? '持股 ▴' : '前十大 ▾'}
+                            {isTop10Open ? '持股 ▴' : '持股 ▾'}
                           </span>
                         </button>
                       ) : (

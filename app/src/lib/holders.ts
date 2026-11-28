@@ -7,6 +7,7 @@
 
 import type { ActiveData, ActiveEtf } from './active.ts';
 import { bookSummary, scorecard, kindOf, KIND_LABEL } from './active.ts';
+import type { FullHoldingsData } from './fullHoldings.ts';
 import type { Top10Data } from './top10.ts';
 
 export interface Holder {
@@ -14,16 +15,21 @@ export interface Holder {
   /** ETF 簡稱（etfs.json 有就用它，否則用來源裡的名稱） */
   name: string;
   weight: number | null;
-  kind: 'daily' | 'monthly';
+  kind: 'daily' | 'pcf' | 'quarterly' | 'monthly';
   asof: string;
-  /** 每日持股才有：股數 */
+  /** 每日持股／申購清單才有：股數 */
   shares?: number;
   /** 主動式最近一次對這檔的動作（新增／加碼／減碼／剔除）與日期 */
   last?: { kind: string; d: string };
 }
 
-export function holdersOf(stock: string, monthly: Top10Data | null, active: ActiveData | null,
-                          names: Record<string, string> = {}): Holder[] {
+export function holdersOf(
+  stock: string,
+  monthly: Top10Data | null,
+  active: ActiveData | null,
+  names: Record<string, string> = {},
+  full: FullHoldingsData | null = null,
+): Holder[] {
   const out = new Map<string, Holder>();
   for (const [etf, e] of Object.entries(active?.etfs ?? {})) {
     const h = e.holdings.find(x => x[0] === stock);
@@ -35,14 +41,34 @@ export function holdersOf(stock: string, monthly: Top10Data | null, active: Acti
       shares: h ? h[2] : 0, last,
     });
   }
+  // 投信每日申購買回清單涵蓋全部成分股，該檔已不在清單中就不應再用上月月報補回
+  const pcfCovered = new Set<string>();
+  for (const [etf, e] of Object.entries(full?.etfs ?? {})) {
+    if (e.basis === 'quarterly1pct' || !e.holdings.length) continue;
+    pcfCovered.add(etf);
+    if (out.has(etf)) continue;
+    const h = e.holdings.find(x => x[0] === stock && x[3] > 0);
+    if (!h) continue;
+    out.set(etf, {
+      etf, name: names[etf] ?? e.name, weight: h[3], kind: 'pcf', asof: e.asof, shares: h[2],
+    });
+  }
   if (monthly) {
     const ym = monthly.meta.ym;
     for (const [etf, e] of Object.entries(monthly.etfs)) {
-      if (out.has(etf)) continue;
+      if (out.has(etf) || pcfCovered.has(etf)) continue;
       const r = e.rows.find(x => x[2] === stock);
       if (!r) continue;
       out.set(etf, { etf, name: names[etf] ?? e.name, weight: r[4], kind: 'monthly', asof: `${ym.slice(0, 4)}/${ym.slice(4)}` });
     }
+  }
+  for (const [etf, e] of Object.entries(full?.etfs ?? {})) {
+    if (e.basis !== 'quarterly1pct' || out.has(etf) || pcfCovered.has(etf)) continue;
+    const h = e.holdings.find(x => x[0] === stock && x[3] > 0);
+    if (!h) continue;
+    out.set(etf, {
+      etf, name: names[etf] ?? e.name, weight: h[3], kind: 'quarterly', asof: e.asof,
+    });
   }
   return [...out.values()].sort((a, b) => (b.weight ?? -1) - (a.weight ?? -1));
 }

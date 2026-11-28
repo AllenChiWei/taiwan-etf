@@ -279,10 +279,10 @@ function Card({
             <div className="rounded-lg bg-bg px-2.5 py-2">
               <div className="flex flex-wrap items-baseline justify-between gap-2 text-[11px]">
                 <span className="font-semibold text-ink">持有這檔的 ETF（{holders.length} 檔）</span>
-                <span className="text-[10.5px] text-faint">主動式每日完整持股／其他為月報前十大</span>
+                <span className="text-[10.5px] text-faint">投信每日完整持股／公會季報與月報前十大</span>
               </div>
               {holders.length === 0 ? (
-                <p className="mt-1 text-[11px] text-muted">目前不在追蹤中主動式 ETF 持股或公會月報前十大內。</p>
+                <p className="mt-1 text-[11px] text-muted">目前不在投信每日持股或公會持股明細內。</p>
               ) : (
                 <>
                   <ul className="mt-1 space-y-0.5 text-[11.5px]">
@@ -291,7 +291,9 @@ function Card({
                         <Link to="/etf" search={{ code: h.etf }}
                               className="min-w-0 truncate text-ink hover:text-accent hover:underline">
                           <span className="font-mono text-accent">{h.etf}</span> {h.name}
-                          <span className="ml-1 text-[10px] text-faint">{h.kind === 'daily' ? '每日' : '月報'}</span>
+                          <span className="ml-1 text-[10px] text-faint">
+                            {h.kind === 'daily' ? '每日' : h.kind === 'pcf' ? '清單' : h.kind === 'quarterly' ? '季報' : '月報'}
+                          </span>
                         </Link>
                         <span className="shrink-0 font-mono tabular-nums text-muted">
                           {h.weight == null ? '—' : `${nf2.format(h.weight)}%`}
@@ -527,6 +529,7 @@ export function DefensivePage() {
 
   const top10 = extras?.[0] ?? null;
   const active = extras?.[1] ?? null;
+  const full = extras?.[3] ?? null;
 
   const allCodes = useMemo(() => {
     const s = new Set<string>();
@@ -538,9 +541,9 @@ export function DefensivePage() {
   const holdersByCode = useMemo(() => {
     if (!extras) return null;
     const m = new Map<string, Holder[]>();
-    for (const c of allCodes) m.set(c, currentEtfHolders(c, top10, active, etfNames));
+    for (const c of allCodes) m.set(c, currentEtfHolders(c, top10, active, etfNames, full));
     return m;
-  }, [extras, allCodes, top10, active, etfNames]);
+  }, [extras, allCodes, top10, active, full, etfNames]);
 
   const metricsOf = (code: string): CrossMetrics => {
     const hr = highsByCode.get(code);

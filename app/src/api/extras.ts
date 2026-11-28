@@ -4,6 +4,7 @@
  */
 
 import type { ActiveData } from '../lib/active.ts';
+import type { FullHoldingsData } from '../lib/fullHoldings.ts';
 import type { UpcomingData } from '../lib/upcoming.ts';
 import type { Top10Data } from '../lib/top10.ts';
 import type { EtfHoldersData } from '../lib/etfHolders.ts';
@@ -37,6 +38,10 @@ async function load<T>(file: string, ok: (d: Partial<T>) => boolean,
 
 export const fetchActive = (signal?: AbortSignal) =>
   load<ActiveData>('active_holdings.json', d => Boolean(d.etfs && d.meta), signal);
+
+/** 被動式 ETF 每日全部持股與公會季報 1% 以上（scripts/fetch_etf_holdings.py；缺檔回 null） */
+export const fetchFullHoldings = (signal?: AbortSignal) =>
+  load<FullHoldingsData>('etf_holdings.json', d => Boolean(d.etfs && d.meta), signal);
 
 export const fetchUpcoming = (signal?: AbortSignal) =>
   load<UpcomingData>('upcoming.json', d => Array.isArray(d.items), signal);

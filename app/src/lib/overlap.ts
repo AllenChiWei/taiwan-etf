@@ -1,11 +1,17 @@
-/* 收藏 ETF 的持股重疊（主動式用投信每日完整持股，其餘用公會月報前十大）。純函式，沒有 React。
+/* 收藏 ETF 的持股重疊（主動式每日 → 被動式每日全部持股 → 公會季報 1% 以上 → 公會月報前十大）。純函式，沒有 React。
  *
- * 重疊度 = Σ 共同持股 min(甲的佔比, 乙的佔比)。只算看得到的部分，所以有月報前十大參與時是「下限」：
+ * 重疊度 = Σ 共同持股 min(甲的佔比, 乙的佔比)。只算看得到的部分，有月報前十大參與時是「下限」：
  * 前十大以外的共同持股算不到。期貨部位不算持股（isStock）。
  */
 
 import { lookupMonthly, type Top10Data } from './top10.ts';
 import { isStock, type ActiveData } from './active.ts';
+import {
+  lookupFullHoldings,
+  type FullHoldingBasis,
+  type FullHoldingsData,
+  type QtyDenom,
+} from './fullHoldings.ts';
 
 export interface Common {
   code: string;
@@ -42,11 +48,12 @@ export function overlapPair(data: Top10Data, a: string, b: string): Pair {
   return { a, b, overlap: common.reduce((s, c) => s + Math.min(c.a, c.b), 0), common };
 }
 
-/** 收藏中有持股資料的 ETF（主動式用每日完整持股，其餘用公會月報前十大），兩兩配對，重疊度高的在前 */
+/** 收藏中有持股資料的 ETF（依完整度優先序取來源），兩兩配對，重疊度高的在前 */
 export function overlapPairs(
   data: Top10Data | null,
   codes: string[],
   active: ActiveData | null = null,
+  full: FullHoldingsData | null = null,
 ): { covered: string[]; pairs: Pair[]; sets: Record<string, HoldingSet> } {
   const covered: string[] = [];
   const sets: Record<string, HoldingSet> = {};
@@ -54,7 +61,7 @@ export function overlapPairs(
   for (const c of codes) {
     if (seen.has(c)) continue;
     seen.add(c);
-    const s = holdingsOf(c, data, active);
+    const s = holdingsOf(c, data, active, full);
     if (s) {
       covered.push(c);
       sets[c] = s;
@@ -75,26 +82,41 @@ export function overlapPairs(
 
 /* ───── 任選兩檔比對（#/compare，2026-11-19 站主：選兩檔 ETF 比共同持股與比例）─────
  *
- * 跟收藏頁的兩兩配對不同，這裡每一檔挑「最完整」的持股來源：
- *   主動式（active_holdings.json 有的）→ 投信每日公告的持股（不只前十大）
- *   其他 → 投信投顧公會月報前十大
- * 兩邊來源不同時（每日 vs 月報）日期也不同，畫面要標出各自的來源與日期。
+ * 每一檔依以下優先序挑最完整的持股來源：
+ *   1. 主動式每日持股（active_holdings.json）
+ *   2. 被動式每日全部持股（etf_holdings.json，投信申購買回清單）
+ *   3. 公會季報持股 1% 以上（etf_holdings.json，只在它比月報前十大涵蓋更多權重時採用）
+ *   4. 公會月報前十大（top10.json）
+ * 兩邊來源不同時日期也不同，畫面要標出各自的來源與日期。
  * 期貨部位不算持股（跟主動式「合計持股」同一條規則，isStock）。
  */
 
+export type HoldingSourceKind = 'daily' | 'pcf' | 'quarterly' | 'monthly';
+
 export interface HoldingSet {
   code: string;
-  /** 'daily'＝投信每日公告；'monthly'＝公會月報前十大 */
-  kind: 'daily' | 'monthly';
-  /** 每日是交易日 YYYY-MM-DD，月報是 YYYY/MM */
+  /** 'daily'＝主動式每日；'pcf'＝被動式申購買回清單；'quarterly'＝公會季報 1% 以上；'monthly'＝公會月報前十大 */
+  kind: HoldingSourceKind;
+  /** 每日／申購清單為 YYYY-MM-DD，季報為 YYYYQ#，月報為 YYYY/MM */
   asof: string;
-  /** 代號 → 名稱、佔淨值 %（公會月報另保留資產類型 type，供穿透時排除債券／連結型 ETF） */
+  /** 來源投信（例「元大投信」）或「投信投顧公會季報」 */
+  src?: string;
+  /** 被動式持股的換算口徑（weight／qty／quarterly1pct） */
+  basis?: FullHoldingBasis;
+  /** basis === 'qty' 時的分母口徑（nav＝淨值；stock＝股票部位合計 100%） */
+  denom?: QtyDenom;
+  /** 代號 → 名稱、佔淨值 %（公會月報／季報另保留資產類型 type，供穿透時排除債券／連結型 ETF） */
   w: Map<string, { name: string; pct: number; type?: string }>;
   /** 這份資料涵蓋的淨值合計 %（前十大通常 40～70%） */
   covered: number;
 }
 
-export function holdingsOf(code: string, top10: Top10Data | null, active: ActiveData | null): HoldingSet | null {
+export function holdingsOf(
+  code: string,
+  top10: Top10Data | null,
+  active: ActiveData | null,
+  full: FullHoldingsData | null = null,
+): HoldingSet | null {
   const daily = active?.etfs[code];
   if (daily && daily.holdings.length) {
     const w = new Map<string, { name: string; pct: number; type?: string }>();
@@ -105,6 +127,36 @@ export function holdingsOf(code: string, top10: Top10Data | null, active: Active
     }
     return { code, kind: 'daily', asof: daily.asof, w, covered: sumPct(w) };
   }
+
+  const f = full ? lookupFullHoldings(full, code) : undefined;
+  if (f && f.basis !== 'quarterly1pct' && f.holdings.length) {
+    const w = new Map<string, { name: string; pct: number; type?: string }>();
+    for (const r of f.holdings) {
+      const [c, n, , pct] = r;
+      const type = r[4];
+      if (!c || !isStock(n) || !(pct > 0)) continue;
+      const prev = w.get(c);
+      w.set(c, {
+        name: prev && prev.name.length <= n.length ? prev.name : n,
+        pct: (prev?.pct ?? 0) + pct,
+        type: prev?.type || type || undefined,
+      });
+    }
+    if (w.size) {
+      return {
+        code,
+        kind: 'pcf',
+        asof: f.asof,
+        src: f.src,
+        basis: f.basis,
+        ...(f.denom ? { denom: f.denom } : {}),
+        w,
+        covered: sumPct(w),
+      };
+    }
+  }
+
+  let monthlySet: HoldingSet | null = null;
   const m = top10 ? lookupMonthly(top10, code) : undefined;
   if (m && m.rows.length) {
     const w = new Map<string, { name: string; pct: number; type?: string }>();
@@ -114,11 +166,46 @@ export function holdingsOf(code: string, top10: Top10Data | null, active: Active
         w.set(sid, { name, pct: (prev?.pct ?? 0) + pct, type: prev?.type || type || undefined });
       }
     }
-    if (!w.size) return null;
-    const ym = top10!.meta?.ym ?? '';
-    return { code, kind: 'monthly', asof: ym ? `${ym.slice(0, 4)}/${ym.slice(4)}` : '', w, covered: sumPct(w) };
+    if (w.size) {
+      const ym = top10!.meta?.ym ?? '';
+      monthlySet = {
+        code,
+        kind: 'monthly',
+        asof: ym ? `${ym.slice(0, 4)}/${ym.slice(4)}` : '',
+        w,
+        covered: sumPct(w),
+      };
+    }
   }
-  return null;
+
+  if (f && f.basis === 'quarterly1pct' && f.holdings.length) {
+    const w = new Map<string, { name: string; pct: number; type?: string }>();
+    for (const r of f.holdings) {
+      const [c, n, , pct] = r;
+      const type = r[4];
+      if (!c || !isStock(n) || !(pct > 0)) continue;
+      const prev = w.get(c);
+      w.set(c, {
+        name: prev && prev.name.length <= n.length ? prev.name : n,
+        pct: (prev?.pct ?? 0) + pct,
+        type: prev?.type || type || undefined,
+      });
+    }
+    const qCovered = sumPct(w);
+    if (w.size && (!monthlySet || qCovered > monthlySet.covered)) {
+      return {
+        code,
+        kind: 'quarterly',
+        asof: f.asof,
+        src: f.src,
+        basis: f.basis,
+        w,
+        covered: qCovered,
+      };
+    }
+  }
+
+  return monthlySet;
 }
 
 function sumPct(w: Map<string, { pct: number }>): number {

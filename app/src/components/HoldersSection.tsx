@@ -6,17 +6,20 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { fetchActive, fetchTop10 } from '../api/extras';
+import { fetchActive, fetchFullHoldings, fetchTop10 } from '../api/extras';
 import { fetchDataset } from '../api/etfs';
 import { holdersOf } from '../lib/holders';
 import type { ActiveData } from '../lib/active';
+import type { FullHoldingsData } from '../lib/fullHoldings';
 import type { Top10Data } from '../lib/top10';
 
 const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const ACT_TONE: Record<string, string> = { 新增: 'text-up', 加碼: 'text-up', 減碼: 'text-down', 剔除: 'text-down' };
 
 export function HoldersSection({ code }: { code: string }) {
-  const [src, setSrc] = useState<{ a: ActiveData | null; m: Top10Data | null; names: Record<string, string> } | null>(null);
+  const [src, setSrc] = useState<{
+    a: ActiveData | null; m: Top10Data | null; f: FullHoldingsData | null; names: Record<string, string>;
+  } | null>(null);
   const [all, setAll] = useState(false);
 
   useEffect(() => {
@@ -24,27 +27,28 @@ export function HoldersSection({ code }: { code: string }) {
     Promise.all([
       fetchActive(ac.signal).catch(() => null),
       fetchTop10(ac.signal).catch(() => null),
+      fetchFullHoldings(ac.signal).catch(() => null),
       fetchDataset(ac.signal).then(d => Object.fromEntries(d.etfs.map(e => [e.code, e.name]))).catch(() => ({})),
-    ]).then(([a, m, names]) => { if (!ac.signal.aborted) setSrc({ a, m, names }); });
+    ]).then(([a, m, f, names]) => { if (!ac.signal.aborted) setSrc({ a, m, f, names }); });
     return () => ac.abort();
   }, []);
 
-  const rows = useMemo(() => (src ? holdersOf(code, src.m, src.a, src.names) : []), [src, code]);
+  const rows = useMemo(() => (src ? holdersOf(code, src.m, src.a, src.names, src.f) : []), [src, code]);
   if (!src) return null;
   const shown = all ? rows : rows.slice(0, 12);
-  const daily = rows.filter(r => r.kind === 'daily').length;
+  const fullCnt = rows.filter(r => r.kind === 'daily' || r.kind === 'pcf').length;
 
   return (
     <section className="mt-3 flex min-w-0 flex-col rounded-xl border border-line bg-surface p-3.5 sm:p-4">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3">
         <h2 className="text-sm font-bold text-ink">持有這檔的 ETF</h2>
         <span className="text-[11.5px] text-faint">
-          {rows.length ? `${rows.length} 檔（主動式每日持股 ${daily} 檔、其他為月報前十大）` : '查無'}
+          {rows.length ? `${rows.length} 檔（每日完整持股 ${fullCnt} 檔、其餘為公會季報／月報）` : '查無'}
         </span>
       </div>
       {rows.length === 0 ? (
         <p className="mt-1.5 text-[12.5px] text-muted">
-          沒有 ETF 把它列在前十大持股，追蹤中的主動式 ETF 也沒有持有。
+          沒有 ETF 在投信每日全部持股或公會持股明細裡持有這檔股票。
         </p>
       ) : (
         <ul className="mt-1.5">
@@ -56,7 +60,13 @@ export function HoldersSection({ code }: { code: string }) {
                   <span className="font-mono text-[12px] text-accent">{r.etf}</span> {r.name}
                 </Link>
                 <span className="block text-[10.5px] text-faint">
-                  {r.kind === 'daily' ? `每日持股 · ${r.asof}` : `月報前十大 · ${r.asof}`}
+                  {r.kind === 'daily'
+                    ? `主動每日 · ${r.asof}`
+                    : r.kind === 'pcf'
+                      ? `申購買回清單 · ${r.asof}`
+                      : r.kind === 'quarterly'
+                        ? `公會季報 1%↑ · ${r.asof}`
+                        : `月報前十大 · ${r.asof}`}
                   {r.last && (
                     <> · 最近 <span className={ACT_TONE[r.last.kind] ?? ''}>{r.last.kind}</span> {r.last.d}</>
                   )}
@@ -75,8 +85,7 @@ export function HoldersSection({ code }: { code: string }) {
         </button>
       )}
       <p className="mt-auto pt-1.5 text-[10.5px] leading-relaxed text-faint">
-        權重＝佔該 ETF 淨值的比例。非主動式 ETF 的來源是投信投顧公會月報，只公布前十大，排在十名以外的持有不會出現；
-        主動式 ETF 是投信每日公告的完整持股。
+        權重＝佔該 ETF 淨值的比例。主動式 ETF 與已串接投信之被動式 ETF 為每日完整持股；未開放官網的投信改用公會月報前十大或季報（持股 1% 以上）。
       </p>
     </section>
   );

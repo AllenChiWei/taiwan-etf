@@ -1,7 +1,7 @@
-# ETF 持股（主動式換股、前十大、即將上市）
+# ETF 持股（主動式換股、被動式全部持股、前十大、即將上市）
 
 > 從專案根目錄的 CLAUDE.md 拆出來（2026-10-31）：CLAUDE.md 每次都整份載入，主題細節放這裡，改到這一塊時才讀。
-> 什麼時候讀：改主動式 ETF 換股、fetch_active_holdings.py、前十大持股、即將上市。
+> 什麼時候讀：改主動式 ETF 換股、fetch_active_holdings.py、被動式全部持股、fetch_etf_holdings.py、前十大持股、即將上市。
 
 ## 主動式 ETF 換股
 
@@ -73,6 +73,55 @@ caf5f72 改成每檔前 10 筆只擋大量流出（f ≤ −50%），流入不�
 - **經理人排行**（`lib/holders.ts` 的 `managerBoard`，主動式換股頁最上面）：選股力＝買進之後 − 賣出之後（`scorecard` 的兩個數），
   換股不到 10 筆的不排名。**股票反查 ETF**（`holdersOf`，個股頁「持有這檔的 ETF」）：主動式用每日完整持股、其他 ETF 用公會月報前十大
   （十名以外查不到，畫面有寫），同一檔以每日持股為準；近 60 次換股內剛剔除的也列出（權重 0）。
+
+## 被動式 ETF 全部持股（申購買回清單＋公會季報 1% 以上，2026-11-28）
+
+`scripts/fetch_etf_holdings.py` → `app/public/data/etf_holdings.json`（**只放最新一天、不累積、進版控**，
+刻意與 `active_holdings.json` 分檔，避免主動式換股頁混入被動式資料）。CI 驗證由
+`scripts/verify_etf_holdings.py` 與 `scripts/test_fetch_etf_holdings.py` 負責，在 `update-data.yml`
+的 `phold` 區塊緊接在 `hold`（主動式換股）後面執行。
+
+### 來源與各家欄位細節（誠實 UA）
+
+共用 `fetch_active_holdings.py` 既有 8 家投信連線與節流設定，涵蓋 `etfs.json` 的台股被動式
+（`cat-domestic`，8 家共 33 檔）及海外被動式（`cat-foreign`，依最久未更新順序用剩餘額度輪替，近 5 天內已抓過不重抓）；
+單輪請求上限預設 58 次：
+
+- **群益**（4 台股＋5 海外）：`POST /CFWeb/api/etf/items`（body `null`）查 `fundNo` → `POST /buyback {fundId, date:null}`；
+  持股在 `data.stocks`（`stocNo, stocName, share, weight`），日期在 `pcf.date2`，`basis='weight'`。
+- **復華**（2 台股＋5 海外）：`GET /api/fundList?ec001=3` 查 `fundID` → `GET /api/assets?fundID=&qDate=YYYY/MM/DD`；
+  持股在 `result[0].detail`（只收 `ftype` 含「股票」者；`stockid, stockname, qshare, prate_addaccint`），`basis='weight'`。
+- **元大**（10 台股＋12 海外）：同 `bridge?FuncId=PCF/Daily&ticker=代號&date=YYYYMMDD`，**回應頂層沒有 `Data` 包裝**
+  （直接是 `PCF, InKind, Cash, FundWeights, Memo`）。被動式的 `FundWeights.StockWeights` 為空，成分在
+  `InKind.FundComposition`（`stkcd, name, qty, cashinlieu`，只有每申購基數股數、無權重）。
+  - 權重換算：`qty × 收盤價 ÷ 分母`。收盤價直接共用 `fetch_active_holdings.day_prices()` 寫在 `.cache/day_prices/<day>.json` 的證交所 `MI_INDEX`／櫃買 `afterTrading/otc` 行情，排程緊接在 `hold` 後跑時 0 額外請求。
+  - 分母優先從 `PCF`（`(totalav / osunit) * baseunit`、`nav * baseunit`、`stock_val + Cash`、`totalav`）驗證股票佔比落在 75%～105%（`denom='nav'`）；換算不到時退回股票部位合計為 100%（`denom='stock'`），前端註明口徑。至少 85% 成分找得到台股收盤價才採信，海外元大 ETF 若僅有 `InKind` 會自動略過。
+- **統一**（1 台股＋2 海外）：`GetPCF`（`specificDate:false`），只收 `AssetCode == 'ST'`。
+- **凱基**（4 台股＋1 海外）：`RedemptionList` 下拉選單名稱與 `etfs.json` 簡稱不同（例 `00915 凱基優選高股息30` vs `凱基台灣優選高股息30 ETF基金`、`00938`、`00952`、`009816`），`match_kgi_code()` 合併 `etfs.json`＋`top10.json` 別名比對，再 `POST /Fund/RedemptionVC`。
+- **中信**（6 台股＋14 海外）：不帶 cookie、間隔拉長到 3.5 秒、每輪最多 7 檔，遇 302／403／429 或 Incapsula HTML 回應立即熔斷並保留前版。
+- **野村**（2 台股＋6 海外）：`POST Fund/GetFundAssets` 直接用證券代號，排除期貨／債券／現金表。
+- **台新**（4 台股＋6 海外）：`GET /ETF/Home/Pcf/{代號}?FundType=ALL` 直接用證券代號，台股去 ` TT`、排除期貨表。
+- **國泰、富邦（官網擋程式，不偽裝）**：改查投信投顧公會「季報持股 1% 以上」`IN2630.aspx?pid=IN22601_05`
+  （ASP.NET 先 GET 取 `__VIEWSTATE` 與動態選單再 POST，寫法同 `fetch_top10.py`）。季別沒變只發 1 個 GET；
+  輸出至同一個 `etf_holdings.json`，`basis='quarterly1pct'`、`asof='YYYYQ#'`、`src='投信投顧公會季報'`，且絕不覆蓋已有每日 PCF 的 ETF。
+
+### 前端優先順序與重跑方式
+
+`app/src/lib/overlap.ts` 的 `holdingsOf()` 採用四層優先序（持股健檢、配息試算展開明細、兩檔持股比對、收藏重疊、股票反查 ETF 共用）：
+1. 主動式每日持股（`active_holdings.json`，`kind='daily'`）
+2. 被動式每日全部持股（`etf_holdings.json` 投信 PCF，`kind='pcf'`）
+3. 公會季報持股 1% 以上（`etf_holdings.json`，`kind='quarterly'`，**只在涵蓋權重高於月報前十大時採用**）
+4. 公會月報前十大（`top10.json`，`kind='monthly'`）
+
+「前十大是已知下限」只在實際使用第 4 層月報時顯示；配息試算展開面板在非月報時標題改「持股明細」並以固定高度可捲動容器顯示全部成分股。缺檔時回 `null`、行為完全退回舊版。
+
+本機重跑與驗證：
+```bash
+python scripts/test_fetch_etf_holdings.py
+PYTHONIOENCODING=utf-8 python scripts/fetch_etf_holdings.py
+python scripts/verify_etf_holdings.py app/public/data/etf_holdings.json
+cd app && node --test tests/compare.test.ts tests/portfolioXray.test.ts
+```
 
 ## 前十大持股
 

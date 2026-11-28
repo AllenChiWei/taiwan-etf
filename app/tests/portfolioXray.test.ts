@@ -25,6 +25,7 @@ import {
 import type { Etf, EtfDataset } from '../src/types.ts';
 import type { Top10Data } from '../src/lib/top10.ts';
 import type { ActiveData } from '../src/lib/active.ts';
+import type { FullHoldingsData } from '../src/lib/fullHoldings.ts';
 import type { StockDividendData, YieldData } from '../src/lib/dividend.ts';
 import type { CbBond, CbData } from '../src/lib/cb.ts';
 import type { CalendarData } from '../src/lib/calendar.ts';
@@ -1616,4 +1617,122 @@ test('etfTopHoldings 真實資料整合：0050、00403A、00646、00679B 口徑�
     code: '00679B', sec: secOf('00679B'), holdingValue: 100_000, top10, active, stockDivs,
   });
   assert.equal(r679.status, 'empty');
+});
+
+test('buildPortfolioXray 與 etfTopHoldings：支援被動式 PCF 與公會季報 1%↑，且僅用月報時標下限', () => {
+  const full: FullHoldingsData = {
+    meta: { updated: '2026-11-28', quarterlyAsof: '2026Q3', source: 'test' },
+    etfs: {
+      '0050': {
+        name: '元大台灣50', asof: '2026-11-27', src: '元大投信', basis: 'qty', denom: 'stock',
+        holdings: Array.from({ length: 15 }, (_, i) => [
+          i === 0 ? '2330' : String(2100 + i),
+          i === 0 ? '台積電' : `成分股${i + 1}`,
+          1000,
+          i === 0 ? 58 : 3,
+        ]),
+      },
+      '00878': {
+        name: '國泰永續高股息', asof: '2026Q3', src: '投信投顧公會季報', basis: 'quarterly1pct',
+        holdings: Array.from({ length: 12 }, (_, i) => [
+          String(2800 + i),
+          `高息股${i + 1}`,
+          0,
+          7,
+          '國內上市',
+        ]),
+      },
+    },
+  };
+  const extraEtfs: Etf[] = [
+    ...ETFS,
+    mkEtf('00878', '國泰永續高股息', 'cat-domestic'),
+  ];
+  const yieldsWith878: YieldData = {
+    ...YIELDS,
+    yields: { ...YIELDS.yields, '00878': { price: 22, yield: 8 } as never },
+  };
+
+  // 只持 0050（PCF）→ hasLowerBound=false、標示 hasQtyStockOnly、展開全部 15 檔
+  const onlyPcf = buildPortfolioXray({
+    holdings: [{ code: '0050', shares: 1000 }],
+    etfs: extraEtfs,
+    top10: TOP10,
+    active: ACTIVE,
+    full,
+    yields: yieldsWith878,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(onlyPcf.hasLowerBound, false, '採用投信 PCF 時不應顯示前十大下限');
+  assert.deepEqual(onlyPcf.pcfDates, ['2026-11-27']);
+  assert.equal(onlyPcf.hasQtyStockOnly, true);
+  assert.equal(onlyPcf.breakdown[0].status, 'pcf');
+  assert.equal(onlyPcf.exposures.length, 15);
+  assert.equal(onlyPcf.exposures[0].fromMonthly, false);
+
+  // 持有 0050（PCF）＋ 00878（季報 1%↑，84% > 月報無資料）→ 仍未用到月報，hasLowerBound=false
+  const withQuarterly = buildPortfolioXray({
+    holdings: [{ code: '0050', shares: 1000 }, { code: '00878', shares: 1000 }],
+    etfs: extraEtfs,
+    top10: TOP10,
+    active: ACTIVE,
+    full,
+    yields: yieldsWith878,
+    stockDivs: STOCK_DIVS,
+  });
+  assert.equal(withQuarterly.hasLowerBound, false);
+  assert.equal(withQuarterly.quarterlyAsof, '2026Q3');
+  assert.equal(withQuarterly.hasDateMismatch, true);
+  assert.equal(withQuarterly.breakdown.find(b => b.code === '00878')?.status, 'quarterly');
+
+  // etfTopHoldings：limit='all' 列出 PCF 全部 15 檔與正確來源文字；預設 limit 維持 10 檔
+  const pcfAll = etfTopHoldings({
+    code: '0050', sec: 'cat-domestic', holdingValue: 100_000,
+    top10: TOP10, active: ACTIVE, full, stockDivs: STOCK_DIVS, limit: 'all',
+  });
+  assert.equal(pcfAll.status, 'ready');
+  assert.equal(pcfAll.view.kind, 'pcf');
+  assert.equal(pcfAll.view.rows.length, 15);
+  assert.equal(pcfAll.view.totalCount, 15);
+  assert.equal(pcfAll.view.basis, 'qty');
+  assert.equal(pcfAll.view.denom, 'stock');
+  assert.match(pcfAll.view.sourceLabel, /^投信申購買回清單 2026-11-27（全部 15 檔/);
+
+  const pcfDefault = etfTopHoldings({
+    code: '0050', sec: 'cat-domestic', holdingValue: 100_000,
+    top10: TOP10, active: ACTIVE, full, stockDivs: STOCK_DIVS,
+  });
+  assert.equal(pcfDefault.status, 'ready');
+  assert.equal(pcfDefault.view.rows.length, 10);
+
+  const qAll = etfTopHoldings({
+    code: '00878', sec: 'cat-domestic', holdingValue: 100_000,
+    top10: TOP10, active: ACTIVE, full, stockDivs: STOCK_DIVS, limit: 'all',
+  });
+  assert.equal(qAll.status, 'ready');
+  assert.equal(qAll.view.kind, 'quarterly');
+  assert.equal(qAll.view.rows.length, 12);
+  assert.equal(qAll.view.sourceLabel, '公會季報 2026Q3（持股 1% 以上，共 12 檔）');
+});
+
+const FULL_PATH = new URL('../public/data/etf_holdings.json', import.meta.url);
+test('etf_holdings.json 真實資料整合：0050 採投信 PCF、全部持股可展開且權重合理', {
+  skip: (!existsSync(ETFS_PATH) || !existsSync(FULL_PATH)) && '尚未產生 etf_holdings.json',
+}, () => {
+  const etfs = (JSON.parse(readFileSync(ETFS_PATH, 'utf8')) as EtfDataset).etfs;
+  const full = JSON.parse(readFileSync(FULL_PATH, 'utf8')) as FullHoldingsData;
+  const top10 = existsSync(TOP10_PATH) ? JSON.parse(readFileSync(TOP10_PATH, 'utf8')) as Top10Data : null;
+  const active = existsSync(ACTIVE_PATH) ? JSON.parse(readFileSync(ACTIVE_PATH, 'utf8')) as ActiveData : null;
+  const stockDivs = existsSync(SDIV_PATH) ? JSON.parse(readFileSync(SDIV_PATH, 'utf8')) as StockDividendData : null;
+  if (full.etfs['0050'] && full.etfs['0050'].basis !== 'quarterly1pct') {
+    const r0050 = etfTopHoldings({
+      code: '0050', sec: etfs.find(e => e.code === '0050')?.sec,
+      holdingValue: 200_000, top10, active, full, stockDivs, limit: 'all',
+    });
+    assert.equal(r0050.status, 'ready');
+    assert.equal(r0050.view.kind, 'pcf');
+    assert.ok(r0050.view.rows.length >= 45, `0050 應展開全部成分股，實際 ${r0050.view.rows.length} 檔`);
+    assert.equal(r0050.view.rows[0].code, '2330');
+    assert.ok(r0050.view.shownPct >= 80 && r0050.view.shownPct <= 105);
+  }
 });

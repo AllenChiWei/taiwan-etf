@@ -9,8 +9,9 @@
 import type { Etf } from '../types.ts';
 import { mergeByCode, type AcctEntry } from './accounts.ts';
 import { holdingLinkKind, type ActiveData } from './active.ts';
+import type { FullHoldingBasis, FullHoldingsData, QtyDenom } from './fullHoldings.ts';
 import type { Top10Data } from './top10.ts';
-import { holdingsOf, type HoldingSet } from './overlap.ts';
+import { holdingsOf, type HoldingSet, type HoldingSourceKind } from './overlap.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
 import {
   resolveShareClass,
@@ -75,6 +76,8 @@ export interface PortfolioXrayInput {
   etfs: readonly Etf[];
   top10: Top10Data | null;
   active: ActiveData | null;
+  /** 選填：被動式 ETF 全部持股（投信每日申購買回清單＋公會季報 1% 以上） */
+  full?: FullHoldingsData | null;
   yields: YieldData | null;
   stockDivs: StockDividendData | null;
   /** 美股最新收盤價（已換算為台幣，代號 → 台幣股價，涵蓋美股 ETF 與美股個股） */
@@ -87,7 +90,7 @@ export interface PortfolioXrayInput {
 
 export type HoldingKind = 'stock' | 'etf' | 'us' | 'us-stock';
 export type StockMarket = 'tw' | 'foreign';
-export type PenetrationStatus = 'direct' | 'daily' | 'monthly' | 'unpenetrable';
+export type PenetrationStatus = 'direct' | HoldingSourceKind | 'unpenetrable';
 export type UnpenetrableReasonKind = 'bond' | 'us' | 'foreign' | 'derivative' | 'missing';
 
 export interface HoldingBreakdownRow {
@@ -101,8 +104,12 @@ export interface HoldingBreakdownRow {
   /** 佔投組總市值（%）；缺報價時為 0 */
   pctOfPortfolio: number;
   status: PenetrationStatus;
-  /** 每日持股 YYYY-MM-DD 或月報 YYYY/MM；直接持股與無法穿透時為 null */
+  /** 每日／清單 YYYY-MM-DD、季報 YYYYQ# 或月報 YYYY/MM；直接持股與無法穿透時為 null */
   asof: string | null;
+  /** 來源投信（pcf）或公會季報 */
+  src?: string;
+  basis?: FullHoldingBasis;
+  denom?: QtyDenom;
   /** 可穿透至個股（台股＋海外）的權重合計（佔該 ETF 淨值 %）；直接個股為 100，無法穿透為 0 */
   coveredPct: number;
   /** 實際展開出的個股總檔數（台股＋海外） */
@@ -129,7 +136,7 @@ export interface ExposureSource {
   /** 來源代號（直接持股即為該股本身，ETF 為 ETF 代號） */
   code: string;
   name: string;
-  kind: 'direct' | 'daily' | 'monthly';
+  kind: 'direct' | HoldingSourceKind;
   /** 該股在此來源中的權重（%）；直接持股為 100 */
   weightInSource: number;
   /** 此來源貢獻的曝險金額（台幣） */
@@ -137,6 +144,8 @@ export interface ExposureSource {
   /** 此來源貢獻的投組權重（%） */
   pctOfPortfolio: number;
   asof: string | null;
+  basis?: FullHoldingBasis;
+  denom?: QtyDenom;
   /** 屬多股別合併標的或含台灣 ADR 時，記錄此來源包含的各股別／ADR 與權重（依順序排列） */
   shareClasses?: ShareClassPart[];
   /** 若此來源含台灣公司的美國 ADR（如 TSM→2330），記錄該 ADR 簡短代號（例如 TSM） */
@@ -230,9 +239,15 @@ export interface PortfolioXrayResult {
   hasLowerBound: boolean;
   /** 投組中主動式每日持股使用到的日期（由舊到新去重） */
   dailyDates: string[];
+  /** 投組中被動式投信申購買回清單使用到的日期（由舊到新去重） */
+  pcfDates: string[];
+  /** 投組中公會季報持股 1% 以上使用到的季別（YYYYQ#），未使用則 null */
+  quarterlyAsof: string | null;
   /** 投組中公會月報前十大使用到的月份（YYYY/MM），未使用則 null */
   monthlyAsof: string | null;
-  /** 投組內各持股權重資料日期是否不一致（例如每日持股與月報並存，或直接持股與月報並存） */
+  /** 是否有投信僅給股數、權重以股票部位合計 100% 換算的 ETF */
+  hasQtyStockOnly: boolean;
+  /** 投組內各持股權重資料日期是否不一致（例如每日持股與月報／季報並存） */
   hasDateMismatch: boolean;
   /** 單一個股真實曝險排行（金額由大到小，含台股與海外） */
   exposures: ExposureRow[];
@@ -595,14 +610,18 @@ export interface EtfHoldingRow {
 }
 
 export interface EtfHoldingsView {
-  kind: 'daily' | 'monthly';
-  /** 每日為 YYYY-MM-DD；月報為 YYYY/MM */
+  kind: HoldingSourceKind;
+  /** 每日／申購清單為 YYYY-MM-DD；季報為 YYYYQ#；月報為 YYYY/MM */
   asof: string;
-  /** 標示資料來源與日期，例如「公會月報 2026/10，第 11 名以後未揭露」或「主動式每日持股 2026-11-26」 */
+  /** 來源投信（pcf）或公會季報 */
+  src?: string;
+  basis?: FullHoldingBasis;
+  denom?: QtyDenom;
+  /** 標示資料來源與日期，例如「投信申購買回清單 2026-11-27（全部 50 檔）」或「公會月報 2026/10，第 11 名以後未揭露」 */
   sourceLabel: string;
-  /** 依合併後佔淨值由大到小取前 limit 檔（預設 10） */
+  /** 依合併後佔淨值由大到小取前 limit 檔（預設 10；傳 'all' 則列出全部） */
   rows: EtfHoldingRow[];
-  /** 此 ETF 可展開的股票成分總檔數（主動式每日持股可能超過 10 檔） */
+  /** 此 ETF 可展開的股票成分總檔數 */
   totalCount: number;
   /** 上列顯示持股的佔淨值合計（%） */
   shownPct: number;
@@ -622,36 +641,38 @@ export interface EtfTopHoldingsInput {
   holdingValue: number | null;
   top10: Top10Data | null;
   active: ActiveData | null;
+  /** 選填：被動式 ETF 全部持股（投信每日申購買回清單＋公會季報 1% 以上） */
+  full?: FullHoldingsData | null;
   /** 選填：提供時台股成分優先採用官方簡稱（同持股健檢） */
   stockDivs?: StockDividendData | null;
-  /** 最多列出前幾名，預設 10 */
-  limit?: number;
+  /** 最多列出前幾名，預設 10；傳 'all' 列出全部成分股 */
+  limit?: number | 'all';
 }
 
 /**
- * 整理單一台灣掛牌 ETF 的前十大持股與約略曝險金額（配息試算「各檔明細」展開用）。
+ * 整理單一台灣掛牌 ETF 的持股明細與約略曝險金額（配息試算「各檔明細」展開用）。
  *
  * 共用 holdingsOf() 與持股健檢的成分解析（市場小標籤、台灣 ADR 併回台股、
  * 同公司多股別合併、排除期貨與債券／連結型 ETF），曝險金額＝這筆 ETF 持有市值 × 佔淨值%。
  */
 export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
   if (input.sec === 'cat-bond') {
-    return { status: 'empty', reason: '債券 ETF 主要持有公債或公司債，無股票前十大持股明細。' };
+    return { status: 'empty', reason: '債券 ETF 主要持有公債或公司債，無股票持股明細。' };
   }
   if (isDerivativeSec(input.sec)) {
-    return { status: 'empty', reason: '槓桿／反向與期貨 ETF 主要持有期貨與現金，無股票前十大持股明細。' };
+    return { status: 'empty', reason: '槓桿／反向與期貨 ETF 主要持有期貨與現金，無股票持股明細。' };
   }
-  if (!input.top10 && !input.active) {
+  if (!input.top10 && !input.active && !input.full) {
     return { status: 'empty', reason: '持股明細資料暫時讀不到。' };
   }
-  const hs = holdingsOf(input.code, input.top10, input.active);
+  const hs = holdingsOf(input.code, input.top10, input.active, input.full ?? null);
   if (!hs) {
     return { status: 'empty', reason: '查無這檔 ETF 的持股明細（可能為新上市、不動產或平衡型 ETF）。' };
   }
 
   const { twComponents, foreignComponents } = splitEtfComponents(hs);
   if (twComponents.length === 0 && foreignComponents.length === 0) {
-    return { status: 'empty', reason: '這檔 ETF 的明細不含股票成分（可能為債券、期貨或連結型 ETF），無前十大持股明細。' };
+    return { status: 'empty', reason: '這檔 ETF 的明細不含股票成分（可能為債券、期貨或連結型 ETF），無股票持股明細。' };
   }
 
   const validValue = input.holdingValue !== null && Number.isFinite(input.holdingValue) && input.holdingValue > 0
@@ -691,23 +712,40 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
   }
 
   all.sort((a, b) => b.pct - a.pct || a.code.localeCompare(b.code));
-  const cap = input.limit !== undefined && Number.isFinite(input.limit)
-    ? Math.max(1, Math.floor(input.limit))
-    : 10;
-  const rows: EtfHoldingRow[] = all.slice(0, cap).map((r, i) => ({ rank: i + 1, ...r }));
+  const slice = input.limit === 'all'
+    ? all
+    : all.slice(
+      0,
+      input.limit !== undefined && Number.isFinite(input.limit) ? Math.max(1, Math.floor(input.limit)) : 10,
+    );
+  const rows: EtfHoldingRow[] = slice.map((r, i) => ({ rank: i + 1, ...r }));
   const shownPct = rows.reduce((s, r) => s + r.pct, 0);
   const shownAmount = validValue !== null
     ? rows.reduce((s, r) => s + (r.exposureAmount ?? 0), 0)
     : null;
-  const sourceLabel = hs.kind === 'daily'
-    ? (hs.asof ? `主動式每日持股 ${hs.asof}` : '主動式每日持股')
-    : (hs.asof ? `公會月報 ${hs.asof}，第 11 名以後未揭露` : '公會月報，第 11 名以後未揭露');
+
+  let sourceLabel: string;
+  if (hs.kind === 'daily') {
+    sourceLabel = hs.asof ? `主動式每日持股 ${hs.asof}` : '主動式每日持股';
+  } else if (hs.kind === 'pcf') {
+    const qtyNote = hs.basis === 'qty'
+      ? (hs.denom === 'stock' ? '，股數換算、股票部位合計 100%' : '，股數×收盤價換算')
+      : '';
+    sourceLabel = `投信申購買回清單${hs.asof ? ` ${hs.asof}` : ''}（全部 ${all.length} 檔${qtyNote}）`;
+  } else if (hs.kind === 'quarterly') {
+    sourceLabel = `公會季報${hs.asof ? ` ${hs.asof}` : ''}（持股 1% 以上，共 ${all.length} 檔）`;
+  } else {
+    sourceLabel = hs.asof ? `公會月報 ${hs.asof}，第 11 名以後未揭露` : '公會月報，第 11 名以後未揭露';
+  }
 
   return {
     status: 'ready',
     view: {
       kind: hs.kind,
       asof: hs.asof,
+      ...(hs.src ? { src: hs.src } : {}),
+      ...(hs.basis ? { basis: hs.basis } : {}),
+      ...(hs.denom ? { denom: hs.denom } : {}),
       sourceLabel,
       rows,
       totalCount: all.length,
@@ -805,7 +843,10 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   let unpenetrableValue = 0;
 
   const dailyDateSet = new Set<string>();
+  const pcfDateSet = new Set<string>();
+  let quarterlyAsof: string | null = null;
   let monthlyAsof: string | null = null;
+  let hasQtyStockOnly = false;
   let directStockCount = 0;
 
   interface AccExposure {
@@ -1032,7 +1073,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       continue;
     }
 
-    const hs = holdingsOf(r.code, input.top10, input.active);
+    const hs = holdingsOf(r.code, input.top10, input.active, input.full ?? null);
     if (!hs) {
       if (r.value !== null) unpenetrableValue += r.value;
       const isForeign = sec === 'cat-foreign';
@@ -1066,8 +1107,16 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     const coveredPct =
       twComponents.reduce((s, c) => s + c.pct, 0)
       + foreignComponents.reduce((s, c) => s + c.pct, 0);
-    if (hs.kind === 'daily') dailyDateSet.add(hs.asof);
-    else monthlyAsof = hs.asof;
+    if (hs.kind === 'daily') {
+      dailyDateSet.add(hs.asof);
+    } else if (hs.kind === 'pcf') {
+      if (hs.asof) pcfDateSet.add(hs.asof);
+      if (hs.basis === 'qty' && hs.denom === 'stock') hasQtyStockOnly = true;
+    } else if (hs.kind === 'quarterly') {
+      quarterlyAsof = hs.asof;
+    } else {
+      monthlyAsof = hs.asof;
+    }
 
     if (r.value !== null) {
       let etfTwPenetrated = 0;
@@ -1086,6 +1135,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
             amount: amt,
             pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
             asof: hs.asof,
+            ...(hs.basis ? { basis: hs.basis } : {}),
+            ...(hs.denom ? { denom: hs.denom } : {}),
             ...(comp.adrCode ? { adrCode: comp.adrCode } : {}),
             ...(shareClasses ? { shareClasses } : {}),
           },
@@ -1109,6 +1160,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
             amount: amt,
             pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
             asof: hs.asof,
+            ...(hs.basis ? { basis: hs.basis } : {}),
+            ...(hs.denom ? { denom: hs.denom } : {}),
             ...(shareClasses ? { shareClasses } : {}),
           },
           {
@@ -1128,23 +1181,54 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     const hasTwDirect = twComponents.some(c => c.twPct > 0);
     const hasTwAdr = twComponents.some(c => c.adrPct > 0);
     const hasForeign = foreignComponents.length > 0;
-    const note = hasTwDirect && hasForeign
-      ? hs.kind === 'daily'
+    const qtyNote = hs.kind === 'pcf' && hs.basis === 'qty'
+      ? (hs.denom === 'stock' ? '・股數換算，以股票部位合計為 100%' : '・股數×收盤價換算')
+      : '';
+    let note: string | null = null;
+    if (hasTwDirect && hasForeign) {
+      note = hs.kind === 'daily'
         ? '跨市場 ETF，台股與海外成分皆已展開（每日持股）'
-        : '跨市場 ETF，台股與海外成分皆已展開（月報前十大，第 11 名以後未揭露）'
-      : hasForeign || (!hasTwDirect && hasTwAdr)
-        ? hs.kind === 'monthly'
-          ? hasTwAdr
-            ? '海外 ETF，已展開月報前十大（含台灣 ADR 併入台股，第 11 名以後未揭露）'
-            : '海外 ETF，已展開月報前十大（第 11 名以後未揭露）'
-          : hasTwAdr
-            ? '海外 ETF，已展開每日完整持股（含台灣 ADR 併入台股）'
-            : '海外 ETF，已展開每日完整持股'
-        : sec === 'cat-foreign'
-          ? `跨市場 ETF，已展開台股成分（${hs.kind === 'daily' ? '每日持股' : '月報前十大'}）`
-          : hs.kind === 'monthly'
-            ? '公會月報前十大（已知下限，第 11 名以後未揭露）'
-            : null;
+        : hs.kind === 'pcf'
+          ? `跨市場 ETF，台股與海外成分皆已展開（投信申購買回清單${qtyNote}）`
+          : hs.kind === 'quarterly'
+            ? '跨市場 ETF，台股與海外成分皆已展開（公會季報持股 1% 以上）'
+            : '跨市場 ETF，台股與海外成分皆已展開（月報前十大，第 11 名以後未揭露）';
+    } else if (hasForeign || (!hasTwDirect && hasTwAdr)) {
+      if (hs.kind === 'monthly') {
+        note = hasTwAdr
+          ? '海外 ETF，已展開月報前十大（含台灣 ADR 併入台股，第 11 名以後未揭露）'
+          : '海外 ETF，已展開月報前十大（第 11 名以後未揭露）';
+      } else if (hs.kind === 'quarterly') {
+        note = hasTwAdr
+          ? '海外 ETF，已展開公會季報持股 1% 以上（含台灣 ADR 併入台股）'
+          : '海外 ETF，已展開公會季報持股 1% 以上';
+      } else if (hs.kind === 'pcf') {
+        note = hasTwAdr
+          ? `海外 ETF，已展開投信申購買回清單（含台灣 ADR 併入台股${qtyNote}）`
+          : `海外 ETF，已展開投信申購買回清單${qtyNote ? `（${qtyNote.slice(1)}）` : ''}`;
+      } else {
+        note = hasTwAdr
+          ? '海外 ETF，已展開每日完整持股（含台灣 ADR 併入台股）'
+          : '海外 ETF，已展開每日完整持股';
+      }
+    } else if (sec === 'cat-foreign') {
+      const kindTag = hs.kind === 'daily'
+        ? '每日持股'
+        : hs.kind === 'pcf'
+          ? `投信申購買回清單${qtyNote}`
+          : hs.kind === 'quarterly'
+            ? '公會季報持股 1% 以上'
+            : '月報前十大';
+      note = `跨市場 ETF，已展開台股成分（${kindTag}）`;
+    } else if (hs.kind === 'monthly') {
+      note = '公會月報前十大（已知下限，第 11 名以後未揭露）';
+    } else if (hs.kind === 'quarterly') {
+      note = '公會季報持股 1% 以上（未滿 1% 未揭露）';
+    } else if (hs.kind === 'pcf' && hs.basis === 'qty') {
+      note = hs.denom === 'stock'
+        ? '投信申購買回清單（股數換算，以股票部位合計為 100%）'
+        : '投信申購買回清單（股數×收盤價換算）';
+    }
 
     breakdown.push({
       code: r.code,
@@ -1156,6 +1240,9 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
       pctOfPortfolio,
       status: hs.kind,
       asof: hs.asof,
+      ...(hs.src ? { src: hs.src } : {}),
+      ...(hs.basis ? { basis: hs.basis } : {}),
+      ...(hs.denom ? { denom: hs.denom } : {}),
       coveredPct,
       stockCount: twComponents.length + foreignComponents.length,
       twStockCount: twComponents.length,
@@ -1198,10 +1285,14 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   const unpenetrablePct = pctOf(unpenetrableValue);
   const top5Pct = exposures.slice(0, 5).reduce((s, e) => s + e.pct, 0);
   const dailyDates = [...dailyDateSet].sort();
+  const pcfDates = [...pcfDateSet].sort();
+  const allDailyDates = new Set([...dailyDates, ...pcfDates]);
   const hasLowerBound = monthlyAsof !== null;
-  const hasDateMismatch = (dailyDates.length > 0 && monthlyAsof !== null)
-    || dailyDates.length > 1
-    || (monthlyAsof !== null && directStockCount > 0);
+  const hasOlderPeriod = monthlyAsof !== null || quarterlyAsof !== null;
+  const hasDateMismatch = (allDailyDates.size > 0 && hasOlderPeriod)
+    || allDailyDates.size > 1
+    || (monthlyAsof !== null && quarterlyAsof !== null)
+    || (hasOlderPeriod && directStockCount > 0);
 
   return {
     holdingCount: resolved.length,
@@ -1221,7 +1312,10 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     top5Pct,
     hasLowerBound,
     dailyDates,
+    pcfDates,
+    quarterlyAsof,
     monthlyAsof,
+    hasQtyStockOnly,
     hasDateMismatch,
     exposures,
     breakdown,

@@ -8,6 +8,7 @@
 import { CYCLICAL } from './valuation.ts';
 import { holdersOf, type Holder } from './holders.ts';
 import type { ActiveData } from './active.ts';
+import type { FullHoldingsData } from './fullHoldings.ts';
 import type { Top10Data } from './top10.ts';
 
 export const DEFENSIVE_YEARS = 10;
@@ -331,9 +332,10 @@ export function currentEtfHolders(
   monthly: Top10Data | null,
   active: ActiveData | null,
   names: Record<string, string> = {},
+  full: FullHoldingsData | null = null,
 ): Holder[] {
-  return holdersOf(stock, monthly, active, names).filter(
-    h => h.kind === 'monthly' || (h.shares ?? 0) > 0 || (h.weight ?? 0) > 0,
+  return holdersOf(stock, monthly, active, names, full).filter(
+    h => h.kind !== 'daily' || (h.shares ?? 0) > 0 || (h.weight ?? 0) > 0,
   );
 }
 

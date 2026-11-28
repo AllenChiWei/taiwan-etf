@@ -330,7 +330,7 @@ class Yuanta(object):
             'DeviceId': 'null', 'FuncId': 'PCF/Daily', 'AppName': 'ETF', 'Device': '3',
             'Platform': 'ETF', 'ticker': code, 'date': day.strftime('%Y%m%d')})
         d = json.loads(self.http.get(self.URL + q).decode('utf-8'))
-        d = d.get('Data', d) if isinstance(d, dict) else {}
+        d = (d.get('Data') or d) if isinstance(d, dict) else {}
         pcf = (d or {}).get('PCF') or {}
         stocks = ((d or {}).get('FundWeights') or {}).get('StockWeights') or []
         if not pcf or not stocks:
@@ -568,9 +568,25 @@ def _px_get(url):
     return json.loads(raw.decode('utf-8'))
 
 
+PX_CACHE_DIR = os.path.join(ROOT, '.cache', 'day_prices')
+
+
 def day_prices(day):
-    u"""某個交易日上市＋上櫃個股 {代號: [均價, 收盤]}；兩邊都拿不到回 None（下次再補，不存空的）。"""
+    u"""某個交易日上市＋上櫃個股 {代號: [均價, 收盤]}；兩邊都拿不到回 None（下次再補，不存空的）。
+
+    同日結果快取到 .cache/day_prices/<day>.json（.gitignore），讓 fetch_etf_holdings.py
+    接在後面跑元大股數換算時直接共用收盤價，不對證交所／櫃買多打一次請求。
+    """
+    cache_path = os.path.join(PX_CACHE_DIR, '%s.json' % day) if re.match(r'^\d{4}-\d{2}-\d{2}$', day or '') else None
+    if cache_path and os.path.exists(cache_path):
+        try:
+            cached = json.load(io.open(cache_path, encoding='utf-8'))
+            if isinstance(cached, dict) and cached:
+                return cached
+        except Exception:                                     # noqa: BLE001
+            pass
     out = {}
+    twse_ok = tpex_ok = False
     ymd = day.replace('-', '')
     try:
         doc = _px_get(TWSE_PX % ymd)
@@ -583,11 +599,13 @@ def day_prices(day):
                 sh, val, cl = num(r[vi]), num(r[ai]), num(r[ci])
                 if sh and cl:
                     out[r[0].strip()] = [round(val / float(sh), 2), cl]
+        twse_ok = bool(out)
     except Exception as e:                                    # noqa: BLE001
         note(u'證交所行情 %s：%s' % (day, str(e)[:60]))
     roc = '%d/%s' % (int(day[:4]) - 1911, day[5:].replace('-', '/'))
     try:
         doc = _px_get(TPEX_PX % roc)
+        before = len(out)
         for t in doc.get('tables') or []:
             f = [x.strip() for x in (t.get('fields') or [])]
             if u'收盤' not in f or u'成交金額(元)' not in f or u'代號' not in f:
@@ -597,8 +615,16 @@ def day_prices(day):
                 sh, val, cl = num(r[vi]), num(r[ai]), num(r[ci])
                 if sh and cl:
                     out[r[ki].strip()] = [round(val / float(sh), 2), cl]
+        tpex_ok = len(out) > before
     except Exception as e:                                    # noqa: BLE001
         note(u'櫃買行情 %s：%s' % (day, str(e)[:60]))
+    if cache_path and out and ((twse_ok and tpex_ok) or len(out) >= 1000):
+        try:
+            os.makedirs(PX_CACHE_DIR, exist_ok=True)
+            with io.open(cache_path, 'w', encoding='utf-8') as fh:
+                fh.write(json.dumps(out, ensure_ascii=False, separators=(',', ':')))
+        except Exception:                                     # noqa: BLE001
+            pass
     return out or None
 
 

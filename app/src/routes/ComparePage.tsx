@@ -20,7 +20,13 @@ const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFr
 const QUICK: [string, string][] = [['0050', '006208'], ['0056', '00878'], ['00878', '00919'], ['0050', '00981A'], ['00981A', '00980A']];
 
 function sourceLabel(s: HoldingSet): string {
-  return s.kind === 'daily' ? `每日持股 ${s.asof}（投信公告，${s.w.size} 檔）` : `前十大 ${s.asof} 月底（投信投顧公會月報）`;
+  if (s.kind === 'daily') return `主動式每日持股 ${s.asof}（投信公告，${s.w.size} 檔）`;
+  if (s.kind === 'pcf') {
+    const qtyNote = s.basis === 'qty' && s.denom === 'stock' ? '，股數換算' : '';
+    return `投信申購買回清單 ${s.asof}（全部 ${s.w.size} 檔${qtyNote}）`;
+  }
+  if (s.kind === 'quarterly') return `公會季報 ${s.asof}（持股 1% 以上，${s.w.size} 檔）`;
+  return `前十大 ${s.asof} 月底（投信投顧公會月報）`;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -50,7 +56,9 @@ function OnlyList({ code, other, rows }: { code: string; other: HoldingSet; rows
       <div className="mb-1 text-[12.5px] font-semibold text-ink">
         {other.kind === 'monthly'
           ? <><span className="font-mono text-accent">{code}</span> 有、不在 <span className="font-mono">{other.code}</span> 前十大（{rows.length} 檔）</>
-          : <><span className="font-mono text-accent">{code}</span> 有、<span className="font-mono">{other.code}</span> 公告持股沒有（{rows.length} 檔）</>}
+          : other.kind === 'quarterly'
+            ? <><span className="font-mono text-accent">{code}</span> 有、不在 <span className="font-mono">{other.code}</span> 季報 1% 以上（{rows.length} 檔）</>
+            : <><span className="font-mono text-accent">{code}</span> 有、<span className="font-mono">{other.code}</span> 公告持股沒有（{rows.length} 檔）</>}
       </div>
       {rows.length === 0 ? <p className="text-[12px] text-muted">沒有。</p> : (
         <ul className="text-[12px]">
@@ -79,13 +87,14 @@ export function ComparePage() {
   const extras = useEtfExtras();
   const top10 = extras?.[0] ?? null;
   const active = extras?.[1] ?? null;
+  const full = extras?.[3] ?? null;
 
   const has = useMemo(() => {
     const s = new Set<string>();
     if (!extras) return s;
-    for (const e of data.etfs) if (holdingsOf(e.code, top10, active)) s.add(e.code);
+    for (const e of data.etfs) if (holdingsOf(e.code, top10, active, full)) s.add(e.code);
     return s;
-  }, [data.etfs, extras, top10, active]);
+  }, [data.etfs, extras, top10, active, full]);
 
   // 有持股資料的放前面；載入前先全部列出
   const options = useMemo<SelectOption[]>(() => {
@@ -98,8 +107,8 @@ export function ComparePage() {
 
   const etfA = data.etfs.find(e => e.code === a) ?? null;
   const etfB = data.etfs.find(e => e.code === b) ?? null;
-  const sa = a && extras ? holdingsOf(a, top10, active) : null;
-  const sb = b && extras ? holdingsOf(b, top10, active) : null;
+  const sa = a && extras ? holdingsOf(a, top10, active, full) : null;
+  const sb = b && extras ? holdingsOf(b, top10, active, full) : null;
   const cmp = useMemo(() => (sa && sb ? compareHoldings(sa, sb) : null), [sa, sb]);
   const max = cmp ? Math.max(1, ...cmp.common.flatMap(c => [c.a, c.b])) : 1;
   const quick = QUICK.filter(([x, y]) => !extras || (has.has(x) && has.has(y)));
@@ -109,7 +118,7 @@ export function ComparePage() {
     <>
       <h1 className="mt-4 text-lg font-bold text-ink">ETF 持股比對</h1>
       <p className="mt-1 max-w-[75ch] text-[12.5px] text-muted">
-        選兩檔 ETF，看它們有哪些共同持股、各佔多少比例。主動式 ETF 用投信每日公告的持股，其他用投信投顧公會的月報前十大。
+        選兩檔 ETF，看它們有哪些共同持股、各佔多少比例。優先採用投信每日全部持股（主動式與被動式申購買回清單），其餘用公會季報 1% 以上或月報前十大。
       </p>
 
       <div className="mt-3 grid grid-cols-1 items-center gap-2 sm:grid-cols-[1fr_auto_1fr]">
@@ -208,9 +217,13 @@ export function ComparePage() {
           </section>
 
           <p className="mt-3 max-w-[75ch] text-[11.5px] leading-relaxed text-faint">
-            重疊度只算看得到的持股：月報只有前十大，前十大以外的共同持股算不到，所以實際重疊只會更多。
-            {sa.kind !== sb.kind && ' 兩檔資料來源不同（每日 vs 月報），日期也不同，比例僅供參考。'}
-            期貨部位不算持股。
+            {(sa.kind === 'monthly' || sb.kind === 'monthly')
+              ? '重疊度只算看得到的持股：月報只有前十大，前十大以外的共同持股算不到，所以實際重疊只會更多。'
+              : (sa.kind === 'quarterly' || sb.kind === 'quarterly')
+                ? '重疊度只算看得到的持股：公會季報僅列持股 1% 以上成分股，未滿 1% 的共同持股算不到。'
+                : '兩檔皆採用投信每日全部持股計算重疊度。'}
+            {(sa.kind !== sb.kind || sa.asof !== sb.asof) && ' 兩檔資料來源或日期不同，比例僅供參考。'}
+            {' '}期貨部位不算持股。
           </p>
         </>
       )}

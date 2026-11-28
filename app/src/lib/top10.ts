@@ -9,6 +9,12 @@
  */
 
 import type { ActiveData } from './active.ts';
+import {
+  lookupFullHoldings,
+  type FullHoldingBasis,
+  type FullHoldingsData,
+  type QtyDenom,
+} from './fullHoldings.ts';
 
 /** [名次, 標的種類, 代號（債券是 ISIN）, 名稱, 佔淨值%] */
 export type Top10Row = [number, string, string, string, number | null];
@@ -19,10 +25,15 @@ export interface Top10Data {
 }
 
 export interface Top10View {
-  /** 'daily' = 投信每日公告；'monthly' = 公會月報 */
-  kind: 'daily' | 'monthly';
-  /** 資料日期：每日是交易日，月報是「2026/08」 */
+  /** 'daily' = 主動式每日公告；'pcf' = 被動式投信申購買回清單；'quarterly' = 公會季報；'monthly' = 公會月報 */
+  kind: 'daily' | 'pcf' | 'quarterly' | 'monthly';
+  /** 資料日期：每日／清單為交易日 YYYY-MM-DD，季報為 YYYYQ#，月報為 YYYY/MM */
   asof: string;
+  /** 全部成分股檔數（每日／申購清單／季報才有） */
+  totalCount?: number;
+  src?: string;
+  basis?: FullHoldingBasis;
+  denom?: QtyDenom;
   rows: { rank: number; code: string; name: string; pct: number | null; type: string }[];
   /** 前十大佔淨值合計 */
   total: number | null;
@@ -36,19 +47,51 @@ export function lookupMonthly(data: Top10Data, code: string) {
   return data.etfs[code] ?? (/[A-Z]$/.test(code) ? data.etfs[code.slice(0, -1)] : undefined);
 }
 
-export function top10For(code: string, monthly: Top10Data | null,
-                         active: ActiveData | null): Top10View | null {
+export function top10For(
+  code: string,
+  monthly: Top10Data | null,
+  active: ActiveData | null,
+  full: FullHoldingsData | null = null,
+): Top10View | null {
   const daily = active?.etfs[code];
   if (daily && daily.holdings.length) {
     const rows = [...daily.holdings].sort((a, b) => b[3] - a[3]).slice(0, 10)
       .map(([c, n, , w], i) => ({ rank: i + 1, code: c, name: n, pct: w, type: '' }));
-    return { kind: 'daily', asof: daily.asof, rows, total: sum(rows.map(r => r.pct)) };
+    return { kind: 'daily', asof: daily.asof, totalCount: daily.holdings.length, rows, total: sum(rows.map(r => r.pct)) };
+  }
+  const f = full ? lookupFullHoldings(full, code) : undefined;
+  if (f && f.basis !== 'quarterly1pct' && f.holdings.length) {
+    const rows = [...f.holdings].sort((a, b) => b[3] - a[3]).slice(0, 10)
+      .map((r, i) => ({ rank: i + 1, code: r[0], name: r[1], pct: r[3], type: r[4] ?? '' }));
+    return {
+      kind: 'pcf',
+      asof: f.asof,
+      totalCount: f.holdings.length,
+      src: f.src,
+      basis: f.basis,
+      ...(f.denom ? { denom: f.denom } : {}),
+      rows,
+      total: sum(rows.map(r => r.pct)),
+    };
   }
   const m = monthly ? lookupMonthly(monthly, code) : undefined;
   if (m && m.rows.length) {
     const rows = m.rows.map(([rank, type, c, n, pct]) => ({ rank, code: c, name: n, pct, type }));
     const ym = monthly!.meta.ym;
     return { kind: 'monthly', asof: `${ym.slice(0, 4)}/${ym.slice(4)}`, rows, total: sum(rows.map(r => r.pct)) };
+  }
+  if (f && f.basis === 'quarterly1pct' && f.holdings.length) {
+    const rows = [...f.holdings].sort((a, b) => b[3] - a[3]).slice(0, 10)
+      .map((r, i) => ({ rank: i + 1, code: r[0], name: r[1], pct: r[3], type: r[4] ?? '' }));
+    return {
+      kind: 'quarterly',
+      asof: f.asof,
+      totalCount: f.holdings.length,
+      src: f.src,
+      basis: f.basis,
+      rows,
+      total: sum(rows.map(r => r.pct)),
+    };
   }
   return null;
 }

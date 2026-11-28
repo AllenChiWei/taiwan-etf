@@ -39,7 +39,8 @@ Where each field comes from, because it is not one source:
 | 站上 20／60 日均線比例 | FinLab `etl:adj_close`（`fetch_highs.py` 同一次下載）→ `calc/ma_breadth.json` → chips.json |
 | 不限用途款項借貸（餘額、擔保維持率、追繳） | TWSE `BFIJ4U_TREND`（臺股儀表板，2026-08-03 起；種子＋每天累積，見 docs/claude/chips.md） |
 | VIX、恐懼貪婪（自算七項） | FinMind `USStockPrice`（`^VIX` `^GSPC` SPY TLT HYG LQD RSP）＋ CBOE 每日 Put/Call（種子 `scripts/seed/cboe_putcall.json`＋Actions 快取累積）——**不是 CNN 的數字** |
-| 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback`）——**累積式、進版控** |
+| 主動式 ETF 持股與換股 | 各投信官網（統一 `GetPCF`、復華 `/api/assets`、中信 `etf/Buyback` 等 8 家）——**累積式、進版控** |
+| 被動式 ETF 全部持股（`etf_holdings.json`） | 上述 8 家投信每日申購買回清單（元大 `InKind` 股數×收盤價換算）＋投信投顧公會季報持股 1% 以上（`IN2630.aspx`，補國泰／富邦）——**只留最新一天、進版控** |
 | 個股配息（配息試算） | 上市：TWSE `TWT49U`；上櫃：櫃買當日除息＋FinMind `TaiwanStockDividend` 分批回補（累積式、進版控） |
 | ETF 前十大持股 | 投信投顧公會「基金投資明細－月前十大」IN2629.aspx（月報，進版控） |
 | 還沒上市的 ETF | 鉅亨網新聞推代號與日期 ＋ 證交所 e添富新上市簡介（部署時產生） |
@@ -75,6 +76,8 @@ scripts/                   the Python data pipeline (scrape → JSON + legacy HT
   fetch_defensive.py         民生必需股建議持有價 → defensive.json（FinMind 殖利率／本益比／淨值比 10 年分位；個股財報那一步順便跑）
   fetch_retail.py            小台／微台散戶多空比歷史 → retail.json（累積式）
   fetch_active_holdings.py   主動式 ETF 每日持股與換股 → active_holdings.json（累積式）
+  fetch_etf_holdings.py      被動式 ETF 每日全部持股（8 家投信 PCF＋公會季報 1%↑）→ etf_holdings.json（最新一天）
+  verify_etf_holdings.py     驗證 etf_holdings.json（權重合計 80～105%、成功檔數、對照月報前 3 名）
   fetch_stock_dividends.py   全部上市櫃個股配息 → stock_dividends.json（累積式）
   fetch_top10.py             ETF 前十大持股（公會月報）→ top10.json（進版控）
   fetch_upcoming.py          還沒上市的 ETF（新聞＋證交所簡介）→ upcoming.json（部署時產生）
@@ -178,7 +181,7 @@ at 19:00 Taiwan time (11:00 UTC — the cron is in UTC, so Taiwan time minus 8 h
 scrapes, rebuilds both front ends, runs every verifier, and only then commits and calls the
 deploy workflow.
 
-**流程分成十一個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
+**流程分成多個互相獨立的區塊，一塊失敗不會擋住其他塊**（step id 就是區塊名）：
 
 | 區塊 | step id | 產出 | 需要 |
 | --- | --- | --- | --- |
@@ -189,6 +192,7 @@ deploy workflow.
 | 個股財報 | `stocks` | `fin_history.json` | 公開資訊觀測站 |
 | 散戶多空比 | `retail` | `retail.json` | 期交所 ＋ FinMind 指數 |
 | 主動式換股 | `hold` | `active_holdings.json` | 統一／復華／中信／群益／元大／凱基／野村／台新投信官網＋證交所 `MI_INDEX`／櫃買 `afterTrading/otc`（估值與持股損益用的均價） |
+| 被動式持股 | `phold` | `etf_holdings.json`（最新一天，不累積） | 上述 8 家投信每日申購買回清單（共用 `.cache/day_prices/` 收盤價供元大換算）＋投信投顧公會季報 `IN2630.aspx`（1% 以上，每季更新一次） |
 | 前十大持股 | `top10` | `top10.json` | 投信投顧公會 |
 | ETF 受益人數 | `eholders` | `etf_holders.json`（逐週累積） | 集保開放資料 1-5 |
 | ETF 配息組成 | `dmix` | `div_mix.json`（每檔最近一次公告的股利／利息／平準金／資本利得／其他占比） | 集保 ETF 觀測站 `fundclear.com.tw/api/etf/dividend/query-dividend`（月領試算只把股利＋利息算進二代健保，2026-10-27） |

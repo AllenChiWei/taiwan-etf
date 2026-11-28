@@ -4,46 +4,57 @@ import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useEtfExtras } from './EtfExtras';
 import { overlapPairs, type HoldingSet } from '../lib/overlap';
+import { lookupFullHoldings } from '../lib/fullHoldings';
 import { lookupMonthly } from '../lib/top10';
 
 const COMMON_PREVIEW = 15;
 
 function shortSource(s: HoldingSet): string {
-  return s.kind === 'daily' ? `每日 ${s.asof.slice(5).replace('-', '/')}` : `前十大 ${s.asof}`;
+  if (s.kind === 'daily') return `主動每日 ${s.asof.slice(5).replace('-', '/')}`;
+  if (s.kind === 'pcf') return `申購清單 ${s.asof.slice(5).replace('-', '/')}`;
+  if (s.kind === 'quarterly') return `季報 1%↑ ${s.asof}`;
+  return `前十大 ${s.asof}`;
 }
 
 export function OverlapSection({ codes, names }: { codes: string[]; names?: ReadonlyMap<string, string> }) {
   const extras = useEtfExtras();
   const top10 = extras?.[0] ?? null;
   const active = extras?.[1] ?? null;
+  const full = extras?.[3] ?? null;
   const [open, setOpen] = useState<string | null>(null);
   const [showAll, setShowAll] = useState<Record<string, boolean>>({});
 
-  const res = useMemo(() => (extras ? overlapPairs(top10, codes, active) : null), [extras, top10, active, codes]);
+  const res = useMemo(() => (extras ? overlapPairs(top10, codes, active, full) : null), [extras, top10, active, full, codes]);
   if (!res || res.covered.length < 2) return null;
 
   const name = (c: string) => {
     const raw = names?.get(c)
       ?? active?.etfs[c]?.name
+      ?? (full ? lookupFullHoldings(full, c)?.name : undefined)
       ?? (top10 ? lookupMonthly(top10, c)?.name : undefined);
     return raw ? raw.replace(/\(.*$|（.*$/, '').slice(0, 14) : c;
   };
 
-  const dailySets = res.covered.map(c => res.sets[c]).filter(s => s.kind === 'daily');
-  const monthlySets = res.covered.map(c => res.sets[c]).filter(s => s.kind === 'monthly');
-  const dailyDate = dailySets.map(s => s.asof).sort().pop() ?? '';
+  const allSets = res.covered.map(c => res.sets[c]);
+  const fullSets = allSets.filter(s => s.kind === 'daily' || s.kind === 'pcf');
+  const quarterlySets = allSets.filter(s => s.kind === 'quarterly');
+  const monthlySets = allSets.filter(s => s.kind === 'monthly');
+  const latestDaily = fullSets.map(s => s.asof).sort().pop() ?? '';
   const monthlyYm = monthlySets[0]?.asof ?? '';
+  const quarterlyAsof = quarterlySets[0]?.asof ?? '';
 
   return (
     <section className="mt-6" aria-label="持股重疊">
       <h2 className="mb-1 text-base font-bold text-ink">持股重疊</h2>
       <p className="mb-2 max-w-[78ch] text-[12.5px] text-muted">
         收藏中兩兩比較持股：重疊度＝共同持股取兩檔裡較小的佔比相加（佔淨值 %，期貨不計）。
-        {dailySets.length > 0 && monthlySets.length > 0
-          ? `主動式 ETF 用投信每日完整持股（截至 ${dailyDate}），其餘用投信投顧公會月報前十大（${monthlyYm}，前十大以外算不到，實際重疊只會更多）；不同來源日期不同，比例僅供參考。`
-          : dailySets.length > 0
-            ? `皆使用投信每日公告的完整持股（截至 ${dailyDate}）。`
-            : `只看投信投顧公會月報前十大（${monthlyYm}），前十大以外算不到，實際重疊只會更多。`}
+        {monthlySets.length === 0 && quarterlySets.length === 0
+          ? `皆使用投信每日公告的全部持股（截至 ${latestDaily}）。`
+          : [
+              fullSets.length > 0 ? `投信每日全部持股（截至 ${latestDaily}）` : '',
+              quarterlySets.length > 0 ? `公會季報持股 1% 以上（${quarterlyAsof}）` : '',
+              monthlySets.length > 0 ? `公會月報前十大（${monthlyYm}，前十大以外算不到，實際重疊只會更多）` : '',
+            ].filter(Boolean).join('、') + '；來源日期不同時比例僅供參考。'}
         點一列看共同持股。
       </p>
       <ul className="grid grid-cols-1 gap-2 lg:grid-cols-2 lg:items-start">
@@ -81,7 +92,7 @@ export function OverlapSection({ codes, names }: { codes: string[]; names?: Read
                 <div className="border-t border-line/60 px-3 py-2">
                   {p.common.length === 0 ? (
                     <p className="text-[12px] text-muted">
-                      {sa.kind === 'daily' && sb.kind === 'daily'
+                      {(sa.kind === 'daily' || sa.kind === 'pcf') && (sb.kind === 'daily' || sb.kind === 'pcf')
                         ? '目前公告持股沒有共同持股。'
                         : '看得到的持股裡沒有共同持股。'}
                     </p>
@@ -119,9 +130,9 @@ export function OverlapSection({ codes, names }: { codes: string[]; names?: Read
                       )}
                     </>
                   )}
-                  {sa.kind !== sb.kind && (
+                  {(sa.kind !== sb.kind || sa.asof !== sb.asof) && (
                     <p className="mt-1.5 text-[11px] text-faint">
-                      兩檔資料來源與日期不同（每日持股 vs 月報前十大），比例僅供參考。
+                      兩檔資料來源或日期不同（{shortSource(sa)} vs {shortSource(sb)}），比例僅供參考。
                     </p>
                   )}
                 </div>

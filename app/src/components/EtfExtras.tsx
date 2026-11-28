@@ -6,10 +6,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { fetchActive, fetchEtfHolders, fetchTop10 } from '../api/extras';
+import { fetchActive, fetchEtfHolders, fetchFullHoldings, fetchTop10 } from '../api/extras';
 import { top10For, missingReason, type Top10Data } from '../lib/top10';
 import { holdersFor, type EtfHoldersData } from '../lib/etfHolders';
 import { holdingLinkKind, type ActiveData } from '../lib/active';
+import type { FullHoldingsData } from '../lib/fullHoldings';
 import { etfTopHoldings, formatShareClasses } from '../lib/portfolioXray';
 import type { StockDividendData } from '../lib/dividend';
 import type { Etf } from '../types';
@@ -19,14 +20,18 @@ const nf2 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 2, maximumFr
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const signed = (v: number) => `${v > 0 ? '+' : ''}${nf0.format(v)}`;
 
-export type EtfExtras = [Top10Data | null, ActiveData | null, EtfHoldersData | null];
+export type EtfExtras = [Top10Data | null, ActiveData | null, EtfHoldersData | null, FullHoldingsData | null];
 
 // 模組層級的快取：開過一次之後，再點別檔不必重新下載
 let cache: Promise<EtfExtras> | null = null;
 let resolved: EtfExtras | null = null;
 function loadAll() {
-  cache ??= Promise.all([fetchTop10().catch(() => null), fetchActive().catch(() => null), fetchEtfHolders().catch(() => null)])
-    .then((d: EtfExtras) => { resolved = d; return d; });
+  cache ??= Promise.all([
+    fetchTop10().catch(() => null),
+    fetchActive().catch(() => null),
+    fetchEtfHolders().catch(() => null),
+    fetchFullHoldings().catch(() => null),
+  ]).then((d: EtfExtras) => { resolved = d; return d; });
   return cache;
 }
 
@@ -45,9 +50,14 @@ export function useEtfExtras(enabled = true): EtfExtras | null {
 
 /** 前十大的資料日期說明（標題下方那行用） */
 export function top10Asof(etf: Etf, data: EtfExtras | null): string | null {
-  const view = data ? top10For(etf.code, data[0], data[1]) : null;
+  const view = data ? top10For(etf.code, data[0], data[1], data[3]) : null;
   if (!view) return null;
-  return view.kind === 'daily' ? `${view.asof} 收盤後（投信每日公告）` : `${view.asof} 月底（投信投顧公會月報）`;
+  if (view.kind === 'daily') return `${view.asof} 收盤後（主動式每日公告）`;
+  if (view.kind === 'pcf') {
+    return `${view.asof}（投信申購買回清單${view.totalCount ? `，共 ${view.totalCount} 檔` : ''}）`;
+  }
+  if (view.kind === 'quarterly') return `${view.asof}（投信投顧公會季報 1% 以上）`;
+  return `${view.asof} 月底（投信投顧公會月報）`;
 }
 
 export function HoldersBox({ code, data }: { code: string; data: EtfExtras | null }) {
@@ -85,7 +95,7 @@ export function Top10List({ etf, data, onPickStock, onNavigate }: {
   const closeSheet = useCallback(() => setSheet(null), []);
   useEffect(() => { setSheet(null); }, [etf.code]);
 
-  const view = data ? top10For(etf.code, data[0], data[1]) : null;
+  const view = data ? top10For(etf.code, data[0], data[1], data[3]) : null;
   const max = view ? Math.max(...view.rows.map(r => r.pct ?? 0), 1) : 1;
   if (!data) return <p className="py-10 text-center text-[13px] text-muted">載入中…</p>;
   if (!view) return <p className="py-8 text-center text-[13px] leading-relaxed text-muted">{missingReason(etf.sec)}</p>;
@@ -144,7 +154,11 @@ export function Top10List({ etf, data, onPickStock, onNavigate }: {
       <p className="mt-2 text-[11px] leading-relaxed text-faint">
         {view.kind === 'daily'
           ? '這一檔是站上追蹤的主動式 ETF，用的是投信每天公告的完整持股，取權重前十名。'
-          : '投信投顧公會每月公布上個月底的持股，大約每月 10 號以後更新；主動式 ETF 天天換股，月報會落後。'}
+          : view.kind === 'pcf'
+            ? `用的是${view.src ?? '投信'}每日公告的申購買回清單（共 ${view.totalCount ?? view.rows.length} 檔），取權重前十名${view.basis === 'qty' && view.denom === 'stock' ? '（權重依股數×收盤價以股票部位合計 100% 換算）' : ''}。`
+            : view.kind === 'quarterly'
+              ? '用的是投信投顧公會季報（持股 1% 以上），取權重前十名。'
+              : '投信投顧公會每月公布上個月底的持股，大約每月 10 號以後更新；主動式 ETF 天天換股，月報會落後。'}
         {hasStock && ' 點台股成分股可以直接看財報與籌碼。'}
       </p>
       {!onPickStock && (
@@ -174,7 +188,9 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
 
   const result = useMemo(
     () => (data
-      ? etfTopHoldings({ code, sec, holdingValue, top10: data[0], active: data[1], stockDivs })
+      ? etfTopHoldings({
+        code, sec, holdingValue, top10: data[0], active: data[1], full: data[3], stockDivs, limit: 'all',
+      })
       : null),
     [code, sec, holdingValue, data, stockDivs],
   );
@@ -198,23 +214,30 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
   const { view } = result;
   const pickStock = onPickStock ?? ((c: string, n?: string) => setSheet({ code: c, name: n }));
   const hasTwStock = view.rows.some(r => r.market === 'tw' && holdingLinkKind(r.code) === 'stock');
+  const isFullList = view.kind !== 'monthly';
+  const scrollable = view.rows.length > 10;
+  const totalLabel = view.kind === 'pcf' || view.kind === 'daily'
+    ? `全部 ${view.rows.length} 檔合計`
+    : view.kind === 'quarterly'
+      ? `1% 以上共 ${view.rows.length} 檔合計`
+      : `上列 ${view.rows.length} 檔合計`;
 
   return (
     <div className="mt-2 rounded-lg border border-line bg-bg p-2.5 sm:p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11.5px]">
         <span className="font-semibold text-ink">
-          前十大持股
-          {view.kind === 'daily' && view.totalCount > view.rows.length && (
-            <span className="ml-1 font-normal text-muted">（共 {view.totalCount} 檔成分股）</span>
+          {isFullList ? '持股明細' : '前十大持股'}
+          {isFullList && (
+            <span className="ml-1 font-normal text-muted">（共 {view.totalCount} 檔）</span>
           )}
         </span>
         <span className="text-faint">{view.sourceLabel}</span>
       </div>
 
-      {/* 手機 390px 用橫向捲動容器，不撐寬外層版面 */}
-      <div className="mt-2 overflow-x-auto rounded-md border border-line bg-surface">
+      {/* 手機 390px 用橫向捲動容器，長清單限制高度可捲動、不撐寬也不撐爆版面 */}
+      <div className={`mt-2 rounded-md border border-line bg-surface ${scrollable ? 'max-h-[340px] overflow-auto' : 'overflow-x-auto'}`}>
         <table className="w-full min-w-[440px] text-[12px]">
-          <thead className="bg-sunken text-muted">
+          <thead className={`${scrollable ? 'sticky top-0 z-10 ' : ''}bg-sunken text-muted`}>
             <tr>
               <th className="w-9 px-2 py-1.5 text-right font-semibold">#</th>
               <th className="px-2 py-1.5 text-left font-semibold">代號</th>
@@ -286,10 +309,10 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
               );
             })}
           </tbody>
-          <tfoot className="border-t border-line bg-sunken/60 font-semibold text-ink">
+          <tfoot className={`${scrollable ? 'sticky bottom-0 z-10 bg-sunken ' : 'bg-sunken/60 '}border-t border-line font-semibold text-ink`}>
             <tr>
               <td colSpan={3} className="px-2 py-1.5 text-left text-[11.5px] text-muted">
-                上列 {view.rows.length} 檔合計
+                {totalLabel}
               </td>
               <td className="whitespace-nowrap px-2 py-1.5 text-right font-mono tabular-nums">
                 {nf2.format(view.shownPct)}%
@@ -305,6 +328,11 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
       <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11px] text-faint">
         <span>
           約略曝險＝這筆持有市值 × 占淨值%
+          {view.basis === 'qty' && (
+            view.denom === 'stock'
+              ? '・權重依申購股數×收盤價以股票部位合計為 100% 換算'
+              : '・權重依申購股數×收盤價÷淨值換算'
+          )}
           {hasTwStock ? '・點台股代號看財報與籌碼' : ''}
         </span>
         <Link to="/etf" search={{ code }} className="font-semibold text-accent hover:underline">

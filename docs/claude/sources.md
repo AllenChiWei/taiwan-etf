@@ -15,6 +15,8 @@
 | 證交所 openapi／mops API | 沒有 robots.txt | OpenAPI ✅ |
 | 櫃買 | 沒有 robots.txt | OpenAPI 與 rwd ✅ |
 | 集保 TDCC | 沒有 robots.txt | 股權分散表 ✅ |
+| 投信投顧公會 SITCA | 沒有 robots.txt（回 404） | `IN2629.aspx`（月前十大）、`IN2630.aspx`（季報 1% 以上，平日僅 1 GET） ✅ |
+| 8 家投信官網（被動式 PCF） | 見 `docs/claude/etf-holdings.md`（均在規則內） | `fetch_etf_holdings.py` 每日上限 58 次（33 檔台股＋海外輪替；中信 3.5s 間隔＋上限 7 檔＋403 熔斷；元大收盤價共用 `.cache/day_prices/` 不重打交易所） ✅ |
 | 鉅亨網 API | 沒有 robots.txt | `/media/api/v1/newslist` ✅ |
 | Nasdaq Trader | 沒有 robots.txt | 官方代號檔 ✅ |
 | FRED | `*` 只擋圖片與搜尋頁，`Crawl-delay: 1` | `/graph/fredgraph.csv` ✅（每次間隔 1.5 秒） |

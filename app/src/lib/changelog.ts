@@ -34,6 +34,13 @@ export interface ChangeDay {
 /** 新到舊。 */
 export const CHANGELOG: ChangeDay[] = [
   {
+    date: '2026-11-28',
+    items: [
+      { kind: 'improve', to: '/dividend',
+        text: '持股健檢與配息試算展開的 ETF 持股明細改優先採用投信每日申購買回清單的全部成分股（元大、群益、復華、統一、凱基、中信、野村、台新），投信官網未開放者改用公會季報持股 1% 以上或月報前十大；展開明細支援捲動檢視完整成分股。' },
+    ],
+  },
+  {
     date: '2026-11-27',
     items: [
       { kind: 'new', to: '/dividend',
