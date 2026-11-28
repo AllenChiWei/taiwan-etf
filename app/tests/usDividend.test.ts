@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveUsDividends, latestMidRate, seriesFromUs, type UsPriceRow } from '../src/lib/usDividend.ts';
+import { dailyMidRates, deriveUsDividends, latestMidRate, seriesFromUs, type UsPriceRow } from '../src/lib/usDividend.ts';
 import { projectHolding } from '../src/lib/dividend.ts';
 
 // SCHD 2026-03 除息前後（2026-03-25 除息）
@@ -45,6 +45,17 @@ test('匯率取最新一天的即期中價，跳過假日的空值', () => {
   ]);
   assert.deepEqual(fx, { date: '2026-09-23', rate: 31.7 });
   assert.equal(latestMidRate([]), null);
+
+  const hist = dailyMidRates([
+    { date: '2026-09-24', spot_buy: 0, spot_sell: 0 },
+    { date: '2026-09-23', spot_buy: 31.75, spot_sell: 31.85 },
+    { date: '2026-09-22', spot_buy: 31.65, spot_sell: 31.75 },
+    { date: '2026-09-23', spot_buy: 31.8, spot_sell: 31.9 },
+  ]);
+  assert.deepEqual(hist, [
+    { date: '2026-09-22', rate: 31.7 },
+    { date: '2026-09-23', rate: 31.85 },
+  ]);
 });
 
 test('換成台幣後，年配息與市值都乘上匯率，殖利率不變', () => {

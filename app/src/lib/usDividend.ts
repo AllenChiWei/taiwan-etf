@@ -61,6 +61,22 @@ export function latestMidRate(rows: FxRow[]): { date: string; rate: number } | n
   return null;
 }
 
+/** 歷史每日即期買賣中價（由舊到新、同日取最後一筆）。缺值（假日回 0 或 -1）的日子跳過。 */
+export function dailyMidRates(rows: readonly FxRow[]): Array<{ date: string; rate: number }> {
+  const byDate = new Map<string, number>();
+  for (const r of rows) {
+    if (typeof r.date !== 'string' || r.date.length < 10) continue;
+    const buy = Number(r.spot_buy);
+    const sell = Number(r.spot_sell);
+    if (buy > 0 && sell > 0) {
+      byDate.set(r.date.slice(0, 10), Math.round(((buy + sell) / 2) * 1000) / 1000);
+    }
+  }
+  return [...byDate.entries()]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([date, rate]) => ({ date, rate }));
+}
+
 /**
  * 美股 ETF -> 跟台股同樣形狀的序列（台幣）。
  * freq 留空：美股沒有「公告頻率」這個欄位，projectHolding 會用近 12 個月的次數推。

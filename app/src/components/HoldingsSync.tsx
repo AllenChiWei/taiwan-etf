@@ -13,33 +13,21 @@
 import { useEffect, useState } from 'react';
 import { Vault, type VaultManifest } from '../lib/vault';
 import { ghWrite, readEncrypted, readToken, type Src } from '../lib/ghSync';
+import {
+  cleanHoldingsSyncPayload,
+  ensureHoldingsLog,
+  taipeiDate,
+  type HoldingsSnapshot,
+} from '../lib/holdingsLog';
 
 export interface SyncEntry { code: string; shares: number; m?: 'us'; k?: 'stock'; acct?: string }
-interface Payload { v?: number; accounts?: unknown; holdings?: unknown; generated?: string }
-interface Remote { holdings: SyncEntry[]; accounts: string[]; generated: string }
+interface Remote { holdings: SyncEntry[]; accounts: string[]; log: HoldingsSnapshot[]; generated: string }
 
 const holdingsVault = new Vault(`${import.meta.env.BASE_URL}data/holdings/`, 'twetf.v18.unlock');
 const SYNCED_KEY = 'twetf.holdings.synced';
 
-function clean(p: Payload): Remote {
-  const holdings: SyncEntry[] = [];
-  for (const x of Array.isArray(p.holdings) ? p.holdings : []) {
-    if (typeof x !== 'object' || x === null) continue;
-    const o = x as Record<string, unknown>;
-    if (typeof o.code !== 'string' || !o.code.trim()
-      || typeof o.shares !== 'number' || !Number.isFinite(o.shares) || o.shares <= 0) {
-      continue;
-    }
-    const item: SyncEntry = { code: o.code.trim(), shares: o.shares };
-    if (o.m === 'us') {
-      item.m = 'us';
-      if (o.k === 'stock') item.k = 'stock';
-    }
-    if (typeof o.acct === 'string' && o.acct.trim()) item.acct = o.acct.trim();
-    holdings.push(item);
-  }
-  const accounts = (Array.isArray(p.accounts) ? p.accounts : []).filter((x): x is string => typeof x === 'string' && !!x.trim());
-  return { holdings, accounts, generated: typeof p.generated === 'string' ? p.generated : '' };
+function clean(p: unknown): Remote {
+  return cleanHoldingsSyncPayload(p);
 }
 
 const getSynced = () => { try { return localStorage.getItem(SYNCED_KEY) ?? ''; } catch { return ''; } };
@@ -54,14 +42,15 @@ function nowStamp(): string {
 /* 2026-10-07 修正：GitHub API 用完次數時，權杖與持股都改走備援（lib/ghSync.ts 的 readToken、readEncrypted；
  * 2026-11-01 搬過去和支出預估共用）。有權杖就用權杖讀持股，一定是最新；備援讀到的標明可能不是最新。 */
 async function readRemote(token: string | null): Promise<{ r: Remote | null; src: Src | null }> {
-  const { data, src } = await readEncrypted<Payload>(holdingsVault, 'holdings.enc', token);
+  const { data, src } = await readEncrypted<unknown>(holdingsVault, 'holdings.enc', token);
   return { r: data ? clean(data) : null, src: data ? src : null };
 }
 
-export function HoldingsSync({ entries, accounts, onLoad }: {
+export function HoldingsSync({ entries, accounts, holdingsLog = [], onLoad }: {
   entries: readonly SyncEntry[];
   accounts: readonly string[];
-  onLoad: (holdings: SyncEntry[], accounts: string[]) => void;
+  holdingsLog?: readonly HoldingsSnapshot[];
+  onLoad: (holdings: SyncEntry[], accounts: string[], log: HoldingsSnapshot[]) => void;
 }) {
   const [manifest, setManifest] = useState<VaultManifest | null>(null);
   const [unlocked, setUnlocked] = useState(false);
@@ -80,12 +69,14 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
   const [msg, setMsg] = useState('');
   const [synced, setSyncedState] = useState(getSynced);
 
-  const text = JSON.stringify({ v: 1, accounts, holdings: entries });
+  const exportLog = ensureHoldingsLog(holdingsLog, entries, taipeiDate());
+  const text = JSON.stringify({ v: 2, accounts, holdings: entries, log: exportLog });
 
   const apply = (r: Remote, s: Src | null = src) => {
-    onLoad(r.holdings, r.accounts);
+    onLoad(r.holdings, r.accounts, r.log);
     setSynced(r.generated); setSyncedState(r.generated);
-    setMsg(`已載入私人持股（${r.holdings.length} 檔，更新於 ${r.generated || '—'}）。`
+    const logNote = r.log.length > 0 ? `、${r.log.length} 筆變動紀錄` : '';
+    setMsg(`已載入私人持股（${r.holdings.length} 檔${logNote}，更新於 ${r.generated || '—'}）。`
       + (s && s !== 'api' ? 'GitHub 暫時限制讀取次數，這次讀到的是備援版本，可能不是最新；過幾分鐘再載入一次較保險。' : ''));
   };
 
@@ -135,11 +126,15 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
     setBusy(true); setMsg('');
     try {
       const generated = nowStamp();
-      const bytes = await holdingsVault.encryptJson({ v: 1, generated, accounts, holdings: entries });
+      const logToSave = ensureHoldingsLog(holdingsLog, entries, taipeiDate());
+      const bytes = await holdingsVault.encryptJson({
+        v: 2, generated, accounts, holdings: entries, log: logToSave,
+      });
       await ghWrite('holdings.enc', bytes, token, `資料：我的持股（網站儲存，${entries.length} 檔，已加密）`);
       setSynced(generated); setSyncedState(generated);
-      setRemote({ holdings: [...entries], accounts: [...accounts], generated }); setSrc('api');
-      setMsg(`已儲存到私人持股（${entries.length} 檔）。其他裝置到配息頁按「☁ 載入私人持股」即可。`);
+      setRemote({ holdings: [...entries], accounts: [...accounts], log: logToSave, generated }); setSrc('api');
+      const logNote = logToSave.length > 0 ? `、${logToSave.length} 筆變動紀錄` : '';
+      setMsg(`已儲存到私人持股（${entries.length} 檔${logNote}）。其他裝置到配息頁按「☁ 載入私人持股」即可。`);
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
     } finally { setBusy(false); setConfirm(null); }
@@ -196,7 +191,7 @@ export function HoldingsSync({ entries, accounts, onLoad }: {
 
       {unlocked && remote && (
         <p className={`text-[11px] ${newer ? 'font-semibold text-up' : 'text-faint'}`}>
-          私人持股 {remote.holdings.length} 檔，更新於 {remote.generated || '—'}
+          私人持股 {remote.holdings.length} 檔{remote.log.length > 0 ? `（含 ${remote.log.length} 筆變動紀錄）` : ''}，更新於 {remote.generated || '—'}
           {newer ? '：比這台的持股新，按「☁ 載入私人持股」更新' : (synced ? '：這台已是最新' : '')}。
         </p>
       )}

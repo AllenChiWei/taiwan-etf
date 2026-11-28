@@ -29,6 +29,14 @@ import {
   accountList, withAccounts, nextAccountName, mergeByCode, renameAccount, removeAccount,
   addHolding,
 } from '../lib/accounts';
+import {
+  HOLDINGS_LOG_KEY,
+  ensureHoldingsLog,
+  parseHoldingsLog,
+  recordHoldingsLog,
+  taipeiDate,
+  type HoldingsSnapshot,
+} from '../lib/holdingsLog';
 
 const STORAGE_KEY = 'twetf.holdings';
 /** 帳戶名稱與順序。持股的 acct 欄位記配息進哪個帳戶（lib/accounts.ts）。 */
@@ -87,9 +95,34 @@ function saveHoldings(v: Entry[]): void {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(v)); } catch { /* 忽略 */ }
 }
 
+function loadHoldingsLog(): HoldingsSnapshot[] {
+  try {
+    return parseHoldingsLog(localStorage.getItem(HOLDINGS_LOG_KEY));
+  } catch {
+    return [];
+  }
+}
+
+function saveHoldingsLog(v: HoldingsSnapshot[]): void {
+  try { localStorage.setItem(HOLDINGS_LOG_KEY, JSON.stringify(v)); } catch { /* 忽略 */ }
+}
+
 export function DividendPlanner({ index }: { index: CalcIndex }) {
   const [accounts, setAccounts] = useState<string[]>(() => accountList(loadAccounts(), loadHoldings()));
   const [entries, setEntries] = useState<Entry[]>(() => withAccounts(loadHoldings(), accounts[0]));
+  const [holdingsLog, setHoldingsLog] = useState<HoldingsSnapshot[]>(() => {
+    const stored = loadHoldingsLog();
+    return stored.length > 0 ? stored : ensureHoldingsLog([], entries, taipeiDate());
+  });
+  const entriesRef = useRef(entries);
+  entriesRef.current = entries;
+  /** 使用者新增／修改／刪除持股或調整帳戶時，同步附加當日（台北日期）快照到持股變動紀錄 */
+  const updateEntries = useCallback((updater: (prev: Entry[]) => Entry[]) => {
+    const next = updater(entriesRef.current);
+    entriesRef.current = next;
+    setEntries(next);
+    setHoldingsLog(prevLog => recordHoldingsLog(prevLog, next, taipeiDate()));
+  }, []);
   const [acct, setAcct] = useState(accounts[0]);
   /** 正在改名的帳戶（含草稿）；等待確認刪除的帳戶 */
   const [renaming, setRenaming] = useState<{ from: string; to: string } | null>(null);
@@ -206,6 +239,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   }, [usKey, usRows, fx]);
 
   useEffect(() => { saveHoldings(entries); }, [entries]);
+  useEffect(() => { saveHoldingsLog(holdingsLog); }, [holdingsLog]);
   useEffect(() => {
     try { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(accounts)); } catch { /* 忽略 */ }
   }, [accounts]);
@@ -388,7 +422,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           return;
         }
         setUsRows(prev => new Map(prev).set(code, r));
-        setEntries(prev => addHolding(prev, { code, shares, m: 'us' as const, k: 'stock' as const, acct }));
+        updateEntries(prev => addHolding(prev, { code, shares, m: 'us' as const, k: 'stock' as const, acct }));
         setPick('');
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -399,14 +433,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
       return;
     }
     if (pick.startsWith('uss:')) {
-      setEntries(prev => addHolding(prev, { code: pick.slice(4), shares, m: 'us' as const, k: 'stock' as const, acct }));
+      updateEntries(prev => addHolding(prev, { code: pick.slice(4), shares, m: 'us' as const, k: 'stock' as const, acct }));
       setPick('');
       return;
     }
-    setEntries(prev => addHolding(prev, pick.startsWith('us:')
+    updateEntries(prev => addHolding(prev, pick.startsWith('us:')
       ? { code: pick.slice(3), shares, m: 'us' as const, acct } : { code: pick, shares, acct }));
     setPick('');
-  }, [pick, shares, acct, adding]);
+  }, [pick, shares, acct, adding, updateEntries]);
 
   const newAccount = () => {
     const name = nextAccountName(accounts);
@@ -418,14 +452,14 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     const r = renameAccount(accounts, entries, renaming.from, renaming.to);
     if (r) {
       setAccounts(r.accounts);
-      setEntries(r.entries);
+      updateEntries(() => r.entries);
       if (acct === renaming.from) setAcct(renaming.to.trim());
     }
     setRenaming(null);
   };
   const deleteAccount = (name: string) => {
     const r = removeAccount(accounts, entries, name);
-    if (r) { setAccounts(r.accounts); setEntries(r.entries); }
+    if (r) { setAccounts(r.accounts); updateEntries(() => r.entries); }
     setDeleting(null);
   };
 
@@ -434,9 +468,9 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   /** 存下新的股數並收起編輯框。0 或空值不存 —— 那等於把持股變成沒有意義的 0。 */
   const save = useCallback((code: string) => {
     if (!(draft > 0)) return;
-    setEntries(prev => prev.map(e => (e.code === code ? { ...e, shares: draft } : e)));
+    updateEntries(prev => prev.map(e => (e.code === code ? { ...e, shares: draft } : e)));
     setEditing(null);
-  }, [draft]);
+  }, [draft, updateEntries]);
 
   const inputCls = 'h-11 rounded-lg border border-line bg-bg px-3 text-base text-ink '
     + 'focus:border-accent focus:ring-3 focus:ring-accent-soft focus:outline-none';
@@ -544,10 +578,17 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                 </button>
               ))}
             </div>
-            <HoldingsSync entries={entries} accounts={accounts} onLoad={(hold, accs) => {
+            <HoldingsSync entries={entries} accounts={accounts} holdingsLog={holdingsLog} onLoad={(hold, accs, remoteLog) => {
               const list = accountList(accs, hold);
+              const nextHoldings = withAccounts(hold, list[0]);
+              entriesRef.current = nextHoldings;
               setAccounts(list);
-              setEntries(withAccounts(hold, list[0]));
+              setEntries(nextHoldings);
+              setHoldingsLog(
+                remoteLog.length > 0
+                  ? remoteLog
+                  : ensureHoldingsLog([], nextHoldings, taipeiDate()),
+              );
               setAcct(list[0]);
               setEditing(null); setDeleting(null); setRenaming(null); setOpenTop10(new Set());
             }} />
@@ -740,7 +781,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                         <select value={acctOf(r.code)} aria-label={`${r.code} 的配息帳戶`}
                                 onChange={e => {
                                   const to = e.target.value;
-                                  setEntries(prev => prev.map(x => (x.code === r.code ? { ...x, acct: to } : x)));
+                                  updateEntries(prev => prev.map(x => (x.code === r.code ? { ...x, acct: to } : x)));
                                 }}
                                 className="h-7 max-w-[7.5em] rounded border border-line bg-bg px-1
                                            text-[11.5px] text-ink">
@@ -760,7 +801,7 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                       <button
                         type="button"
                         onClick={() => {
-                          setEntries(prev => prev.filter(e => e.code !== r.code));
+                          updateEntries(prev => prev.filter(e => e.code !== r.code));
                           if (editing === r.code) setEditing(null);
                           setOpenTop10(prev => {
                             if (!prev.has(r.code)) return prev;

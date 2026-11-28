@@ -94,3 +94,14 @@
   2. `cb.json`：排除交換債（`exch: true`），標示強制贖回、近月餘額減少、負溢價與價內轉換賣壓。
   3. `calendar.json`：未來 14 天除權息、法說會、股東會（同時含直接持有 ETF 除息與穿透台股成分股）。
   4. `news.json`：公開資訊觀測站近期重大訊息（僅標題與外連）。
+
+## 持股每日總市值走勢（`/dividend?view=value`，2026-11-28）
+
+配息頁第三個分頁「市值走勢」（`components/PortfolioValue.tsx`，由 `DividendPage.tsx` 懶載入，僅切入此分頁時才發送歷史日價請求），純邏輯位於 `lib/holdingsLog.ts`（`tests/holdingsLog.test.ts`）與 `lib/valueHistory.ts`（`tests/valueHistory.test.ts`），不依賴 `calc/index.json`。
+
+- **持股變動紀錄與加密同步**：配息試算每次新增／修改／刪除持股或調整帳戶，皆在 `localStorage` 的 `twetf.holdingsLog` 附加一筆 `{date: 台北日期, holdings: [...同 twetf.holdings 格式]}`（同一天多次修改只留最後一筆）。私人持股同步（`components/HoldingsSync.tsx`）將 `log` 併入加密檔 `holdings.enc`（`v: 2`）；載入舊格式（無 `log`）或本機尚未建立紀錄時，自動以目前持股作為第一筆。所有持股與變動紀錄僅存於瀏覽器與加密檔，不上傳明文。
+- **歷史收盤價與匯率來源**：
+  - 台股（ETF 與上市櫃個股）：瀏覽器直打 FinMind `TaiwanStockPrice`（`api/finmind.ts` 的 `fetchTwPrices`，近 15.5 個月），每日快取於 `localStorage`（`twetf.twprice.<代號>`），抓不到時沿用舊快取。不使用 `series/tw`（其為含息還原價且不含一般個股）。
+  - 美股：沿用 `fetchUsPrices`（約 15 個月原始 `Close`）× 當日美元匯率（`fetchUsdTwdHistory` 抓 FinMind `TaiwanExchangeRate` 即期買賣中價，每日快取於 `twetf.usdtwd.hist`；台灣休市取前一個營業日匯率，歷史匯率抓不到時退回最近一筆匯率並於畫面提示）。
+- **每日市值、補價與估算**：對每個交易日取「該日以前最近一筆持股紀錄」× 當日收盤價加總。開始記錄（`log[0].date`）之前以第一筆持股往回估算（支援近 3 月／6 月／1 年，超長紀錄加「全部」），折線以虛線呈現並標註「估算（以目前持股回推）」。某檔在部分交易日缺價（含跨市場休市）時沿用前一個有價日補齊並註明缺價與補價清單；上市較晚在首次有價前不計入市值，首日有價亦不計入當日損益避免假暴賺。
+- **扣掉加減碼的損益與配息口徑**：每日損益＝前一日生效持股 ×（今日台幣價 − 昨日台幣價）（美股自然涵蓋匯率變動，賣光清倉日亦照前一日持股計算當日損益），累計損益折線與總市值折線分開顯示，加減碼日以標記點與快速膠囊點選展開當日變動明細。配息不計入市值與損益，另依 `dividends.json`、`stock_dividends.json` 與美股 `deriveUsDividends` 以除息日前一日持股估算區間稅前配息。

@@ -1,9 +1,10 @@
-/* 配息試算與持股健檢：獨立的分頁。
+/* 配息試算、持股健檢與市值走勢：獨立的分頁。
  *
  * 「配息試算」計算現有持股每月與全年可領股息（資料存在 localStorage 的 twetf.holdings）；
  * 「持股健檢」（?view=xray）讀同一份持股，按市值權重穿透展開 ETF 成分股，檢視單一個股集中度
- * 以及低融資維持率、可轉債轉換賣壓、未來 14 天行事曆與近期重大訊息。
- * 持股健檢不依賴 calc/index.json（FinLab），即使 FinLab 額度用完仍可正常使用。
+ * 以及低融資維持率、可轉債轉換賣壓、未來 14 天行事曆與近期重大訊息；
+ * 「市值走勢」（?view=value）讀持股變動紀錄（twetf.holdingsLog），僅在切入此分頁時才抓歷史日價，
+ * 顯示每日總市值與扣掉加減碼的累計損益。後兩者均不依賴 calc/index.json（FinLab）。
  */
 
 import { lazy, Suspense, useCallback } from 'react';
@@ -14,10 +15,15 @@ import { useCalcIndex } from '../hooks/useCalcIndex';
 
 const PortfolioXray = lazy(() => import('../components/PortfolioXray')
   .then(m => ({ default: m.PortfolioXray })));
+const PortfolioValue = lazy(() => import('../components/PortfolioValue')
+  .then(m => ({ default: m.PortfolioValue })));
+
+type DividendView = '' | 'xray' | 'value';
 
 const VIEWS = [
   { id: '', label: '配息試算' },
   { id: 'xray', label: '持股健檢' },
+  { id: 'value', label: '市值走勢' },
 ] as const;
 
 function DividendPlanTab() {
@@ -50,20 +56,22 @@ function DividendPlanTab() {
 export function DividendPage() {
   const { view } = useSearch({ from: '/dividend' });
   const navigate = useNavigate();
-  const activeView: '' | 'xray' = view === 'xray' ? 'xray' : '';
+  const activeView: DividendView = view === 'xray' ? 'xray' : view === 'value' ? 'value' : '';
 
-  const setView = useCallback((next: '' | 'xray') => {
+  const setView = useCallback((next: DividendView) => {
     void navigate({
       to: '/dividend',
-      search: next === 'xray' ? { view: 'xray' } : {},
+      search: next ? { view: next } : {},
       replace: true,
       resetScroll: false,
     });
   }, [navigate]);
 
+  const heading = activeView === 'xray' ? '持股健檢' : activeView === 'value' ? '市值走勢' : '配息試算';
+
   return (
     <>
-      <h1 className="sr-only">{activeView === 'xray' ? '持股健檢' : '配息試算'}</h1>
+      <h1 className="sr-only">{heading}</h1>
 
       <div role="tablist" aria-label="配息頁分頁" className="flex flex-wrap gap-1.5 pt-4">
         {VIEWS.map(v => (
@@ -84,6 +92,10 @@ export function DividendPage() {
       {activeView === 'xray' ? (
         <Suspense fallback={<p className="py-16 text-center text-[13px] text-muted">載入持股健檢中…</p>}>
           <PortfolioXray onGoPlan={() => setView('')} />
+        </Suspense>
+      ) : activeView === 'value' ? (
+        <Suspense fallback={<p className="py-16 text-center text-[13px] text-muted">載入市值走勢中…</p>}>
+          <PortfolioValue onGoPlan={() => setView('')} />
         </Suspense>
       ) : (
         <DividendPlanTab />

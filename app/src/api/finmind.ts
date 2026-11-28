@@ -10,7 +10,7 @@
 
 import type { FmRow } from '../lib/fundamentals.ts';
 import type { UsPriceRow, FxRow } from '../lib/usDividend.ts';
-import { latestMidRate } from '../lib/usDividend.ts';
+import { dailyMidRates, latestMidRate } from '../lib/usDividend.ts';
 import type { PerRow, PriceRow } from '../lib/valuation.ts';
 import { DEFENSIVE_YEARS, shiftDays, todayTaipei, type FinMindDividendRow } from '../lib/defensive.ts';
 
@@ -209,4 +209,125 @@ export async function fetchUsdTwd(): Promise<{ date: string; rate: number; stale
     if (saved && saved.rate > 0) return { date: saved.date, rate: saved.rate, stale: true };
     throw err;
   }
+}
+
+/* ── 市值走勢：台股近 15 個月日收盤價與美元歷史匯率 ────────────
+ * 沿用與美股日價相同的瀏覽器端 localStorage 每日快取機制：
+ * 同一天抓過不重打 FinMind，抓不到（如額度用完）退回上次快取，僅在進入「市值走勢」分頁時才呼叫。
+ */
+
+const twPriceCache = new Map<string, Promise<PriceRow[]>>();
+const TW_PRICE_KEY = (code: string) => `twetf.twprice.${code}`;
+
+interface SavedCompactRows {
+  fetched: string;
+  rows: Array<[string, number]>;
+}
+
+function loadSavedCompact(key: string): SavedCompactRows | null {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? 'null');
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const o = parsed as { fetched?: unknown; rows?: unknown };
+    if (typeof o.fetched !== 'string' || !Array.isArray(o.rows)) return null;
+    const cleaned: Array<[string, number]> = [];
+    for (const item of o.rows) {
+      if (Array.isArray(item) && typeof item[0] === 'string' && typeof item[1] === 'number' && item[1] > 0) {
+        cleaned.push([item[0], item[1]]);
+      }
+    }
+    return { fetched: o.fetched, rows: cleaned };
+  } catch {
+    return null;
+  }
+}
+
+/** 台股（ETF 與上市櫃個股）近 15.5 個月每日收盤價，同一台北日快取於 localStorage。 */
+export function fetchTwPrices(code: string, signal?: AbortSignal): Promise<PriceRow[]> {
+  const normCode = code.trim().toUpperCase();
+  const hit = twPriceCache.get(normCode);
+  if (hit) return hit;
+
+  const today = todayTaipei();
+  const saved = loadSavedCompact(TW_PRICE_KEY(normCode));
+  if (saved && saved.fetched === today && saved.rows.length > 0) {
+    return Promise.resolve(saved.rows.map(([date, close]) => ({ date, close })));
+  }
+
+  const start = shiftDays(today, -470);
+  const p = rows<PriceRow>('TaiwanStockPrice', normCode, start, signal)
+    .then(list => {
+      const byDate = new Map<string, number>();
+      for (const r of list) {
+        if (typeof r.date !== 'string' || r.date.length < 10) continue;
+        const c = Number(r.close);
+        if (Number.isFinite(c) && c > 0) byDate.set(r.date.slice(0, 10), c);
+      }
+      const pairs = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      const out = pairs.map(([date, close]) => ({ date, close }));
+      if (pairs.length > 0) {
+        try {
+          localStorage.setItem(TW_PRICE_KEY(normCode), JSON.stringify({ fetched: today, rows: pairs }));
+        } catch { /* 無痕模式或容量滿 */ }
+      } else {
+        twPriceCache.delete(normCode);
+      }
+      return out;
+    })
+    .catch(err => {
+      twPriceCache.delete(normCode);
+      if (signal?.aborted) throw err;
+      if (saved && saved.rows.length > 0) {
+        return saved.rows.map(([date, close]) => ({ date, close }));
+      }
+      throw err;
+    });
+  twPriceCache.set(normCode, p);
+  return p;
+}
+
+const FX_HIST_KEY = 'twetf.usdtwd.hist';
+let fxHistCache: Promise<{ rows: Array<{ date: string; rate: number }>; stale: boolean }> | null = null;
+
+/** 美元兌台幣近 15.5 個月歷史即期買賣中價。同一日不重抓，抓不到退回舊快取或最近一筆匯率。 */
+export function fetchUsdTwdHistory(
+  signal?: AbortSignal,
+): Promise<{ rows: Array<{ date: string; rate: number }>; stale: boolean }> {
+  if (fxHistCache) return fxHistCache;
+
+  const today = todayTaipei();
+  const saved = loadSavedCompact(FX_HIST_KEY);
+  if (saved && saved.fetched === today && saved.rows.length > 0) {
+    return Promise.resolve({
+      rows: saved.rows.map(([date, rate]) => ({ date, rate })),
+      stale: false,
+    });
+  }
+
+  const start = shiftDays(today, -470);
+  const p = rows<FxRow>('TaiwanExchangeRate', 'USD', start, signal)
+    .then(list => {
+      const out = dailyMidRates(list);
+      if (out.length === 0) throw new Error('FinMind 沒有歷史匯率資料');
+      const pairs: Array<[string, number]> = out.map(x => [x.date, x.rate]);
+      try {
+        localStorage.setItem(FX_HIST_KEY, JSON.stringify({ fetched: today, rows: pairs }));
+      } catch { /* 無痕模式或容量滿 */ }
+      return { rows: out, stale: false };
+    })
+    .catch(async err => {
+      fxHistCache = null;
+      if (signal?.aborted) throw err;
+      if (saved && saved.rows.length > 0) {
+        return { rows: saved.rows.map(([date, rate]) => ({ date, rate })), stale: true };
+      }
+      try {
+        const latest = await fetchUsdTwd();
+        return { rows: [{ date: latest.date, rate: latest.rate }], stale: true };
+      } catch {
+        throw err;
+      }
+    });
+  fxHistCache = p;
+  return p;
 }

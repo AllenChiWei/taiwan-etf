@@ -31,6 +31,8 @@ test('排序：代號完全相同 > 代號開頭 > 名稱；同分 ETF 排在個
 test('頁面靠關鍵字也找得到；空字串只列頁面', () => {
   assert.equal(searchAll(items, '經理人')[0].name, '主動式換股');
   assert.deepEqual(searchAll(items, '經理人')[0].search, { view: 'active' });
+  assert.equal(searchAll(items, '市值走勢')[0].to, '/dividend');
+  assert.deepEqual(searchAll(items, '市值走勢')[0].search, { view: 'value' });
   assert.ok(searchAll(items, '').every(x => x.kind === 'page'));
   assert.equal(searchAll(items, 'zzzz').length, 0);
 });
