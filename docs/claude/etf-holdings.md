@@ -123,6 +123,22 @@ python scripts/verify_etf_holdings.py app/public/data/etf_holdings.json
 cd app && node --test tests/compare.test.ts tests/portfolioXray.test.ts
 ```
 
+## 海外 ISIN →「代號 交易所」對照（isin_ticker.json，2026-11-28）
+
+`scripts/gen_isin_ticker.py` → `app/public/data/isin_ticker.json`（進版控，結構 `{"meta":{"updated","count"},"map":{ISIN:"代號 交易所"},"miss":{ISIN:"最後查詢日"}}`）。
+在 `update-data.yml` 的 `isinmap` 區塊緊接在 `phold`（被動式持股）之後執行（`--max 300`，`continue-on-error: true`，失敗保留前一版）。
+
+- **收集來源與非股票排除**：合併掃描 `top10.json`＋`etf_holdings.json`（排除債券／槓反／期貨 ETF），並於成分層過濾非股票項目：債券／票券／基金／ETF／REIT 類型與名稱字樣、`XS`／`US912`（含 `US9128`）／`TW` 開頭、利率＋到期日格式債券名稱（如 `T 4 3/4 05/15/55`）及台股代號。
+- **增量、冷卻與節流**：首次尚無 `isin_ticker.json` 時先以既有 `app/src/lib/isinTicker.ts`（396 筆）作種子；平常只查新 ISIN，單次上限 `--max 300`；查無對應者記在 `miss`、30 天內不重查；OpenFIGI v3 無 key 上限每分鐘 25 次，維持每批 10 筆、節流 2.6 秒與誠實 UA。網路或 API 失敗時不中斷腳本，保留已完成進度或既有檔案，且不把失敗批次誤記進 `miss`。
+- **前端按需載入與後備**：保留 `app/src/lib/isinTicker.ts` 當靜態後備；只在持股健檢（`PortfolioXray`）與配息試算持股展開面板（`EtfHoldingsTable`）需要時透過 `fetchIsinTicker()` 載入 `isin_ticker.json`，由 `lib/isinTickerData.ts` 的 `mergeIsinTickerMap()` 合併（同 ISIN 以資料檔優先，缺檔照舊退回內建表）。
+
+本機重跑與驗證：
+```bash
+python scripts/test_gen_isin_ticker.py
+PYTHONIOENCODING=utf-8 python scripts/gen_isin_ticker.py --max 300
+cd app && node --test tests/portfolioXray.test.ts
+```
+
 ## 前十大持股
 
 台股清單點 ETF 名稱跳出的視窗（`Top10Modal`、`lib/top10.ts`）。`scripts/fetch_top10.py` →

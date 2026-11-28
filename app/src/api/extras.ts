@@ -15,6 +15,7 @@ import type { CalendarData } from '../lib/calendar.ts';
 import type { CbData, CbMarket, CbSeriesPoint, CbConv } from '../lib/cb.ts';
 import type { NextdayData } from '../lib/nextday.ts';
 import { parseUsStocksDataset, type UsStocksDataset } from '../lib/usStocks.ts';
+import { parseIsinTickerData, type IsinTickerData } from '../lib/isinTickerData.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -117,3 +118,22 @@ export const fetchUsStocks = (): Promise<UsStocksDataset | null> => {
   }
   return usStocksPromise;
 };
+
+/** 海外 ISIN →「代號 交易所」對照資料檔（scripts/gen_isin_ticker.py，進版控；
+ *  僅在持股健檢與配息試算持股展開面板需要時載入，缺檔回 null 並沿用內建 isinTicker.ts） */
+let isinTickerPromise: Promise<IsinTickerData | null> | null = null;
+let isinTickerResolved: IsinTickerData | null | undefined = undefined;
+export const fetchIsinTicker = (): Promise<IsinTickerData | null> => {
+  if (!isinTickerPromise) {
+    isinTickerPromise = fetch(`${BASE}data/isin_ticker.json`, { cache: 'no-cache' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(raw => parseIsinTickerData(raw))
+      .catch(() => null)
+      .then(d => {
+        isinTickerResolved = d;
+        return d;
+      });
+  }
+  return isinTickerPromise;
+};
+export const cachedIsinTicker = (): IsinTickerData | null | undefined => isinTickerResolved;

@@ -37,6 +37,7 @@ concurrency:
 #   散戶   retail.json                          期交所三大法人＋全市場未沖銷（累積式）
 #   換股   active_holdings.json                 各投信官網的主動式 ETF 持股（累積式）
 #   被動持 etf_holdings.json                    各投信每日申購買回清單＋公會季報 1% 以上（只存最新）
+#   ISIN   isin_ticker.json                     OpenFIGI v3 海外股票 ISIN 對照（每日最多補查 300 筆）
 #   前十大 top10.json                           投信投顧公會月報（月份沒變就不重抓）
 #   個股息 stock_dividends.json                 全部上市櫃個股配息（上櫃歷史用 FinMind 分批回補）
 #
@@ -83,6 +84,7 @@ jobs:
       RETAIL_FILES: app/public/data/retail.json
       HOLD_FILES: app/public/data/active_holdings.json
       PHOLD_FILES: app/public/data/etf_holdings.json
+      ISIN_FILES: app/public/data/isin_ticker.json
       TOP10_FILES: app/public/data/top10.json
       EHOLD_FILES: app/public/data/etf_holders.json
       DMIX_FILES: app/public/data/div_mix.json
@@ -312,6 +314,17 @@ jobs:
           python scripts/test_fetch_etf_holdings.py
           cd app && node --test tests/compare.test.ts tests/portfolioXray.test.ts
 
+      # ── 區塊七之三：海外 ISIN →「代號 交易所」對照（OpenFIGI v3，免 key）──
+      # 緊接在被動式持股之後跑，補查 top10.json＋etf_holdings.json 新出現的海外股票 ISIN；
+      # 每次上限 300 筆、miss 30 天不重查，失敗保留前一版不擋其他區塊。
+      - name: 海外 ISIN 對照
+        id: isinmap
+        continue-on-error: true
+        run: |
+          set -e
+          python scripts/test_gen_isin_ticker.py
+          python scripts/gen_isin_ticker.py --max 300
+
       # ── 區塊八：前十大持股（月報）──────────────────────────────────────
       # 投信投顧公會一個月更新一次。月份沒變時只有一個 GET 就結束；變了才查十幾個類型。
       - name: 前十大持股
@@ -399,6 +412,7 @@ jobs:
           note 散戶多空比   '${{ steps.retail.outcome }}' $RETAIL_FILES
           note 主動式換股   '${{ steps.hold.outcome }}'   $HOLD_FILES
           note 被動式持股   '${{ steps.phold.outcome }}'  $PHOLD_FILES
+          note 海外ISIN對照 '${{ steps.isinmap.outcome }}' $ISIN_FILES
           note 前十大持股   '${{ steps.top10.outcome }}'  $TOP10_FILES
           note ETF受益人數  '${{ steps.eholders.outcome }}' $EHOLD_FILES
           note ETF配息組成  '${{ steps.dmix.outcome }}'  $DMIX_FILES
@@ -419,6 +433,7 @@ jobs:
             echo "| 散戶多空比 | ${{ steps.retail.outcome }} |"
             echo "| 主動式換股 | ${{ steps.hold.outcome }} |"
             echo "| 被動式持股 | ${{ steps.phold.outcome }} |"
+            echo "| 海外 ISIN 對照 | ${{ steps.isinmap.outcome }} |"
             echo "| 前十大持股 | ${{ steps.top10.outcome }} |"
             echo "| ETF 受益人數 | ${{ steps.eholders.outcome }} |"
             echo "| ETF 配息組成 | ${{ steps.dmix.outcome }} |"
@@ -429,7 +444,7 @@ jobs:
       - name: 提交變更
         id: commit
         run: |
-          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $PHOLD_FILES $TOP10_FILES $EHOLD_FILES $DMIX_FILES $SDIV_FILES $EXDIV_FILES"
+          FILES="$DIV_FILES $TW_FILES $US_FILES $ATM_FILES $STOCK_FILES $RETAIL_FILES $HOLD_FILES $PHOLD_FILES $ISIN_FILES $TOP10_FILES $EHOLD_FILES $DMIX_FILES $SDIV_FILES $EXDIV_FILES"
           if git diff --quiet -- $FILES; then
             echo "資料無變動，不提交"
             echo "changed=false" >> $GITHUB_OUTPUT

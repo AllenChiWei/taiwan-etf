@@ -18,9 +18,13 @@ import {
   formatShareClasses,
   isUsCommodityEtf,
   matchesHealthFilter,
+  mergeIsinTickerMap,
+  parseIsinTickerData,
   parseStoredHoldings,
+  resolveIsinTickerMap,
   SHARE_CLASS_ALIAS,
   TW_ADR_TO_TW,
+  type IsinTickerData,
   type MarginStateLite,
 } from '../src/lib/portfolioXray.ts';
 import type { Etf, EtfDataset } from '../src/types.ts';
@@ -1859,4 +1863,146 @@ test('美股商品 ETF 辨識（GLD 等對照表與名稱關鍵字）：單獨�
   assert.equal(usStockRow.status, 'direct');
   assert.ok(xray.exposures.some(e => e.code === 'GOLD US' && e.amount === 50_000));
   assert.equal(xray.exposures.some(e => e.code === 'GLD US' || e.code === 'GLD'), false);
+});
+
+test('ISIN 對照資料檔解析與合併：內建 isinTicker.ts 當後備、isin_ticker.json 覆寫與擴充、缺檔照舊可用', () => {
+  // 1. 解析與容錯
+  assert.equal(parseIsinTickerData(null), null);
+  assert.equal(parseIsinTickerData({}), null);
+  assert.equal(parseIsinTickerData({ map: [] }), null);
+  const parsed = parseIsinTickerData({
+    meta: { updated: '2026-11-28', count: 2 },
+    map: {
+      'us9581021055': 'wdc us',
+      'BAD': 'XXX US',
+      'US1273871087': 'CDNS US',
+    },
+    miss: { 'XX0000000001': '2026-11-28' },
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.meta.updated, '2026-11-28');
+  assert.deepEqual(parsed.map, {
+    US9581021055: 'WDC US',
+    US1273871087: 'CDNS US',
+  });
+  assert.deepEqual(parsed.miss, { XX0000000001: '2026-11-28' });
+
+  // 2. 內建＋資料檔合併：既有保留、新增補上、同鍵以資料檔為準
+  const merged = mergeIsinTickerMap(
+    { US0378331005: 'AAPL US', US9999999991: 'OLD US' },
+    { meta: { updated: '2026-11-28', count: 2 }, map: { US9999999991: 'NEW US', US9581021055: 'WDC US' } },
+  );
+  assert.equal(merged.US0378331005, 'AAPL US');
+  assert.equal(merged.US9999999991, 'NEW US');
+  assert.equal(merged.US9581021055, 'WDC US');
+
+  // 3. 缺檔（null）直接退回內建 isinTicker.ts
+  const fallback = resolveIsinTickerMap(null);
+  assert.equal(fallback.US0378331005, 'AAPL US');
+  assert.equal(fallback.US9581021055, undefined);
+});
+
+test('buildPortfolioXray 與 etfTopHoldings：合併執行時 isin_ticker.json 後可與主動式持股對齊，缺檔沿用內建且排除 US912／債券名', () => {
+  const etfs: Etf[] = [
+    mkEtf('00402A', '主動安聯美國科技', 'cat-foreign', true),
+    mkEtf('00988A', '主動統一全球創新', 'cat-foreign', true),
+  ];
+  const full: FullHoldingsData = {
+    meta: { updated: '2026-11-28', quarterlyAsof: '2026Q3', source: 'test' },
+    etfs: {
+      '00402A': {
+        name: '主動安聯美國科技',
+        asof: '2026Q3',
+        src: '投信投顧公會季報',
+        basis: 'quarterly1pct',
+        holdings: [
+          ['US0378331005', 'APPLE INC', 0, 8, '國外股票(含承銷)'],
+          ['US9581021055', 'WESTERN DIGITAL', 0, 5, '國外股票(含承銷)'],
+          ['US912797KL01', 'US T-BILL', 0, 2],
+          ['US00206RCQ39', 'T 4 3/4 05/15/55', 0, 2],
+        ],
+      },
+    },
+  };
+  const active = {
+    meta: { updated: '2026-11-28', minChange: 0.005, blocked: [], source: 'test', errors: [] },
+    etfs: {
+      '00988A': {
+        name: '主動統一全球創新', issuer: '統一投信', asof: '2026-11-27', changes: [],
+        holdings: [
+          ['WDC US', '威騰電子', 1000, 4],
+        ],
+      },
+    },
+  } as unknown as ActiveData;
+  const yields: YieldData = {
+    meta: { asof: '2026-11-27' },
+    yields: {
+      '00402A': { price: 100 }, // 1,000 股 = 100,000（WDC 5% = 5,000）
+      '00988A': { price: 100 }, // 1,000 股 = 100,000（WDC 4% = 4,000）
+    },
+  };
+
+  // A. 缺檔（isinMap: null）：內建 AAPL 仍可轉；WDC 的 ISIN 維持原樣不與主動式合併；美債與債券名排除
+  const withoutJson = buildPortfolioXray({
+    holdings: [
+      { code: '00402A', shares: 1000 },
+      { code: '00988A', shares: 1000 },
+    ],
+    etfs,
+    top10: null,
+    active,
+    full,
+    yields,
+    stockDivs: null,
+    isinMap: null,
+  });
+  assert.ok(withoutJson.exposures.some(e => e.code === 'AAPL US'));
+  assert.ok(withoutJson.exposures.some(e => e.code === 'US9581021055' && e.isIsin === true));
+  assert.ok(withoutJson.exposures.some(e => e.code === 'WDC US' && e.sources.length === 1));
+  assert.equal(withoutJson.exposures.some(e => e.code === 'US912797KL01' || e.code === 'US00206RCQ39'), false);
+
+  // B. 載入 isin_ticker.json：US9581021055 轉為 WDC US 並與 00988A 合併，內建 AAPL 照常保留
+  const runtimeMap: IsinTickerData = {
+    meta: { updated: '2026-11-28', count: 1 },
+    map: { US9581021055: 'WDC US' },
+  };
+  const withJson = buildPortfolioXray({
+    holdings: [
+      { code: '00402A', shares: 1000 },
+      { code: '00988A', shares: 1000 },
+    ],
+    etfs,
+    top10: null,
+    active,
+    full,
+    yields,
+    stockDivs: null,
+    isinMap: runtimeMap,
+  });
+  assert.ok(withJson.exposures.some(e => e.code === 'AAPL US'), '資料檔僅含新鍵時仍應保留內建後備');
+  const wdc = withJson.exposures.find(e => e.code === 'WDC US');
+  assert.ok(wdc, '載入 isin_ticker.json 後 US9581021055 應與 00988A 的 WDC US 合併');
+  assert.equal(wdc.displayCode, 'WDC');
+  assert.equal(wdc.isIsin, undefined);
+  assert.equal(wdc.name, '威騰電子');
+  assert.equal(wdc.amount, 9_000);
+  assert.equal(wdc.sources.length, 2);
+
+  // C. 配息試算展開明細（etfTopHoldings）同步吃合併對照與缺檔後備
+  const panelMerged = etfTopHoldings({
+    code: '00402A', sec: 'cat-foreign', holdingValue: 100_000,
+    top10: null, active: null, full, isinMap: runtimeMap, limit: 'all',
+  });
+  assert.equal(panelMerged.status, 'ready');
+  assert.ok(panelMerged.view.rows.some(r => r.code === 'AAPL US'));
+  assert.ok(panelMerged.view.rows.some(r => r.code === 'WDC US' && r.displayCode === 'WDC' && !r.isIsin));
+
+  const panelFallback = etfTopHoldings({
+    code: '00402A', sec: 'cat-foreign', holdingValue: 100_000,
+    top10: null, active: null, full, isinMap: null, limit: 'all',
+  });
+  assert.equal(panelFallback.status, 'ready');
+  assert.ok(panelFallback.view.rows.some(r => r.code === 'AAPL US'));
+  assert.ok(panelFallback.view.rows.some(r => r.code === 'US9581021055' && r.isIsin === true));
 });

@@ -6,12 +6,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { fetchActive, fetchEtfHolders, fetchFullHoldings, fetchTop10 } from '../api/extras';
+import { cachedIsinTicker, fetchActive, fetchEtfHolders, fetchFullHoldings, fetchIsinTicker, fetchTop10 } from '../api/extras';
 import { top10For, missingReason, type Top10Data } from '../lib/top10';
 import { holdersFor, type EtfHoldersData } from '../lib/etfHolders';
 import { holdingLinkKind, type ActiveData } from '../lib/active';
 import type { FullHoldingsData } from '../lib/fullHoldings';
-import { etfTopHoldings, formatShareClasses } from '../lib/portfolioXray';
+import { etfTopHoldings, formatShareClasses, type IsinTickerData } from '../lib/portfolioXray';
 import type { StockDividendData } from '../lib/dividend';
 import type { Etf } from '../types';
 import { StockSheet } from './StockSheet';
@@ -186,13 +186,24 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
   const closeSheet = useCallback(() => setSheet(null), []);
   useEffect(() => { setSheet(null); }, [code]);
 
+  // 只在配息試算展開 ETF 持股面板時按需載入 isin_ticker.json（模組快取、缺檔退回內建表）
+  const [isinMap, setIsinMap] = useState<IsinTickerData | null>(() => cachedIsinTicker() ?? null);
+  useEffect(() => {
+    if (cachedIsinTicker() !== undefined) return;
+    let alive = true;
+    fetchIsinTicker()
+      .then(d => { if (alive) setIsinMap(prev => (prev === d ? prev : d)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   const result = useMemo(
     () => (data
       ? etfTopHoldings({
-        code, sec, holdingValue, top10: data[0], active: data[1], full: data[3], stockDivs, limit: 'all',
+        code, sec, holdingValue, top10: data[0], active: data[1], full: data[3], stockDivs, isinMap, limit: 'all',
       })
       : null),
-    [code, sec, holdingValue, data, stockDivs],
+    [code, sec, holdingValue, data, stockDivs, isinMap],
   );
 
   if (!result) {

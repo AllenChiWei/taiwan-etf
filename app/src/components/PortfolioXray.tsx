@@ -11,7 +11,7 @@ import { useEtfExtras } from './EtfExtras';
 import { StockSheet } from './StockSheet';
 import { EmptyState } from './EmptyState';
 import { Fold } from './Fold';
-import { fetchCalendar, fetchCb, fetchStockDividends, fetchUsStocks, fetchYields } from '../api/extras';
+import { cachedIsinTicker, fetchCalendar, fetchCb, fetchIsinTicker, fetchStockDividends, fetchUsStocks, fetchYields } from '../api/extras';
 import { fetchMarginState, type MarginState } from '../api/market';
 import { fetchNews } from '../api/news';
 import { fetchUsDataset } from '../api/usEtfs';
@@ -36,6 +36,7 @@ import {
   parseStoredHoldings,
   type ExposureRow,
   type HealthFilterMode,
+  type IsinTickerData,
 } from '../lib/portfolioXray';
 
 const STORAGE_KEY = 'twetf.holdings';
@@ -155,6 +156,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   const [cbData, setCbData] = useState<CbData | null | undefined>(undefined);
   const [calendar, setCalendar] = useState<CalendarData | null | undefined>(undefined);
   const [news, setNews] = useState<NewsData | null | undefined>(undefined);
+  const [isinMap, setIsinMap] = useState<IsinTickerData | null>(() => cachedIsinTicker() ?? null);
 
   // 美股（只有持股含 m === 'us' 才去載入對應清單與 FinMind 報價）
   const usCodes = useMemo(
@@ -216,6 +218,11 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
     fetchNews(ac.signal)
       .then(d => { if (!ac.signal.aborted) setNews(d); })
       .catch(() => { if (!ac.signal.aborted) setNews(null); });
+    if (cachedIsinTicker() === undefined) {
+      fetchIsinTicker()
+        .then(d => { if (!ac.signal.aborted) setIsinMap(prev => (prev === d ? prev : d)); })
+        .catch(() => {});
+    }
     return () => ac.abort();
   }, [hasHoldings]);
 
@@ -276,8 +283,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       usPricesTwd,
       usNames,
       usStockNames,
+      isinMap,
     }),
-    [holdings, etfData.etfs, top10, active, full, yields, stockDivs, usPricesTwd, usNames, usStockNames],
+    [holdings, etfData.etfs, top10, active, full, yields, stockDivs, usPricesTwd, usNames, usStockNames, isinMap],
   );
 
   const marginCheck = useMemo(

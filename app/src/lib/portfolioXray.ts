@@ -14,6 +14,12 @@ import type { Top10Data } from './top10.ts';
 import { holdingsOf, type HoldingSet, type HoldingSourceKind } from './overlap.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
 import {
+  mergeIsinTickerMap,
+  parseIsinTickerData,
+  type IsinTickerData,
+  type IsinTickerMeta,
+} from './isinTickerData.ts';
+import {
   resolveShareClass,
   resolveTwAdr,
   SHARE_CLASS_ALIAS,
@@ -23,7 +29,22 @@ import {
 } from './shareClassAlias.ts';
 import type { StockDividendData, YieldData } from './dividend.ts';
 
-export { SHARE_CLASS_ALIAS, SHARE_CLASS_LABEL, TW_ADR_TO_TW };
+export {
+  mergeIsinTickerMap,
+  parseIsinTickerData,
+  SHARE_CLASS_ALIAS,
+  SHARE_CLASS_LABEL,
+  TW_ADR_TO_TW,
+  type IsinTickerData,
+  type IsinTickerMeta,
+};
+
+/** 合併內建 ISIN_TICKER 與執行時載入的 isin_ticker.json；缺檔時直接沿用內建對照。 */
+export function resolveIsinTickerMap(
+  extra?: IsinTickerData | Readonly<Record<string, string>> | null,
+): Readonly<Record<string, string>> {
+  return extra ? mergeIsinTickerMap(ISIN_TICKER, extra) : ISIN_TICKER;
+}
 import {
   addDays, convPct, convertible, outPct,
   type CbBond, type CbData, type CbUpcoming,
@@ -86,6 +107,8 @@ export interface PortfolioXrayInput {
   usNames?: ReadonlyMap<string, string>;
   /** 美股個股名稱對照（代號 → 名稱） */
   usStockNames?: ReadonlyMap<string, string>;
+  /** 選填：執行時載入的海外 ISIN →「代號 交易所」對照（isin_ticker.json），與內建 isinTicker.ts 合併 */
+  isinMap?: IsinTickerData | Readonly<Record<string, string>> | null;
 }
 
 export type HoldingKind = 'stock' | 'etf' | 'us' | 'us-stock';
@@ -298,10 +321,10 @@ const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
 const FOREIGN_TICKER_RE = /^([A-Z0-9][A-Z0-9./-]{0,11})\s+([A-Z][A-Z0-9])$/;
 const CJK_RE = /[\u4e00-\u9fff]/;
 
-// 公會月報的資產類型若屬債券、期貨或連結型 ETF，不展開成個股
-const NON_STOCK_TYPE_RE = /公債|公司債|金融債|可轉債|債券|短期票券|附買回|債|期貨|期指|選擇權|受益憑證|共同基金|境外基金|貨幣市場基金|ETF/i;
-// 沒有資產類型欄位時，依名稱排除常見債券寫法（如 US TREASURY 4.25% 2054）
-const BOND_NAME_RE = /\b(TREASURY|T-BILL|BOND|NOTES?|DEBENTURE|MTN|COUPON|GILTS?)\b|公債|公司債|金融債|債券|\d+(?:\.\d+)?%\s*(?:\d{2,4}|\/)/i;
+// 公會月報／季報的資產類型若屬債券、票券、基金、期貨或連結型 ETF，不展開成個股
+const NON_STOCK_TYPE_RE = /公債|公司債|金融債|可轉債|債券|短期票券|票券|附買回|債|期貨|期指|選擇權|受益憑證|共同基金|境外基金|貨幣市場基金|基金|ETF/i;
+// 沒有資產類型欄位時，依名稱排除常見債券寫法（如 US TREASURY 4.25% 2054、T 4 3/4 05/15/55）
+const BOND_NAME_RE = /\b(TREASURY|T-BILL|BOND|NOTES?|DEBENTURE|MTN|COUPON|GILTS?)\b|公債|公司債|金融債|債券|\d+(?:\.\d+)?%\s*(?:\d{2,4}|\/)|(?:^|[\s(])V?\d{1,2}(?:\.\d+|\s+\d+\/\d+)?%?\s+(?:0?[1-9]|1[0-2])\/(?:0?[1-9]|[12]\d|3[01])\/\d{2,4}(?:\b|$)/i;
 
 // 交易所別名正規化（跟 scripts/gen_isin_ticker.py 一致，讓各投信的不同寫法合併成同一個鍵）
 const EXCH_ALIAS: Record<string, string> = {
@@ -382,7 +405,12 @@ function normalizeForeignTicker(
   };
 }
 
-function parseForeignComponent(rawSid: string, rawName: string, rowType?: string): ParsedForeign | null {
+function parseForeignComponent(
+  rawSid: string,
+  rawName: string,
+  rowType?: string,
+  isinLookup: Readonly<Record<string, string>> = ISIN_TICKER,
+): ParsedForeign | null {
   if (rowType && NON_STOCK_TYPE_RE.test(rowType)) return null;
   const sid = rawSid.trim().toUpperCase();
   if (!sid) return null;
@@ -395,9 +423,12 @@ function parseForeignComponent(rawSid: string, rawName: string, rowType?: string
     return { ...norm, isIsin: false };
   }
 
-  // 2. ISIN（公會月報前十大格式，如 US0378331005、JP3122400009、VN000000VIC9）
+  // 2. ISIN（公會月報前十大與季報格式，如 US0378331005、JP3122400009、VN000000VIC9）
   if (ISIN_RE.test(sid)) {
-    const mapped = ISIN_TICKER[sid];
+    // 排除歐洲債（XS）、美國公債／國庫券（US912／US9128）及債券類名稱
+    if (sid.startsWith('XS') || sid.startsWith('US912')) return null;
+    if (BOND_NAME_RE.test(rawName)) return null;
+    const mapped = isinLookup[sid];
     if (mapped) {
       const mm = mapped.trim().toUpperCase().match(FOREIGN_TICKER_RE);
       if (mm) {
@@ -405,9 +436,6 @@ function parseForeignComponent(rawSid: string, rawName: string, rowType?: string
         if (norm) return { ...norm, isIsin: false };
       }
     }
-    // 排除歐洲債（XS）與美國公債（US9128）及債券類名稱
-    if (sid.startsWith('XS') || sid.startsWith('US9128')) return null;
-    if (BOND_NAME_RE.test(rawName)) return null;
     return {
       key: sid,
       displayCode: sid,
@@ -526,7 +554,10 @@ interface ParsedForeignComponent extends ParsedForeign {
 }
 
 /** 分流展開單一 ETF 的台股普通股（另併入台灣公司美國 ADR）與海外股票（排除期貨、債券與連結型 ETF）。 */
-function splitEtfComponents(hs: HoldingSet): {
+function splitEtfComponents(
+  hs: HoldingSet,
+  isinLookup: Readonly<Record<string, string>> = ISIN_TICKER,
+): {
   twComponents: ParsedTwComponent[];
   foreignComponents: ParsedForeignComponent[];
 } {
@@ -548,7 +579,7 @@ function splitEtfComponents(hs: HoldingSet): {
       }
       continue;
     }
-    const parsed = parseForeignComponent(sid, item.name, item.type);
+    const parsed = parseForeignComponent(sid, item.name, item.type, isinLookup);
     if (!parsed) continue;
     const adr = !parsed.isIsin ? resolveTwAdr(parsed.key) : null;
     if (adr) {
@@ -674,6 +705,8 @@ export interface EtfTopHoldingsInput {
   full?: FullHoldingsData | null;
   /** 選填：提供時台股成分優先採用官方簡稱（同持股健檢） */
   stockDivs?: StockDividendData | null;
+  /** 選填：執行時載入的海外 ISIN →「代號 交易所」對照（isin_ticker.json），與內建 isinTicker.ts 合併 */
+  isinMap?: IsinTickerData | Readonly<Record<string, string>> | null;
   /** 最多列出前幾名，預設 10；傳 'all' 列出全部成分股 */
   limit?: number | 'all';
 }
@@ -699,7 +732,8 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
     return { status: 'empty', reason: '查無這檔 ETF 的持股明細（可能為新上市、不動產或平衡型 ETF）。' };
   }
 
-  const { twComponents, foreignComponents } = splitEtfComponents(hs);
+  const isinLookup = resolveIsinTickerMap(input.isinMap);
+  const { twComponents, foreignComponents } = splitEtfComponents(hs, isinLookup);
   if (twComponents.length === 0 && foreignComponents.length === 0) {
     return { status: 'empty', reason: '這檔 ETF 的明細不含股票成分（可能為債券、期貨或連結型 ETF），無股票持股明細。' };
   }
@@ -790,8 +824,8 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
  * 口徑說明：
  * - 所有已取得最新收盤價的持股（含債券／美股／海外 ETF）均計入總市值分母，
  *   單一個股佔比＝（直接持股市值 ＋ Σ 各 ETF 市值 × 該股佔 ETF 淨值% ）÷ 投組總市值。
- * - 台股 ETF、海外 ETF 與跨市場主動式 ETF 皆展開台股與海外股票成分；公會月報的海外 ISIN 透過
- *   ISIN_TICKER 對照表轉成「代號 交易所」與主動式持股合併，再經 SHARE_CLASS_ALIAS 將同公司不同股別
+ * - 台股 ETF、海外 ETF 與跨市場主動式 ETF 皆展開台股與海外股票成分；公會月報／季報的海外 ISIN 透過
+ *   內建 ISIN_TICKER 與執行時載入的 isin_ticker.json 合併對照轉成「代號 交易所」與主動式持股合併，再經 SHARE_CLASS_ALIAS 將同公司不同股別
  *   （如 GOOG／GOOGL、BRK.A／BRK.B、005935／005930）合併至代表鍵並保留來源股別明細，查無對照時仍以 ISIN 保留。
  * - 台灣公司的美國 ADR（TW_ADR_TO_TW：TSM→2330、UMC→2303、ASX→3711、CHT→2412）一律併回對應台股列，
  *   套用於月報 ISIN、主動式每日持股與直接持有美股個股，金額歸入台股類別並保留 ADR 來源標示（市值曝險不受 ADR 換算股數影響）。
@@ -803,6 +837,7 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
 export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResult {
   const merged = mergeByCode(input.holdings);
   const etfMap = new Map(input.etfs.map(e => [e.code, e] as const));
+  const isinLookup = resolveIsinTickerMap(input.isinMap);
 
   interface ResolvedHolding {
     code: string;
@@ -1128,7 +1163,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     }
 
     // 分流展開台股普通股（另併入台灣公司美國 ADR）與海外股票（排除期貨 TX／WTX、債券 ISIN 與國外掛牌 ETF）
-    const { twComponents, foreignComponents } = splitEtfComponents(hs);
+    const { twComponents, foreignComponents } = splitEtfComponents(hs, isinLookup);
 
     if (twComponents.length === 0 && foreignComponents.length === 0) {
       if (r.value !== null) unpenetrableValue += r.value;
