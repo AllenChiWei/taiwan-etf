@@ -6,7 +6,14 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { assetKey, type HoldingsSnapshot } from '../src/lib/holdingsLog.ts';
-import { buildValueHistory, shiftMonths, type DailyFx, type DailyPrice } from '../src/lib/valueHistory.ts';
+import {
+  buildBenchmarkComparison,
+  buildValueHistory,
+  computeMaxDrawdown,
+  shiftMonths,
+  type DailyFx,
+  type DailyPrice,
+} from '../src/lib/valueHistory.ts';
 
 test('手算核對：估算區間 + 實際紀錄切換 + 美股匯率 + 休市補價 + 加減碼不含於損益', () => {
   const log: HoldingsSnapshot[] = [
@@ -254,4 +261,161 @@ test('配息不算進市值與損益，另以除息日前一日持股估算區�
   assert.equal(res.rows[1].dailyPnl, -2_000);
   // 除息日 11-26 前一日（11-25）持有 2000 股 → 估算已領配息 2,000 元
   assert.equal(res.estDividends, 2_000);
+});
+
+test('報酬比較手算核對：交易日補前值 + 起點歸零 + TWR 扣加減碼 + 超額報酬與最大回撤', () => {
+  // 0050 1000 股 + VOO 10 股，固定匯率 25；11-25 模擬台股休市（0050 與 TAIEX 皆缺價）
+  // 11-26 加碼 0050 +1000 股（不應扭曲 TWR）
+  const log: HoldingsSnapshot[] = [
+    {
+      date: '2026-11-24',
+      holdings: [
+        { code: '0050', shares: 1000 },
+        { code: 'VOO', shares: 10, m: 'us' },
+      ],
+    },
+    {
+      date: '2026-11-26',
+      holdings: [
+        { code: '0050', shares: 2000 },
+        { code: 'VOO', shares: 10, m: 'us' },
+      ],
+    },
+  ];
+  const twPrices = new Map<string, DailyPrice[]>([
+    ['0050', [
+      { date: '2026-11-24', close: 100 },
+      { date: '2026-11-26', close: 122 },
+      { date: '2026-11-27', close: 103.8 },
+    ]],
+  ]);
+  const usPrices = new Map<string, DailyPrice[]>([
+    ['VOO', [
+      { date: '2026-11-24', close: 400 },
+      { date: '2026-11-25', close: 480 },
+      { date: '2026-11-26', close: 480 },
+      { date: '2026-11-27', close: 480 },
+    ]],
+  ]);
+  const fxHistory: DailyFx[] = [
+    { date: '2026-11-24', rate: 25 },
+    { date: '2026-11-25', rate: 25 },
+    { date: '2026-11-26', rate: 25 },
+    { date: '2026-11-27', rate: 25 },
+  ];
+  const taiex: DailyPrice[] = [
+    { date: '2026-11-24', close: 20_000 },
+    // 2026-11-25 台股休市缺價 → 應以 11-24 收盤 20,000 補齊
+    { date: '2026-11-26', close: 22_000 },
+    { date: '2026-11-27', close: 18_700 },
+  ];
+
+  const hist = buildValueHistory({ log, twPrices, usPrices, fxHistory, range: '1y' });
+  const cmp = buildBenchmarkComparison(hist.rows, taiex);
+
+  assert.equal(cmp.points.length, 4);
+  assert.equal(cmp.startDate, '2026-11-24');
+  assert.equal(cmp.endDate, '2026-11-27');
+  assert.equal(cmp.filledDays, 1);
+  assert.equal(cmp.trimmedLeadingDays, 0);
+
+  // 11-24 起點歸零：我的 0%、大盤 0%、超額 0%
+  assert.equal(cmp.points[0].portfolioRetPct, 0);
+  assert.equal(cmp.points[0].benchmarkRetPct, 0);
+  assert.equal(cmp.points[0].excessRetPct, 0);
+  assert.equal(cmp.points[0].benchmarkFilled, false);
+
+  // 11-25 台股休市：VOO +20,000 / 200,000 = +10%；TAIEX 補前值 20,000 → 0%；超額 +10%
+  assert.equal(cmp.points[1].benchmarkFilled, true);
+  assert.equal(cmp.points[1].benchmarkClose, 20_000);
+  assert.ok(Math.abs(cmp.points[1].portfolioRetPct - 10) < 1e-9);
+  assert.equal(cmp.points[1].benchmarkRetPct, 0);
+  assert.ok(Math.abs(cmp.points[1].excessRetPct - 10) < 1e-9);
+
+  // 11-26 加碼日（扣加減碼日報酬 = 22,000 / 220,000 = +10% → TWR 1.1*1.1-1 = +21%）
+  // TAIEX 22,000 / 20,000 - 1 = +10%；超額 = +11%
+  assert.equal(cmp.points[2].benchmarkFilled, false);
+  assert.ok(Math.abs(cmp.points[2].portfolioRetPct - 21) < 1e-9);
+  assert.ok(Math.abs(cmp.points[2].benchmarkRetPct - 10) < 1e-9);
+  assert.ok(Math.abs(cmp.points[2].excessRetPct - 11) < 1e-9);
+
+  // 11-27 回檔（日報酬 = -36,400 / 364,000 = -10% → TWR 1.21*0.9-1 = +8.9%）
+  // TAIEX 18,700 / 20,000 - 1 = -6.5%；超額 = 8.9 - (-6.5) = +15.4%
+  assert.ok(Math.abs((cmp.portfolioRetPct ?? 0) - 8.9) < 1e-9);
+  assert.ok(Math.abs((cmp.benchmarkRetPct ?? 0) - (-6.5)) < 1e-9);
+  assert.ok(Math.abs((cmp.excessRetPct ?? 0) - 15.4) < 1e-9);
+
+  // 最大回撤：我 1.21 → 1.089 = -10%；大盤 22,000 → 18,700 = -15%
+  assert.ok(Math.abs((cmp.portfolioMaxDrawdownPct ?? 0) - (-10)) < 1e-9);
+  assert.ok(Math.abs((cmp.benchmarkMaxDrawdownPct ?? 0) - (-15)) < 1e-9);
+});
+
+test('報酬比較：切換區間同步起點歸零；基準資料較晚開始時於共同起點重歸零', () => {
+  const log: HoldingsSnapshot[] = [
+    { date: '2026-11-27', holdings: [{ code: '0050', shares: 1000 }] },
+  ];
+  const twPrices = new Map<string, DailyPrice[]>([
+    ['0050', [
+      { date: '2026-01-02', close: 100 },
+      { date: '2026-06-01', close: 110 },
+      { date: '2026-10-01', close: 120 },
+      { date: '2026-11-27', close: 132 },
+    ]],
+  ]);
+  const fullTaiex: DailyPrice[] = [
+    { date: '2026-01-02', close: 20_000 },
+    { date: '2026-06-01', close: 21_000 },
+    { date: '2026-10-01', close: 24_000 },
+    { date: '2026-11-27', close: 25_200 },
+  ];
+
+  // 近 3 月視窗（10/01 → 11/27）：我的 120→132 (+10%)，大盤 24,000→25,200 (+5%)，超額 +5%
+  const h3m = buildValueHistory({ log, twPrices, usPrices: new Map(), fxHistory: [], range: '3m' });
+  const c3m = buildBenchmarkComparison(h3m.rows, fullTaiex);
+  assert.equal(c3m.startDate, '2026-10-01');
+  assert.equal(c3m.points[0].portfolioRetPct, 0);
+  assert.equal(c3m.points[0].benchmarkRetPct, 0);
+  assert.ok(Math.abs((c3m.portfolioRetPct ?? 0) - 10) < 1e-9);
+  assert.ok(Math.abs((c3m.benchmarkRetPct ?? 0) - 5) < 1e-9);
+  assert.ok(Math.abs((c3m.excessRetPct ?? 0) - 5) < 1e-9);
+
+  // 基準從 2026-06-01 才開始 → 1y 視窗略過 01-02，雙方於 06-01 共同歸零
+  // 我的 110→132 (+20%)，大盤 21,000→25,200 (+20%)，超額 0%，且 rowIndex 對應原 rows[1..3]
+  const h1y = buildValueHistory({ log, twPrices, usPrices: new Map(), fxHistory: [], range: '1y' });
+  const lateTaiex = fullTaiex.slice(1);
+  const cLate = buildBenchmarkComparison(h1y.rows, lateTaiex);
+  assert.equal(cLate.trimmedLeadingDays, 1);
+  assert.equal(cLate.startDate, '2026-06-01');
+  assert.deepEqual(cLate.points.map(p => p.rowIndex), [1, 2, 3]);
+  assert.equal(cLate.points[0].portfolioRetPct, 0);
+  assert.equal(cLate.points[0].benchmarkRetPct, 0);
+  assert.ok(Math.abs((cLate.portfolioRetPct ?? 0) - 20) < 1e-9);
+  assert.ok(Math.abs((cLate.benchmarkRetPct ?? 0) - 20) < 1e-9);
+  assert.ok(Math.abs(cLate.excessRetPct ?? 1) < 1e-9);
+});
+
+test('最大回撤與缺基準資料邊界驗證', () => {
+  assert.equal(computeMaxDrawdown([]), 0);
+  assert.equal(computeMaxDrawdown([0]), 0);
+  assert.equal(computeMaxDrawdown([0, 5, 12, 18]), 0);
+  // 財富倍數 1.0 → 1.2 → 1.08 → 1.15：相對高點回撤 = (1.08 / 1.2 - 1) * 100 = -10%（非 8 - 20 = -12%）
+  assert.ok(Math.abs(computeMaxDrawdown([0, 20, 8, 15]) - (-10)) < 1e-9);
+  assert.ok(Math.abs(computeMaxDrawdown([0, -10, -25, -5]) - (-25)) < 1e-9);
+
+  // 基準無資料時安全回空結果
+  const log: HoldingsSnapshot[] = [
+    { date: '2026-11-27', holdings: [{ code: '0050', shares: 1000 }] },
+  ];
+  const twPrices = new Map<string, DailyPrice[]>([
+    ['0050', [
+      { date: '2026-11-26', close: 100 },
+      { date: '2026-11-27', close: 105 },
+    ]],
+  ]);
+  const hist = buildValueHistory({ log, twPrices, usPrices: new Map(), fxHistory: [] });
+  const emptyCmp = buildBenchmarkComparison(hist.rows, []);
+  assert.equal(emptyCmp.points.length, 0);
+  assert.equal(emptyCmp.excessRetPct, null);
+  assert.equal(emptyCmp.portfolioMaxDrawdownPct, null);
+  assert.equal(emptyCmp.benchmarkMaxDrawdownPct, null);
 });

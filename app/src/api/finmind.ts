@@ -286,6 +286,66 @@ export function fetchTwPrices(code: string, signal?: AbortSignal): Promise<Price
   return p;
 }
 
+/** 發行量加權股價指數（未含息，FinMind TaiwanStockPrice data_id=TAIEX），沿用每日快取與降級備援。 */
+export function fetchTaiexPrices(signal?: AbortSignal): Promise<PriceRow[]> {
+  return fetchTwPrices('TAIEX', signal);
+}
+
+interface TotalReturnRow {
+  date: string;
+  stock_id?: string;
+  price?: number;
+  close?: number;
+}
+
+const TAIEX_TR_KEY = 'twetf.taiex.tr';
+let taiexTrCache: Promise<PriceRow[]> | null = null;
+
+/** 發行量加權股價報酬指數（含息，FinMind TaiwanStockTotalReturnIndex data_id=TAIEX），每日快取於 localStorage。 */
+export function fetchTaiexTotalReturn(signal?: AbortSignal): Promise<PriceRow[]> {
+  if (taiexTrCache) return taiexTrCache;
+
+  const today = todayTaipei();
+  const saved = loadSavedCompact(TAIEX_TR_KEY);
+  if (saved && saved.fetched === today && saved.rows.length > 0) {
+    return Promise.resolve(saved.rows.map(([date, close]) => ({ date, close })));
+  }
+
+  const start = shiftDays(today, -470);
+  const p = rows<TotalReturnRow>('TaiwanStockTotalReturnIndex', 'TAIEX', start, signal)
+    .then(list => {
+      // 若 API 同時回傳多個指數（例如 TAIEX 與 TPEx），只留 TAIEX 避免覆蓋
+      const hasTaiexId = list.some(r => r.stock_id === 'TAIEX');
+      const byDate = new Map<string, number>();
+      for (const r of list) {
+        if (hasTaiexId && r.stock_id !== 'TAIEX') continue;
+        if (typeof r.date !== 'string' || r.date.length < 10) continue;
+        const c = Number(r.price ?? r.close);
+        if (Number.isFinite(c) && c > 0) byDate.set(r.date.slice(0, 10), c);
+      }
+      const pairs = [...byDate.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      const out = pairs.map(([date, close]) => ({ date, close }));
+      if (pairs.length > 0) {
+        try {
+          localStorage.setItem(TAIEX_TR_KEY, JSON.stringify({ fetched: today, rows: pairs }));
+        } catch { /* 無痕模式或容量滿 */ }
+      } else {
+        taiexTrCache = null;
+      }
+      return out;
+    })
+    .catch(err => {
+      taiexTrCache = null;
+      if (signal?.aborted) throw err;
+      if (saved && saved.rows.length > 0) {
+        return saved.rows.map(([date, close]) => ({ date, close }));
+      }
+      throw err;
+    });
+  taiexTrCache = p;
+  return p;
+}
+
 const FX_HIST_KEY = 'twetf.usdtwd.hist';
 let fxHistCache: Promise<{ rows: Array<{ date: string; rate: number }>; stale: boolean }> | null = null;
 

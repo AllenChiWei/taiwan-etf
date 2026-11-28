@@ -5,11 +5,17 @@
  * 手機 390px 維持單欄不撐寬。純計算在 lib/valueHistory.ts 與 lib/holdingsLog.ts。
  */
 
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useState, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useEtfData } from '../context/AppContext';
 import { fetchEtfDividends, fetchStockDividends, fetchUsStocks } from '../api/extras';
-import { fetchTwPrices, fetchUsPrices, fetchUsdTwdHistory } from '../api/finmind';
+import {
+  fetchTaiexPrices,
+  fetchTaiexTotalReturn,
+  fetchTwPrices,
+  fetchUsPrices,
+  fetchUsdTwdHistory,
+} from '../api/finmind';
 import { fetchUsDataset } from '../api/usEtfs';
 import { holdingLinkKind } from '../lib/active';
 import type { EtfDividendData, StockDividendData } from '../lib/dividend';
@@ -27,7 +33,10 @@ import { parseStoredHoldings } from '../lib/portfolioXray';
 import { deriveUsDividends, type UsPriceRow } from '../lib/usDividend';
 import { usStockNameMap, type UsStocksDataset } from '../lib/usStocks';
 import {
+  buildBenchmarkComparison,
   buildValueHistory,
+  type BenchmarkDayPoint,
+  type BenchmarkMode,
   type DailyFx,
   type DailyPrice,
   type PeriodChange,
@@ -58,6 +67,19 @@ function compactMoney(v: number): string {
   if (a >= 1e8) return `${sign}${(a / 1e8).toFixed(1).replace(/\.0$/, '')}億`;
   if (a >= 1e4) return `${sign}${nf0.format(Math.round(a / 1e4))}萬`;
   return `${sign}${nf0.format(Math.round(a))}`;
+}
+
+/** Y 軸百分比刻度（例如 +10%、0%、−5%，遇到 2.5 等刻度自動保留小數）。 */
+function formatAxisPct(v: number): string {
+  if (v === 0) return '0%';
+  const sign = v > 0 ? '+' : '−';
+  const abs = Math.abs(v);
+  const digits = Math.abs(abs * 10 - Math.round(abs * 10)) > 1e-4
+    ? 2
+    : Math.abs(abs - Math.round(abs)) > 1e-4
+      ? 1
+      : 0;
+  return `${sign}${abs.toFixed(digits).replace(/\.0+$/, '')}%`;
 }
 
 /** 漂亮 Y 軸刻度（對齊 EquityPage）。 */
@@ -122,7 +144,7 @@ function changeSummaryText(c: ValueHoldingChange): string {
 function StatCard({ label, value, sub, valueClass = 'text-ink', className }: {
   label: string;
   value: string;
-  sub?: string;
+  sub?: ReactNode;
   valueClass?: string;
   className?: string;
 }) {
@@ -145,6 +167,7 @@ function periodSub(p: PeriodChange | null, emptyText: string): string {
 }
 
 const VALUE_COLOR = 'var(--cat-1)';
+const BENCH_COLOR = 'var(--cat-2)';
 const CHANGE_DOT = 'var(--cat-2)';
 
 /** 圖一：每日總市值折線（估算區間虛線、實際紀錄實線、加減碼日可點標記點） */
@@ -558,6 +581,207 @@ function PnlLineChart({
   );
 }
 
+/** 圖三：報酬比較折線（我的持股 TWR vs 加權指數／加權報酬指數，同區間自 0% 起算） */
+function ReturnCompareChart({
+  points,
+  benchLabel,
+  activeRowIdx,
+  onHoverRow,
+  onPinRow,
+}: {
+  points: readonly BenchmarkDayPoint[];
+  benchLabel: string;
+  activeRowIdx: number;
+  onHoverRow: (rowIdx: number | null) => void;
+  onPinRow: (rowIdx: number) => void;
+}) {
+  const { ref, width: W } = useChartWidth(340);
+  const H = 260;
+  const FONT = 11;
+
+  const { lo, hi, yTicks } = useMemo(() => {
+    let minV = 0;
+    let maxV = 0;
+    for (const p of points) {
+      if (p.portfolioRetPct < minV) minV = p.portfolioRetPct;
+      if (p.portfolioRetPct > maxV) maxV = p.portfolioRetPct;
+      if (p.benchmarkRetPct < minV) minV = p.benchmarkRetPct;
+      if (p.benchmarkRetPct > maxV) maxV = p.benchmarkRetPct;
+    }
+    const span = maxV - minV;
+    const pad = span > 0 ? span * 0.1 : 2;
+    const y0 = minV - pad;
+    const y1 = maxV + pad;
+    const ts = niceTicks(y0, y1, 4);
+    if (!ts.includes(0)) ts.push(0);
+    ts.sort((a, b) => a - b);
+    return { lo: y0, hi: y1, yTicks: ts };
+  }, [points]);
+
+  const xTicks = useMemo(() => {
+    const last = points.length - 1;
+    if (last <= 0) return [0];
+    const steps = W >= 720 && points.length >= 20 ? 4 : 2;
+    const out: number[] = [];
+    for (let k = 0; k <= steps; k++) {
+      const idx = Math.round((last * k) / steps);
+      if (out[out.length - 1] !== idx) out.push(idx);
+    }
+    return out;
+  }, [points.length, W]);
+
+  const activePointIdx = useMemo(() => {
+    if (points.length === 0) return 0;
+    const exact = points.findIndex(p => p.rowIndex === activeRowIdx);
+    if (exact >= 0) return exact;
+    return activeRowIdx < points[0].rowIndex ? 0 : points.length - 1;
+  }, [points, activeRowIdx]);
+
+  if (points.length < 2) {
+    return (
+      <div ref={ref} className="mt-2 w-full min-w-0 overflow-hidden">
+        <p className="py-10 text-center text-[12.5px] text-muted">交易日數不足 2 天，暫無法繪製報酬比較曲線。</p>
+      </div>
+    );
+  }
+
+  const labelW = estimateLabelWidth(yTicks.map(formatAxisPct), FONT);
+  const PAD = { top: 12, right: 10, bottom: 22, left: Math.max(40, labelW + 8) };
+  const plotW = Math.max(40, W - PAD.left - PAD.right);
+  const plotH = H - PAD.top - PAD.bottom;
+
+  const x = (i: number) => PAD.left + (i / (points.length - 1)) * plotW;
+  const y = (v: number) => PAD.top + (1 - (v - lo) / (hi - lo || 1)) * plotH;
+
+  let benchPath = '';
+  let portEstPath = '';
+  let portActualPath = '';
+  let actualStartIdx = -1;
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i];
+    const bPt = `${x(i).toFixed(1)},${y(p.benchmarkRetPct).toFixed(1)}`;
+    benchPath += `${i ? 'L' : 'M'}${bPt}`;
+
+    const pPt = `${x(i).toFixed(1)},${y(p.portfolioRetPct).toFixed(1)}`;
+    if (p.estimated) {
+      portEstPath += `${portEstPath ? 'L' : 'M'}${pPt}`;
+    } else {
+      if (actualStartIdx === -1) {
+        actualStartIdx = i;
+        if (portEstPath) portEstPath += `L${pPt}`;
+      }
+      portActualPath += `${portActualPath ? 'L' : 'M'}${pPt}`;
+    }
+  }
+
+  const cur = points[activePointIdx];
+  const pickPointIdx = (clientX: number, rect: DOMRect) => {
+    const px = ((clientX - rect.left) / (rect.width || 1)) * W;
+    const raw = ((px - PAD.left) / plotW) * (points.length - 1);
+    return Math.max(0, Math.min(points.length - 1, Math.round(raw)));
+  };
+
+  return (
+    <div ref={ref} className="mt-2 w-full min-w-0 overflow-hidden">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width={W}
+        height={H}
+        style={{ height: H }}
+        className="block w-full touch-pan-y select-none"
+        role="img"
+        aria-label={`持股時間加權報酬與${benchLabel}報酬比較圖`}
+        onMouseLeave={() => onHoverRow(null)}
+        onMouseMove={e => onHoverRow(points[pickPointIdx(e.clientX, e.currentTarget.getBoundingClientRect())].rowIndex)}
+        onClick={e => onPinRow(points[pickPointIdx(e.clientX, e.currentTarget.getBoundingClientRect())].rowIndex)}
+      >
+        {yTicks.map(t => (
+          <g key={t}>
+            <line
+              x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)}
+              stroke={t === 0 ? 'var(--c-border-strong)' : 'var(--c-border)'}
+              strokeWidth={t === 0 ? 1.2 : 1}
+              strokeDasharray={t === 0 ? '4 4' : undefined}
+              opacity={t === 0 ? 0.9 : 0.6}
+            />
+            <text x={PAD.left - 6} y={y(t) + 4} textAnchor="end" fontSize={FONT} fill="var(--c-faint)">
+              {formatAxisPct(t)}
+            </text>
+          </g>
+        ))}
+
+        {actualStartIdx > 0 && (
+          <g>
+            <line x1={x(actualStartIdx)} x2={x(actualStartIdx)} y1={PAD.top} y2={H - PAD.bottom}
+                  stroke="var(--c-border-strong)" strokeDasharray="3 3" strokeWidth={1} />
+            <text x={Math.min(W - PAD.right - 2, x(actualStartIdx) + 4)} y={PAD.top + 10}
+                  fontSize={10} fill="var(--c-faint)">開始記錄</text>
+          </g>
+        )}
+
+        <path d={benchPath} fill="none" stroke={BENCH_COLOR} strokeWidth={1.8}
+              strokeLinejoin="round" strokeLinecap="round" opacity={0.92} />
+
+        {portEstPath && (
+          <path d={portEstPath} fill="none" stroke={VALUE_COLOR} strokeWidth={1.8}
+                strokeDasharray="5 4" strokeLinejoin="round" opacity={0.85} />
+        )}
+        {portActualPath && (
+          <path d={portActualPath} fill="none" stroke={VALUE_COLOR} strokeWidth={2}
+                strokeLinejoin="round" strokeLinecap="round" />
+        )}
+
+        {xTicks.map(i => (
+          <text key={i} x={x(i)} y={H - 5}
+                textAnchor={i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}
+                fontSize={FONT} fill="var(--c-faint)">
+            {points[i].date}
+          </text>
+        ))}
+
+        <line x1={x(activePointIdx)} x2={x(activePointIdx)} y1={PAD.top} y2={H - PAD.bottom}
+              stroke="var(--c-border-strong)" strokeWidth={1} strokeDasharray="3 3" />
+        <circle cx={x(activePointIdx)} cy={y(cur.benchmarkRetPct)} r={3.5}
+                fill={BENCH_COLOR} stroke="var(--c-surface)" strokeWidth={1.5} />
+        <circle cx={x(activePointIdx)} cy={y(cur.portfolioRetPct)} r={4}
+                fill={VALUE_COLOR} stroke="var(--c-surface)" strokeWidth={2} />
+      </svg>
+
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-muted">
+        <span className="font-mono font-semibold text-ink">
+          {cur.date}
+          {cur.estimated && (
+            <span className="ml-1 rounded bg-sunken px-1 py-0.5 font-sans text-[10px] font-semibold text-muted">估算</span>
+          )}
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: VALUE_COLOR }} />
+          我的持股{' '}
+          <strong className={`font-mono tabular-nums ${toneClass(cur.portfolioRetPct)}`}>
+            {signedPct(cur.portfolioRetPct)}
+          </strong>
+        </span>
+        <span className="inline-flex items-center gap-1">
+          <span className="inline-block h-2 w-2 rounded-full" style={{ background: BENCH_COLOR }} />
+          {benchLabel}{' '}
+          <strong className={`font-mono tabular-nums ${toneClass(cur.benchmarkRetPct)}`}>
+            {signedPct(cur.benchmarkRetPct)}
+          </strong>
+          {cur.benchmarkFilled && (
+            <span className="text-[10.5px] text-faint">（補前值）</span>
+          )}
+        </span>
+        <span>
+          超額{' '}
+          <strong className={`font-mono tabular-nums ${toneClass(cur.excessRetPct)}`}>
+            {signedPct(cur.excessRetPct)}
+          </strong>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const RANGES: ReadonlyArray<{ id: ValueRange; label: string }> = [
   { id: '3m', label: '近 3 月' },
   { id: '6m', label: '近 6 月' },
@@ -580,6 +804,17 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
   const [etfDivs, setEtfDivs] = useState<EtfDividendData | null>(null);
   const [usDataset, setUsDataset] = useState<UsEtfDataset | null>(null);
   const [usStocks, setUsStocks] = useState<UsStocksDataset | null>(null);
+
+  // 加權指數（未含息／含息報酬指數）比較狀態，僅進入本分頁且有持股時抓
+  const [benchMode, setBenchMode] = useState<BenchmarkMode>('price');
+  const [taiexPrices, setTaiexPrices] = useState<DailyPrice[]>([]);
+  const [taiexLoading, setTaiexLoading] = useState(false);
+  const [taiexError, setTaiexError] = useState<string | null>(null);
+  const [taiexRetryTick, setTaiexRetryTick] = useState(0);
+  const [taiexTrPrices, setTaiexTrPrices] = useState<DailyPrice[]>([]);
+  const [taiexTrLoading, setTaiexTrLoading] = useState(false);
+  const [taiexTrError, setTaiexTrError] = useState<string | null>(null);
+  const [taiexTrRetryTick, setTaiexTrRetryTick] = useState(0);
 
   // 圖表互動與明細表狀態
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
@@ -678,6 +913,58 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
 
     return () => ac.abort();
   }, [assetsKey, retryTick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const hasAssets = assets.length > 0;
+
+  // 加權指數（未含息）：僅進入本分頁且有持股時向 FinMind 抓取（每日快取）
+  useEffect(() => {
+    if (!hasAssets) return;
+    const ac = new AbortController();
+    setTaiexLoading(true);
+    setTaiexError(null);
+    fetchTaiexPrices(ac.signal)
+      .then(list => {
+        if (ac.signal.aborted) return;
+        if (list.length > 0) {
+          setTaiexPrices(list);
+        } else {
+          setTaiexError('FinMind 查無加權指數資料');
+        }
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setTaiexError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setTaiexLoading(false);
+      });
+    return () => ac.abort();
+  }, [hasAssets, taiexRetryTick]);
+
+  // 加權報酬指數（含息）：僅在使用者切換時按需向 FinMind 抓取（每日快取）
+  useEffect(() => {
+    if (!hasAssets || benchMode !== 'tr') return;
+    const ac = new AbortController();
+    setTaiexTrLoading(true);
+    setTaiexTrError(null);
+    fetchTaiexTotalReturn(ac.signal)
+      .then(list => {
+        if (ac.signal.aborted) return;
+        if (list.length > 0) {
+          setTaiexTrPrices(list);
+        } else {
+          setTaiexTrError('FinMind 查無加權報酬指數（含息）資料');
+        }
+      })
+      .catch((err: unknown) => {
+        if (ac.signal.aborted) return;
+        setTaiexTrError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!ac.signal.aborted) setTaiexTrLoading(false);
+      });
+    return () => ac.abort();
+  }, [hasAssets, benchMode, taiexTrRetryTick]);
 
   // 背景載入標的名稱與配息（容許缺檔，不阻塞走勢圖）
   useEffect(() => {
@@ -783,6 +1070,21 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
 
   const loadingPrices = totalRequests > 0 && doneCount < totalRequests;
   const rows = history.rows;
+  const activeBenchPrices = benchMode === 'tr' ? taiexTrPrices : taiexPrices;
+  const benchLoading = benchMode === 'tr' ? taiexTrLoading : taiexLoading;
+  const benchError = benchMode === 'tr' ? taiexTrError : taiexError;
+  const benchName = benchMode === 'tr' ? '加權報酬指數（含息）' : '加權指數';
+  const benchShort = benchMode === 'tr' ? '加權含息' : '加權';
+  const comparison = useMemo(
+    () => buildBenchmarkComparison(rows, activeBenchPrices),
+    [rows, activeBenchPrices],
+  );
+  const rangeLabel = range === 'all' ? '全部' : (RANGES.find(r => r.id === range)?.label ?? '近 1 年');
+  const retryBenchmark = useCallback(() => {
+    if (benchMode === 'tr') setTaiexTrRetryTick(n => n + 1);
+    else setTaiexRetryTick(n => n + 1);
+  }, [benchMode]);
+
   const lastIdx = Math.max(0, rows.length - 1);
   const safePinned = pinnedIdx !== null && pinnedIdx < rows.length ? pinnedIdx : null;
   const activeIdx = hoverIdx !== null && hoverIdx < rows.length
@@ -859,7 +1161,7 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
       )}
 
       {/* 頂部總覽卡片 */}
-      <div className={`grid grid-cols-2 gap-2.5 sm:grid-cols-4 ${showDivCard ? 'lg:grid-cols-5' : ''}`}>
+      <div className={`grid grid-cols-2 gap-2.5 sm:grid-cols-4 ${showDivCard ? 'xl:grid-cols-6' : 'lg:grid-cols-5'}`}>
         <StatCard
           label="目前總市值"
           value={history.latestValue !== null ? `${money(history.latestValue)} 元` : '—'}
@@ -885,9 +1187,48 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
           valueClass={toneClass(history.changeYtd?.pnl)}
           sub={periodSub(history.changeYtd, '今年尚無足夠交易日')}
         />
+        <StatCard
+          className={showDivCard ? 'col-span-2 sm:col-span-2 xl:col-span-1' : 'col-span-2 sm:col-span-4 lg:col-span-1'}
+          label={`區間報酬 vs ${benchShort}（${rangeLabel}）`}
+          value={
+            comparison.excessRetPct !== null
+              ? `超額 ${signedPct(comparison.excessRetPct)}`
+              : benchLoading
+                ? '載入中…'
+                : '—'
+          }
+          valueClass={comparison.excessRetPct !== null ? toneClass(comparison.excessRetPct) : 'text-muted'}
+          sub={
+            comparison.portfolioRetPct !== null && comparison.benchmarkRetPct !== null ? (
+              <>
+                <span className="block">
+                  我{' '}
+                  <span className={`font-mono font-semibold ${toneClass(comparison.portfolioRetPct)}`}>
+                    {signedPct(comparison.portfolioRetPct)}
+                  </span>
+                  {'・'}{benchShort}{' '}
+                  <span className={`font-mono font-semibold ${toneClass(comparison.benchmarkRetPct)}`}>
+                    {signedPct(comparison.benchmarkRetPct)}
+                  </span>
+                </span>
+                <span className="block">
+                  最大回撤 我 <span className="font-mono">{signedPct(comparison.portfolioMaxDrawdownPct)}</span>
+                  {'・'}{benchShort}{' '}
+                  <span className="font-mono">{signedPct(comparison.benchmarkMaxDrawdownPct)}</span>
+                </span>
+              </>
+            ) : benchError ? (
+              '暫時抓不到大盤指數'
+            ) : benchLoading ? (
+              `正在抓${benchName}…`
+            ) : (
+              '需要至少 2 個交易日'
+            )
+          }
+        />
         {showDivCard && history.estDividends !== null && (
           <StatCard
-            className="col-span-2 sm:col-span-4 lg:col-span-1"
+            className="col-span-2 sm:col-span-2 xl:col-span-1"
             label="區間估計配息"
             value={`${money(history.estDividends)} 元`}
             valueClass="text-yield"
@@ -1121,6 +1462,94 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
             />
           </section>
 
+          {/* 圖三：報酬比較（我的持股 TWR vs 加權指數／加權報酬指數，同區間起點歸零） */}
+          <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-sm font-bold text-ink">報酬比較（vs {benchName}）</h2>
+                <p className="mt-0.5 text-[11px] leading-snug text-faint">
+                  同區間自 0% 起算・我的持股採時間加權報酬（扣加減碼、不含配息）；
+                  {benchMode === 'tr' ? '加權報酬指數含現金股利還原' : '加權指數未含息'}
+                  {comparison.filledDays > 0 ? `・含 ${comparison.filledDays} 天以前日指數補齊` : ''}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label="比較基準">
+                <button
+                  type="button"
+                  aria-pressed={benchMode === 'price'}
+                  onClick={() => setBenchMode('price')}
+                  className={`h-7 rounded-md px-2.5 text-[12px] font-semibold transition-colors ${
+                    benchMode === 'price' ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}
+                >
+                  加權指數（未含息）
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={benchMode === 'tr'}
+                  onClick={() => setBenchMode('tr')}
+                  className={`h-7 rounded-md px-2.5 text-[12px] font-semibold transition-colors ${
+                    benchMode === 'tr' ? 'bg-accent text-accent-ink' : 'bg-sunken text-muted hover:text-ink'}`}
+                >
+                  加權報酬指數（含息）
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-faint">
+              {!history.allEstimated && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block h-0.5 w-3.5" style={{ background: VALUE_COLOR }} />我的持股（實際）
+                </span>
+              )}
+              {history.hasEstimated && (
+                <span className="inline-flex items-center gap-1">
+                  <span className="inline-block h-0 w-3.5 border-t-2 border-dashed" style={{ borderColor: VALUE_COLOR }} />
+                  我的持股（估算）
+                </span>
+              )}
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block h-0.5 w-3.5" style={{ background: BENCH_COLOR }} />{benchName}
+              </span>
+              {comparison.trimmedLeadingDays > 0 && comparison.startDate && (
+                <span>共同起點自 {comparison.startDate} 起算</span>
+              )}
+            </div>
+
+            {benchLoading && comparison.points.length === 0 ? (
+              <p className="py-10 text-center text-[12.5px] text-muted">載入{benchName}資料中…</p>
+            ) : benchError && comparison.points.length === 0 ? (
+              <div className="mt-2 rounded-lg border border-line bg-bg px-3 py-4 text-center text-[12px] text-muted">
+                <p>暫時抓不到{benchName}：{benchError}</p>
+                <div className="mt-2 flex flex-wrap justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={retryBenchmark}
+                    className="h-8 rounded-lg bg-accent px-3 text-[12px] font-semibold text-accent-ink hover:opacity-90"
+                  >
+                    重新載入
+                  </button>
+                  {benchMode === 'tr' && (
+                    <button
+                      type="button"
+                      onClick={() => setBenchMode('price')}
+                      className="h-8 rounded-lg bg-sunken px-3 text-[12px] font-semibold text-ink hover:bg-hover"
+                    >
+                      改看加權指數（未含息）
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <ReturnCompareChart
+                points={comparison.points}
+                benchLabel={benchShort}
+                activeRowIdx={activeIdx}
+                onHoverRow={setHoverIdx}
+                onPinRow={togglePin}
+              />
+            )}
+          </section>
+
           {/* 每日明細表 */}
           <section className="mt-3 min-w-0 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1230,6 +1659,7 @@ export function PortfolioValue({ onGoPlan }: { onGoPlan: () => void }) {
         <p>
           計算方式：每個交易日取該日以前最近一筆持股紀錄乘上當日收盤價（台股取 FinMind 日收盤價、美股取 FinMind 日收盤價 × 當日台銀美元即期中價，皆快取於本機瀏覽器）。
           每日損益＝前一天生效持股 ×（今天台幣價 − 昨天台幣價），美股自動涵蓋匯率變動，加減碼資金進出不影響累計損益；配息不計入市值。
+          報酬比較以時間加權報酬對照 FinMind 加權指數（TaiwanStockPrice TAIEX，未含息）或加權報酬指數（TaiwanStockTotalReturnIndex TAIEX，含息），共同起點皆歸零為 0%，台股休市日以前一交易日指數補齊。
           開始記錄前的估算區間以首次記錄持股往回推算，未調整歷史分割與期間異動。
         </p>
         <p className="mt-1">

@@ -105,3 +105,4 @@
   - 美股：沿用 `fetchUsPrices`（約 15 個月原始 `Close`）× 當日美元匯率（`fetchUsdTwdHistory` 抓 FinMind `TaiwanExchangeRate` 即期買賣中價，每日快取於 `twetf.usdtwd.hist`；台灣休市取前一個營業日匯率，歷史匯率抓不到時退回最近一筆匯率並於畫面提示）。
 - **每日市值、補價與估算**：對每個交易日取「該日以前最近一筆持股紀錄」× 當日收盤價加總。開始記錄（`log[0].date`）之前以第一筆持股往回估算（支援近 3 月／6 月／1 年，超長紀錄加「全部」），折線以虛線呈現並標註「估算（以目前持股回推）」。某檔在部分交易日缺價（含跨市場休市）時沿用前一個有價日補齊並註明缺價與補價清單；上市較晚在首次有價前不計入市值，首日有價亦不計入當日損益避免假暴賺。
 - **扣掉加減碼的損益與配息口徑**：每日損益＝前一日生效持股 ×（今日台幣價 − 昨日台幣價）（美股自然涵蓋匯率變動，賣光清倉日亦照前一日持股計算當日損益），累計損益折線與總市值折線分開顯示，加減碼日以標記點與快速膠囊點選展開當日變動明細。配息不計入市值與損益，另依 `dividends.json`、`stock_dividends.json` 與美股 `deriveUsDividends` 以除息日前一日持股估算區間稅前配息。
+- **加權指數報酬比對（2026-11-28）**：同區間以時間加權報酬（`cumRetPct`）對照瀏覽器向 FinMind 抓取的 `TaiwanStockPrice`（`data_id=TAIEX`，未含息，快取 `twetf.twprice.TAIEX`），並提供切換至 `TaiwanStockTotalReturnIndex`（`data_id=TAIEX`，含息報酬指數，切換時才按需抓取並快取於 `twetf.taiex.tr`）；台股休市但美股開盤日以前一交易日指數補齊，共同起點歸零為 0%，同步於摘要卡顯示超額報酬與兩者最大回撤（`buildBenchmarkComparison`、`computeMaxDrawdown`）。

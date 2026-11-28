@@ -681,3 +681,150 @@ export function buildValueHistory(input: ValueHistoryInput): ValueHistoryResult 
     usedFxFallback,
   };
 }
+
+export type BenchmarkMode = 'price' | 'tr';
+
+export interface BenchmarkDayPoint {
+  date: string;
+  /** 對應到 ValueDayRow[] 的索引（與總市值／累計損益圖同步游標與點選鎖定） */
+  rowIndex: number;
+  /** 我的持股視窗內時間加權累計報酬（%，起點歸零） */
+  portfolioRetPct: number;
+  /** 基準指數視窗內累計報酬（%，起點歸零） */
+  benchmarkRetPct: number;
+  /** 超額報酬＝我的持股報酬 − 基準指數報酬（百分點） */
+  excessRetPct: number;
+  /** 當日基準指數收盤值（或補前值） */
+  benchmarkClose: number;
+  /** true 代表當日基準指數缺交易日（例如台股休市但美股開盤），以前一筆補齊 */
+  benchmarkFilled: boolean;
+  /** 沿用對應 ValueDayRow 的估算標記 */
+  estimated: boolean;
+}
+
+export interface BenchmarkComparison {
+  points: BenchmarkDayPoint[];
+  startDate: string | null;
+  endDate: string | null;
+  /** 區間我的持股時間加權報酬（%） */
+  portfolioRetPct: number | null;
+  /** 區間基準指數累計報酬（%） */
+  benchmarkRetPct: number | null;
+  /** 區間超額報酬＝我的報酬 − 基準報酬（百分點） */
+  excessRetPct: number | null;
+  /** 區間我的持股最大回撤（%，非正數，例如 -8.2 代表自高點最大回跌 8.2%） */
+  portfolioMaxDrawdownPct: number | null;
+  /** 區間基準指數最大回撤（%，非正數） */
+  benchmarkMaxDrawdownPct: number | null;
+  /** 視窗內基準指數使用前一交易日補齊的天數 */
+  filledDays: number;
+  /** 若基準資料起點晚於持股視窗首日，前面略過的天數 */
+  trimmedLeadingDays: number;
+}
+
+/**
+ * 由累計報酬序列（%，如 0, +20, +8）計算區間最大回撤（%，非正數）。
+ * 轉為財富倍數 W = 1 + r/100，追蹤歷史高點 peak，每日回撤 = (W / peak − 1) × 100。
+ */
+export function computeMaxDrawdown(retPcts: readonly number[]): number {
+  if (retPcts.length === 0) return 0;
+  let peak = -Infinity;
+  let maxDd = 0;
+  for (const r of retPcts) {
+    if (!Number.isFinite(r)) continue;
+    const w = Math.max(0, 1 + r / 100);
+    if (w > peak) peak = w;
+    if (peak > 0) {
+      const dd = (w / peak - 1) * 100;
+      if (dd < maxDd) maxDd = dd;
+    }
+  }
+  return Object.is(maxDd, -0) ? 0 : maxDd;
+}
+
+/**
+ * 將持股視窗內的時間加權報酬與基準指數（加權指數／加權報酬指數）對齊比較：
+ * - 以持股視窗交易日為主軸，基準缺交易日時以前一筆收盤補齊。
+ * - 自雙方皆有資料的首日為共同起點，兩條曲線同步歸零成 0%。
+ * - 計算區間超額報酬（我的報酬 − 基準報酬）與兩者區間最大回撤。
+ */
+export function buildBenchmarkComparison(
+  rows: readonly ValueDayRow[],
+  benchmarkPrices: readonly DailyPrice[],
+): BenchmarkComparison {
+  const empty: BenchmarkComparison = {
+    points: [],
+    startDate: null,
+    endDate: null,
+    portfolioRetPct: null,
+    benchmarkRetPct: null,
+    excessRetPct: null,
+    portfolioMaxDrawdownPct: null,
+    benchmarkMaxDrawdownPct: null,
+    filledDays: 0,
+    trimmedLeadingDays: 0,
+  };
+  if (rows.length < 2) return empty;
+  const benchSorted = normalizePrices(benchmarkPrices);
+  if (benchSorted.length === 0) return empty;
+
+  let firstIdx = -1;
+  let baseBench = 0;
+  for (let i = 0; i < rows.length; i++) {
+    const hit = lookupOnOrBefore(benchSorted, rows[i].date);
+    if (hit) {
+      firstIdx = i;
+      baseBench = hit.row.close;
+      break;
+    }
+  }
+  if (firstIdx < 0 || rows.length - firstIdx < 2 || !(baseBench > 0)) return empty;
+
+  const basePortWealth = 1 + rows[firstIdx].cumRetPct / 100;
+  if (!(basePortWealth > 0)) return empty;
+
+  const points: BenchmarkDayPoint[] = [];
+  let filledDays = 0;
+
+  for (let i = firstIdx; i < rows.length; i++) {
+    const row = rows[i];
+    const hit = lookupOnOrBefore(benchSorted, row.date);
+    if (!hit) continue;
+    const isStart = i === firstIdx;
+    const portRetPct = isStart
+      ? 0
+      : basePortWealth === 1
+        ? row.cumRetPct
+        : ((1 + row.cumRetPct / 100) / basePortWealth - 1) * 100;
+    const benchRetPct = isStart ? 0 : (hit.row.close / baseBench - 1) * 100;
+    const excessRetPct = portRetPct - benchRetPct;
+    const benchmarkFilled = !hit.exact;
+    if (benchmarkFilled) filledDays += 1;
+
+    points.push({
+      date: row.date,
+      rowIndex: i,
+      portfolioRetPct: Object.is(portRetPct, -0) ? 0 : portRetPct,
+      benchmarkRetPct: Object.is(benchRetPct, -0) ? 0 : benchRetPct,
+      excessRetPct: Object.is(excessRetPct, -0) ? 0 : excessRetPct,
+      benchmarkClose: hit.row.close,
+      benchmarkFilled,
+      estimated: row.estimated,
+    });
+  }
+
+  if (points.length < 2) return empty;
+  const last = points[points.length - 1];
+  return {
+    points,
+    startDate: points[0].date,
+    endDate: last.date,
+    portfolioRetPct: last.portfolioRetPct,
+    benchmarkRetPct: last.benchmarkRetPct,
+    excessRetPct: last.excessRetPct,
+    portfolioMaxDrawdownPct: computeMaxDrawdown(points.map(p => p.portfolioRetPct)),
+    benchmarkMaxDrawdownPct: computeMaxDrawdown(points.map(p => p.benchmarkRetPct)),
+    filledDays,
+    trimmedLeadingDays: firstIdx,
+  };
+}
