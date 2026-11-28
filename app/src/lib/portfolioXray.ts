@@ -91,7 +91,7 @@ export interface PortfolioXrayInput {
 export type HoldingKind = 'stock' | 'etf' | 'us' | 'us-stock';
 export type StockMarket = 'tw' | 'foreign';
 export type PenetrationStatus = 'direct' | HoldingSourceKind | 'unpenetrable';
-export type UnpenetrableReasonKind = 'bond' | 'us' | 'foreign' | 'derivative' | 'missing';
+export type UnpenetrableReasonKind = 'bond' | 'us' | 'foreign' | 'derivative' | 'commodity' | 'missing';
 
 export interface HoldingBreakdownRow {
   code: string;
@@ -225,10 +225,13 @@ export interface PortfolioXrayResult {
   /** 海外個股總曝險市值與佔比（直接持有美股個股 ＋ ETF 穿透辨識出的海外個股） */
   foreignStockValue: number;
   foreignStockPct: number;
+  /** 商品 ETF（黃金、白銀、原油等實物／商品期貨，沒有個股）市值與佔比 */
+  commodityValue: number;
+  commodityPct: number;
   /** 可穿透 ETF 中未揭露（前十大以外）／期貨與現金部分 */
   unrevealedEtfValue: number;
   unrevealedEtfPct: number;
-  /** 無法穿透標的（債券、美股、槓反／期貨、尚無明細 ETF）市值與佔比 */
+  /** 無法穿透標的（債券、美股 ETF、槓反／期貨、尚無明細 ETF）市值與佔比 */
   unpenetrableValue: number;
   unpenetrablePct: number;
   /** 已辨識台股個股總曝險佔比＝directStockPct + penetratedEtfPct */
@@ -263,6 +266,32 @@ const ETF_CODE_RE = /^00\d{2,4}[A-Z]?$/;
 
 function isDerivativeSec(sec: string | undefined): boolean {
   return sec === 'cat-leveraged' || sec === 'cat-futures' || sec === 'cat-leveraged-futures';
+}
+
+/** 美股商品 ETF 代號對照表（實物貴金屬／大宗商品期貨 ETF，本來就沒有個股）。 */
+export const US_COMMODITY_ETFS: ReadonlySet<string> = new Set([
+  // 黃金
+  'GLD', 'IAU', 'GLDM', 'IAUM', 'SGOL', 'BAR', 'AAAU', 'OUNZ', 'PHYS',
+  // 白銀／鉑金／鈀金／綜合貴金屬
+  'SLV', 'SIVR', 'PSLV', 'PPLT', 'PALL', 'GLTR',
+  // 綜合商品／能源／農產品／工業金屬
+  'DBC', 'PDBC', 'GSG', 'BCI', 'COMT', 'USCI', 'CMDY',
+  'USO', 'BNO', 'UNG', 'DBE',
+  'DBA', 'CORN', 'WEAT', 'SOYB',
+  'CPER', 'DBB',
+]);
+
+const US_COMMODITY_NAME_RE = /\b(?:gold|silver|platinum|palladium|commodit(?:y|ies)|oil|natural\s+gas)\b/i;
+// 排除礦業／油氣開採／油服等持有公司股票的產業型 ETF（例：GDX Gold Miners、XOP Oil & Gas E&P、OIH Oil Services）
+const US_COMMODITY_EQUITY_EXCLUDE_RE = /\b(?:miners?|mining|exploration|production|producers?|services?|equipment|equity|equities|stocks?|compan(?:y|ies))\b/i;
+
+/** 判斷美股 ETF（m='us' 且非個股）是否為商品 ETF（持有實物或商品期貨，本來就沒有個股）。 */
+export function isUsCommodityEtf(code: string, name?: string): boolean {
+  const norm = code.trim().toUpperCase();
+  if (!norm) return false;
+  if (US_COMMODITY_ETFS.has(norm)) return true;
+  if (!name) return false;
+  return US_COMMODITY_NAME_RE.test(name) && !US_COMMODITY_EQUITY_EXCLUDE_RE.test(name);
 }
 
 const ISIN_RE = /^[A-Z]{2}[A-Z0-9]{9}\d$/;
@@ -767,8 +796,8 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
  * - 台灣公司的美國 ADR（TW_ADR_TO_TW：TSM→2330、UMC→2303、ASX→3711、CHT→2412）一律併回對應台股列，
  *   套用於月報 ISIN、主動式每日持股與直接持有美股個股，金額歸入台股類別並保留 ADR 來源標示（市值曝險不受 ADR 換算股數影響）。
  * - 其餘直接持有的美股個股（m='us' 且 k='stock'）計入海外個股曝險之直接持有（鍵「CODE US」並套用股別合併），
- *   與 ETF 穿透之同一家公司合併；美股掛牌 ETF（m='us' 且無 k）維持無法穿透。
- * - 債券 ETF（cat-bond）、美股掛牌 ETF、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
+ *   與 ETF 穿透之同一家公司合併；美股掛牌商品 ETF（黃金、白銀、原油等）另歸為「商品」，其餘美股 ETF 維持無法穿透。
+ * - 債券 ETF（cat-bond）、非商品美股掛牌 ETF、槓桿／反向／期貨 ETF 及無股票明細者無法穿透。
  * - 主動式 ETF 的期貨部位（含 TX／WTX 等）與公會月報的債券／國外掛牌 ETF 不計為個股曝險。
  */
 export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResult {
@@ -839,6 +868,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   let directStockValue = 0;
   let penetratedEtfValue = 0;
   let foreignStockValue = 0;
+  let commodityValue = 0;
   let unrevealedEtfValue = 0;
   let unpenetrableValue = 0;
 
@@ -1021,6 +1051,15 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     }
 
     if (r.kind === 'us') {
+      if (isUsCommodityEtf(r.code, r.name)) {
+        if (r.value !== null) commodityValue += r.value;
+        breakdown.push({
+          code: r.code, name: r.name, kind: 'us', shares: r.shares, price: r.price, value: r.value,
+          pctOfPortfolio, status: 'unpenetrable', asof: null, coveredPct: 0, stockCount: 0,
+          note: '商品 ETF（持有實物黃金／商品期貨，沒有個股）', unpenetrableKind: 'commodity',
+        });
+        continue;
+      }
       if (r.value !== null) unpenetrableValue += r.value;
       breakdown.push({
         code: r.code, name: r.name, kind: 'us', shares: r.shares, price: r.price, value: r.value,
@@ -1281,6 +1320,7 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   const directStockPct = pctOf(directStockValue);
   const penetratedEtfPct = pctOf(penetratedEtfValue);
   const foreignStockPct = pctOf(foreignStockValue);
+  const commodityPct = pctOf(commodityValue);
   const unrevealedEtfPct = pctOf(unrevealedEtfValue);
   const unpenetrablePct = pctOf(unpenetrableValue);
   const top5Pct = exposures.slice(0, 5).reduce((s, e) => s + e.pct, 0);
@@ -1304,6 +1344,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     penetratedEtfPct,
     foreignStockValue,
     foreignStockPct,
+    commodityValue,
+    commodityPct,
     unrevealedEtfValue,
     unrevealedEtfPct,
     unpenetrableValue,

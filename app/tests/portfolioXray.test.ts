@@ -16,6 +16,7 @@ import {
   cleanForeignName,
   etfTopHoldings,
   formatShareClasses,
+  isUsCommodityEtf,
   matchesHealthFilter,
   parseStoredHoldings,
   SHARE_CLASS_ALIAS,
@@ -1735,4 +1736,127 @@ test('etf_holdings.json 真實資料整合：0050 採投信 PCF、全部持股�
     assert.equal(r0050.view.rows[0].code, '2330');
     assert.ok(r0050.view.shownPct >= 80 && r0050.view.shownPct <= 105);
   }
+});
+
+test('美股商品 ETF 辨識（GLD 等對照表與名稱關鍵字）：單獨歸類「商品」、不計入無法穿透、SPY 與礦業股 ETF 維持美股 ETF、台股期貨 ETF 不受影響且覆蓋度加總 100%', () => {
+  // 1. 對照表代號不需名稱即可辨識為商品 ETF
+  for (const code of [
+    'GLD', 'IAU', 'GLDM', 'SGOL', 'BAR', 'SLV', 'SIVR', 'PPLT', 'PALL',
+    'DBC', 'PDBC', 'GSG', 'USO', 'BNO', 'UNG', 'DBA', 'CPER',
+  ]) {
+    assert.equal(isUsCommodityEtf(code), true, `${code} 應辨識為美股商品 ETF`);
+  }
+
+  // 2. 名稱關鍵字可補抓對照表以外的商品 ETF，但排除礦業／油氣開採／油服與 Goldman 等股票型 ETF
+  assert.equal(isUsCommodityEtf('UGL', 'ProShares Ultra Gold'), true);
+  assert.equal(isUsCommodityEtf('AGQ', 'ProShares Ultra Silver'), true);
+  assert.equal(isUsCommodityEtf('XPT', 'Example Physical Platinum Trust'), true);
+  assert.equal(isUsCommodityEtf('XPD', 'Example Physical Palladium ETF'), true);
+  assert.equal(isUsCommodityEtf('XCOM', 'Example Broad Commodity Fund'), true);
+  assert.equal(isUsCommodityEtf('XOIL', 'Example Crude Oil Futures ETF'), true);
+  assert.equal(isUsCommodityEtf('XNG', 'Example Natural Gas Fund'), true);
+
+  assert.equal(isUsCommodityEtf('SPY', 'State Street SPDR S&P 500 ETF Trust'), false);
+  assert.equal(isUsCommodityEtf('GDX', 'VanEck Gold Miners ETF'), false, '金礦股 ETF 應維持股票型美股 ETF');
+  assert.equal(isUsCommodityEtf('XOP', 'State Street SPDR S&P Oil & Gas Exploration & Production ETF'), false);
+  assert.equal(isUsCommodityEtf('OIH', 'VanEck Oil Services ETF'), false);
+  assert.equal(isUsCommodityEtf('GSLC', 'Goldman Sachs ActiveBeta U.S. Large Cap Equity ETF'), false);
+
+  // 3. buildPortfolioXray 完整覆蓋度與分類驗證（總市值 500,000）
+  const etfsWithFutures: Etf[] = [
+    ...ETFS,
+    mkEtf('00635U', '期元大S&P黃金', 'cat-futures'),
+  ];
+  const yieldsWithFutures: YieldData = {
+    ...YIELDS,
+    yields: {
+      ...YIELDS.yields,
+      '00635U': { price: 50 },
+    },
+  };
+
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: '2330', shares: 100 },                        // 直接台股：100,000 (20%)
+      { code: '0050', shares: 1000 },                       // 台股 ETF：100,000 (穿透 60,000 = 12%、未揭露 40,000 = 8%)
+      { code: 'GLD', shares: 10, m: 'us' },                 // 美股商品 ETF（對照表）：80,000 (16%)
+      { code: 'XAG', shares: 20, m: 'us' },                 // 美股商品 ETF（名稱關鍵字）：20,000 (4%)
+      { code: 'SPY', shares: 100, m: 'us' },                // 美股一般 ETF：50,000 (10%)
+      { code: 'GDX', shares: 50, m: 'us' },                 // 美股金礦股 ETF（排除）：50,000 (10%)
+      { code: '00635U', shares: 1000 },                     // 台股期貨 ETF（cat-futures 維持 derivative）：50,000 (10%)
+      { code: 'GOLD', shares: 100, m: 'us', k: 'stock' },   // 美股個股（k:'stock' 維持直接持股）：50,000 (10%)
+    ],
+    etfs: etfsWithFutures,
+    top10: TOP10,
+    active: null,
+    yields: yieldsWithFutures,
+    stockDivs: STOCK_DIVS,
+    usPricesTwd: new Map([
+      ['GLD', 8_000],
+      ['XAG', 1_000],
+      ['SPY', 500],
+      ['GDX', 1_000],
+      ['GOLD', 500],
+    ]),
+    usNames: new Map([
+      ['GLD', 'SPDR Gold Shares'],
+      ['XAG', 'Example Physical Silver Trust'],
+      ['SPY', 'State Street SPDR S&P 500 ETF Trust'],
+      ['GDX', 'VanEck Gold Miners ETF'],
+    ]),
+    usStockNames: new Map([
+      ['GOLD', 'Barrick Gold Corp'],
+    ]),
+  });
+
+  assert.equal(xray.totalValue, 500_000);
+  assert.equal(xray.directStockValue, 100_000);
+  assert.equal(xray.penetratedEtfValue, 60_000);
+  assert.equal(xray.foreignStockValue, 50_000);
+  assert.equal(xray.commodityValue, 100_000, 'GLD (80,000) + XAG (20,000) 應歸入商品');
+  assert.equal(xray.unrevealedEtfValue, 40_000);
+  assert.equal(xray.unpenetrableValue, 150_000, 'SPY + GDX + 00635U 仍算無法穿透，不含 GLD/XAG');
+
+  assert.ok(Math.abs(xray.commodityPct - 20) < 1e-9);
+  assert.ok(Math.abs(xray.unpenetrablePct - 30) < 1e-9);
+  assert.ok(Math.abs(
+    xray.directStockPct
+    + xray.penetratedEtfPct
+    + xray.foreignStockPct
+    + xray.commodityPct
+    + xray.unrevealedEtfPct
+    + xray.unpenetrablePct
+    - 100,
+  ) < 1e-9, '覆蓋度六類加總應為 100%');
+
+  const gldRow = xray.breakdown.find(b => b.code === 'GLD')!;
+  assert.equal(gldRow.status, 'unpenetrable');
+  assert.equal(gldRow.unpenetrableKind, 'commodity');
+  assert.equal(gldRow.note, '商品 ETF（持有實物黃金／商品期貨，沒有個股）');
+  assert.equal(gldRow.coveredPct, 0);
+  assert.equal(gldRow.stockCount, 0);
+
+  const xagRow = xray.breakdown.find(b => b.code === 'XAG')!;
+  assert.equal(xagRow.status, 'unpenetrable');
+  assert.equal(xagRow.unpenetrableKind, 'commodity');
+  assert.equal(xagRow.note, '商品 ETF（持有實物黃金／商品期貨，沒有個股）');
+
+  const spyRow = xray.breakdown.find(b => b.code === 'SPY')!;
+  assert.equal(spyRow.status, 'unpenetrable');
+  assert.equal(spyRow.unpenetrableKind, 'us');
+  assert.equal(spyRow.note, '美股 ETF（站內無成分股資料，無法穿透）');
+
+  const gdxRow = xray.breakdown.find(b => b.code === 'GDX')!;
+  assert.equal(gdxRow.status, 'unpenetrable');
+  assert.equal(gdxRow.unpenetrableKind, 'us');
+
+  const twFuturesRow = xray.breakdown.find(b => b.code === '00635U')!;
+  assert.equal(twFuturesRow.status, 'unpenetrable');
+  assert.equal(twFuturesRow.unpenetrableKind, 'derivative');
+
+  const usStockRow = xray.breakdown.find(b => b.code === 'GOLD')!;
+  assert.equal(usStockRow.kind, 'us-stock');
+  assert.equal(usStockRow.status, 'direct');
+  assert.ok(xray.exposures.some(e => e.code === 'GOLD US' && e.amount === 50_000));
+  assert.equal(xray.exposures.some(e => e.code === 'GLD US' || e.code === 'GLD'), false);
 });

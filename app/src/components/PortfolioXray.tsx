@@ -45,6 +45,8 @@ const AMBER = '#d97706';
 const WATCH = '#ca8a04';
 // 海外個股曝險進度條採用既有類別 token（非紅非綠，深淺主題皆相容）
 const FOREIGN_BAR = 'var(--cat-8)';
+// 商品 ETF 進度條採用既有中性灰 token（深淺主題皆相容，與未揭露／無法穿透區隔）
+const COMMODITY_BAR = 'var(--cat-tail-a)';
 
 const nf0 = new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 });
 const nf1 = new Intl.NumberFormat('zh-TW', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
@@ -451,7 +453,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             <div
               className="mt-2 flex h-2.5 w-full overflow-hidden rounded-full bg-sunken"
               role="img"
-              aria-label={`直接持股 ${nf1.format(xray.directStockPct)}%、ETF 穿透台股 ${nf1.format(xray.penetratedEtfPct)}%、海外個股 ${nf1.format(xray.foreignStockPct)}%、未揭露或現金 ${nf1.format(xray.unrevealedEtfPct)}%、無法穿透 ${nf1.format(xray.unpenetrablePct)}%`}
+              aria-label={`直接持股 ${nf1.format(xray.directStockPct)}%、ETF 穿透台股 ${nf1.format(xray.penetratedEtfPct)}%、海外個股 ${nf1.format(xray.foreignStockPct)}%${xray.commodityPct > 0 ? `、商品 ${nf1.format(xray.commodityPct)}%` : ''}、未揭露或現金 ${nf1.format(xray.unrevealedEtfPct)}%、無法穿透 ${nf1.format(xray.unpenetrablePct)}%`}
             >
               {xray.directStockPct > 0 && (
                 <span className="bg-accent" style={{ width: `${Math.min(100, xray.directStockPct)}%` }} />
@@ -461,6 +463,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               )}
               {xray.foreignStockPct > 0 && (
                 <span style={{ width: `${Math.min(100, xray.foreignStockPct)}%`, backgroundColor: FOREIGN_BAR }} />
+              )}
+              {xray.commodityPct > 0 && (
+                <span style={{ width: `${Math.min(100, xray.commodityPct)}%`, backgroundColor: COMMODITY_BAR }} />
               )}
               {xray.unrevealedEtfPct > 0 && (
                 <span className="bg-line-strong" style={{ width: `${Math.min(100, xray.unrevealedEtfPct)}%` }} />
@@ -482,6 +487,12 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs" style={{ backgroundColor: FOREIGN_BAR }} />
                   海外個股曝險 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.foreignStockPct)}%</b>
+                </span>
+              )}
+              {xray.commodityPct > 0.05 && (
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs" style={{ backgroundColor: COMMODITY_BAR }} />
+                  商品 <b className="font-mono tabular-nums text-ink">{nf1.format(xray.commodityPct)}%</b>
                 </span>
               )}
               {xray.unrevealedEtfPct > 0.05 && (
@@ -506,7 +517,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
         )}
 
         {/* 關鍵限制一律明示：「前十大是已知下限」只在實際使用月報前十大時顯示 */}
-        {(xray.hasLowerBound || xray.quarterlyAsof || xray.hasQtyStockOnly || xray.unpenetrableValue > 0 || xray.hasDateMismatch) && (
+        {(xray.hasLowerBound || xray.quarterlyAsof || xray.hasQtyStockOnly || xray.commodityValue > 0 || xray.unpenetrableValue > 0 || xray.hasDateMismatch) && (
           <p className="mt-2 text-[11.5px] leading-relaxed text-muted">
             {xray.hasLowerBound && (
               <>
@@ -521,6 +532,11 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             {xray.hasQtyStockOnly && (
               <>
                 部分投信（如元大被動式）僅公布申購股數，權重依收盤價以股票部位合計為 100% 換算。{' '}
+              </>
+            )}
+            {xray.commodityValue > 0 && (
+              <>
+                <b className="text-ink">商品 ETF</b>（黃金、白銀、原油等實物或商品期貨）沒有個股成分，另列為「商品」並計入總市值分母。{' '}
               </>
             )}
             {xray.unpenetrableValue > 0 && (
@@ -621,7 +637,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
 
           {xray.exposures.length === 0 ? (
             <p className="py-10 text-center text-[13px] text-muted">
-              目前持股沒有可穿透的個股（例如全為債券或美股掛牌 ETF，或報價尚未載入）。
+              目前持股沒有可穿透的個股（例如全為債券、商品或美股掛牌 ETF，或報價尚未載入）。
             </p>
           ) : (
             <>
@@ -1231,7 +1247,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自投信每日持股／申購買回清單、公會季報與月報前十大；直接持有的美股個股亦計入海外個股曝險並與 ETF 成分合併，美股 ETF 本身沒有成分資料。台灣公司的美國 ADR（TSM 等）併入台股計算。公會月報／季報的 ISIN 代號透過對照表合併至同一家公司，同一家公司的不同股別（如 Alphabet A／C 股、波克夏 A／B 股、三星電子普通股／特別股）亦合併計算並在展開來源時標示各股別比重，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
             </li>
             <li>
-              <strong className="text-muted">無法穿透的標的</strong>：債券 ETF、美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
+              <strong className="text-muted">商品 ETF 與無法穿透的標的</strong>：黃金、白銀、原油等美股商品 ETF 持有實物或商品期貨，沒有個股成分，於覆蓋度另標為「商品」；債券 ETF、其餘美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
             </li>
             <li>
               <strong className="text-muted">資料日期與口徑差異</strong>：投信每日申購買回清單與主動式持股為收盤後公告、公會月報為上月底快照（約每月 10 號後更新）、公會季報為季底快照、股價為最新收盤價、融資維持率採 XQ 平均成本推算（非券商個人整戶維持率，最晚約 21:30 更新）、可轉債看板晚行情一個交易日且近月餘額減少含轉換／賣回／買回。
