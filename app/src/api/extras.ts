@@ -16,6 +16,7 @@ import type { CbData, CbMarket, CbSeriesPoint, CbConv } from '../lib/cb.ts';
 import type { NextdayData } from '../lib/nextday.ts';
 import { parseUsStocksDataset, type UsStocksDataset } from '../lib/usStocks.ts';
 import { parseIsinTickerData, type IsinTickerData } from '../lib/isinTickerData.ts';
+import { parseUsEtfHoldingsData, type UsEtfHoldingsData } from '../lib/usEtfHoldings.ts';
 
 const BASE = import.meta.env.BASE_URL;
 
@@ -137,3 +138,22 @@ export const fetchIsinTicker = (): Promise<IsinTickerData | null> => {
   return isinTickerPromise;
 };
 export const cachedIsinTicker = (): IsinTickerData | null | undefined => isinTickerResolved;
+
+/** 美股 ETF 成分股（scripts/fetch_us_etf_holdings.py，進版控；
+ *  僅在持股健檢持有美股 ETF 或配息試算點開美股 ETF 持股面板時按需載入，缺檔回 null） */
+let usEtfHoldingsPromise: Promise<UsEtfHoldingsData | null> | null = null;
+let usEtfHoldingsResolved: UsEtfHoldingsData | null | undefined = undefined;
+export const fetchUsEtfHoldings = (): Promise<UsEtfHoldingsData | null> => {
+  if (!usEtfHoldingsPromise) {
+    usEtfHoldingsPromise = fetch(`${BASE}data/us_etf_holdings.json`, { cache: 'no-cache' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(raw => parseUsEtfHoldingsData(raw))
+      .catch(() => null)
+      .then(d => {
+        usEtfHoldingsResolved = d;
+        return d;
+      });
+  }
+  return usEtfHoldingsPromise;
+};
+export const cachedUsEtfHoldings = (): UsEtfHoldingsData | null | undefined => usEtfHoldingsResolved;

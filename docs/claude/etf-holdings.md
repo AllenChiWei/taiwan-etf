@@ -139,6 +139,36 @@ PYTHONIOENCODING=utf-8 python scripts/gen_isin_ticker.py --max 300
 cd app && node --test tests/portfolioXray.test.ts
 ```
 
+## 美股 ETF 持股（us_etf_holdings.json，2026-11-28）
+
+`scripts/fetch_us_etf_holdings.py` → `app/public/data/us_etf_holdings.json`（**只放最新、不累積、進版控**）。
+對照表 `US_ETF_SOURCES` 可擴充，首批收錄 `QQQ`、`QQQM`、`QQQI`、`SPYI`；單檔失敗保留前一版該檔，不用較舊日期覆蓋較新日期。
+在 `update-data.yml` 以獨立區塊 `ushold` 執行（`continue-on-error: true`、失敗還原、驗證在區塊內），輕量驗證 QQQ 為 `full`、至少 90 檔且權重合計 95%～101%。
+
+### 來源與節流（誠實 UA）
+
+- **Invesco（QQQ、QQQM，`basis='full'`，`src='Invesco 官網'`）**：
+  `GET https://dng-api.invesco.com/cache/v1/accounts/en_US/shareclasses/{TICKER}/holdings/fund?idType=ticker&productType=ETF`，
+  取 `effectiveBusinessDate` 與 `holdings[]`（`ticker`、`issuerName`、`percentageOfTotalNetAssets`、`securityTypeName`），依 `securityTypeName` 只留股票／ADR／REIT，排除現金、貨幣市場基金、美債與選擇權。
+- **NEOS（QQQI、SPYI，`basis='top25'`，`src='NEOS 官網'`）**：
+  `GET https://neosfunds.com/{ticker_lower}/`，解析 `downloadHoldingsCSV('<TICKER>')` 之後的第一個 `<table>`（`Security Name | Identifier | Weighting (%)`）與鄰近的 `Data as of MM/DD/YYYY`，僅公開前 25 大；排除名稱／代號含 Call／Put／Option／Cash／Treasury 與選擇權代碼的列。
+  `robots.txt` 指定 `Crawl-delay: 10`，連續對 NEOS 請求間隔固定 ≥ 10.5 秒。
+
+### 前端整合與按需載入
+
+- `app/src/lib/usEtfHoldings.ts` 解析資料檔與格式化來源標示（例：`Invesco 官網 2026-11-25（全部 101 檔）`、`NEOS 官網 2026-11-30（前 25 大）`）。
+- `app/src/lib/overlap.ts` 的 `usHoldingsOf()` 將成分代號轉成 `TICKER US`，交由 `lib/portfolioXray.ts` 套用既有美股代號正規化（如 `BRK.B`）、同公司股別合併（Alphabet A／C 股）與台灣 ADR 併回台股（`TSM→2330`），和台股 ETF 拆出的同一家公司合併。
+- 覆蓋度：拆出的海外個股歸「海外個股曝險」、台灣 ADR 歸「ETF 穿透台股」、前 25 大以外與選擇權／現金歸「未揭露」、尚未收錄成分的美股 ETF 維持「無法穿透」。
+- `api/extras.ts` 的 `fetchUsEtfHoldings()` 只在持股健檢確實持有美股 ETF，或在配息試算點開美股 ETF 持股面板（`EtfHoldingsTable`）時按需載入並快取。
+
+本機重跑與驗證：
+```bash
+python scripts/test_fetch_us_etf_holdings.py
+PYTHONIOENCODING=utf-8 python scripts/fetch_us_etf_holdings.py
+python scripts/fetch_us_etf_holdings.py --verify app/public/data/us_etf_holdings.json
+cd app && node --test tests/portfolioXray.test.ts
+```
+
 ## 前十大持股
 
 台股清單點 ETF 名稱跳出的視窗（`Top10Modal`、`lib/top10.ts`）。`scripts/fetch_top10.py` →

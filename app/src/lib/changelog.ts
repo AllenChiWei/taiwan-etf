@@ -36,6 +36,8 @@ export const CHANGELOG: ChangeDay[] = [
   {
     date: '2026-11-28',
     items: [
+      { kind: 'new', to: '/dividend',
+        text: '持股健檢會拆開 QQQ、QQQM、QQQI、SPYI 等美股 ETF，和台股 ETF 的同一家公司合併計算；配息試算的各檔明細也能點開美股 ETF 查看成分股與約略曝險。' },
       { kind: 'improve', to: '/dividend',
         text: '持股健檢的海外個股對照每天自動補齊，同一家公司在不同 ETF 的寫法更容易合併。' },
       { kind: 'improve', to: '/dividend',

@@ -11,7 +11,13 @@ import { mergeByCode, type AcctEntry } from './accounts.ts';
 import { holdingLinkKind, type ActiveData } from './active.ts';
 import type { FullHoldingBasis, FullHoldingsData, QtyDenom } from './fullHoldings.ts';
 import type { Top10Data } from './top10.ts';
-import { holdingsOf, type HoldingSet, type HoldingSourceKind } from './overlap.ts';
+import { holdingsOf, usHoldingsOf, type HoldingSet, type HoldingSourceKind } from './overlap.ts';
+import {
+  formatUsHoldingsSource,
+  parseUsEtfHoldingsData,
+  type UsEtfHoldingBasis,
+  type UsEtfHoldingsData,
+} from './usEtfHoldings.ts';
 import { ISIN_TICKER } from './isinTicker.ts';
 import {
   mergeIsinTickerMap,
@@ -30,13 +36,17 @@ import {
 import type { StockDividendData, YieldData } from './dividend.ts';
 
 export {
+  formatUsHoldingsSource,
   mergeIsinTickerMap,
   parseIsinTickerData,
+  parseUsEtfHoldingsData,
   SHARE_CLASS_ALIAS,
   SHARE_CLASS_LABEL,
   TW_ADR_TO_TW,
   type IsinTickerData,
   type IsinTickerMeta,
+  type UsEtfHoldingBasis,
+  type UsEtfHoldingsData,
 };
 
 /** 合併內建 ISIN_TICKER 與執行時載入的 isin_ticker.json；缺檔時直接沿用內建對照。 */
@@ -99,6 +109,8 @@ export interface PortfolioXrayInput {
   active: ActiveData | null;
   /** 選填：被動式 ETF 全部持股（投信每日申購買回清單＋公會季報 1% 以上） */
   full?: FullHoldingsData | null;
+  /** 選填：美股 ETF 官網成分股（us_etf_holdings.json，僅在持有美股 ETF 時按需載入） */
+  usHoldings?: UsEtfHoldingsData | null;
   yields: YieldData | null;
   stockDivs: StockDividendData | null;
   /** 美股最新收盤價（已換算為台幣，代號 → 台幣股價，涵蓋美股 ETF 與美股個股） */
@@ -129,9 +141,10 @@ export interface HoldingBreakdownRow {
   status: PenetrationStatus;
   /** 每日／清單 YYYY-MM-DD、季報 YYYYQ# 或月報 YYYY/MM；直接持股與無法穿透時為 null */
   asof: string | null;
-  /** 來源投信（pcf）或公會季報 */
+  /** 來源投信（pcf）、公會季報或美股發行商（us） */
   src?: string;
   basis?: FullHoldingBasis;
+  usBasis?: UsEtfHoldingBasis;
   denom?: QtyDenom;
   /** 可穿透至個股（台股＋海外）的權重合計（佔該 ETF 淨值 %）；直接個股為 100，無法穿透為 0 */
   coveredPct: number;
@@ -167,7 +180,11 @@ export interface ExposureSource {
   /** 此來源貢獻的投組權重（%） */
   pctOfPortfolio: number;
   asof: string | null;
+  src?: string;
   basis?: FullHoldingBasis;
+  usBasis?: UsEtfHoldingBasis;
+  /** 來源 ETF 展開出的股票成分總檔數（供美股官網顯示「全部 N 檔」） */
+  sourceCount?: number;
   denom?: QtyDenom;
   /** 屬多股別合併標的或含台灣 ADR 時，記錄此來源包含的各股別／ADR 與權重（依順序排列） */
   shareClasses?: ShareClassPart[];
@@ -271,6 +288,10 @@ export interface PortfolioXrayResult {
   quarterlyAsof: string | null;
   /** 投組中公會月報前十大使用到的月份（YYYY/MM），未使用則 null */
   monthlyAsof: string | null;
+  /** 投組中已穿透美股 ETF 使用到的日期（由舊到新去重） */
+  usDates: string[];
+  /** 是否持有僅揭露前 25 大的美股 ETF（如 NEOS QQQI／SPYI） */
+  hasUsTop25: boolean;
   /** 是否有投信僅給股數、權重以股票部位合計 100% 換算的 ETF */
   hasQtyStockOnly: boolean;
   /** 投組內各持股權重資料日期是否不一致（例如每日持股與月報／季報並存） */
@@ -671,11 +692,12 @@ export interface EtfHoldingRow {
 
 export interface EtfHoldingsView {
   kind: HoldingSourceKind;
-  /** 每日／申購清單為 YYYY-MM-DD；季報為 YYYYQ#；月報為 YYYY/MM */
+  /** 每日／申購清單／美股官網為 YYYY-MM-DD；季報為 YYYYQ#；月報為 YYYY/MM */
   asof: string;
-  /** 來源投信（pcf）或公會季報 */
+  /** 來源投信（pcf）、公會季報或美股發行商（us） */
   src?: string;
   basis?: FullHoldingBasis;
+  usBasis?: UsEtfHoldingBasis;
   denom?: QtyDenom;
   /** 標示資料來源與日期，例如「投信申購買回清單 2026-11-27（全部 50 檔）」或「公會月報 2026/10，第 11 名以後未揭露」 */
   sourceLabel: string;
@@ -697,12 +719,18 @@ export interface EtfTopHoldingsInput {
   code: string;
   /** ETF 所屬分區（cat-domestic / cat-foreign / cat-bond / cat-leveraged…） */
   sec?: Etf['sec'];
+  /** true 代表查詢美股掛牌 ETF（從 usHoldings 讀取，不查台股投信／公會資料） */
+  isUs?: boolean;
+  /** 選填：美股 ETF 名稱（用於辨識商品 ETF 等無股票成分原因） */
+  name?: string;
   /** 使用者持有這筆 ETF 的市值（台幣）；缺收盤價或 <= 0 時傳 null */
   holdingValue: number | null;
   top10: Top10Data | null;
   active: ActiveData | null;
   /** 選填：被動式 ETF 全部持股（投信每日申購買回清單＋公會季報 1% 以上） */
   full?: FullHoldingsData | null;
+  /** 選填：美股 ETF 官網成分股（us_etf_holdings.json） */
+  usHoldings?: UsEtfHoldingsData | null;
   /** 選填：提供時台股成分優先採用官方簡稱（同持股健檢） */
   stockDivs?: StockDividendData | null;
   /** 選填：執行時載入的海外 ISIN →「代號 交易所」對照（isin_ticker.json），與內建 isinTicker.ts 合併 */
@@ -712,24 +740,40 @@ export interface EtfTopHoldingsInput {
 }
 
 /**
- * 整理單一台灣掛牌 ETF 的持股明細與約略曝險金額（配息試算「各檔明細」展開用）。
+ * 整理單一台灣或美股掛牌 ETF 的持股明細與約略曝險金額（配息試算「各檔明細」展開用）。
  *
- * 共用 holdingsOf() 與持股健檢的成分解析（市場小標籤、台灣 ADR 併回台股、
+ * 共用 holdingsOf()／usHoldingsOf() 與持股健檢的成分解析（市場小標籤、台灣 ADR 併回台股、
  * 同公司多股別合併、排除期貨與債券／連結型 ETF），曝險金額＝這筆 ETF 持有市值 × 佔淨值%。
  */
 export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
-  if (input.sec === 'cat-bond') {
-    return { status: 'empty', reason: '債券 ETF 主要持有公債或公司債，無股票持股明細。' };
-  }
-  if (isDerivativeSec(input.sec)) {
-    return { status: 'empty', reason: '槓桿／反向與期貨 ETF 主要持有期貨與現金，無股票持股明細。' };
-  }
-  if (!input.top10 && !input.active && !input.full) {
-    return { status: 'empty', reason: '持股明細資料暫時讀不到。' };
-  }
-  const hs = holdingsOf(input.code, input.top10, input.active, input.full ?? null);
-  if (!hs) {
-    return { status: 'empty', reason: '查無這檔 ETF 的持股明細（可能為新上市、不動產或平衡型 ETF）。' };
+  let hs: HoldingSet | null;
+  if (input.isUs) {
+    if (isUsCommodityEtf(input.code, input.name)) {
+      return { status: 'empty', reason: '商品 ETF 主要持有實物黃金或商品期貨，無股票持股明細。' };
+    }
+    if (!input.usHoldings) {
+      return { status: 'empty', reason: '美股 ETF 持股明細資料暫時讀不到。' };
+    }
+    hs = usHoldingsOf(input.code, input.usHoldings);
+    if (!hs) {
+      const supported = Object.keys(input.usHoldings.etfs).sort();
+      const hint = supported.length > 0 ? `（目前已收錄 ${supported.join('、')}）` : '';
+      return { status: 'empty', reason: `站內尚無這檔美股 ETF 的持股明細${hint}。` };
+    }
+  } else {
+    if (input.sec === 'cat-bond') {
+      return { status: 'empty', reason: '債券 ETF 主要持有公債或公司債，無股票持股明細。' };
+    }
+    if (isDerivativeSec(input.sec)) {
+      return { status: 'empty', reason: '槓桿／反向與期貨 ETF 主要持有期貨與現金，無股票持股明細。' };
+    }
+    if (!input.top10 && !input.active && !input.full) {
+      return { status: 'empty', reason: '持股明細資料暫時讀不到。' };
+    }
+    hs = holdingsOf(input.code, input.top10, input.active, input.full ?? null);
+    if (!hs) {
+      return { status: 'empty', reason: '查無這檔 ETF 的持股明細（可能為新上市、不動產或平衡型 ETF）。' };
+    }
   }
 
   const isinLookup = resolveIsinTickerMap(input.isinMap);
@@ -797,6 +841,8 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
     sourceLabel = `投信申購買回清單${hs.asof ? ` ${hs.asof}` : ''}（全部 ${all.length} 檔${qtyNote}）`;
   } else if (hs.kind === 'quarterly') {
     sourceLabel = `公會季報${hs.asof ? ` ${hs.asof}` : ''}（持股 1% 以上，共 ${all.length} 檔）`;
+  } else if (hs.kind === 'us') {
+    sourceLabel = formatUsHoldingsSource(hs.src ?? '官網', hs.asof, hs.usBasis ?? 'full', all.length);
   } else {
     sourceLabel = hs.asof ? `公會月報 ${hs.asof}，第 11 名以後未揭露` : '公會月報，第 11 名以後未揭露';
   }
@@ -808,6 +854,7 @@ export function etfTopHoldings(input: EtfTopHoldingsInput): EtfHoldingsResult {
       asof: hs.asof,
       ...(hs.src ? { src: hs.src } : {}),
       ...(hs.basis ? { basis: hs.basis } : {}),
+      ...(hs.usBasis ? { usBasis: hs.usBasis } : {}),
       ...(hs.denom ? { denom: hs.denom } : {}),
       sourceLabel,
       rows,
@@ -909,8 +956,10 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
 
   const dailyDateSet = new Set<string>();
   const pcfDateSet = new Set<string>();
+  const usDateSet = new Set<string>();
   let quarterlyAsof: string | null = null;
   let monthlyAsof: string | null = null;
+  let hasUsTop25 = false;
   let hasQtyStockOnly = false;
   let directStockCount = 0;
 
@@ -1095,11 +1144,116 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
         });
         continue;
       }
-      if (r.value !== null) unpenetrableValue += r.value;
+      const hs = usHoldingsOf(r.code, input.usHoldings);
+      if (!hs) {
+        if (r.value !== null) unpenetrableValue += r.value;
+        breakdown.push({
+          code: r.code, name: r.name, kind: 'us', shares: r.shares, price: r.price, value: r.value,
+          pctOfPortfolio, status: 'unpenetrable', asof: null, coveredPct: 0, stockCount: 0,
+          note: '美股 ETF（站內無成分股資料，無法穿透）', unpenetrableKind: 'us',
+        });
+        continue;
+      }
+
+      const { twComponents, foreignComponents } = splitEtfComponents(hs, isinLookup);
+      if (twComponents.length === 0 && foreignComponents.length === 0) {
+        if (r.value !== null) unpenetrableValue += r.value;
+        breakdown.push({
+          code: r.code, name: r.name, kind: 'us', shares: r.shares, price: r.price, value: r.value,
+          pctOfPortfolio, status: 'unpenetrable', asof: hs.asof || null, coveredPct: 0, stockCount: 0,
+          note: '美股 ETF（明細中無可展開股票成分，無法穿透）', unpenetrableKind: 'us',
+        });
+        continue;
+      }
+
+      const stockCount = twComponents.length + foreignComponents.length;
+      const coveredPct =
+        twComponents.reduce((s, c) => s + c.pct, 0)
+        + foreignComponents.reduce((s, c) => s + c.pct, 0);
+      if (hs.asof) usDateSet.add(hs.asof);
+      if (hs.usBasis === 'top25') hasUsTop25 = true;
+
+      if (r.value !== null) {
+        let etfTwPenetrated = 0;
+        for (const comp of twComponents) {
+          const amt = r.value * (comp.pct / 100);
+          etfTwPenetrated += amt;
+          const shareClasses = twShareClasses(comp);
+          addExposure(
+            comp.sid,
+            comp.name,
+            {
+              code: r.code,
+              name: r.name,
+              kind: 'us',
+              weightInSource: comp.pct,
+              amount: amt,
+              pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
+              asof: hs.asof || null,
+              ...(hs.src ? { src: hs.src } : {}),
+              ...(hs.usBasis ? { usBasis: hs.usBasis } : {}),
+              sourceCount: stockCount,
+              ...(comp.adrCode ? { adrCode: comp.adrCode } : {}),
+              ...(shareClasses ? { shareClasses } : {}),
+            },
+            { displayCode: comp.sid, market: 'tw', marketLabel: '台股', isIsin: false },
+          );
+        }
+
+        let etfForeignPenetrated = 0;
+        for (const comp of foreignComponents) {
+          const amt = r.value * (comp.pct / 100);
+          etfForeignPenetrated += amt;
+          const shareClasses = foreignShareClasses(comp);
+          addExposure(
+            comp.key,
+            comp.name,
+            {
+              code: r.code,
+              name: r.name,
+              kind: 'us',
+              weightInSource: comp.pct,
+              amount: amt,
+              pctOfPortfolio: totalValue > 0 ? (amt / totalValue) * 100 : 0,
+              asof: hs.asof || null,
+              ...(hs.src ? { src: hs.src } : {}),
+              ...(hs.usBasis ? { usBasis: hs.usBasis } : {}),
+              sourceCount: stockCount,
+              ...(shareClasses ? { shareClasses } : {}),
+            },
+            {
+              displayCode: comp.displayCode,
+              market: 'foreign',
+              marketLabel: comp.marketLabel,
+              isIsin: comp.isIsin,
+            },
+          );
+        }
+
+        penetratedEtfValue += etfTwPenetrated;
+        foreignStockValue += etfForeignPenetrated;
+        unrevealedEtfValue += Math.max(0, r.value - etfTwPenetrated - etfForeignPenetrated);
+      }
+
+      const hasTwAdr = twComponents.some(c => c.adrPct > 0);
+      const srcLabel = formatUsHoldingsSource(hs.src ?? '官網', hs.asof, hs.usBasis ?? 'full', stockCount);
       breakdown.push({
-        code: r.code, name: r.name, kind: 'us', shares: r.shares, price: r.price, value: r.value,
-        pctOfPortfolio, status: 'unpenetrable', asof: null, coveredPct: 0, stockCount: 0,
-        note: '美股 ETF（站內無成分股資料，無法穿透）', unpenetrableKind: 'us',
+        code: r.code,
+        name: r.name,
+        kind: 'us',
+        shares: r.shares,
+        price: r.price,
+        value: r.value,
+        pctOfPortfolio,
+        status: 'us',
+        asof: hs.asof || null,
+        ...(hs.src ? { src: hs.src } : {}),
+        ...(hs.usBasis ? { usBasis: hs.usBasis } : {}),
+        coveredPct,
+        stockCount,
+        twStockCount: twComponents.length,
+        foreignStockCount: foreignComponents.length,
+        note: hasTwAdr ? `${srcLabel}・含台灣 ADR 併入台股` : srcLabel,
       });
       continue;
     }
@@ -1361,7 +1515,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
   const top5Pct = exposures.slice(0, 5).reduce((s, e) => s + e.pct, 0);
   const dailyDates = [...dailyDateSet].sort();
   const pcfDates = [...pcfDateSet].sort();
-  const allDailyDates = new Set([...dailyDates, ...pcfDates]);
+  const usDates = [...usDateSet].sort();
+  const allDailyDates = new Set([...dailyDates, ...pcfDates, ...usDates]);
   const hasLowerBound = monthlyAsof !== null;
   const hasOlderPeriod = monthlyAsof !== null || quarterlyAsof !== null;
   const hasDateMismatch = (allDailyDates.size > 0 && hasOlderPeriod)
@@ -1392,6 +1547,8 @@ export function buildPortfolioXray(input: PortfolioXrayInput): PortfolioXrayResu
     pcfDates,
     quarterlyAsof,
     monthlyAsof,
+    usDates,
+    hasUsTop25,
     hasQtyStockOnly,
     hasDateMismatch,
     exposures,

@@ -16,16 +16,19 @@ import {
   cleanForeignName,
   etfTopHoldings,
   formatShareClasses,
+  formatUsHoldingsSource,
   isUsCommodityEtf,
   matchesHealthFilter,
   mergeIsinTickerMap,
   parseIsinTickerData,
   parseStoredHoldings,
+  parseUsEtfHoldingsData,
   resolveIsinTickerMap,
   SHARE_CLASS_ALIAS,
   TW_ADR_TO_TW,
   type IsinTickerData,
   type MarginStateLite,
+  type UsEtfHoldingsData,
 } from '../src/lib/portfolioXray.ts';
 import type { Etf, EtfDataset } from '../src/types.ts';
 import type { Top10Data } from '../src/lib/top10.ts';
@@ -2005,4 +2008,301 @@ test('buildPortfolioXray 與 etfTopHoldings：合併執行時 isin_ticker.json �
   assert.equal(panelFallback.status, 'ready');
   assert.ok(panelFallback.view.rows.some(r => r.code === 'AAPL US'));
   assert.ok(panelFallback.view.rows.some(r => r.code === 'US9581021055' && r.isIsin === true));
+});
+
+test('美股 ETF 穿透：QQQ＋00830（月報 TSM ADR、NVDA）合併、股別合併、ADR 併回台股與覆蓋度加總 100%', () => {
+  const etfs: Etf[] = [
+    mkEtf('00830', '國泰費城半導體', 'cat-foreign'),
+  ];
+  const top10: Top10Data = {
+    meta: { ym: '202610', updated: '2026-11-13', source: 'SITCA' },
+    etfs: {
+      '00830': {
+        name: '國泰費城半導體',
+        rows: [
+          [1, '國外股票(含承銷)', 'US67066G1040', 'NVIDIA CORP', 12],
+          [2, '國外股票(含承銷)', 'US11135F1012', 'BROADCOM INC', 10],
+          [7, '國外股票(含承銷)', 'US8740391003', '台灣積體電路製造股份有限公司', 4.5],
+        ],
+      },
+    },
+  };
+  const yields: YieldData = {
+    meta: { asof: '2026-11-27' },
+    yields: {
+      '00830': { price: 50 }, // 2,000 股 = 100,000（NVDA 12,000、AVGO 10,000、TSM ADR 4,500）
+    },
+  };
+  const usHoldings: UsEtfHoldingsData = {
+    meta: { updated: '2026-11-28', count: 2 },
+    etfs: {
+      QQQ: {
+        asof: '2026-11-25',
+        src: 'Invesco 官網',
+        basis: 'full',
+        rows: [
+          ['NVDA', 'NVIDIA Corp', 9.0],
+          ['AAPL', 'Apple Inc', 8.5],
+          ['AVGO', 'Broadcom Inc', 5.0],
+          ['GOOGL', 'Alphabet Inc Class A', 2.8],
+          ['GOOG', 'Alphabet Inc Class C', 2.6],
+          ['BRK/B', 'Berkshire Hathaway Inc', 1.5],
+        ],
+      },
+      // 驗證美股 ETF 若含台灣 ADR（TSM）同樣會併回台股 2330
+      SMH: {
+        asof: '2026-11-25',
+        src: '官網',
+        basis: 'full',
+        rows: [
+          ['NVDA', 'NVIDIA Corp', 20.0],
+          ['TSM', 'Taiwan Semiconductor Mfg ADR', 10.0],
+        ],
+      },
+    },
+  };
+
+  // 投組總市值 = QQQ (200,000) + 00830 (100,000) + SMH (100,000) = 400,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: 'QQQ', shares: 10, m: 'us', acct: '美股戶' },
+      { code: '00830', shares: 2000, acct: '台股戶' },
+      { code: 'SMH', shares: 10, m: 'us', acct: '美股戶' },
+    ],
+    etfs,
+    top10,
+    active: null,
+    usHoldings,
+    yields,
+    stockDivs: STOCK_DIVS,
+    usPricesTwd: new Map([['QQQ', 20_000], ['SMH', 10_000]]),
+    usNames: new Map([['QQQ', 'Invesco QQQ Trust'], ['SMH', 'VanEck Semiconductor ETF']]),
+  });
+
+  assert.equal(xray.totalValue, 400_000);
+  assert.deepEqual(xray.usDates, ['2026-11-25']);
+  assert.equal(xray.hasUsTop25, false);
+  assert.equal(xray.hasDateMismatch, true, '美股官網 2026-11-25 與月報 2026/10 並存');
+
+  // NVDA：QQQ (200,000*9%=18,000) + 00830 (100,000*12%=12,000) + SMH (100,000*20%=20,000) = 50,000
+  const nvda = xray.exposures.find(e => e.code === 'NVDA US');
+  assert.ok(nvda, 'QQQ、00830 與 SMH 的 NVDA 應合併為單一列 NVDA US');
+  assert.equal(nvda.displayCode, 'NVDA');
+  assert.equal(nvda.market, 'foreign');
+  assert.equal(nvda.marketLabel, '美股');
+  assert.ok(Math.abs(nvda.amount - 50_000) < 1e-6);
+  assert.equal(nvda.sources.length, 3);
+  const nvdaQqq = nvda.sources.find(s => s.code === 'QQQ')!;
+  assert.equal(nvdaQqq.kind, 'us');
+  assert.equal(nvdaQqq.src, 'Invesco 官網');
+  assert.equal(nvdaQqq.usBasis, 'full');
+  assert.equal(nvdaQqq.asof, '2026-11-25');
+  assert.equal(nvdaQqq.sourceCount, 5, 'QQQ 6 列中 GOOG＋GOOGL 合併後為 5 檔公司');
+  assert.equal(
+    formatUsHoldingsSource(nvdaQqq.src!, nvdaQqq.asof!, nvdaQqq.usBasis!, nvdaQqq.sourceCount),
+    'Invesco 官網 2026-11-25（全部 5 檔）',
+  );
+
+  // AVGO：QQQ (10,000) + 00830 (10,000) = 20,000
+  const avgo = xray.exposures.find(e => e.code === 'AVGO US');
+  assert.ok(avgo);
+  assert.ok(Math.abs(avgo.amount - 20_000) < 1e-6);
+
+  // GOOG + GOOGL 在 QQQ 內合併成 GOOGL US (5.4% = 10,800)
+  assert.equal(xray.exposures.some(e => e.code === 'GOOG US'), false);
+  const googl = xray.exposures.find(e => e.code === 'GOOGL US');
+  assert.ok(googl);
+  assert.ok(Math.abs(googl.amount - 10_800) < 1e-6);
+  assert.equal(
+    formatShareClasses(googl.sources[0].shareClasses!, googl.sources[0].weightInSource),
+    'A 股 2.80%＋C 股 2.60%＝5.40%',
+  );
+
+  // BRK/B 正規化為 BRK.B US
+  const brk = xray.exposures.find(e => e.code === 'BRK.B US');
+  assert.ok(brk);
+  assert.equal(brk.displayCode, 'BRK.B');
+  assert.ok(Math.abs(brk.amount - 3_000) < 1e-6);
+
+  // TSM ADR：00830 (4,500) + SMH (10,000) = 14,500 全部併入台股 2330
+  assert.equal(xray.exposures.some(e => e.code === 'TSM US'), false);
+  const tsmc = xray.exposures.find(e => e.code === '2330');
+  assert.ok(tsmc);
+  assert.equal(tsmc.market, 'tw');
+  assert.equal(tsmc.hasAdr, true);
+  assert.ok(Math.abs(tsmc.amount - 14_500) < 1e-6);
+  assert.equal(tsmc.sources.length, 2);
+
+  // 覆蓋度驗證：
+  // 台股穿透 (TSM ADR) = 14,500；海外個股 = QQQ 58,800 + 00830 22,000 + SMH 20,000 = 100,800；
+  // 未揭露 = (200,000-58,800) + (100,000-26,500) + (100,000-30,000) = 284,700；合計 = 400,000 (100%)
+  assert.ok(Math.abs(xray.penetratedEtfValue - 14_500) < 1e-6);
+  assert.ok(Math.abs(xray.foreignStockValue - 100_800) < 1e-6);
+  assert.ok(Math.abs(xray.unrevealedEtfValue - 284_700) < 1e-6);
+  assert.equal(xray.unpenetrableValue, 0);
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct
+    + xray.commodityPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9);
+
+  const bQqq = xray.breakdown.find(b => b.code === 'QQQ')!;
+  assert.equal(bQqq.status, 'us');
+  assert.equal(bQqq.src, 'Invesco 官網');
+  assert.equal(bQqq.usBasis, 'full');
+  assert.equal(bQqq.note, 'Invesco 官網 2026-11-25（全部 5 檔）');
+});
+
+test('美股 ETF 前 25 大（QQQI）＋未揭露、沒有資料的美股 ETF（VOO）仍無法穿透，覆蓋度加總 100%', () => {
+  const usHoldings: UsEtfHoldingsData = {
+    meta: { updated: '2026-11-28', count: 1 },
+    etfs: {
+      QQQI: {
+        asof: '2026-11-30',
+        src: 'NEOS 官網',
+        basis: 'top25',
+        rows: [
+          ['AAPL', 'Apple Inc', 9.01],
+          ['NVDA', 'NVIDIA Corp', 8.75],
+          ['MSFT', 'Microsoft Corp', 7.24],
+          // 模擬其餘 22 檔合計 40%，前 25 大股票總計 65%（剩餘 35% 為第 26 名以後＋選擇權＋現金）
+          ['AMZN', 'Amazon.com Inc', 40.0],
+        ],
+      },
+    },
+  };
+
+  // 投組總市值 = QQQI (200,000) + VOO (100,000，無資料) + GLD (100,000，商品) = 400,000
+  const xray = buildPortfolioXray({
+    holdings: [
+      { code: 'QQQI', shares: 100, m: 'us' },
+      { code: 'VOO', shares: 10, m: 'us' },
+      { code: 'GLD', shares: 10, m: 'us' },
+    ],
+    etfs: [],
+    top10: null,
+    active: null,
+    usHoldings,
+    yields: null,
+    stockDivs: null,
+    usPricesTwd: new Map([['QQQI', 2_000], ['VOO', 10_000], ['GLD', 10_000]]),
+    usNames: new Map([
+      ['QQQI', 'NEOS Nasdaq-100 High Income ETF'],
+      ['VOO', 'Vanguard S&P 500 ETF'],
+      ['GLD', 'SPDR Gold Shares'],
+    ]),
+  });
+
+  assert.equal(xray.totalValue, 400_000);
+  assert.equal(xray.hasUsTop25, true);
+  assert.equal(xray.hasLowerBound, false, '未使用台股月報前十大，hasLowerBound 維持 false');
+  assert.deepEqual(xray.usDates, ['2026-11-30']);
+
+  // QQQI：65% (130,000) 進海外個股曝險、35% (70,000) 進未揭露；VOO 100,000 無法穿透；GLD 100,000 商品
+  assert.ok(Math.abs(xray.foreignStockValue - 130_000) < 1e-6);
+  assert.ok(Math.abs(xray.unrevealedEtfValue - 70_000) < 1e-6);
+  assert.equal(xray.unpenetrableValue, 100_000);
+  assert.equal(xray.commodityValue, 100_000);
+  assert.ok(Math.abs(
+    xray.directStockPct + xray.penetratedEtfPct + xray.foreignStockPct
+    + xray.commodityPct + xray.unrevealedEtfPct + xray.unpenetrablePct - 100,
+  ) < 1e-9, '覆蓋度加總必須等於 100%');
+
+  const bQqqi = xray.breakdown.find(b => b.code === 'QQQI')!;
+  assert.equal(bQqqi.status, 'us');
+  assert.equal(bQqqi.usBasis, 'top25');
+  assert.equal(bQqqi.coveredPct, 65);
+  assert.equal(bQqqi.note, 'NEOS 官網 2026-11-30（前 4 大）');
+
+  const bVoo = xray.breakdown.find(b => b.code === 'VOO')!;
+  assert.equal(bVoo.status, 'unpenetrable');
+  assert.equal(bVoo.unpenetrableKind, 'us');
+  assert.equal(bVoo.note, '美股 ETF（站內無成分股資料，無法穿透）');
+
+  const bGld = xray.breakdown.find(b => b.code === 'GLD')!;
+  assert.equal(bGld.status, 'unpenetrable');
+  assert.equal(bGld.unpenetrableKind, 'commodity');
+});
+
+test('etfTopHoldings 與 parseUsEtfHoldingsData：配息試算面板支援展開美股 ETF（QQQ 全部、QQQI 前 25 大、無資料與商品回 empty）', () => {
+  assert.equal(parseUsEtfHoldingsData(null), null);
+  assert.equal(parseUsEtfHoldingsData({}), null);
+  const parsed = parseUsEtfHoldingsData({
+    meta: { updated: '2026-11-28' },
+    etfs: {
+      qqq: {
+        asof: '2026-11-25',
+        src: 'Invesco 官網',
+        basis: 'full',
+        rows: [
+          ['nvda', 'NVIDIA Corp', 8.5],
+          ['GOOGL', 'Alphabet Inc Class A', 2.8],
+          ['GOOG', 'Alphabet Inc Class C', 2.6],
+          ['BAD', 'Zero', 0],
+        ],
+      },
+      QQQI: {
+        asof: '2026-11-30',
+        src: 'NEOS 官網',
+        basis: 'top25',
+        rows: [['AAPL', 'Apple Inc', 9.01]],
+      },
+    },
+  });
+  assert.ok(parsed);
+  assert.equal(parsed.etfs.QQQ.rows.length, 3);
+
+  const qqqView = etfTopHoldings({
+    code: 'QQQ', isUs: true, holdingValue: 200_000,
+    top10: null, active: null, usHoldings: parsed, limit: 'all',
+  });
+  assert.equal(qqqView.status, 'ready');
+  assert.equal(qqqView.view.kind, 'us');
+  assert.equal(qqqView.view.usBasis, 'full');
+  assert.equal(qqqView.view.totalCount, 2, 'GOOGL＋GOOG 合併為單一列，共 2 家公司');
+  assert.equal(qqqView.view.sourceLabel, 'Invesco 官網 2026-11-25（全部 2 檔）');
+  assert.equal(qqqView.view.rows[0].code, 'NVDA US');
+  assert.ok(Math.abs(qqqView.view.rows[0].exposureAmount! - 17_000) < 1e-6);
+  assert.equal(qqqView.view.rows[1].code, 'GOOGL US');
+  assert.ok(Math.abs(qqqView.view.rows[1].pct - 5.4) < 1e-9);
+
+  const qqqiView = etfTopHoldings({
+    code: 'QQQI', isUs: true, holdingValue: 100_000,
+    top10: null, active: null, usHoldings: parsed, limit: 'all',
+  });
+  assert.equal(qqqiView.status, 'ready');
+  assert.equal(qqqiView.view.usBasis, 'top25');
+  assert.equal(qqqiView.view.sourceLabel, 'NEOS 官網 2026-11-30（前 1 大）');
+  assert.ok(Math.abs(qqqiView.view.rows[0].exposureAmount! - 9_010) < 1e-6);
+
+  const vooEmpty = etfTopHoldings({
+    code: 'VOO', isUs: true, holdingValue: 100_000,
+    top10: null, active: null, usHoldings: parsed, limit: 'all',
+  });
+  assert.equal(vooEmpty.status, 'empty');
+  assert.match(vooEmpty.reason, /QQQ/);
+
+  const gldEmpty = etfTopHoldings({
+    code: 'GLD', isUs: true, name: 'SPDR Gold Shares', holdingValue: 100_000,
+    top10: null, active: null, usHoldings: parsed, limit: 'all',
+  });
+  assert.equal(gldEmpty.status, 'empty');
+  assert.match(gldEmpty.reason, /商品/);
+});
+
+const US_HOLD_PATH = new URL('../public/data/us_etf_holdings.json', import.meta.url);
+test('us_etf_holdings.json 真實資料整合：QQQ 全部持股與 QQQI 前 25 大皆可穿透且權重合理', {
+  skip: !existsSync(US_HOLD_PATH) && '尚未產生 us_etf_holdings.json',
+}, () => {
+  const raw = JSON.parse(readFileSync(US_HOLD_PATH, 'utf8'));
+  const usHoldings = parseUsEtfHoldingsData(raw);
+  assert.ok(usHoldings, 'us_etf_holdings.json 應可正確解析');
+  const qqq = usHoldings.etfs.QQQ;
+  assert.ok(qqq && qqq.basis === 'full' && qqq.rows.length >= 90, 'QQQ 應至少 90 檔');
+  const qqqSum = qqq.rows.reduce((s, r) => s + r[2], 0);
+  assert.ok(qqqSum >= 95 && qqqSum <= 101, `QQQ 權重合計應在 95～101%，實際 ${qqqSum.toFixed(2)}%`);
+  const view = etfTopHoldings({
+    code: 'QQQ', isUs: true, holdingValue: 100_000, top10: null, active: null, usHoldings, limit: 'all',
+  });
+  assert.equal(view.status, 'ready');
+  assert.equal(view.view.rows.some(r => r.code === 'GOOG US'), false, 'QQQ 的 Alphabet C 股應併入 GOOGL');
 });

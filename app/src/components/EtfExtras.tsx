@@ -6,12 +6,12 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { cachedIsinTicker, fetchActive, fetchEtfHolders, fetchFullHoldings, fetchIsinTicker, fetchTop10 } from '../api/extras';
+import { cachedIsinTicker, cachedUsEtfHoldings, fetchActive, fetchEtfHolders, fetchFullHoldings, fetchIsinTicker, fetchTop10, fetchUsEtfHoldings } from '../api/extras';
 import { top10For, missingReason, type Top10Data } from '../lib/top10';
 import { holdersFor, type EtfHoldersData } from '../lib/etfHolders';
 import { holdingLinkKind, type ActiveData } from '../lib/active';
 import type { FullHoldingsData } from '../lib/fullHoldings';
-import { etfTopHoldings, formatShareClasses, type IsinTickerData } from '../lib/portfolioXray';
+import { etfTopHoldings, formatShareClasses, type IsinTickerData, type UsEtfHoldingsData } from '../lib/portfolioXray';
 import type { StockDividendData } from '../lib/dividend';
 import type { Etf } from '../types';
 import { StockSheet } from './StockSheet';
@@ -169,15 +169,21 @@ export function Top10List({ etf, data, onPickStock, onNavigate }: {
 }
 
 /**
- * 單一台灣掛牌 ETF 的前十大持股與約略曝險金額表（配息試算「各檔明細」展開用）。
- * 共用 useEtfExtras 快取與 lib/portfolioXray.ts 的成分解析（市場小標籤、ADR 併回台股、股別合併）。
+ * 單一台灣或美股掛牌 ETF 的持股明細與約略曝險金額表（配息試算「各檔明細」展開用）。
+ * 共用 useEtfExtras／us_etf_holdings 快取與 lib/portfolioXray.ts 的成分解析（市場小標籤、ADR 併回台股、股別合併）。
  */
-export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onPickStock }: {
+export function EtfHoldingsTable({ code, sec, isUs = false, name, holdingValue, data, usHoldings, stockDivs, onPickStock }: {
   code: string;
   sec?: Etf['sec'];
+  /** true 代表美股掛牌 ETF，僅按需載入 us_etf_holdings.json，不下載台股持股檔 */
+  isUs?: boolean;
+  /** 美股 ETF 名稱（供判斷商品 ETF 等無股票成分原因） */
+  name?: string;
   /** 使用者持有這筆 ETF 的市值（台幣）；缺收盤價時傳 null */
   holdingValue: number | null;
   data: EtfExtras | null;
+  /** 選填：外部已載入的美股 ETF 持股資料；未傳且 isUs=true 時於展開當下按需載入 */
+  usHoldings?: UsEtfHoldingsData | null;
   stockDivs?: StockDividendData | null;
   /** 外層元件（DividendPlanner）統一掛一個 StockSheet，避免每列各掛一個 */
   onPickStock?: (code: string, name?: string) => void;
@@ -186,25 +192,50 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
   const closeSheet = useCallback(() => setSheet(null), []);
   useEffect(() => { setSheet(null); }, [code]);
 
-  // 只在配息試算展開 ETF 持股面板時按需載入 isin_ticker.json（模組快取、缺檔退回內建表）
+  // 台股 ETF 展開面板時按需載入 isin_ticker.json（美股 ETF 已有代號，不需載入）
   const [isinMap, setIsinMap] = useState<IsinTickerData | null>(() => cachedIsinTicker() ?? null);
   useEffect(() => {
-    if (cachedIsinTicker() !== undefined) return;
+    if (isUs || cachedIsinTicker() !== undefined) return;
     let alive = true;
     fetchIsinTicker()
       .then(d => { if (alive) setIsinMap(prev => (prev === d ? prev : d)); })
       .catch(() => {});
     return () => { alive = false; };
-  }, []);
+  }, [isUs]);
 
-  const result = useMemo(
-    () => (data
-      ? etfTopHoldings({
-        code, sec, holdingValue, top10: data[0], active: data[1], full: data[3], stockDivs, isinMap, limit: 'all',
-      })
-      : null),
-    [code, sec, holdingValue, data, stockDivs, isinMap],
+  // 美股 ETF 展開面板時按需載入 us_etf_holdings.json（模組快取、缺檔回 null）
+  const [usHoldingsState, setUsHoldingsState] = useState<UsEtfHoldingsData | null | undefined>(() =>
+    (usHoldings !== undefined ? usHoldings : cachedUsEtfHoldings()),
   );
+  useEffect(() => {
+    if (!isUs) return;
+    if (usHoldings !== undefined) {
+      setUsHoldingsState(usHoldings);
+      return;
+    }
+    if (cachedUsEtfHoldings() !== undefined) {
+      setUsHoldingsState(cachedUsEtfHoldings());
+      return;
+    }
+    let alive = true;
+    fetchUsEtfHoldings()
+      .then(d => { if (alive) setUsHoldingsState(d); })
+      .catch(() => { if (alive) setUsHoldingsState(null); });
+    return () => { alive = false; };
+  }, [isUs, usHoldings]);
+
+  const result = useMemo(() => {
+    if (isUs) {
+      if (usHoldingsState === undefined) return null;
+      return etfTopHoldings({
+        code, isUs: true, name, holdingValue, top10: null, active: null, usHoldings: usHoldingsState, stockDivs, limit: 'all',
+      });
+    }
+    if (!data) return null;
+    return etfTopHoldings({
+      code, sec, holdingValue, top10: data[0], active: data[1], full: data[3], stockDivs, isinMap, limit: 'all',
+    });
+  }, [isUs, usHoldingsState, code, name, sec, holdingValue, data, stockDivs, isinMap]);
 
   if (!result) {
     return (
@@ -225,9 +256,10 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
   const { view } = result;
   const pickStock = onPickStock ?? ((c: string, n?: string) => setSheet({ code: c, name: n }));
   const hasTwStock = view.rows.some(r => r.market === 'tw' && holdingLinkKind(r.code) === 'stock');
-  const isFullList = view.kind !== 'monthly';
+  const isUsTop25 = view.kind === 'us' && view.usBasis === 'top25';
+  const isFullList = view.kind !== 'monthly' && !isUsTop25;
   const scrollable = view.rows.length > 10;
-  const totalLabel = view.kind === 'pcf' || view.kind === 'daily'
+  const totalLabel = view.kind === 'pcf' || view.kind === 'daily' || (view.kind === 'us' && view.usBasis === 'full')
     ? `全部 ${view.rows.length} 檔合計`
     : view.kind === 'quarterly'
       ? `1% 以上共 ${view.rows.length} 檔合計`
@@ -237,8 +269,8 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
     <div className="mt-2 rounded-lg border border-line bg-bg p-2.5 sm:p-3">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11.5px]">
         <span className="font-semibold text-ink">
-          {isFullList ? '持股明細' : '前十大持股'}
-          {isFullList && (
+          {isUsTop25 ? '官網前十大持股' : isFullList ? '持股明細' : '前十大持股'}
+          {(isFullList || isUsTop25) && (
             <span className="ml-1 font-normal text-muted">（共 {view.totalCount} 檔）</span>
           )}
         </span>
@@ -339,6 +371,7 @@ export function EtfHoldingsTable({ code, sec, holdingValue, data, stockDivs, onP
       <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 text-[11px] text-faint">
         <span>
           約略曝險＝這筆持有市值 × 占淨值%
+          {isUsTop25 && '・官網僅公開前 10 大持股，其餘成分與選擇權／現金未揭露'}
           {view.basis === 'qty' && (
             view.denom === 'stock'
               ? '・權重依申購股數×收盤價以股票部位合計為 100% 換算'

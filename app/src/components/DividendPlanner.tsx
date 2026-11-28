@@ -177,12 +177,12 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
     () => new Map(dataset.status === 'ready' ? dataset.data.etfs.map(e => [e.code, e] as const) : []),
     [dataset],
   );
-  /** 各檔明細點開看前十大持股的台股 ETF；第一次點開才觸發下載 top10／active_holdings */
+  /** 各檔明細點開看持股的 ETF（含台股與美股 ETF）；台股在第一次點開才觸發下載 top10／active／etf_holdings，美股由 EtfHoldingsTable 按需載入 */
   const [openTop10, setOpenTop10] = useState<Set<string>>(() => new Set());
   const [top10Requested, setTop10Requested] = useState(false);
   const etfExtras = useEtfExtras(top10Requested);
-  const toggleTop10 = useCallback((code: string) => {
-    setTop10Requested(true);
+  const toggleTop10 = useCallback((code: string, isUs = false) => {
+    if (!isUs) setTop10Requested(true);
     setOpenTop10(prev => {
       const next = new Set(prev);
       if (next.has(code)) next.delete(code);
@@ -347,6 +347,10 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
   };
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
   const usSet = useMemo(() => new Set(usKey ? usKey.split(',') : []), [usKey]);
+  const usEtfSet = useMemo(
+    () => new Set(entries.filter(e => e.m === 'us' && e.k !== 'stock').map(e => e.code)),
+    [entries],
+  );
   /** 配息來源分類：美股、台股個股（全算股利所得）、ETF（用集保公告的組成）。總帳戶與各帳戶的月份明細共用 */
   const kindOf = (code: string): 'etf' | 'stock' | 'us' => (usSet.has(code) ? 'us'
     : index.codes[code]?.kind === 'stock' || (stockDivs?.stocks[code] && !(code in index.codes)) ? 'stock' : 'etf');
@@ -736,27 +740,34 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
           <section className="mt-3 rounded-xl border border-line bg-surface p-3.5 sm:p-4">
             <div className="flex flex-wrap items-baseline justify-between gap-x-3">
               <h2 className="text-sm font-bold text-ink">各檔明細</h2>
-              <span className="text-[11.5px] text-faint">點台股 ETF 可展開持股明細與約略曝險</span>
+              <span className="text-[11.5px] text-faint">點 ETF 可展開持股明細與約略曝險</span>
             </div>
             <ul className="mt-2 divide-y divide-line">
               {rows.map(r => {
                 const isTwEtf = kindOf(r.code) === 'etf';
-                const isTop10Open = isTwEtf && openTop10.has(r.code);
+                const isUsEtf = usEtfSet.has(r.code);
+                const canExpandHoldings = isTwEtf || isUsEtf;
+                const isTop10Open = canExpandHoldings && openTop10.has(r.code);
                 return (
                 <li key={r.code} className="py-2.5 first:pt-0 last:pb-0">
                   <div className="flex flex-wrap items-baseline justify-between gap-x-2 gap-y-1">
                     <div className="flex min-w-0 items-center gap-1.5">
-                      {isTwEtf ? (
+                      {canExpandHoldings ? (
                         <button
                           type="button"
                           data-testid={`plan-top10-toggle-${r.code}`}
                           aria-expanded={isTop10Open}
-                          onClick={() => toggleTop10(r.code)}
+                          onClick={() => toggleTop10(r.code, isUsEtf)}
                           className="group flex min-w-0 max-w-full items-center gap-1.5 rounded text-left"
                         >
                           <span className="inline-block h-2.5 w-2.5 shrink-0 rounded-sm"
                                 style={{ background: colorOf(r.code) }} />
                           <span className="font-mono text-[13.5px] font-bold text-ink group-hover:text-accent">{r.code}</span>
+                          {isUsEtf && (
+                            <span className="shrink-0 rounded bg-sunken px-1.5 py-0.5 text-[10.5px] font-semibold text-muted">
+                              美股
+                            </span>
+                          )}
                           <span className="truncate text-[13px] text-muted group-hover:text-accent">{r.name}</span>
                           <span className="shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10.5px] font-semibold text-accent">
                             {isTop10Open ? '持股 ▴' : '持股 ▾'}
@@ -937,9 +948,11 @@ export function DividendPlanner({ index }: { index: CalcIndex }) {
                   {isTop10Open && (
                     <EtfHoldingsTable
                       code={r.code}
-                      sec={etfByCode.get(r.code)?.sec}
+                      sec={isUsEtf ? undefined : etfByCode.get(r.code)?.sec}
+                      isUs={isUsEtf}
+                      name={r.name}
                       holdingValue={r.price > 0 ? r.value : null}
-                      data={etfExtras}
+                      data={isUsEtf ? null : etfExtras}
                       stockDivs={stockDivs}
                       onPickStock={pickStock}
                     />

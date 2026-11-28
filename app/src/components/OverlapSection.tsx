@@ -13,6 +13,7 @@ function shortSource(s: HoldingSet): string {
   if (s.kind === 'daily') return `主動每日 ${s.asof.slice(5).replace('-', '/')}`;
   if (s.kind === 'pcf') return `申購清單 ${s.asof.slice(5).replace('-', '/')}`;
   if (s.kind === 'quarterly') return `季報 1%↑ ${s.asof}`;
+  if (s.kind === 'us') return `${s.src ?? '官網'} ${s.asof.slice(5).replace('-', '/')}`;
   return `前十大 ${s.asof}`;
 }
 

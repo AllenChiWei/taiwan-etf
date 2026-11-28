@@ -26,6 +26,9 @@ function sourceLabel(s: HoldingSet): string {
     return `投信申購買回清單 ${s.asof}（全部 ${s.w.size} 檔${qtyNote}）`;
   }
   if (s.kind === 'quarterly') return `公會季報 ${s.asof}（持股 1% 以上，${s.w.size} 檔）`;
+  if (s.kind === 'us') {
+    return `${s.src ?? '官網'} ${s.asof}（${s.usBasis === 'top25' ? '前 25 大' : `全部 ${s.w.size} 檔`}）`;
+  }
   return `前十大 ${s.asof} 月底（投信投顧公會月報）`;
 }
 

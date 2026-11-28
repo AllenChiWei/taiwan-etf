@@ -12,6 +12,11 @@ import {
   type FullHoldingsData,
   type QtyDenom,
 } from './fullHoldings.ts';
+import {
+  lookupUsEtfHoldings,
+  type UsEtfHoldingBasis,
+  type UsEtfHoldingsData,
+} from './usEtfHoldings.ts';
 
 export interface Common {
   code: string;
@@ -91,24 +96,59 @@ export function overlapPairs(
  * 期貨部位不算持股（跟主動式「合計持股」同一條規則，isStock）。
  */
 
-export type HoldingSourceKind = 'daily' | 'pcf' | 'quarterly' | 'monthly';
+export type HoldingSourceKind = 'daily' | 'pcf' | 'quarterly' | 'monthly' | 'us';
 
 export interface HoldingSet {
   code: string;
-  /** 'daily'＝主動式每日；'pcf'＝被動式申購買回清單；'quarterly'＝公會季報 1% 以上；'monthly'＝公會月報前十大 */
+  /** 'daily'＝主動式每日；'pcf'＝被動式申購買回清單；'quarterly'＝公會季報 1% 以上；'monthly'＝公會月報前十大；'us'＝美股 ETF 官網持股 */
   kind: HoldingSourceKind;
-  /** 每日／申購清單為 YYYY-MM-DD，季報為 YYYYQ#，月報為 YYYY/MM */
+  /** 每日／申購清單／美股官網為 YYYY-MM-DD，季報為 YYYYQ#，月報為 YYYY/MM */
   asof: string;
-  /** 來源投信（例「元大投信」）或「投信投顧公會季報」 */
+  /** 來源投信（例「元大投信」）、「投信投顧公會季報」或美股發行商（例「Invesco 官網」） */
   src?: string;
   /** 被動式持股的換算口徑（weight／qty／quarterly1pct） */
   basis?: FullHoldingBasis;
+  /** kind === 'us' 時的揭露口徑（full＝全部持股；top25＝僅前 25 大） */
+  usBasis?: UsEtfHoldingBasis;
   /** basis === 'qty' 時的分母口徑（nav＝淨值；stock＝股票部位合計 100%） */
   denom?: QtyDenom;
   /** 代號 → 名稱、佔淨值 %（公會月報／季報另保留資產類型 type，供穿透時排除債券／連結型 ETF） */
   w: Map<string, { name: string; pct: number; type?: string }>;
   /** 這份資料涵蓋的淨值合計 %（前十大通常 40～70%） */
   covered: number;
+}
+
+/** 讀取美股 ETF 官網成分股，將成分代號轉成「TICKER US」合併鍵供持股健檢與明細展開共用。 */
+export function usHoldingsOf(
+  code: string,
+  usHoldings: UsEtfHoldingsData | null | undefined,
+): HoldingSet | null {
+  const entry = lookupUsEtfHoldings(usHoldings, code);
+  if (!entry || !entry.rows.length) return null;
+  const w = new Map<string, { name: string; pct: number; type?: string }>();
+  for (const [rawTicker, rawName, pct] of entry.rows) {
+    let ticker = rawTicker.trim().toUpperCase();
+    if (!ticker || !(pct > 0)) continue;
+    // BRK B 這類空白分隔股別先轉成點號，再統一補上 US 交易所後綴
+    ticker = ticker.replace(/^([A-Z0-9]{1,5})\s+([A-Z])$/, '$1.$2');
+    const key = /\s+[A-Z][A-Z0-9]$/.test(ticker) ? ticker : `${ticker} US`;
+    const name = rawName.trim() || ticker;
+    const prev = w.get(key);
+    w.set(key, {
+      name: prev && prev.name.length <= name.length ? prev.name : name,
+      pct: (prev?.pct ?? 0) + pct,
+    });
+  }
+  if (!w.size) return null;
+  return {
+    code: code.trim().toUpperCase(),
+    kind: 'us',
+    asof: entry.asof,
+    src: entry.src,
+    usBasis: entry.basis,
+    w,
+    covered: sumPct(w),
+  };
 }
 
 export function holdingsOf(

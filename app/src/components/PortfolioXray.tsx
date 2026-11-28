@@ -11,7 +11,7 @@ import { useEtfExtras } from './EtfExtras';
 import { StockSheet } from './StockSheet';
 import { EmptyState } from './EmptyState';
 import { Fold } from './Fold';
-import { cachedIsinTicker, fetchCalendar, fetchCb, fetchIsinTicker, fetchStockDividends, fetchUsStocks, fetchYields } from '../api/extras';
+import { cachedIsinTicker, cachedUsEtfHoldings, fetchCalendar, fetchCb, fetchIsinTicker, fetchStockDividends, fetchUsEtfHoldings, fetchUsStocks, fetchYields } from '../api/extras';
 import { fetchMarginState, type MarginState } from '../api/market';
 import { fetchNews } from '../api/news';
 import { fetchUsDataset } from '../api/usEtfs';
@@ -31,12 +31,14 @@ import {
   checkPortfolioFilings,
   checkPortfolioMargin,
   formatShareClasses,
+  formatUsHoldingsSource,
   matchesHealthFilter,
   MINOR_EXPOSURE_PCT,
   parseStoredHoldings,
   type ExposureRow,
   type HealthFilterMode,
   type IsinTickerData,
+  type UsEtfHoldingsData,
 } from '../lib/portfolioXray';
 
 const STORAGE_KEY = 'twetf.holdings';
@@ -168,6 +170,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
   const usKey = usCodes.join(',');
   const [usDataset, setUsDataset] = useState<UsEtfDataset | null>(null);
   const [usStocks, setUsStocks] = useState<UsStocksDataset | null>(null);
+  const [usHoldings, setUsHoldings] = useState<UsEtfHoldingsData | null>(() => cachedUsEtfHoldings() ?? null);
   const [usRows, setUsRows] = useState<Map<string, UsPriceRow[]>>(new Map());
   const [fx, setFx] = useState<{ date: string; rate: number; stale: boolean } | null>(null);
 
@@ -233,6 +236,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       fetchUsDataset(ac.signal)
         .then(d => { if (!ac.signal.aborted) setUsDataset(d); })
         .catch(() => {});
+      fetchUsEtfHoldings()
+        .then(d => { if (!ac.signal.aborted) setUsHoldings(prev => (prev === d ? prev : d)); })
+        .catch(() => {});
     }
     if (hasUsStocks) {
       fetchUsStocks()
@@ -278,6 +284,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       top10,
       active,
       full,
+      usHoldings,
       yields: yields ?? null,
       stockDivs: stockDivs ?? null,
       usPricesTwd,
@@ -285,7 +292,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
       usStockNames,
       isinMap,
     }),
-    [holdings, etfData.etfs, top10, active, full, yields, stockDivs, usPricesTwd, usNames, usStockNames, isinMap],
+    [holdings, etfData.etfs, top10, active, full, usHoldings, yields, stockDivs, usPricesTwd, usNames, usStockNames, isinMap],
   );
 
   const marginCheck = useMemo(
@@ -506,18 +513,22 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
               {xray.unrevealedEtfPct > 0.05 && (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs bg-line-strong" />
-                  {xray.hasLowerBound
-                    ? '前十大以外／期貨現金'
-                    : xray.quarterlyAsof
-                      ? '未滿 1%／期貨現金'
-                      : '期貨／現金／未展開'}{' '}
+                  {xray.hasLowerBound && xray.hasUsTop25
+                    ? '未揭露成分／選擇權現金'
+                    : xray.hasLowerBound
+                      ? '前十大以外／期貨現金'
+                      : xray.hasUsTop25
+                        ? '官網前幾大以外／選擇權現金'
+                        : xray.quarterlyAsof
+                          ? '未滿 1%／期貨現金'
+                          : '期貨／現金／未展開'}{' '}
                   <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unrevealedEtfPct)}%</b>
                 </span>
               )}
               {xray.unpenetrablePct > 0.05 && (
                 <span className="inline-flex items-center gap-1.5">
                   <span aria-hidden className="inline-block h-2.5 w-2.5 rounded-xs border border-line-strong bg-sunken" />
-                  無法穿透（債券／美股 ETF／槓反／無明細） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
+                  無法穿透（債券／未收錄美股 ETF／槓反／無明細） <b className="font-mono tabular-nums text-ink">{nf1.format(xray.unpenetrablePct)}%</b>
                 </span>
               )}
             </div>
@@ -525,11 +536,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
         )}
 
         {/* 關鍵限制一律明示：「前十大是已知下限」只在實際使用月報前十大時顯示 */}
-        {(xray.hasLowerBound || xray.quarterlyAsof || xray.hasQtyStockOnly || xray.commodityValue > 0 || xray.unpenetrableValue > 0 || xray.hasDateMismatch) && (
+        {(xray.hasLowerBound || xray.hasUsTop25 || xray.quarterlyAsof || xray.hasQtyStockOnly || xray.commodityValue > 0 || xray.unpenetrableValue > 0 || xray.hasDateMismatch) && (
           <p className="mt-2 text-[11.5px] leading-relaxed text-muted">
             {xray.hasLowerBound && (
               <>
                 <b className="text-ink">前十大是已知下限</b>：含月報前十大 ETF（{xray.monthlyAsof} 月底），第 11 名以後成分股算不到，實際個股佔比只會等於或更高。{' '}
+              </>
+            )}
+            {xray.hasUsTop25 && (
+              <>
+                <b className="text-ink">部分美股 ETF 僅有官網公開的前 10 大</b>：第 11 名以後成分股、選擇權與現金算不到，歸入「未揭露」。{' '}
               </>
             )}
             {xray.quarterlyAsof && (
@@ -549,7 +565,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
             )}
             {xray.unpenetrableValue > 0 && (
               <>
-                <b className="text-ink">債券／美股 ETF／槓反及尚無明細的 ETF 無法穿透</b>，已計入總市值分母但不展開至個股。
+                <b className="text-ink">債券／未收錄成分的美股 ETF／槓反及尚無明細的 ETF 無法穿透</b>，已計入總市值分母但不展開至個股。
               </>
             )}
             {xray.hasDateMismatch && (
@@ -558,6 +574,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                 {[
                   xray.dailyDates.length > 0 ? `主動式每日 ${xray.dailyDates.join('／')}` : '',
                   xray.pcfDates.length > 0 ? `投信申購買回清單 ${xray.pcfDates.join('／')}` : '',
+                  xray.usDates.length > 0 ? `美股 ETF 官網 ${xray.usDates.join('／')}` : '',
                   xray.quarterlyAsof ? `公會季報 ${xray.quarterlyAsof}` : '',
                   xray.monthlyAsof ? `公會月報 ${xray.monthlyAsof} 月底` : '',
                   yields?.meta?.asof ? `收盤報價 ${yields.meta.asof}` : '',
@@ -591,7 +608,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                   <tr key={`${b.kind}-${b.code}`}>
                     <td className="px-2.5 py-1.5">
                       <span className="font-mono font-semibold text-ink">
-                        {b.kind === 'etf' ? (
+                        {b.kind === 'etf' || b.kind === 'us' ? (
                           <Link to="/etf" search={{ code: b.code }} className="text-accent hover:underline">{b.code}</Link>
                         ) : b.kind === 'stock' && holdingLinkKind(b.code) === 'stock' ? (
                           <button type="button" onClick={() => pickStock(b.code, b.name)} className="text-accent hover:underline">
@@ -618,6 +635,8 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                       {b.status === 'monthly' && (b.note
                         ? `${b.note}（${b.asof}）`
                         : `公會月報前十大（${b.asof}・下限）`)}
+                      {b.status === 'us' && (b.note
+                        ?? formatUsHoldingsSource(b.src ?? '官網', b.asof ?? '', b.usBasis ?? 'full', b.stockCount))}
                       {b.status === 'unpenetrable' && (b.note ?? '無法穿透')}
                     </td>
                     <td className="px-2.5 py-1.5 text-right font-mono tabular-nums text-ink">
@@ -645,7 +664,7 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
 
           {xray.exposures.length === 0 ? (
             <p className="py-10 text-center text-[13px] text-muted">
-              目前持股沒有可穿透的個股（例如全為債券、商品或美股掛牌 ETF，或報價尚未載入）。
+              目前持股沒有可穿透的個股（例如全為債券、商品或未收錄成分的美股 ETF，或報價尚未載入）。
             </p>
           ) : (
             <>
@@ -844,7 +863,9 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
                                               ? `投信申購買回清單 ${src.asof}${src.basis === 'qty' && src.denom === 'stock' ? '（股票部位 100% 換算）' : src.basis === 'qty' ? '（股數換算）' : ''}`
                                               : src.kind === 'quarterly'
                                                 ? `公會季報 ${src.asof}（持股 1% 以上）`
-                                                : `公會月報 ${src.asof}`}
+                                                : src.kind === 'us'
+                                                  ? formatUsHoldingsSource(src.src ?? '官網', src.asof ?? '', src.usBasis ?? 'full', src.sourceCount)
+                                                  : `公會月報 ${src.asof}`}
                                       </div>
                                     )}
                                   </li>
@@ -1233,6 +1254,11 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
           <span>
             個股收盤價：<span className="font-mono text-muted">{stockDivs?.meta.updated ?? '暫時讀不到'}</span>
           </span>
+          {hasUsEtfs && (
+            <span>
+              美股 ETF 持股：<span className="font-mono text-muted">{usHoldings?.meta.updated ?? '暫時讀不到'}</span>
+            </span>
+          )}
           {usCodes.length > 0 && (
             <span>
               美元匯率：<span className="font-mono text-muted">{fx ? `${fx.date}（${fx.rate}）` : '暫時讀不到'}</span>
@@ -1246,16 +1272,16 @@ export function PortfolioXray({ onGoPlan }: { onGoPlan: () => void }) {
           </span>
         </div>
 
-        <Fold summary="算法口徑與限制：優先採用投信每日全部持股，其次公會季報 1% 以上與月報前十大；美股／債券／槓反 ETF 無法穿透，僅供檢視參考">
+        <Fold summary="算法口徑與限制：優先採用投信每日全部持股與美股官網持股，其次公會季報 1% 以上與月報前十大；未收錄成分或債券／槓反 ETF 無法穿透">
           <ul className="list-disc space-y-1 pl-4">
             <li>
-              <strong className="text-muted">持股來源優先順序</strong>：主動式每日持股 → 被動式投信每日申購買回清單（全部成分股：元大、群益、復華、統一、凱基、中信、野村、台新；元大僅公布申購股數，以證交所／櫃買收盤價換算權重）→ 投信投顧公會季報（持股 1% 以上，補國泰、富邦等未開放官網查詢的投信，且僅於涵蓋權重高於月報前十大時採用）→ 公會月報前十大。只有用到月報前十大時，第 11 名以後成分股算不到，單一個股曝險才是已知下限。
+              <strong className="text-muted">持股來源優先順序</strong>：台股掛牌 ETF 依「主動式每日持股 → 被動式投信每日申購買回清單（元大、群益、復華、統一、凱基、中信、野村、台新；元大僅公布申購股數，以證交所／櫃買收盤價換算權重）→ 投信投顧公會季報（持股 1% 以上，補國泰、富邦等未開放官網查詢的投信，且僅於涵蓋權重高於月報前十大時採用）→ 公會月報前十大」；美股 ETF 採用發行商官網持股（Invesco 全部持股：QQQ、QQQM；NEOS 官網前 10 大：QQQI、SPYI，未揭露部分歸入「未揭露」）。
             </li>
             <li>
-              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自投信每日持股／申購買回清單、公會季報與月報前十大；直接持有的美股個股亦計入海外個股曝險並與 ETF 成分合併，美股 ETF 本身沒有成分資料。台灣公司的美國 ADR（TSM 等）併入台股計算。公會月報／季報的 ISIN 代號透過對照表合併至同一家公司，同一家公司的不同股別（如 Alphabet A／C 股、波克夏 A／B 股、三星電子普通股／特別股）亦合併計算並在展開來源時標示各股別比重，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
+              <strong className="text-muted">海外個股穿透口徑</strong>：海外成分來自投信每日持股／申購買回清單、美股 ETF 官網、公會季報與月報前十大；直接持有的美股個股亦計入海外個股曝險並與台／美 ETF 成分合併。台灣公司的美國 ADR（TSM 等）併入台股計算。公會月報／季報的 ISIN 代號透過對照表合併至同一家公司，同一家公司的不同股別（如 Alphabet A／C 股、波克夏 A／B 股、三星電子普通股／特別股）亦合併計算並在展開來源時標示各股別比重，尚無對照者以原 ISIN 呈現；低融資維持率、可轉債、除息／法說與重大訊息四項健檢僅針對台股標的。
             </li>
             <li>
-              <strong className="text-muted">商品 ETF 與無法穿透的標的</strong>：黃金、白銀、原油等美股商品 ETF 持有實物或商品期貨，沒有個股成分，於覆蓋度另標為「商品」；債券 ETF、其餘美股掛牌 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
+              <strong className="text-muted">商品 ETF 與無法穿透的標的</strong>：黃金、白銀、原油等美股商品 ETF 持有實物或商品期貨，沒有個股成分，於覆蓋度另標為「商品」；債券 ETF、尚未收錄成分資料的美股 ETF、槓桿／反向與期貨 ETF、以及尚無明細之新上市／平衡型／連結型 ETF 均無法展開成分股；已取得報價者仍計入投組總市值分母。主動式 ETF 內含之台指期貨部位亦不計為個股曝險。
             </li>
             <li>
               <strong className="text-muted">資料日期與口徑差異</strong>：投信每日申購買回清單與主動式持股為收盤後公告、公會月報為上月底快照（約每月 10 號後更新）、公會季報為季底快照、股價為最新收盤價、融資維持率採 XQ 平均成本推算（非券商個人整戶維持率，最晚約 21:30 更新）、可轉債看板晚行情一個交易日且近月餘額減少含轉換／賣回／買回。
